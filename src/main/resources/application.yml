@@ -1,0 +1,197 @@
+spring:
+  application:
+    name: devops-platform-backend
+
+  profiles:
+    active: ${spring_profiles_active:dev}
+
+  # 数据源配置（由 profile 具体化）
+  datasource:
+    driver-class-name: org.postgresql.Driver
+
+  # Redis 配置（由 profile 具体化）
+  data:
+    redis:
+      database: 0
+
+server:
+  port: 8088
+  servlet:
+    context-path: /ai
+
+spring.servlet.multipart:
+  # 单文件与单请求上限。与 devops.storage.attachment.max-file-size 保持一致，
+  # 二者不一致时以更小者生效：Tomcat 会在进入业务代码前直接拒绝。
+  max-file-size: 20MB
+  max-request-size: 20MB
+
+# ==================== OpsBrain AI 自定义配置 ====================
+devops:
+  ai:
+    # 双模开关：MOCK（开发期不调 API）/ REAL（生产模式）
+    mode: ${AI_MODE:MOCK}
+
+    # 阿里云百炼配置（Real 模式生效）
+    alibaba:
+      api-key: ${ALIBABA_API_KEY:your-alibaba-api-key-here}
+      base-url: ${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      # 主力模型（日常对话，快速响应）
+      turbo-model: ${ALIBABA_TURBO_MODEL:qwen-plus}
+      # 推理模型（复杂问题，可选）
+      reasoner-model: ${ALIBABA_REASONER_MODEL:qwen-max}
+      # Embedding 模型（1536 维）
+      embedding-model: ${ALIBABA_EMBEDDING_MODEL:text-embedding-v2}
+      # 超时配置（毫秒）
+      timeout: 60000
+      max-retries: 2
+
+    # 向量维度铁律（全链路统一）
+    vector:
+      dimension: 1536
+
+    # 语义缓存配置
+    semantic-cache:
+      enabled: true
+      # 相似度阈值（>= 此值命中缓存）
+      similarity-threshold: 0.85
+      # 缓存 TTL（秒）
+      ttl: 3600
+      # 热查询缓存上限，超出后按 LRU 淘汰
+      max-hot-queries: 100
+
+    # 幻觉防护 L4 相似度熔断
+    hallucination:
+      min-similarity-score: 0.73
+
+    # 文档索引配置（DocumentIndexer 读取）
+    index:
+      # 超时时间（毫秒），向量化 + 切片写入超时降级
+      timeout-ms: 60000
+      # 批量切片数，单次 JDBC batch 写入量
+      batch-size: 20
+
+    # 检索策略
+    retrieval:
+      # 混合检索（向量 + 关键词加权融合）。
+      # 默认关闭：content_tsv 需触发器维护，且中文分词依赖 PG 扩展
+      # （zhparser/pg_jieba）。未装扩展时 to_tsvector('simple', 中文)
+      # 几乎无效，启用会让关键词权重变成噪音。
+      hybrid-enabled: false
+      vector-weight: 0.65
+      keyword-weight: 0.35
+
+    # 知识库生命周期治理（P1-9）
+    knowledge:
+      # 孤儿切片定时清理开关。孤儿切片由已停用的 /ingest 端点产生（doc_id IS NULL），
+      # 逃脱 deprecate/purge 治理却仍被检索命中。每日 03:17 清理。
+      # 数据迁移期间可临时关闭，避免误删由外部脚本补录但暂未归档的切片。
+      cleanup-orphan-enabled: true
+
+      # 保留期（R10 确认 2026-08-12）
+      retention:
+        # 废弃后保留多少天再归档。默认 90 天供审计窗口与撤销恢复。
+        # 超期后由 KnowledgeRetentionScheduler 定时扫描，正文转对象存储。
+        deprecated-days: 90
+        # 归档后保留多少天再物理删除。默认 365 天。
+        # 超期后由 KnowledgeRetentionScheduler 定时清理，级联删除历史/标签/切片。
+        archived-days: 365
+
+      # 保留期定时清理任务（R3-①）
+      cleanup:
+        # 总开关。关闭后全部定时清理任务跳过（日志级 debug）。
+        enabled: true
+        # 每次扫描最大处理数。限制单次事务工作量，避免大事务阻塞。
+        batch-size: 500
+        # 废弃→归档执行开关（P1 默认 false，仅统计不执行）。
+        # 归档需 P2-4 MinIO 存储落地方可使用（正文转对象存储），
+        # 且需先执行 migration_v10 补 archived_at/archive_path 列。
+        # 开启前请确认上述前提已满足，否则事务会因缺少列而失败。
+        archive-enabled: false
+
+# 高风险操作审批 (P1-3 Single Writer)
+    approval:
+      # HIGH 优先级工单是否需人工审批后才写库
+      # L1 阶段默认 false 保持现有体验；L3 引入审批工作流后置为 true
+      high-priority-ticket: false
+
+    # 健康检查开关（P1-7）
+    health:
+      # /api/v1/health/ai-model 探测会真实调用付费 LLM + embedding API，
+      # 每次拉取都产生计费。默认关闭，仅运维手动验证连通性时临时开启。
+      # /ping 与 /db 不调付费 API，始终开放，可被 K8s probe 高频拉取。
+      ai-model-enabled: false
+
+    # 上下文预算管理 (MVP-1)
+    context-window: 32000
+
+    # Token 预算（与 ContextBudgetManager 读取的 devops.ai.* 对齐）
+    reserved-response-tokens: 1500
+    system-prompt-tokens: 800
+
+    # 三层记忆架构 (P1-1)
+    memory:
+      # 热记忆：滑动窗口保留轮数（一轮 = 提问 + 回答）
+      hot-window-turns: 10
+      # 热记忆 TTL（分钟），静默超时后由归档任务持久化到温记忆
+      hot-ttl-minutes: 120
+
+      # ---- 冷记忆归档（B-2）----
+      # 归档总开关。默认关闭：归档会写对象存储并置 archived 标记，需运维显式启用。
+      archive-enabled: ${MEMORY_ARCHIVE_ENABLED:false}
+      # 保留天数：会话创建超过此天数且未归档者进入归档候选（按 create_time 判定，
+      # 非 update_time——否则长期续聊的老会话永不归档）
+      archive-after-days: 90
+      # 单轮归档上限，防长事务与内存堆积；剩余量下一轮继续（日志如实告知积压）
+      archive-batch-size: 200
+      # 归档执行时刻（6 位 cron）。默认每日 04:23——错开 :00/:30 与其他定时任务
+      # （孤儿切片 03:17、知识保留期 03:30/04:00），避免同时刻争抢数据库与对象存储连接。
+      # 配置化而非硬编码：运维需按业务低峰调整，验证时需临时提频。
+      archive-cron: ${MEMORY_ARCHIVE_CRON:0 23 4 * * *}
+
+  # ==================== 告警接入（L2 实时监测） ====================
+  alert:
+    # 告警接收总开关。关闭后 AlertWebhookController 仍返回 200 但跳过处理。
+    # 用于运维期临时禁入，不改变 Prometheus 重试行为（非 200 会重试）。
+    enabled: true
+    # 自动建单开关。关闭后告警仍入库并去重，但不触发自动建单（Single Writer 契约 6.10）。
+    # 适合告警风暴时保护工单系统，风暴过后可手动补单。
+    auto-ticket-enabled: true
+    # 自动建单创建人标识（对齐 AlertService.ALERT_CREATOR "alert-bot"）
+    ticket-creator: alert-bot
+
+  # ==================== 工单闭环（B1 首响 SLA） ====================
+  ticket:
+    # 首响超时扫描开关。关闭后已超时的工单不再被标记——
+    # 用于数据迁移/压测期间避免把大批历史工单一次性标成超时污染看板。
+    # 读取方：FirstResponseBreachScheduler.scanEnabled
+    response-breach-scan-enabled: true
+    # 扫描间隔（毫秒）。默认 2 分钟：P0 首响时限仅 15 分钟，
+    # 若按常规 5~10 分钟扫描，最坏情况超时后 10 分钟才发现，占时限 2/3，告警失去意义。
+    # 读取方：FirstResponseBreachScheduler 的 @Scheduled(fixedDelayString)
+    response-breach-scan-interval-ms: 120000
+
+  # ==================== 对象存储（工单附件） ====================
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:29000}
+      access-key: ${MINIO_ACCESS_KEY:devops_minio}
+      secret-key: ${MINIO_SECRET_KEY:devops_minio_pwd}
+      bucket: ${MINIO_BUCKET:devops-ticket-attachment}
+      # 冷记忆归档专用桶。与附件桶分离：两者保留期与访问模式不同，
+      # 混用会让对象生命周期策略无法分别配置。桶由归档任务启动时兜底创建（private）
+      archive-bucket: ${MINIO_ARCHIVE_BUCKET:devops-memory-archive}
+      # 预签名 URL 有效期（秒）。短有效期降低链接泄露风险，
+      # 又足够用户完成一次下载。
+      presign-expiry-seconds: 300
+
+    attachment:
+      # 单文件上限（字节），20MB。运维日志/配置/截图足够。
+      max-file-size: 20971520
+      # 单工单附件数上限，防止无节制堆积
+      max-count-per-ticket: 10
+      # 扩展名白名单（小写，不含点）。
+      # 用白名单而非黑名单：黑名单永远列不全可执行类型
+      # （.exe .bat .sh .jsp .php .dll .so .jar .msi .vbs .ps1 …），
+      # 漏一个即成上传后门。
+      allowed-extensions: log,txt,json,yaml,yml,xml,csv,md,conf,ini,properties,png,jpg,jpeg,gif,webp,pdf,zip,gz,tar,tgz
+

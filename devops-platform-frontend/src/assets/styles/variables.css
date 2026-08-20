@@ -1,0 +1,205 @@
+:root {
+  --app-header-height: 70px;
+  --app-content-max-width: 1220px;
+  --radius-card: 14px;
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06);
+  /* === Brand Primary === */
+  --color-primary: #1B4F9C;
+  --color-primary-light: #2A6BC6;
+  --color-primary-lighter: #E8F0FC;
+  --color-primary-dark: #0E2F5A;
+
+  /* === Neutral Palette === */
+  --color-bg: #F5F7FA;
+  --color-bg-elevated: #FFFFFF;
+  --color-bg-sunken: #EBEEF3;
+  --color-surface: #FFFFFF;
+  --color-surface-hover: #F8F9FB;
+  --color-border: #D1D5DB;
+  --color-border-light: #E5E7EB;
+
+  /* === Text === */
+  --color-text-primary: #111827;
+  --color-text-secondary: #4B5563;
+  --color-text-tertiary: #9CA3AF;
+  --color-text-inverse: #FFFFFF;
+  --color-text-link: var(--color-primary-light);
+  --color-text-on-primary: #FFFFFF;
+
+  /* === State Colors === */
+  --state-success: #16A34A;
+  --state-success-bg: #F0FDF4;
+  --state-warning: #D97706;
+  --state-warning-bg: #FFFBEB;
+  --state-error: #DC2626;
+  --state-error-bg: #FEF2F2;
+  --state-info: var(--color-primary-light);
+  --state-info-bg: var(--color-primary-lighter);
+
+  /* === Typography === */
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* === Radius === */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* === Spacing === */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+
+  /* === Shadows === */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+
+  /* === Element Plus Overrides (align with brand) === */
+  --el-color-primary: #1B4F9C;
+  --el-color-primary-light-3: #4577B8;
+  --el-color-primary-light-5: #7A9DCE;
+  --el-color-primary-light-7: #B3C6E2;
+  --el-color-primary-light-8: #D1DEEF;
+  --el-color-primary-light-9: #E8F0FC;
+  --el-color-primary-dark-2: #0E2F5A;
+  --el-color-success: #16A34A;
+  --el-color-success-light-8: #DCF5E4;
+  --el-color-success-light-9: #F0FDF4;
+  --el-color-warning: #D97706;
+  --el-color-warning-light-8: #FDEBC6;
+  --el-color-warning-light-9: #FFFBEB;
+  --el-color-danger: #DC2626;
+  --el-color-danger-light-8: #FADBDB;
+  --el-color-danger-light-9: #FEF2F2;
+  --el-color-error: #DC2626;
+  --el-color-error-light-8: #FADBDB;
+  --el-color-error-light-9: #FEF2F2;
+  --el-color-info: #4B5563;
+  --el-color-info-light-8: #E1E4E9;
+  --el-color-info-light-9: #F3F4F6;
+  --el-bg-color: #FFFFFF;
+  --el-bg-color-overlay: #FFFFFF;
+  --el-text-color-primary: #111827;
+  --el-text-color-regular: #4B5563;
+  --el-text-color-secondary: #9CA3AF;
+  --el-text-color-placeholder: #9CA3AF;
+  --el-border-color: #E5E7EB;
+  --el-border-color-light: #E5E7EB;
+  --el-border-color-lighter: #F3F4F6;
+  --el-fill-color-blank: #FFFFFF;
+  --el-box-shadow-light: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+}
+
+/* Typography Classes */
+.devops-h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-4xl);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.025em;
+  color: var(--color-text-primary);
+}
+
+.devops-h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.devops-h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--color-text-primary);
+}
+
+.devops-h4 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  color: var(--color-text-primary);
+}
+
+.devops-body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+}
+
+.devops-caption {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-normal);
+  color: var(--color-text-tertiary);
+}
+
+.devops-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+}
+
+/* Compact table density (toggle via SettingsDialog → compactTable)
+   工单列表已迁移到 el-table（方案A：支持列宽拖拉），其内部 DOM 是
+   .el-table__cell 而非裸 th/td，故选择器需同时覆盖两种结构：
+   前者用于 el-table，后者用于仍是手写 table 的其他页面 */
+.compact-tables .tickets-table th,
+.compact-tables .tickets-table td,
+.compact-tables .tickets-table .el-table__header th.el-table__cell,
+.compact-tables .tickets-table .el-table__body td.el-table__cell {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.compact-tables .tickets-table .ticket-title-cell {
+  max-width: 320px;
+}
+
+/* 紧凑模式：工单列表的描述已移入悬浮速览卡不再占行，此处保留 .ticket-desc
+   规则供其它仍在行内显示描述的表格使用 */
+.compact-tables .tickets-table .ticket-desc {
+  display: none;
+}
+
+.compact-tables .kb-grid {
+  gap: 12px;
+}

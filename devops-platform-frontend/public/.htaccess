@@ -1,0 +1,2 @@
+# Suppress passive event listener warnings in console
+# These warnings come from Element Plus and don't affect functionality

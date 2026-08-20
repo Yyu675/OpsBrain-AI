@@ -1,0 +1,104 @@
+# ============================================================
+# Dev 环境配置（开发期本地验证）
+# ============================================================
+
+spring:
+  datasource:
+    # PostgreSQL 16 + pgvector（宿主机直连 Docker 映射端口）
+    url: jdbc:postgresql://localhost:25432/devops_knowledge_db
+    username: devops
+    password: devops_password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  data:
+    redis:
+      # Redis 7（宿主机直连 Docker 映射端口）
+      host: localhost
+      port: 26379
+      password: devops_redis_pwd  # ✅ 修复：与 docker-compose.dev.yml 中的密码保持一致
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 2
+
+# ============================================================
+# 业务配置：AI 模式与模型选择
+# ============================================================
+devops:
+  ai:
+    # 模式开关：MOCK（开发期替身，0成本） / REAL（真实API调用）
+    mode: REAL
+
+    # 大模型 API 配置（OpenAI 兼容协议）
+    # 配置项名保留 alibaba 前缀是历史命名，实际可对接任意 OpenAI 兼容端点。
+    # API Key 与 Base URL 均从环境变量读取，密钥不得写入本文件。
+    alibaba:
+      api-key: ${ALIBABA_API_KEY:please-set-ALIBABA_API_KEY-in-env-file}
+
+      # Base URL 可被环境变量覆盖，便于切换供应商
+      base-url: ${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+
+      # Turbo 模型：日常对话（快速响应，成本低）
+      turbo-model: ${ALIBABA_TURBO_MODEL:deepseek-v4-flash}
+
+      # Reasoner 模型：复杂推理（由 DevOpsIntentRouter 按意图路由）
+      reasoner-model: ${ALIBABA_REASONER_MODEL:deepseek-v4-pro}
+
+      # Embedding 模型：文本向量化（RAG 检索核心）
+      #
+      # ⚠️ 当前 freetokenfaucet.com 端点**不提供 Embedding 模型**
+      #    （/v1/models 返回的全是对话模型，请求 embeddings 报
+      #     NO_UPSTREAM_AVAILABLE）。
+      #    这意味着 REAL 模式下知识库无法向量化，RAG 检索不可用。
+      #    解决方案见 CLAUDE.md「Embedding 供应」决策项。
+      embedding-model: ${ALIBABA_EMBEDDING_MODEL:text-embedding-v2}
+
+      # 超时时间（毫秒）
+      timeout: 60000
+
+      # 重试次数
+      max-retries: 2
+      # 注：此处原有 embedding-dimension: 1536 已删除。
+      # 它是**第二处**维度定义且无任何代码读取它——改它不生效，
+      # 却看起来像是维度的权威来源，会误导排查。
+      # 维度唯一来源是 devops.ai.vector.dimension（见 application.yml），
+      # 由 AiModelConfig 与 VectorStoreConfig 共同读取。
+
+    # Agent 超时配置（毫秒）
+    agent-timeout-ms: 30000
+
+    # ============================================================
+    # 冷记忆归档（B-2）：开发环境常态开启
+    # ============================================================
+    # 生产环境保持 application.yml 的默认 false，由环境变量
+    # MEMORY_ARCHIVE_ENABLED=true 显式开启——那是一次有意识的运维操作。
+    #
+    # 开发环境开启的目的：让归档任务真实运行，在数据量小、易排查时
+    # 暴露问题（权限/网络/数据量），而非等到生产首次开启时才撞上。
+    memory:
+      archive-enabled: true
+      # 开发期缩短保留期至 7 天：默认 90 天意味着要等 90 天才有第一批归档，
+      # 无法在开发周期内观察到真实效果。生产仍用 application.yml 的 90 天。
+      archive-after-days: 7
+
+# ============================================================
+# 日志配置（开发期详细日志）
+# ============================================================
+logging:
+  level:
+    root: INFO
+    com.devops.agent: DEBUG  # 业务代码详细日志
+    dev.langchain4j: DEBUG   # LangChain4j 框架日志（查看工具调用、Prompt）
+    org.springframework.ai: DEBUG
+    org.springframework.jdbc.core.JdbcTemplate: DEBUG  # SQL 日志
+    org.springframework.jdbc.core.StatementCreatorUtils: TRACE  # SQL 参数日志
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"   # 控制台日志格式
+    file: ../log/%d{yyyy-MM-dd}.log  # 日志文件路径

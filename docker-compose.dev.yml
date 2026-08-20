@@ -1,0 +1,137 @@
+# =====================================================================
+# OpsBrain AI（智维大脑）—— 开发环境基础设施编排
+# 用途：本地开发时在宿主机（IDEA）跑 Spring Boot，用本文件一键拉起
+#       它依赖的 PostgreSQL+pgvector、Redis、Adminer 三个服务。
+#
+# 启动：docker compose -f docker-compose.dev.yml up -d
+# 停止：docker compose -f docker-compose.dev.yml down
+# 清库：docker compose -f docker-compose.dev.yml down -v （连同数据卷一起删）
+#
+# 端口规则（2026-08-17 调整）：容器内保持标准端口不变，宿主机映射端口统一加前缀 2。
+#   原前缀 1 方案（15432/16379/18080/19000）在本机 Docker Desktop 上绑定静默失败——
+#   无进程占用、不在 netsh excludedportrange 内，但 NetworkSettings.Ports 为空且宿主机不可达；
+#   同镜像同命令换用 2xxxx 端口即正常，故改用前缀 2。详见 CLAUDE.md 6.36。
+#     PostgreSQL  容器内 5432  → 宿主机 25432
+#     Redis       容器内 6379  → 宿主机 26379
+#     Adminer     容器内 8080  → 宿主机 28080
+#     MinIO API   容器内 9000  → 宿主机 29000
+#     MinIO 控制台 容器内 9001  → 宿主机 29001
+#
+# 后端连接约定：
+#   - 宿主机跑后端（本地开发）：连 localhost:25432 / localhost:26379
+#   - 后端也进容器时（compose 内互联）：连 服务名+容器内端口 postgres:5432 / redis:6379
+# 账号/库名/密码严格对齐 docs/05-development-design/04-数据库设计.md。
+# =====================================================================
+
+services:
+  # ------------------- PostgreSQL + pgvector -------------------
+  postgres:
+    image: ankane/pgvector:v0.5.1
+    container_name: devops-pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: devops_knowledge_db
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops_password
+      # 让 pg_isready / psql 等客户端默认连到业务库，健康检查更准确
+      PGDATABASE: devops_knowledge_db
+    ports:
+      - "25432:5432"          # 宿主机 25432 → 容器 5432
+    volumes:
+      - devops_pg_data:/var/lib/postgresql/data
+      # init.sql 仅在数据卷为空（首次初始化）时自动执行
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devops -d devops_knowledge_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ------------------- Redis 7 -------------------
+  redis:
+    image: redis:7.0-alpine
+    container_name: devops-redis
+    restart: unless-stopped
+    # 容器内仍监听标准 6379；通过 --requirepass 设置密码，与后端配置一致
+    command: ["redis-server", "--requirepass", "devops_redis_pwd", "--appendonly", "yes"]
+    ports:
+      - "26379:6379"          # 宿主机 26379 → 容器 6379
+    volumes:
+      - devops_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "devops_redis_pwd", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ------------------- MinIO（对象存储，工单附件） -------------------
+  # 选用理由：与生产 OSS/S3 接口一致，多实例部署可共享，
+  #   原生支持预签名 URL（文件不经后端流转，避免占用应用带宽）。
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    container_name: devops-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: devops_minio
+      MINIO_ROOT_PASSWORD: devops_minio_pwd
+    ports:
+      - "29000:9000"          # S3 API
+      - "29001:9001"          # 控制台 http://localhost:29001
+    volumes:
+      - devops_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ------------------- MinIO 初始化（建桶，一次性任务） -------------------
+  # 桶设为 private：下载统一走后端签发的预签名 URL，
+  # 避免附件被匿名遍历（运维附件常含日志与配置，属敏感数据）。
+  minio-init:
+    image: minio/mc:RELEASE.2024-09-16T17-43-14Z
+    container_name: devops-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 devops_minio devops_minio_pwd &&
+      mc mb --ignore-existing local/devops-ticket-attachment &&
+      mc anonymous set none local/devops-ticket-attachment &&
+      echo '✅ MinIO 桶 devops-ticket-attachment 已就绪（private）' &&
+      mc mb --ignore-existing local/devops-memory-archive &&
+      mc anonymous set none local/devops-memory-archive &&
+      echo '{\"Rules\":[{\"ID\":\"expire-archive-365d\",\"Status\":\"Enabled\",\"Expiration\":{\"Days\":365}}]}' > /tmp/ilm-archive.json &&
+      mc ilm rule import local/devops-memory-archive < /tmp/ilm-archive.json &&
+      echo '✅ MinIO 桶 devops-memory-archive 已就绪（private + 365 天自动过期）'
+      "
+    restart: "no"
+
+  # ------------------- Adminer（数据库可视化，验收查表用） -------------------
+  adminer:
+    image: adminer:4
+    container_name: devops-adminer
+    restart: unless-stopped
+    ports:
+      - "28080:8080"          # 宿主机 28080 → 容器 8080，浏览器访问 http://localhost:28080
+    environment:
+      # 打开页面默认预填 PostgreSQL 服务名，登录时 System 选 PostgreSQL、
+      # Server 填 postgres、用户 devops、密码 devops_password、库 devops_knowledge_db
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# 具名数据卷：容器删除后数据仍保留，除非显式 down -v
+volumes:
+  devops_pg_data:
+    name: devops_pg_data
+  devops_redis_data:
+    name: devops_redis_data
+  devops_minio_data:
+    name: devops_minio_data

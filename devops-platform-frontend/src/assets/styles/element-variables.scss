@@ -1,0 +1,53 @@
+/* Element Plus Theme Variables */
+@forward 'element-plus/theme-chalk/src/common/var.scss' with (
+  $colors: (
+    'primary': (
+      'base': #1B4F9C,
+      'light-3': #2A6BC6,
+      'light-5': #E8F0FC,
+      'dark-2': #0E2F5A,
+    ),
+    'success': (
+      'base': #16A34A,
+    ),
+    'warning': (
+      'base': #D97706,
+    ),
+    'danger': (
+      'base': #DC2626,
+    ),
+    'error': (
+      'base': #DC2626,
+    ),
+    'info': (
+      'base': #2A6BC6,
+    ),
+  ),
+  $bg-color: (
+    '': #F5F7FA,
+  ),
+  $fill-color: (
+    'blank': #FFFFFF,
+  ),
+  $text-color: (
+    'primary': #111827,
+    'regular': #4B5563,
+    'secondary': #9CA3AF,
+    'placeholder': #9CA3AF,
+  ),
+  $border-color: (
+    'base': #E5E7EB,
+    'light': #E5E7EB,
+    'lighter': #F3F4F6,
+    'extra-light': #F9FAFB,
+    'dark': #D1D5DB,
+    'darker': #9CA3AF,
+  ),
+  $border-radius: (
+    'base': 8px,
+    'small': 4px,
+    'round': 9999px,
+    'circle': 50%,
+  ),
+  $font-family: ('Inter', 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif),
+);
