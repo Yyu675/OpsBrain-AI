@@ -1,0 +1,39 @@
+# =====================================================================
+# Prometheus 主配置（L2 监控栈，2026-08-20）
+# =====================================================================
+# 职责：定期抓取 node-exporter 指标，按 alert.rules.yml 评估告警，
+#       触发的告警推送给 Alertmanager（由它路由到 OpsBrain Webhook）。
+#
+# 开发期把评估/抓取间隔调短（15s），便于快速看到告警触发；生产建议 30s~1m。
+# =====================================================================
+
+global:
+  scrape_interval: 15s        # 抓取指标间隔
+  evaluation_interval: 15s    # 评估告警规则间隔
+
+# 告警规则文件
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+
+# Alertmanager 地址（compose 网络内用服务名 + 容器内端口）
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# 抓取目标
+scrape_configs:
+  # Prometheus 自身（自监控）
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # node-exporter：宿主机 CPU/内存/磁盘/负载指标
+  # compose 网络内用服务名 node-exporter:9100
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          # 给该来源打统一 service/module 标签，便于告警继承（可被规则内标签覆盖）
+          service: 'host-node'

@@ -1,0 +1,37 @@
+# =====================================================================
+# Alertmanager 配置（L2 监控栈，2026-08-20）
+# =====================================================================
+# 职责：接收 Prometheus 推来的告警，按路由发到 OpsBrain 后端 Webhook。
+#
+# 关键：后端在宿主机（IDEA）跑，不在本 compose 网络内，故 url 用
+#       host.docker.internal:8088（compose 里已配 extra_hosts: host-gateway）。
+#       后端 context-path=/ai，端点 POST /api/v1/alerts/webhook，
+#       全路径 = http://host.docker.internal:8088/ai/api/v1/alerts/webhook
+#
+# 开发期把分组/重复间隔调到最短，便于快速看到告警送达；生产建议拉长：
+#   group_wait: 30s / group_interval: 5m / repeat_interval: 4h
+# =====================================================================
+
+global:
+  resolve_timeout: 1m
+
+route:
+  # 分组维度：按告警名 + 服务分组
+  group_by: ['alertname', 'service']
+  # 首次分组等待（开发期调短，便于快速送达）
+  group_wait: 5s
+  # 同组新告警的追加推送间隔
+  group_interval: 10s
+  # 同一告警的重复提醒间隔（开发期调短；生产应设 4h 避免刷屏）
+  repeat_interval: 1m
+  # 默认接收器
+  receiver: opsbrain-webhook
+
+receivers:
+  - name: opsbrain-webhook
+    webhook_configs:
+      # 指向宿主机上的 OpsBrain 后端告警接收端点
+      - url: 'http://host.docker.internal:8088/ai/api/v1/alerts/webhook'
+        # send_resolved=true：告警恢复时也推一条（status=resolved），
+        # OpsBrain 据此把对应告警标记 RESOLVED（AlertService 已支持）
+        send_resolved: true

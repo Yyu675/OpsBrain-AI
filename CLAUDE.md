@@ -2812,6 +2812,64 @@ application/runtime/ColdMemoryArchiveScheduler.java   冷记忆归档任务（Mi
 1. **趋势预测**仍未实现——只做历史趋势可视化 + 服务下钻，PRD 的趋势*预测*需时序模型，未在 UI 暗示有预测功能
 2. 冷归档竞态孤儿对象仍需人工对账（继承 6.52 限制 3）
 
+### 6.54 方向一：L2 告警接入真实数据源（Prometheus + Alertmanager + node-exporter）（2026-08-20）
+
+> **背景**：6.34/6.35/6.50 已交付 L2 告警全链路代码（Webhook→去重→自动建单→WebSocket→列表/详情），但 `docker-compose.dev.yml` **无监控数据源**——只能手工 curl 推 webhook 验证，无真实告警自动流入。本轮补齐工业标准监控栈，让 L2 从「能演示」变为「真实自动监测」。
+
+**用户拍板决策**
+
+| 决策点 | 用户选择 | 落地含义 |
+| :--- | :--- | :--- |
+| 告警接入形态 | **保留现有 `/api/v1/alerts/webhook` + Alertmanager 标准链路** | 不改后端代码；Alertmanager webhook_config 指向该端点 |
+
+**对蓝图的合理偏离（已确认）**
+
+蓝图（`OpsBrain_AI_L1至L5...蓝图.md` §45）写「Prometheus 发现告警立即向 `/api/v1/webhook/prometheus` 发 JSON」。实际保留代码的 `/api/v1/alerts/webhook`（接 Alertmanager 标准格式），理由：
+- **Prometheus 本身不直发 webhook**——工业标准是 Prometheus 采集/评估 → **Alertmanager 路由通知** → webhook。蓝图「Prometheus 发 webhook」技术上不精确。
+- 现有 `AlertmanagerWebhook` DTO 已完全对齐 Alertmanager 负载（receiver/status/alerts[labels/annotations/startsAt/endsAt/fingerprint]），零改动即可对接。
+- 路径命名 `/alerts/webhook` 比 `/webhook/prometheus` 更贴合「按告警实体聚合」的语义。
+
+**新增文件**
+```
+monitoring/prometheus.yml         抓取配置（node-exporter + 自监控）+ 规则文件引用 + Alertmanager 地址
+monitoring/alert.rules.yml        告警规则（4 条真实指标规则 P0~P4 + 1 条哨兵，验证后已注释哨兵）
+monitoring/alertmanager.yml       路由配置，webhook 指向 host.docker.internal:8088（开发期分组/重复间隔调短）
+```
+
+**改动文件**
+- `docker-compose.dev.yml`（+prometheus 29090 / alertmanager 29093 / node-exporter 29100 三容器 + `devops_prometheus_data` 卷）
+
+**关键决策**
+
+| 决策点 | 选择 | 理由 |
+| :--- | :--- | :--- |
+| webhook 目标地址 | **`host.docker.internal:8088`** + `extra_hosts: host-gateway` | 后端在宿主机（IDEA）跑，不在 compose 网络内。用服务名连不到，必须走 host-gateway |
+| 告警规则标签契约 | 规则必带 `severity`/`service`/`module` label + `summary`/`description` annotation | AlertService 据此映射 P 级、建单分类、SLA。缺标签会落兜底分支 |
+| 联调哨兵规则 | `vector(1) > 0` 恒触发，验证后**注释保留** | 必然触发用于确认整条链路通；留着会每分钟产生噪声告警，故验证后注释（需再联调时取消注释 + reload） |
+| node-exporter 挂载 | **Windows/WSL2 下不挂 `/:/host:ro,rslave`** | rslave 传播模式在 WSL2 报「not a shared or slave mount」。改采集 VM 指标（验证链路足够）；Linux 生产可加回真实宿主机挂载 |
+| 端口分配 | 29090/29093/29100（沿用 6.36 前缀 2 惯例） | 容器内保持标准端口，宿主机加前缀 2，与既有 PG/Redis/MinIO 一致 |
+| 恢复语义 | `send_resolved: true` | 告警恢复时推 status=resolved，OpsBrain 标记对应告警 RESOLVED（AlertService 已支持） |
+
+**新增契约**
+- **L2 告警走 Alertmanager 标准链路**：Prometheus 采集/评估 → Alertmanager 路由 → OpsBrain webhook，不接 Prometheus 原始格式（Prometheus 不直发 webhook）
+- **宿主机后端的容器→宿主机回调用 `host.docker.internal`**：compose 内服务回调宿主机进程必须用 host-gateway，不能用服务名或 localhost
+- **联调哨兵规则用后必须注释**：`vector(1)>0` 恒触发，留着是持续噪声源
+- **告警规则标签是与 AlertService 的契约**：新增规则必带 severity/service/module + summary/description，否则映射落兜底
+
+**实测验证（独立 8099 实例 MOCK 模式，测试后数据全部还原）**
+- 监控栈起栈：prometheus 健康、node/prometheus 两抓取目标 up、7 条规则全部加载
+- **真实链路端到端打通（10 秒内自动完成，无任何手工 curl）**：
+  Prometheus 哨兵 firing → Alertmanager 推 webhook → 告警入库（id=6, `critical→P0`, service=payment-service, `module=POD`）→ **自动建单**（`TKT-20260820-0006`, P0, `category=容器/K8s`, `SLA=15m 响应/4h 解决`）→ 工单号回填告警 → WebSocket 广播
+- **映射全部正确**：`severity=critical→P0`、`module=POD→category=容器/K8s`、`P0→SLA 15m 响应`
+- **去重生效**：哨兵重发后 `occurrence_count` 递增（→2），**同一告警 id / 同一工单，未重复建单**
+- 收尾：停 8099、webhook 改回 8088、注释哨兵、清测试数据、重启栈使配置生效；确认哨兵停止 firing、告警表 0 行、原 3 张真实工单完好
+- 监控栈三容器保持运行，供后续方向二（钉钉通知）复用
+
+**已知限制**
+1. Windows/WSL2 下 node-exporter 采集的是 WSL2 VM 指标而非 Windows 宿主机——真实内存/磁盘规则在开发机上反映 VM 状态。Linux 生产部署可加回 `/:/host` 挂载采集真实宿主机指标
+2. 真实告警需用户实例（8088）在线才能接收——Alertmanager 推 8088，后端离线时 webhook 连接失败（Alertmanager 会重试）。这是预期行为，非缺陷
+3. 哨兵规则默认注释——真实内存/CPU/磁盘规则只在超阈值时触发，开发机通常不达标，故日常无告警产生（需真实负载或取消注释哨兵才见告警流）
+
 ### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
 
 **已验证通过**：

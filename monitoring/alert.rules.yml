@@ -1,0 +1,89 @@
+# =====================================================================
+# Prometheus 告警规则（L2 监控栈，2026-08-20）
+# =====================================================================
+# 每条规则的 labels 与 annotations 必须与 OpsBrain AlertService 的读取契约对齐：
+#   labels.severity  → 映射 P0~P4（critical→P0, warning→P2, info→P4，或直接 P0~P4）
+#   labels.service   → 告警归属服务
+#   labels.module    → 业务模块枚举（HOST/POD/DB/CACHE/NETWORK/K8S/MYSQL...）
+#   annotations.summary     → 告警标题
+#   annotations.description → 告警详情（渲染进工单描述）
+#
+# alertname 由 alert: 字段提供，Prometheus 自动作为 labels.alertname。
+#
+# severity 分级参照蓝图 §二：
+#   P0/P1 高危 → 人机协同（HITL），自动建单 + 强提醒
+#   P2/P3 中低危 → 自动建单 + 观察
+# =====================================================================
+
+groups:
+  - name: opsbrain-host-alerts
+    rules:
+      # ---- P2：宿主机内存使用率偏高（可真实触发）----
+      # 内存可用率 < 20% 持续 1 分钟触发。开发期易复现（开点内存压力即可）。
+      - alert: HostHighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 1m
+        labels:
+          severity: warning        # → P2
+          service: host-node
+          module: HOST
+        annotations:
+          summary: "宿主机内存使用率超过 80%"
+          description: "节点内存可用率过低（已用 > 80%），持续 1 分钟。可能存在内存泄漏或负载过高，需排查占用最高的进程。"
+
+      # ---- P1：宿主机内存严重不足（可真实触发，阈值更高）----
+      - alert: HostCriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 92
+        for: 1m
+        labels:
+          severity: critical       # → P0（AlertService: critical→P0）
+          service: host-node
+          module: HOST
+        annotations:
+          summary: "宿主机内存严重不足（>92%）"
+          description: "节点内存已用超过 92%，持续 1 分钟，存在 OOM 风险。需立即定位高占用进程或扩容。"
+
+      # ---- P2：根分区磁盘将满（可真实触发）----
+      # Windows/WSL2 下 node-exporter 未挂宿主机 /host，改用容器可见的根挂载点 "/"。
+      # Linux 生产若挂了 /host，把 mountpoint 改回 "/host"。
+      - alert: HostDiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 2m
+        labels:
+          severity: warning        # → P2
+          service: host-node
+          module: HOST
+        annotations:
+          summary: "根分区磁盘使用率超过 85%"
+          description: "根分区可用空间不足 15%，持续 2 分钟。需清理日志/临时文件或扩容磁盘。"
+
+      # ---- P3：CPU 负载偏高（可真实触发）----
+      - alert: HostHighCpuLoad
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 85
+        for: 2m
+        labels:
+          severity: info           # → P4（如需 P3 可改 warning 或显式 P3）
+          service: host-node
+          module: HOST
+        annotations:
+          summary: "宿主机 CPU 使用率持续偏高（>85%）"
+          description: "CPU 使用率持续 2 分钟超过 85%，可能有异常进程占用或负载激增。"
+
+  # ---- 验证专用哨兵告警（已完成联调验证，默认注释）----
+  # vector(1) 恒为 1，规则永远满足——起栈后约 15s 必定推一条 P0 告警到 webhook。
+  # 2026-08-20 已用它验证「Prometheus→Alertmanager→OpsBrain→自动建单→去重」整条链路通过
+  # （告警 id=6 → 工单 TKT-20260820-0006，重发 occurrence_count 递增不重复建单）。
+  # 保留但注释：需要再次联调时取消注释并 `curl -X POST localhost:29090/-/reload` 重载即可。
+  # 取消注释后会持续每分钟产生噪声告警，验证完请重新注释。
+  # - name: opsbrain-smoke-test
+  #   rules:
+  #     - alert: OpsBrainWebhookSmokeTest
+  #       expr: vector(1) > 0
+  #       for: 0m
+  #       labels:
+  #         severity: critical       # → P0
+  #         service: payment-service
+  #         module: POD
+  #       annotations:
+  #         summary: "【联调哨兵】OpsBrain 告警链路连通性测试"
+  #         description: "此为验证 Prometheus→Alertmanager→OpsBrain Webhook→自动建单链路的哨兵告警，非真实故障。"

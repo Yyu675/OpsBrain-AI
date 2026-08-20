@@ -16,6 +16,9 @@
 #     Adminer     容器内 8080  → 宿主机 28080
 #     MinIO API   容器内 9000  → 宿主机 29000
 #     MinIO 控制台 容器内 9001  → 宿主机 29001
+#     node-exporter 容器内 9100 → 宿主机 29100（L2 监控，2026-08-20 新增）
+#     Prometheus  容器内 9090  → 宿主机 29090（L2 监控 Web UI）
+#     Alertmanager 容器内 9093 → 宿主机 29093（L2 监控 Web UI）
 #
 # 后端连接约定：
 #   - 宿主机跑后端（本地开发）：连 localhost:25432 / localhost:26379
@@ -127,6 +130,62 @@ services:
       postgres:
         condition: service_healthy
 
+  # ------------------- L2 监控栈：node-exporter（宿主机指标采集）-------------------
+  # 暴露 CPU/内存/磁盘/负载等指标，供 Prometheus 抓取。
+  # 端口 9100 → 宿主机 29100（沿用前缀 2 惯例）。
+  #
+  # 注：Windows/Docker Desktop（WSL2）下不挂 / 根文件系统——rslave 传播模式在
+  # WSL2 不支持（报 "not a shared or slave mount"）。此处采集的是 WSL2 VM 的
+  # 指标而非 Windows 宿主机，对验证告警链路已足够；Linux 生产部署可加回
+  # `--path.rootfs=/host` + `- /:/host:ro,rslave` 采集真实宿主机指标。
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: devops-node-exporter
+    restart: unless-stopped
+    ports:
+      - "29100:9100"
+
+  # ------------------- L2 监控栈：Prometheus（指标采集 + 告警规则评估）-------------------
+  # 抓 node-exporter 指标，按 alert.rules.yml 评估告警，触发后推给 Alertmanager。
+  # 端口 9090 → 宿主机 29090（Web UI: http://localhost:29090）。
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: devops-prometheus
+    restart: unless-stopped
+    ports:
+      - "29090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - devops_prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      # 评估间隔调短便于开发期快速验证（生产用默认 1m）
+      - '--storage.tsdb.retention.time=7d'
+    depends_on:
+      - node-exporter
+      - alertmanager
+
+  # ------------------- L2 监控栈：Alertmanager（告警路由 → OpsBrain Webhook）-------------------
+  # 把 Prometheus 触发的告警按 alertmanager.yml 路由，webhook_config 指向 OpsBrain 后端。
+  # 端口 9093 → 宿主机 29093（Web UI: http://localhost:29093）。
+  #
+  # 关键：后端在宿主机（IDEA）跑，不在本 compose 网络内，故 webhook 地址用
+  # host.docker.internal:8088（extra_hosts 声明确保 Linux Docker 也能解析）。
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: devops-alertmanager
+    restart: unless-stopped
+    ports:
+      - "29093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 # 具名数据卷：容器删除后数据仍保留，除非显式 down -v
 volumes:
   devops_pg_data:
@@ -135,3 +194,5 @@ volumes:
     name: devops_redis_data
   devops_minio_data:
     name: devops_minio_data
+  devops_prometheus_data:
+    name: devops_prometheus_data
