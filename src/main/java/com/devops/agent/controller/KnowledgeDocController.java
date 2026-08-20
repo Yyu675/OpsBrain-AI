@@ -209,6 +209,7 @@ public class KnowledgeDocController {
      * 默认下架请用 /deprecate。</p>
      */
     @DeleteMapping("/{id}/purge")
+    @cn.dev33.satoken.annotation.SaCheckRole("ADMIN")   // 方向 F：物理删除不可逆，限管理员
     public ApiResponse<Object> purge(@PathVariable Long id,
                                      @RequestBody(required = false) Map<String, String> body) {
         try {

@@ -3100,6 +3100,60 @@ devops-platform-frontend/src/api/approval.ts            审批 API
 1. 聚合窗口内首告警恢复（RESOLVED）后，其 ticket_id 仍可能被后续告警关联——当前查询按 `last_occurred_at` 窗口而非严格「工单未关闭」，极端场景下可能关联到已解决工单。实际影响小（窗口仅 5min），严格化需查工单状态，待有真实反馈再优化
 2. 聚合仅按 service+module，不做告警内容相似度聚类——同 service 下语义无关的两类告警也会聚合到一张工单。更细粒度聚类（如按 alertName 前缀）属后续增强
 
+### 6.59 方向 F：RBAC 细粒度权限（导航按角色 + 不可逆操作限管理员）（2026-08-21）
+
+> **背景**：方向三已建 `sys_user.role`（ADMIN/OPS）+ Sa-Token 登录校验；方向 D 接通首个 `@SaCheckRole("ADMIN")`（审批中心）。方向 F 把角色控制系统化。
+
+**核实发现（避免重复造轮子）**
+
+盘点确认**前端路由守卫已完整**（`router.beforeEach`：未登录跳 login / `meta.roles` 校验 `hasRole` 跳 403 / `meta.permissions` 校验）——方向三/前序会话已做。`app.ts` 的 `hasRole/hasPermission`、`SaTokenPermissionProvider`（实时查库角色）均就绪。故 F 的真缺口只剩两处。
+
+**F 真缺口（本轮补齐）**
+1. **导航未按角色过滤**：`NavigationItem` 无 roles 字段，非管理员仍看到「审批中心」入口（点进去 403，体验差）
+2. **不可逆写端点缺角色保护**：知识文档 `purge`（物理删除）、工单物理 `DELETE` 仅需登录，任何登录用户可执行
+
+**关键决策：范围收敛——只保护不可逆操作，不铺满全端点**
+
+| 决策点 | 选择 | 理由 |
+| :--- | :--- | :--- |
+| 保护范围 | **仅「不可逆删除」限 ADMIN**（知识 purge / 工单物理 DELETE） | 常规 CRUD（工单增改、知识增改、告警确认、工单作废 void）保持登录即可——OPS 日常要用，全端点铺 RBAC 会把运维挡在日常工作外（误伤） |
+| 导航过滤 | `NavigationItem +roles?:string[]`，navbar 按 `app.hasRole` 过滤 | 用 `string[]` 而非 import Role——避免 navigation ↔ stores/app 循环依赖 |
+| 注解方式 | `@cn.dev33.satoken.annotation.SaCheckRole("ADMIN")` 全限定名 | 免 import，两处方法级注解，改动最小 |
+| 双层防护 | 前端导航隐藏 + 路由守卫 + 后端 `@SaCheckRole` | 前端隐藏是体验，后端注解是安全底线（前端可绕，后端不可绕） |
+
+**新增契约**
+- **RBAC 只保护不可逆/高危操作，不铺满全端点**：常规 CRUD 保持「登录即可」，避免误伤 OPS 日常运维
+- **导航按角色过滤用 string[] 声明**：`NavigationItem.roles` 不 import Role，防循环依赖；过滤在 navbar（有 app store）做
+- **权限双层**：前端导航/守卫是体验层（可绕），后端 `@SaCheckRole` 是安全底线（不可绕）——敏感操作两层都要有
+
+**改动文件**
+- 前端：`config/navigation.ts`（NavigationItem +roles + 审批中心 roles:['admin']）、`AppNavbar.vue`（navItems 改 computed 按 hasRole 过滤）
+- 后端：`KnowledgeDocController.purge` + `TicketController.deleteTicket` 各加 `@SaCheckRole("ADMIN")`
+
+**实测验证（独立 8099 实例 MOCK，建临时 OPS 用户 ops1，测试后已清理）**
+- ops1 登录 + `/auth/me` → role=OPS（OPS 能登录，权限受限）
+- **知识文档 purge**：admin→200（放行）/ ops1→**403**（拦截）
+- **工单物理删除**：admin→200（放行）/ ops1→**403**（拦截）
+- **对照 OPS 日常不受影响**：ops1 查工单列表 → 200（常规操作畅通，范围收敛判断正确）
+- 用不存在的 id 验证权限层（admin 过权限到业务层、ops 在权限层即拦），不破坏真实数据
+- `mvn test` **123/123**；前端 `npm run build` 通过；数据还原（仅 admin 用户、工单原 3 张）
+
+**已知限制**
+1. 仅 ADMIN/OPS 两角色 + 不可逆操作保护——更细粒度的权限点（如「只读 viewer」「按模块授权」）未做，属后续按真实组织架构增补
+2. 前端敏感按钮（如工单删除按钮）未按角色隐藏——非管理员点了会收到 403 提示。按钮级隐藏是体验优化，安全底线已由后端 `@SaCheckRole` 保证
+
+---
+
+## 七、DEF 三方向整体状态（2026-08-21）
+
+| 方向 | 内容 | 状态 | 关键验证 |
+| :---: | :--- | :---: | :--- |
+| **D** | L3 人机协同审批闭环 | ✅ | AI 提议→落审批单→admin 批准→重放建单（工单3→4）；驳回不建单；非admin 403 |
+| **E** | 告警聚合降噪 | ✅ | 3 条同源告警→1 工单+3 告警入库；跨 service 不误聚合；同 key 仍 occurrence 递增 |
+| **F** | RBAC 细粒度权限 | ✅ | 不可逆删除 admin 放行/ops 403；OPS 日常 CRUD 畅通；导航按角色过滤 |
+
+三方向均 `mvn test` 123/123 + 端到端验证通过 + 数据还原。已推送 Gitee。
+
 ### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
 
 **已验证通过**：

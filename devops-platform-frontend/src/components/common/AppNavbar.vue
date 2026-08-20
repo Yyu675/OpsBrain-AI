@@ -15,7 +15,11 @@ const router = useRouter()
 const app = useAppStore()
 const notificationsStore = useNotificationsStore()
 
-const navItems = primaryNavigationItems
+// 方向 F RBAC：按当前用户角色过滤导航项。
+// 无 roles 的项对所有登录用户可见；有 roles 的（如审批中心 admin-only）仅匹配角色可见。
+const navItems = computed(() =>
+  primaryNavigationItems.filter(i => !i.roles || app.hasRole(i.roles as Array<'admin' | 'operator' | 'viewer' | 'guest'>))
+)
 
 const prefetchers: Record<string, () => Promise<unknown>> = {
   home: () => import('@/views/Home.vue'),

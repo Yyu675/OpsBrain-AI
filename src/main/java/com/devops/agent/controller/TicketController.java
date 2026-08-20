@@ -524,6 +524,7 @@ public class TicketController {
      * @return 被删除的工单快照
      */
     @DeleteMapping("/{id}")
+    @cn.dev33.satoken.annotation.SaCheckRole("ADMIN")   // 方向 F：工单物理删除不可逆，限管理员（作废用 /void，OPS 可用）
     public ApiResponse<DevOpsTicket> deleteTicket(@PathVariable String id) {
         log.warn("[TicketController] 删除工单: id={}", id);
         try {
