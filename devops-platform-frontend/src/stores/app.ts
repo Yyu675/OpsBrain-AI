@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { loadPersisted, savePersisted, type Migrator } from '@/utils/persist'
+import { getAuthToken, setAuthToken, clearAuthToken } from '@/utils/http'
+import { login as apiLogin, getMe as apiGetMe, logout as apiLogout, type AuthUser } from '@/api/auth'
 
 export type Role = 'admin' | 'operator' | 'viewer' | 'guest'
 
@@ -19,25 +21,20 @@ export interface AppSettings {
   idleTimeoutMinutes: number
 }
 
-const PROFILE_KEY = 'user-profile'
 const SETTINGS_KEY = 'app-settings'
+const PROFILE_KEY = 'user-profile'
 const STORE_VERSION = 1
 
-const PROFILE_MIGRATIONS: Record<number, Migrator> = {}
 const SETTINGS_MIGRATIONS: Record<number, Migrator> = {}
 
-// TODO(P2-鉴权): 此处为硬编码假管理员，待真实登录鉴权接入后替换。
-// isAuthenticated: true（下方 state）同理——L1 阶段无认证，MVP 演示用默认管理员身份。
-// 06-模块核查设计修复方案 P1 已修 AppNavbar.doLogout 调用 signOut()，
-// 此处保留硬编码默认值；真实鉴权落地时需：① 改 isAuthenticated 初值为 false；
-// ② DEFAULT_USER 改为 guest 占位；③ 由登录回调写入真实 user。
-const DEFAULT_USER: CurrentUser = {
-  name: '管理员',
-  email: 'admin@devops.local',
-  avatar: '管',
-  role: 'admin',
-  title: '高级运维工程师',
-  permissions: ['*']
+/** 访客（未登录）身份 */
+const GUEST_USER: CurrentUser = {
+  name: '访客',
+  email: '',
+  avatar: '访',
+  role: 'guest',
+  title: '',
+  permissions: []
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -54,25 +51,30 @@ const roleLabels: Record<Role, string> = {
   guest: '访客'
 }
 
-const loadProfile = (): CurrentUser => {
-  // 检查登出标记：signOut 时写入 app-authenticated=false
-  // 若标记存在，不恢复管理员身份
-  try {
-    if (localStorage.getItem('app-authenticated') === 'false') {
-      return {
-        name: '访客',
-        email: '',
-        avatar: '访',
-        role: 'guest',
-        title: '',
-        permissions: []
-      }
-    }
-  } catch {
-    // localStorage 不可用，退回默认
+/** 后端角色（ADMIN/OPS）→ 前端 Role + 权限。ADMIN 全权限，OPS 常规运维权限。 */
+const mapBackendRole = (backendRole: string | null | undefined): { role: Role; permissions: string[] } => {
+  switch ((backendRole || '').toUpperCase()) {
+    case 'ADMIN':
+      return { role: 'admin', permissions: ['*'] }
+    case 'OPS':
+      return { role: 'operator', permissions: [] }
+    default:
+      return { role: 'viewer', permissions: [] }
   }
-  const saved = loadPersisted<Partial<CurrentUser>>(PROFILE_KEY, STORE_VERSION, { migrations: PROFILE_MIGRATIONS })
-  return { ...DEFAULT_USER, ...(saved || {}) }
+}
+
+/** 后端登录用户 → 前端 CurrentUser 视图 */
+const toCurrentUser = (u: AuthUser): CurrentUser => {
+  const { role, permissions } = mapBackendRole(u.role)
+  const name = u.displayName || u.username
+  return {
+    name,
+    email: '',
+    avatar: name.charAt(0).toUpperCase(),
+    role,
+    title: roleLabels[role],
+    permissions
+  }
 }
 
 const loadSettings = (): AppSettings => {
@@ -83,8 +85,10 @@ const loadSettings = (): AppSettings => {
 export const useAppStore = defineStore('app', {
   state: () => ({
     loadingCount: 0,
-    isAuthenticated: true,
-    currentUser: loadProfile(),
+    // 真实鉴权（方向三）：初值 false，登录成功或 restoreSession 命中才置 true。
+    // 不再硬编码 true——此前 MVP 假管理员已移除。
+    isAuthenticated: false,
+    currentUser: { ...GUEST_USER } as CurrentUser,
     settings: loadSettings()
   }),
   getters: {
@@ -122,6 +126,48 @@ export const useAppStore = defineStore('app', {
       if (this.hasAllPermissions) return true
       return codes.every((c) => this.currentUser.permissions.includes(c))
     },
+
+    // ==================== 鉴权（方向三：Sa-Token）====================
+
+    /** 登录：调后端 → 存 token → 写登录态。失败抛出（由登录页 catch 展示） */
+    async login(username: string, password: string) {
+      const result = await apiLogin(username, password)
+      setAuthToken(result.token)
+      this.currentUser = toCurrentUser(result.user)
+      this.isAuthenticated = true
+    },
+
+    /**
+     * 恢复会话：应用启动时若本地有 token，调 /auth/me 验证并恢复登录态。
+     * token 失效（401）时 http 层已清 token；这里静默失败为未登录。
+     */
+    async restoreSession(): Promise<boolean> {
+      if (!getAuthToken()) {
+        this.isAuthenticated = false
+        this.currentUser = { ...GUEST_USER }
+        return false
+      }
+      try {
+        const user = await apiGetMe()
+        this.currentUser = toCurrentUser(user)
+        this.isAuthenticated = true
+        return true
+      } catch {
+        clearAuthToken()
+        this.isAuthenticated = false
+        this.currentUser = { ...GUEST_USER }
+        return false
+      }
+    },
+
+    /** 登出：后端失效 token + 清本地 token + 重置为访客 */
+    async signOut() {
+      await apiLogout()
+      clearAuthToken()
+      this.isAuthenticated = false
+      this.currentUser = { ...GUEST_USER }
+    },
+
     updateProfile(patch: Partial<Pick<CurrentUser, 'name' | 'email' | 'title'>>) {
       const next: CurrentUser = { ...this.currentUser, ...patch }
       if (patch.name) next.avatar = patch.name.charAt(0).toUpperCase()
@@ -135,25 +181,6 @@ export const useAppStore = defineStore('app', {
     resetSettings() {
       this.settings = { ...DEFAULT_SETTINGS }
       savePersisted(SETTINGS_KEY, this.settings, STORE_VERSION)
-    },
-    signOut() {
-      this.isAuthenticated = false
-      this.currentUser = {
-        name: '访客',
-        email: '',
-        avatar: '访',
-        role: 'guest',
-        title: '',
-        permissions: []
-      }
-      // 持久化登出态，避免刷新后 loadProfile 又恢复成管理员
-      savePersisted(PROFILE_KEY, this.currentUser, STORE_VERSION)
-      // 写入一个 isAuthenticated=false 标记，loadProfile 据此不合并 DEFAULT_USER
-      try {
-        localStorage.setItem('app-authenticated', 'false')
-      } catch {
-        // 持久化失败不阻塞登出
-      }
     }
   }
 })

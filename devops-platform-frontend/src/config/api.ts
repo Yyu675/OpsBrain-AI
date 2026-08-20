@@ -16,6 +16,10 @@ export const API_BASE = `${BASE_URL}${API_PREFIX}`
 export const API_ENDPOINTS = {
   // M1 对话接入
   CHAT_STREAM: `${API_BASE}/chat/stream`,
+  // 鉴权（方向三：Sa-Token）
+  AUTH_LOGIN: `${API_BASE}/auth/login`,
+  AUTH_ME: `${API_BASE}/auth/me`,
+  AUTH_LOGOUT: `${API_BASE}/auth/logout`,
 
   // M8 看板统计
   DASHBOARD_OVERVIEW: `${API_BASE}/dashboard/overview`,

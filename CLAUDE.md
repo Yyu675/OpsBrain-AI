@@ -2934,6 +2934,76 @@ devops.notify.dingtalk.secret    ${DINGTALK_SECRET:}
 2. 通知未做去重/聚合：告警风暴时可能短时多条推送。钉钉端有频控（20 条/分钟），超限时 DingTalkNotifier 记 WARN 不重试。告警聚合待后续
 3. 真实推送需用户配 `DINGTALK_WEBHOOK` + 开启开关——本轮验证为 MOCK 模式（确认钩子触发与消息格式），真实钉钉送达待用户提供 webhook 后验证
 
+### 6.56 方向三：真实鉴权落地（Sa-Token + BCrypt + sys_user）（2026-08-20）
+
+> **背景**：此前 `stores/app.ts` 硬编码假管理员（`isAuthenticated:true`/`permissions:['*']`），配额 key 用 sessionId 兜底（6.24 P1-4 遗留），路由守卫 `requiresAuth` 是死代码。方向三落地真实登录授权。用户先指示「用市面最常用机制」，后明确指定 **Sa-Token**（dromara 出品，国内最常用 Java 鉴权框架）。
+
+**用户拍板决策**
+
+| 决策点 | 用户选择 | 落地含义 |
+| :--- | :--- | :--- |
+| 鉴权机制 | **Sa-Token** | token 签发/校验/登录态/登出交给 Sa-Token；用户源与密码校验仍是本项目职责 |
+| 用户来源 | **`sys_user` 表 + BCrypt**（按「最常用」原则采用） | Sa-Token 不管密码，用户名密码比对用 BCrypt（jBCrypt） |
+
+**途中重构：JWT → Sa-Token**
+
+先按「最常用」写了一版**手写 JWT**（`JwtService`/`JwtAuthInterceptor`/`CurrentUserContext` + jjwt 依赖）。用户指定 Sa-Token 后**删除这三个类、去掉 jjwt 三个依赖**，改用 Sa-Token。**保留未变**的部分（Sa-Token 不涉及）：`sys_user` 表、`User`/`UserRepository`/`AuthService`（BCrypt）/`AuthDataInitializer`（种子 admin）。这印证了分层设计的价值——鉴权框架可换，用户源与密码层不动。
+
+**关键决策**
+
+| 决策点 | 选择 | 理由 |
+| :--- | :--- | :--- |
+| 不用 Spring Security | **仅 SaInterceptor + WebConfig 白名单** | Spring Security 会默认拦截全部端点、改变测试行为，冲击现有 91 端点与 123 测试；Sa-Token 拦截器只作用于 `addPathPatterns("/api/**")`，白名单用 `excludePathPatterns`，对现有零冲击 |
+| token 存储 | **Sa-Token + Redis**（`sa-token-redis-template`） | 复用项目已有 Redis（前缀 `satoken:` 不干扰业务缓存）；实现**真正的服务端登出**——`StpUtil.logout()` 使 token 失效，手写 JWT 做不到（无状态只能等过期） |
+| 未登录异常映射 | **GlobalExceptionHandler +NotLoginException → 401 + 40101** | `NotLoginException` 是 RuntimeException 子类，不单独处理会被 `handleRuntimeException` 当 500；登录失效应 401，前端据此跳登录 |
+| SSE token 传递 | **fetchEventSource 带 `satoken` 头** | 项目 SSE 用 `@microsoft/fetch-event-source`（基于 fetch，支持自定义头），无需退化到 `?satoken=` query（原生 EventSource 才需要） |
+| WebSocket 鉴权 | **暂不拦**（`/ws/**` 不在 `/api/**` 下） | SaInterceptor 只拦 `/api/**`，WS 握手鉴权另论，蓝图未要求，保持可连 |
+| 白名单 | `/api/v1/auth/**`、`/api/v1/health/**`、`/api/v1/alerts/webhook` | 登录本身/探针/Prometheus 推送无 token |
+| CORS 补 PATCH | `allowedMethods` 加 `PATCH` | 工单状态更新用 PATCH，此前遗漏会致预检失败（顺带修） |
+
+**关键 bug：配额 key 跨线程失效（实测才暴露）**
+
+配额 key 从 sessionId 改真实 userId 时，`resolveQuotaKey` 用 `StpUtil.isLogin()` 取登录态。但 `handleStreamChat` 一进来就 `CompletableFuture.runAsync` 提交 **sessionExecutor 虚拟线程**（6.25），Sa-Token 上下文（ThreadLocal）在虚拟线程**取不到**——`isLogin()` 返回 false，静默回退 sessionId。实测日志 `user=<traceId>` 而非 `user:1` 才发现（与 6.6 traceId 跨线程同源）。**编译和单元测试都发现不了这个 bug**。
+- **修复**：在 `handleStreamChat` 入口（仍是 Controller 请求线程，Sa-Token 上下文可用）解析 `final String quotaKey`，供 runAsync 闭包捕获。修复后实测 `user=user:1`。
+
+**新增契约**
+- **鉴权用 Sa-Token，不引入 Spring Security**：避免默认拦截全端点冲击既有测试；受保护路径由 SaInterceptor `addPathPatterns` 显式声明
+- **密码只存 BCrypt 哈希**：种子密码由 `AuthDataInitializer` 运行时 BCrypt 编码写入（迁移不写死哈希——salt 每次不同）
+- **登录态相关的 ThreadLocal（Sa-Token/配额）必须在请求线程取**：虚拟线程/流式回调线程取不到，须在入口解析后传入闭包（同 6.6 traceId）
+- **前端所有请求自动带 satoken 头**：`utils/http` 统一注入；SSE 用 fetchEventSource 头；401 派发 `auth:unauthorized` 事件由 App 跳登录
+- **配额 key 用真实 userId**：关闭 6.24 P1-4 遗留（sessionId 兜底），登录用户配额跨会话累积
+
+**新增文件**
+```
+sql/migration_v22_sys_user.sql            用户表（幂等，+ 同步 init.sql Table 21）
+domain/auth/User.java                     用户实体
+domain/auth/UserRepository.java           用户仓储（JdbcTemplate）
+domain/auth/AuthService.java              BCrypt 登录校验 + 密码编码
+domain/auth/AuthDataInitializer.java      种子 admin（BCrypt，幂等）
+controller/AuthController.java            登录/取当前用户/登出（StpUtil）
+devops-platform-frontend/src/api/auth.ts              登录 API
+devops-platform-frontend/src/views/Login.vue          登录页
+```
+
+**改动文件**
+- 后端：`pom.xml`（+sa-token-spring-boot3-starter/redis-template/commons-pool2 + jbcrypt，去 jjwt）、`WebConfig`（SaInterceptor + 白名单 + CORS 补 PATCH）、`GlobalExceptionHandler`（+NotLoginException→401）、`DevOpsAgentServiceImpl`（配额 key 请求线程解析 + streamAgent 加 quotaKey 参数）、`application.yml`（+sa-token 配置块）、`init.sql`（+Table 21）
+- 前端：`utils/http.ts`（token 管理 + satoken 头注入 + 401 事件）、`stores/app.ts`（去硬编码假管理员 + login/restoreSession/signOut）、`api/chat.ts`（SSE 带 satoken 头）、`config/api.ts`（+auth 端点）、`router/index.ts`（+/login 路由 + 守卫默认需登录）、`main.ts`（启动 restoreSession）、`App.vue`（auth:unauthorized 监听 + 空闲超时跳 login）、`AppNavbar.vue`（doLogout await signOut）
+
+**实测验证（独立 8099 实例 MOCK 模式）**
+- 未登录访问 `/tickets` → **HTTP 401 + 40101**
+- 登录 admin/admin123 → 返回 token + tokenName + 用户信息（不含密码）
+- 带 token（header）→ 200 放行；`/auth/me` 返回当前用户
+- **SSE `/chat/stream` 带 satoken 头 → 正常流式**；不带 → 401
+- **登出后 token 失效 → 401**（Sa-Token 服务端登出，JWT 做不到）
+- **配额 key = `user:1`**（修复跨线程 bug 后；此前误为 traceId）
+- `mvn test` **123/123**；前端 `npm run build` 通过（含 Login 产物）
+
+**已知限制**
+1. 种子密码默认 admin/admin123（`AUTH_SEED_*` 环境变量可覆盖），启动日志提示改密——生产必须改
+2. WebSocket `/ws/alerts` 暂不鉴权（不在 `/api/**` 拦截范围）——WS 握手鉴权待后续
+3. 角色权限仅做到「登录校验」（checkLogin），细粒度 `checkPermission`/`checkRole` 未启用——路由 `roles`/`permissions` 守卫已预留，后端 `@SaCheckRole` 待接
+4. 前端 Login 页为独立页面级验证（构建通过 + 后端链路 curl 全验），浏览器端到端交互未跑（需 dev server + 浏览器）
+
 ### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
 
 **已验证通过**：

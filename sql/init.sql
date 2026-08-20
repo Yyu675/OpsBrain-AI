@@ -593,6 +593,27 @@ CREATE INDEX IF NOT EXISTS idx_pm_action_ticket
 CREATE INDEX IF NOT EXISTS idx_pm_action_status_due
     ON sys_postmortem_action_item (status, due_date) WHERE status IN ('OPEN', 'DOING');
 
+-- ---------------------------------------------------------------------
+-- Table 21: sys_user - 系统用户（方向三：真实鉴权 JWT + BCrypt）
+-- ---------------------------------------------------------------------
+-- 提供真实用户来源，替代前端硬编码假管理员。密码存 BCrypt 哈希绝不明文。
+-- 种子管理员由 AuthDataInitializer 启动时用 BCryptPasswordEncoder 编码写入
+-- （迁移不写死哈希——BCrypt 每次 salt 不同，运行时编码才能与登录校验一致）。
+-- role 对齐前端 Role（ADMIN/OPS）；display_name 可对齐 sys_team_member.name。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_user (
+    id            BIGSERIAL PRIMARY KEY,
+    username      VARCHAR(64)  NOT NULL,
+    password      VARCHAR(100) NOT NULL,                        -- BCrypt 哈希
+    display_name  VARCHAR(64),
+    role          VARCHAR(32)  NOT NULL DEFAULT 'OPS',          -- ADMIN/OPS
+    status        VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE',       -- ACTIVE/DISABLED
+    last_login_at TIMESTAMP,
+    create_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_username ON sys_user (username);
+
 -- =====================================================================
 -- Data Migration: v10 孤儿切片清理
 -- =====================================================================

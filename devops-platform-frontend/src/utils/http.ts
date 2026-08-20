@@ -1,3 +1,56 @@
+// ==================== Sa-Token 鉴权 token 管理（方向三）====================
+// token 存 localStorage，每个请求由 httpRequest 自动附带 satoken 头。
+// 读写含 try-catch：隐私模式/禁用 localStorage 时降级为内存不崩（同 persist.ts 契约）。
+
+const AUTH_TOKEN_KEY = 'opsbrain-token'
+let inMemoryToken: string | null = null
+
+export const getAuthToken = (): string | null => {
+  if (inMemoryToken) return inMemoryToken
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY)
+  } catch {
+    return inMemoryToken
+  }
+}
+
+export const setAuthToken = (token: string): void => {
+  inMemoryToken = token
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token)
+  } catch {
+    /* 隐私模式：仅内存持有 */
+  }
+}
+
+export const clearAuthToken = (): void => {
+  inMemoryToken = null
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY)
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/**
+ * 处理 401（未登录/登录失效）：清 token 并跳登录页。
+ * <p>用自定义事件解耦——http 层不直接依赖 router，由 App 监听后用 router 跳转，
+ * 避免硬 location 跳转丢失 SPA 状态。带 from 供登录后回跳。</p>
+ */
+const handleUnauthorized = (): void => {
+  clearAuthToken()
+  try {
+    // 避免在登录页自身重复派发
+    if (!window.location.pathname.includes('/login')) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized', {
+        detail: { from: window.location.pathname + window.location.search }
+      }))
+    }
+  } catch {
+    /* SSR/无 window：忽略 */
+  }
+}
+
 export interface HttpRequestOptions extends Omit<RequestInit, 'signal'> {
   timeout?: number
   retries?: number
@@ -239,6 +292,8 @@ export const httpRequest = async <T = unknown>(
   const mergedHeaders: Record<string, string> = {
     Accept: 'application/json',
     ...(rest.body && !(rest.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+    // Sa-Token 鉴权（方向三）：自动附带 token 头。头名 satoken 对齐后端 sa-token.token-name。
+    ...(getAuthToken() ? { satoken: getAuthToken() as string } : {}),
     ...(headers as Record<string, string> | undefined)
   }
 
@@ -264,12 +319,16 @@ export const httpRequest = async <T = unknown>(
         }
         let payload: unknown = null
         try { payload = await res.json() } catch { /* body not json */ }
+        // 401：未登录或登录失效，清 token 并通知 App 跳登录页
+        if (res.status === 401) {
+          handleUnauthorized()
+        }
         throw new HttpError(
           (payload as { message?: string })?.message || `HTTP ${res.status}`,
           res.status,
           'HTTP_STATUS',
           payload,
-          undefined,
+          (payload as { code?: number })?.code,
           url
         )
       }

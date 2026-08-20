@@ -1,5 +1,6 @@
 package com.devops.agent.common.exception;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import com.devops.agent.common.dto.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,21 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleSecurityGuardException(SecurityGuardException ex) {
         log.warn("🚫 [GlobalException] 安全拦截: {}", ex.getMessage());
         return ApiResponse.error(ex.getCode(), ex.getMessage());
+    }
+
+    /**
+     * 处理 Sa-Token 未登录异常（方向三鉴权）
+     * <p>
+     * SaInterceptor 校验未登录时抛 {@link NotLoginException}（RuntimeException 子类）。
+     * 必须单独处理——否则会被下方 {@code handleRuntimeException} 当作 500 内部错误，
+     * 而登录失效应是 401，前端据此跳登录页。业务码 40101 与 AuthController 一致。
+     * </p>
+     */
+    @ExceptionHandler(NotLoginException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public ApiResponse<Void> handleNotLoginException(NotLoginException ex) {
+        log.debug("🔒 [GlobalException] 未登录/登录失效: type={}", ex.getType());
+        return ApiResponse.error(40101, "未登录或登录已失效，请重新登录");
     }
 
     /**

@@ -125,6 +125,35 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- ================= 鉴权（方向三：Sa-Token + BCrypt）================= -->
+        <!-- Sa-Token：dromara 出品的轻量 Java 权限认证框架（国内最常用）。
+             负责 token 签发/校验/登录态/登出；用户源与密码校验仍由本项目 sys_user + BCrypt 承担。
+             Spring Boot 3.x 用 spring-boot3-starter。 -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot3-starter</artifactId>
+            <version>1.44.0</version>
+        </dependency>
+        <!-- Sa-Token 整合 Redis（jackson 序列化）：token 存 Redis，实现真正的服务端登出、
+             多实例共享登录态。复用项目已有的 Redis（不同 key 前缀 satoken:，不干扰业务缓存）。 -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-redis-template</artifactId>
+            <version>1.44.0</version>
+        </dependency>
+        <!-- Redis 连接池（sa-token-redis-template 需要；版本由 spring-boot BOM 管理） -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
+        <!-- 密码哈希：jBCrypt（纯 BCrypt 实现，~3KB 零传递依赖）。
+             Sa-Token 不管密码校验，用户名密码比对仍用 BCrypt。 -->
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>0.4</version>
+        </dependency>
+
         <!-- ================= 测试 ================= -->
         <!-- 经典命名：spring-boot-starter-test（含 JUnit 5、AssertJ、Mockito 等） -->
         <dependency>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bot } from 'lucide-vue-next'
 import AppErrorBoundary from '@/components/common/AppErrorBoundary.vue'
@@ -55,22 +55,35 @@ useIdleTimer({
       .catch(() => {
         warnCloseFn = null
         if (closed) return
-        app.signOut()
-        router.push('/403')
+        app.signOut().finally(() => router.push('/login'))
       })
   },
   onTimeout() {
     warnCloseFn?.()
     warnCloseFn = null
     if (!app.isAuthenticated) return
-    app.signOut()
     ElMessage.warning('长时间未操作，已自动退出登录')
-    router.push('/403')
+    app.signOut().finally(() => router.push('/login'))
   },
   onActive() {
     warnCloseFn?.()
     warnCloseFn = null
   }
+})
+
+// 方向三：监听 http 层派发的 401 事件（token 失效/未登录），跳登录页并带回跳路径。
+const onUnauthorized = (e: Event) => {
+  const detail = (e as CustomEvent).detail as { from?: string } | undefined
+  const from = detail?.from
+  if (route.path === '/login') return
+  router.push({ name: 'login', query: from ? { redirect: from } : {} })
+}
+
+onMounted(() => {
+  window.addEventListener('auth:unauthorized', onUnauthorized)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('auth:unauthorized', onUnauthorized)
 })
 </script>
 

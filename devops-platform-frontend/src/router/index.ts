@@ -15,6 +15,8 @@ declare module 'vue-router' {
     hiddenFromNavigation?: boolean
     description?: string
     capabilities?: string[]
+    /** 公开路由（无需登录即可访问，如登录页）——方向三鉴权守卫据此放行 */
+    public?: boolean
   }
 }
 
@@ -153,6 +155,7 @@ const router = createRouter({
       path: '/governance/manual-intervention', name: 'manual-intervention', component: lazy(() => import('../views/FutureCapability.vue'), 'ManualIntervention', 'dashboard'),
       meta: { title: '人工介入中心', stage: 'L4', hiddenFromNavigation: true, description: '集中处理自动化无法安全闭环的异常任务与升级请求。', capabilities: ['介入队列', '上下文快照', '接管操作', '恢复自动化'] }
     },
+    { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
     { path: '/403', name: 'forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权访问' } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFound, meta: { title: '页面未找到' } }
   ],
@@ -167,13 +170,21 @@ router.beforeEach((to) => {
   const app = useAppStore()
   const meta = to.meta || {}
 
-  if (meta.requiresAuth && !app.isAuthenticated) {
+  // 公开路由（登录页等）直接放行
+  if (meta.public) {
+    return true
+  }
+
+  // 方向三真实鉴权：未登录一律跳登录页，带 redirect 回跳。
+  // isAuthenticated 由 main.ts 启动时 restoreSession() 依据本地 token 预置。
+  if (!app.isAuthenticated) {
     return {
-      name: 'forbidden',
-      query: { from: to.fullPath, reason: 'unauth' }
+      name: 'login',
+      query: { redirect: to.fullPath }
     }
   }
 
+  // 已登录：再校验角色 / 权限（预留，当前多数路由未设 roles/permissions）
   if (meta.roles && !app.hasRole(meta.roles)) {
     return {
       name: 'forbidden',

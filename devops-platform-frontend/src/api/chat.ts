@@ -5,6 +5,7 @@
 
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { API_ENDPOINTS } from '../config/api'
+import { getAuthToken } from '../utils/http'
 import type {
   SSEStartEvent,
   SSEToolStatusEvent,
@@ -52,6 +53,9 @@ export async function chatStream(
     headers: {
       'Accept': 'text/event-stream',
       'Content-Type': 'application/json',
+      // 方向三鉴权：SSE 也需带 token。fetchEventSource 基于 fetch，支持自定义头，
+      // 故用 satoken 头即可（无需退化到 ?satoken= query）。
+      ...(getAuthToken() ? { satoken: getAuthToken() as string } : {}),
     },
     // sessionId 用于三层记忆的多轮关联，省略则后端退化为单轮无记忆
     body: JSON.stringify(sessionId ? { query, sessionId } : { query }),

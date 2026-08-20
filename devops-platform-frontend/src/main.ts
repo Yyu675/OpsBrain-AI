@@ -12,6 +12,7 @@ import App from './App.vue'
 import router from './router'
 import { permission } from './directives/permission'
 import { toFriendlyError, HttpError } from './utils/http'
+import { useAppStore } from './stores/app'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -100,4 +101,10 @@ window.addEventListener('error', (e) => {
   }
 })
 
-app.mount('#app')
+// 方向三：挂载前恢复登录态——本地有 token 则调 /auth/me 验证。
+// 等它完成再 mount，避免路由守卫在 isAuthenticated 未初始化时误跳登录页。
+// 无论成功失败都 mount（失败即未登录，守卫会引导到登录页）。
+const appStore = useAppStore(pinia)
+appStore.restoreSession().finally(() => {
+  app.mount('#app')
+})

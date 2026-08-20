@@ -1,5 +1,7 @@
 package com.devops.agent.application.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
+
 import com.devops.agent.application.runtime.CostQuotaManager;
 import com.devops.agent.application.runtime.CostQuotaManager.ModelType;
 import com.devops.agent.application.context.ContextBudgetManager;
@@ -181,6 +183,11 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         final String sessionId = (sessionIdParam != null && !sessionIdParam.isBlank())
                 ? sessionIdParam : traceId;
 
+        // 配额 key 必须在此解析——当前仍是 Controller 请求线程，Sa-Token 登录上下文（ThreadLocal）可用。
+        // 下方 runAsync 一旦切到 sessionExecutor 虚拟线程，StpUtil.isLogin() 就取不到登录态了
+        // （与 6.6 traceId 跨线程同源）。解析为 final 供异步闭包捕获，优先 userId 回退 sessionId。
+        final String quotaKey = resolveQuotaKey(sessionId);
+
         CompletableFuture.runAsync(() -> {
             try {
                 // 设置 traceId 到 ThreadLocal(供工单创建时使用)
@@ -273,11 +280,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 int estimatedTokens = budgetManager.estimateTokensPublic(query) + 1500; // 输入估算 + 输出预留
                 CostQuotaManager.ModelType modelType = routedModel.contains("reasoner") || routedModel.contains("max") ?
                         CostQuotaManager.ModelType.REASONER : CostQuotaManager.ModelType.TURBO;
-                // P1-4：配额 key 改用 sessionId（跨请求累积），不再用每次唯一的 traceId。
-                // 此前以 traceId 作 userId，每请求 traceId 唯一 → 用户日配额维度永远从 0 起，
-                // 单用户日限额形同虚设。sessionId 在同一会话内稳定，能真正跨轮累积。
-                // 过渡方案：无真实鉴权前以 sessionId 兜底，待 L2/L3 引入登录后替换为 operatorId。
-                var quotaCheck = quotaManager.preCheck(sessionId, estimatedTokens, modelType);
+                // quotaKey 已在方法入口（请求线程）解析为 final，此处直接用（闭包捕获）
+                var quotaCheck = quotaManager.preCheck(quotaKey, estimatedTokens, modelType);
                 if (!quotaCheck.isAllowed()) {
                     log.warn("⚠️ [Quota] 配额超限 | traceId={} | reason={} | detail={}", traceId, quotaCheck.getReason(), quotaCheck.getDetail());
                     stateManager.transition(traceId, AgentState.FAILED,
@@ -300,7 +304,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                 // ========== 步骤 4: 流式执行 Agent 引擎 ==========
                 log.debug("🔍 [Step 4/7] 流式执行 Agent 引擎 | model={} | traceId={}", routedModel, traceId);
-                streamAgent(engine, query, traceId, sessionId, routedModel, startTime, emitter, modelType);
+                streamAgent(engine, query, traceId, sessionId, routedModel, startTime, emitter, modelType, quotaKey);
 
             } catch (SecurityGuardException e) {
                 log.warn("🚫 [SecurityGuard] 拦截 | traceId={} | reason={}", traceId, e.getMessage());
@@ -337,9 +341,31 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      * <p>
      * 状态机集成 (MVP-2)：关键节点记录状态迁移，支持审计/回放/断点恢复
      */
+    /**
+     * 解析配额 key：优先真实登录用户 userId（方向三 Sa-Token 鉴权），未登录回退 sessionId。
+     * <p>
+     * 必须在请求线程调用——Sa-Token 从当前请求上下文（ThreadLocal）读登录态，
+     * 流式回调线程读不到。故 handleStreamChat 在请求线程算好后传入 streamAgent 闭包捕获。
+     * </p>
+     * <p>
+     * "user:" 前缀避免与 sessionId 空间碰撞：登录用户配额按 userId 跨会话累积，
+     * 未登录（理论上不会到这——/chat/stream 已鉴权）回退 sessionId 防 NPE。
+     * </p>
+     */
+    private String resolveQuotaKey(String sessionId) {
+        try {
+            if (StpUtil.isLogin()) {
+                return "user:" + StpUtil.getLoginIdAsLong();
+            }
+        } catch (Exception ignore) {
+            // 非请求上下文或 Sa-Token 未就绪：回退 sessionId
+        }
+        return sessionId;
+    }
+
     private void streamAgent(DevOpsAgentEngine engine, String query, String traceId,
                              String sessionId, String routedModel, long startTime,
-                             SseEmitter emitter, CostQuotaManager.ModelType modelType) {
+                             SseEmitter emitter, CostQuotaManager.ModelType modelType, String quotaKey) {
         // 注：会话与 CONTEXT_PREPARED 迁移已由 handleStreamChat 完成，此处不重复
 
         // 收集流式过程中的状态（工具结果、完整答案、引用出处）
@@ -463,7 +489,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         double actualCost = (modelType == CostQuotaManager.ModelType.REASONER) ?
                                 (actualTokens / 1000.0) * 0.02 : (actualTokens / 1000.0) * 0.002;
                         // P1-5：配额扣减 key 与预检保持一致（sessionId），跨轮累积
-                        quotaManager.recordUsage(sessionId, actualTokens, actualCost, modelType);
+                        quotaManager.recordUsage(quotaKey, actualTokens, actualCost, modelType);
 
                         // R-Gap2：citations 序列化为 JSON 数组字符串供审计日志存储
                         String citationsJson = citations.isEmpty() ? "[]" :
@@ -510,7 +536,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         double failedCost = (modelType == CostQuotaManager.ModelType.REASONER) ?
                                 (failedTokens / 1000.0) * 0.02 : (failedTokens / 1000.0) * 0.002;
                         // 失败也要扣减已发生的配额（key 与预检一致 = sessionId）
-                        quotaManager.recordUsage(sessionId, failedTokens, failedCost, modelType);
+                        quotaManager.recordUsage(quotaKey, failedTokens, failedCost, modelType);
 
                         recordLogAsync(traceId, query,
                                 (partial.isEmpty() ? "" : partial + "\n---\n") + "流式异常: " + errMsg,

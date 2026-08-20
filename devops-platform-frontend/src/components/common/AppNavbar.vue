@@ -110,12 +110,11 @@ const doLogout = async () => {
       cancelButtonText: '取消',
       type: 'warning'
     })
+    // 方向三：调用 app.signOut() 清登录态（后端 Sa-Token 失效 token + 清本地 token）。
+    // signOut 为 async（含后端 logout 调用），await 后再跳登录页确保 token 已清。
+    await app.signOut()
     ElMessage.success('已退出登录')
-    // P1-11：必须调用 app.signOut() 清除登录态。
-    // 此前仅 toast + 跳首页，isAuthenticated 永久 true，用户「退出」后仍是已登录状态。
-    // signOut() 已存在于 stores/app.ts:118，将 isAuthenticated 置 false、currentUser 切换为访客。
-    app.signOut()
-    router.push('/')
+    router.push('/login')
   } catch {
     // cancel
   }

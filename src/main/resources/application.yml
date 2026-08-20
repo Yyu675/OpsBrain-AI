@@ -25,6 +25,29 @@ spring.servlet.multipart:
   max-file-size: 20MB
   max-request-size: 20MB
 
+# ==================== Sa-Token 鉴权（方向三）====================
+sa-token:
+  # token 名称（前端请求头/参数名；登录接口会返回 tokenName 供前端使用）
+  token-name: satoken
+  # token 有效期（秒），默认 1 天。-1 为永不过期
+  timeout: 86400
+  # 最低活跃频率（秒），-1 不检查（用户长时间不操作也不强制失效）
+  active-timeout: -1
+  # 允许同一账号多端同时登录（true）；false 则新登录挤掉旧登录
+  is-concurrent: true
+  # 多人登录共用一个 token（false=每次登录生成新 token，更安全）
+  is-share: false
+  # token 风格：uuid
+  token-style: uuid
+  # 从请求头读 token（前后端分离主用）
+  is-read-header: true
+  # 从 query 参数读 token（SSE：EventSource 不支持自定义头，靠 ?satoken=xxx）
+  is-read-body: true
+  # 不从 Cookie 读（前后端分离，避免 CSRF；也不写 Cookie）
+  is-read-cookie: false
+  # 关闭 Sa-Token 启动 banner 日志
+  is-log: false
+
 # ==================== OpsBrain AI 自定义配置 ====================
 devops:
   ai:
