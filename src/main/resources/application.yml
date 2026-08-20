@@ -181,6 +181,11 @@ devops:
     auto-ticket-enabled: true
     # 自动建单创建人标识（对齐 AlertService.ALERT_CREATOR "alert-bot"）
     ticket-creator: alert-bot
+    # 告警聚合降噪（方向 E）：窗口内同 service+module 的不同告警聚合到同一工单，
+    # 避免一个故障源引发的多条告警各建一张工单刷屏。关闭则回退每条各建单。
+    aggregate-enabled: true
+    # 聚合时间窗口（分钟）
+    aggregate-window-minutes: 5
 
   # ==================== L2 通知渠道（钉钉自定义机器人） ====================
   notify:

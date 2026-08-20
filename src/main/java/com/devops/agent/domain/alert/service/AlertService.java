@@ -86,6 +86,14 @@ public class AlertService {
     @Value("${devops.alert.ticket-creator:alert-bot}")
     private String alertCreator;
 
+    /** 告警聚合降噪开关（方向 E）。关闭后回退为每条告警各建单（原行为） */
+    @Value("${devops.alert.aggregate-enabled:true}")
+    private boolean aggregateEnabled;
+
+    /** 聚合时间窗口（分钟）：窗口内同 service+module 的不同告警聚合到同一工单 */
+    @Value("${devops.alert.aggregate-window-minutes:5}")
+    private int aggregateWindowMinutes;
+
     // ==================== Level → Priority 映射 ====================
 
     /**
@@ -263,6 +271,24 @@ public class AlertService {
         // WebSocket 广播新告警（非阻塞旁路——推送失败不影响主流程）
         alertNotifier.broadcastNew(saved);
 
+        // 方向 E：告警风暴聚合抑制。窗口内同 service+module 已有已建单的活跃告警时，
+        // 新告警关联其工单而不新建单——避免一个故障源（如节点宕机）引发的多条不同告警
+        // 各建一张工单刷屏。被抑制的告警仍已入库（上方 save），列表可见（告警可见性铁律），
+        // 只是不重复建单、不重复强提醒。
+        if (autoTicketEnabled && aggregateEnabled) {
+            Optional<Alert> group = alertRepository.findActiveGroupTicket(service, module, aggregateWindowMinutes);
+            if (group.isPresent() && group.get().getTicketId() != null) {
+                String groupTicketId = group.get().getTicketId();
+                alertRepository.updateTicketId(saved.getId(), groupTicketId);
+                saved.setTicketId(groupTicketId);
+                log.info("🧲 [AlertService] 告警聚合抑制 | id={} | alertName={} | service={} | module={} | 关联工单={} | 窗口={}min",
+                        saved.getId(), alertName, service, module, groupTicketId, aggregateWindowMinutes);
+                // 关联到组工单：追加活动流 + 聚合通知（不重复强提醒）
+                appendAggregatedAlert(groupTicketId, saved, alertName);
+                return;
+            }
+        }
+
         // 自动建单（Single Writer 契约 6.10：通过 TicketService 写入，不直写 Repository）
         createAutoTicket(saved, alertName, service, module);
     }
@@ -338,6 +364,27 @@ public class AlertService {
         } catch (Exception e) {
             // 通知构造异常也不影响建单主流程
             log.warn("⚠️ [AlertService] 告警通知构造失败（已忽略）| alertId={} | {}", alert.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 聚合关联：把被抑制的告警关联到组工单（方向 E）
+     * <p>
+     * <b>只记活动流留痕，不推钉钉</b>——这是降噪核心：组内后续告警不再骚扰值班 SRE
+     * （首告警建单时已推过组通知）。被抑制的告警本身已入库、列表可见（告警可见性铁律），
+     * 工单活动流也留有「关联告警」记录，信息不丢失，只是不重复建单、不重复强提醒。
+     * </p>
+     * <p>旁路：留痕失败仅 WARN，不影响告警入库与聚合抑制主流程。</p>
+     */
+    private void appendAggregatedAlert(String ticketId, Alert alert, String alertName) {
+        try {
+            String detail = "聚合关联告警：" + alertName
+                    + (alert.getDescription() != null && !alert.getDescription().isBlank()
+                        ? " — " + alert.getDescription() : "");
+            ticketService.recordActivity(ticketId, "warning", "关联告警", detail, ALERT_CREATOR, false);
+        } catch (Exception e) {
+            log.warn("⚠️ [AlertService] 聚合关联留痕失败（已忽略）| ticketId={} | alertId={} | {}",
+                    ticketId, alert.getId(), e.getMessage());
         }
     }
 

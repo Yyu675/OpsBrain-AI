@@ -72,6 +72,40 @@ public class AlertRepository {
     }
 
     /**
+     * 查找时间窗口内同 service+module 且已建单的活跃告警（方向 E：告警聚合降噪）
+     * <p>
+     * 用于告警风暴抑制：同一服务+模块在短时间内产生的多条<b>不同 dedup_key</b> 告警
+     * （如一个节点挂了导致其上多个 Pod 各报不同告警），只应建一张工单。
+     * 窗口内已有已建单（ticket_id 非空）的活跃告警时，新告警关联其 ticket_id 而不新建单。
+     * </p>
+     * <p>
+     * 与 {@link #findActiveByDedupKey} 互补：后者处理「完全同键」重复（occurrence 递增），
+     * 本方法处理「同服务不同键」的风暴聚合。取最近一条作为组代表。
+     * </p>
+     *
+     * @param service       服务名（为空则不聚合——无法判定归属）
+     * @param module        模块
+     * @param windowMinutes 聚合时间窗口（分钟）
+     * @return 组代表告警（含可关联的 ticket_id），无则 empty
+     */
+    public Optional<Alert> findActiveGroupTicket(String service, String module, int windowMinutes) {
+        if (service == null || service.isBlank()) {
+            return Optional.empty();   // 无 service 无法判定聚合归属，不抑制
+        }
+        String sql = """
+            SELECT * FROM sys_alert
+             WHERE service = ? AND module = ?
+               AND status IN ('FIRING', 'ACKNOWLEDGED')
+               AND ticket_id IS NOT NULL
+               AND last_occurred_at >= CURRENT_TIMESTAMP - CAST(? AS INTEGER) * INTERVAL '1 minute'
+             ORDER BY last_occurred_at DESC
+             LIMIT 1
+            """;
+        List<Alert> results = jdbcTemplate.query(sql, ALERT_ROW_MAPPER, service, module, windowMinutes);
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+    }
+
+    /**
      * 按 ID 查询
      */
     public Optional<Alert> findById(Long id) {

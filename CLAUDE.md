@@ -3061,6 +3061,45 @@ devops-platform-frontend/src/api/approval.ts            审批 API
 2. 审批超时自动 EXPIRED 靠 `expireOverdue()`，尚未接定时任务——当前审批单有 24h expiresAt 但无扫描任务标记过期，待接入 Scheduler
 3. 审批中心导航对所有登录用户可见，非管理员点进去是「无权限」三态兜底——精细的按角色隐藏导航项属方向 F（RBAC）范畴
 
+### 6.58 方向 E：告警聚合降噪（跨键风暴抑制）（2026-08-21）
+
+> **背景**：现有去重（6.34 `dedup_key`）只处理「完全同键」重复（occurrence 递增、不重复建单）。但真正的告警风暴是**不同键但同源**——一个节点宕机导致其上多个 Pod 各报不同 alertName 的告警，dedup_key 各异，会**各建一张工单刷屏**。方向 E 补齐跨键的时间窗口聚合。
+
+**核心设计**
+
+| 决策点 | 选择 | 理由 |
+| :--- | :--- | :--- |
+| 聚合维度 | **service + module** | 同服务同模块的一类问题视为同一故障源。跨 service 独立建单（不误聚合） |
+| 组载体 | **复用 ticket_id 作组键**（不新建 alert_group 表） | 首告警建单得 ticket_id，窗口内同 service+module 后续告警关联该 ticket_id。最轻量，无需新表 |
+| 时间窗口 | **5 分钟**（`aggregate-window-minutes` 可配） | 窗口内视为同一波风暴；查 `last_occurred_at >= now - N min` 且已建单的活跃告警 |
+| 被抑制告警 | **仍入库、列表可见**，只是不重复建单 | 告警可见性铁律——绝不把告警藏起来。工单活动流留「关联告警」记录，信息不丢 |
+| 聚合通知 | **组内后续告警不推钉钉**（仅首单推过组通知） | 降噪核心：不重复骚扰值班 SRE。被抑制告警只记活动流留痕 |
+| 无 service 的告警 | **不聚合**（`findActiveGroupTicket` 直接返回 empty） | 无 service 无法判定归属，宁可各自建单也不错误聚合 |
+
+**三层去重语义正交**（本方向补齐第二层）：
+1. **同 dedup_key**（完全同键）→ occurrence 递增，不新增告警行（6.34）
+2. **同 service+module 跨键**（窗口内）→ 新告警入库但关联首单 ticket_id，不新建单（本方向）
+3. **跨 service** → 独立建单
+
+**新增契约**
+- **告警聚合不得丢失可见性**：被抑制的告警仍入库、列表可见、活动流留痕，只抑制「重复建单」与「重复强提醒」，不抑制入库
+- **聚合维度以 service+module 为界**：跨 service 不聚合，无 service 不聚合
+- **组内后续告警不重复通知**：首告警建单已推组通知，后续只留痕不推——降噪的本质是减少对人的重复骚扰
+
+**改动文件**
+- 后端：`AlertRepository`（+`findActiveGroupTicket` 窗口内同 service+module 已建单告警查询）、`AlertService`（`createNewAlert` 建单前聚合抑制 + `appendAggregatedAlert` 留痕不推钉钉 + 2 配置字段）、`application.yml`（+`devops.alert.aggregate-enabled`/`aggregate-window-minutes`）
+
+**实测验证（独立 8099 实例 MOCK 模式，测试后数据全部还原）**
+- **风暴聚合**：3 条不同 alertName（PodCrashLoopBackOff/OOMKilled/ImagePullError）同 service+module → **全部入库（id 8/9/10 可见）+ 全关联同一工单 TKT-...0001 + 只建 1 张单**（此前会建 3 张）
+- **活动流留痕**：工单有 2 条「聚合关联告警」记录，信息不丢
+- **跨 service 不误聚合**：order-service 告警新建单（工单数 1→2）
+- **同 dedup_key 去重仍生效**：重复推 PodCrashLoopBackOff → occurrence 2，告警行仍 4 条（不新增）
+- `mvn test` **123/123**；数据还原（告警 0、工单回原 3 张）
+
+**已知限制**
+1. 聚合窗口内首告警恢复（RESOLVED）后，其 ticket_id 仍可能被后续告警关联——当前查询按 `last_occurred_at` 窗口而非严格「工单未关闭」，极端场景下可能关联到已解决工单。实际影响小（窗口仅 5min），严格化需查工单状态，待有真实反馈再优化
+2. 聚合仅按 service+module，不做告警内容相似度聚类——同 service 下语义无关的两类告警也会聚合到一张工单。更细粒度聚类（如按 alertName 前缀）属后续增强
+
 ### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
 
 **已验证通过**：
