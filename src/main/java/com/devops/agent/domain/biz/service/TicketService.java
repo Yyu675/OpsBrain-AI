@@ -44,6 +44,7 @@ public class TicketService {
     private final TicketTagRepository tagRepository;
     private final com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository;
     private final com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository;
+    private final com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
     private final StringRedisTemplate redisTemplate;
 
     public TicketService(DevOpsTicketRepository ticketRepository,
@@ -52,6 +53,7 @@ public class TicketService {
                         TicketTagRepository tagRepository,
                         com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository,
                         com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository,
+                        com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier,
                         StringRedisTemplate redisTemplate) {
         this.ticketRepository = ticketRepository;
         this.replyRepository = replyRepository;
@@ -59,6 +61,7 @@ public class TicketService {
         this.tagRepository = tagRepository;
         this.actionRepository = actionRepository;
         this.postmortemRepository = postmortemRepository;
+        this.dingTalkNotifier = dingTalkNotifier;
         this.redisTemplate = redisTemplate;
     }
 
@@ -667,6 +670,23 @@ public class TicketService {
         recordActivity(ticketId, "warning", "工单升级", reason.trim(), who, true);
         log.warn("⬆️ [TicketService] 工单已升级 | ticketId={} | operator={} | reason={}",
                 ticketId, who, reason.trim());
+
+        // L2 钉钉通知（方向二）：升级上报是「需要更多人关注」的强信号，@所有人。
+        // 旁路——DingTalkNotifier 内部异步 + 失败仅 WARN，不影响升级主流程。
+        // 只在升级这一个工单事件推送：普通状态流转有活动流+列表可见即可，
+        // 群机器人 @所有人 不适合逐条状态变更（会刷屏）。
+        try {
+            String title = "⬆️ 工单升级 " + existing.getPriority() + " · " + existing.getTitle();
+            String md = "### " + title + "\n\n"
+                    + "- **工单**：" + ticketId + "\n"
+                    + "- **优先级**：" + existing.getPriority() + "\n"
+                    + "- **升级人**：" + who + "\n"
+                    + "- **升级原因**：" + reason.trim() + "\n"
+                    + "- **负责人**：" + (existing.getAssignee() != null ? existing.getAssignee() : "待分配") + "\n";
+            dingTalkNotifier.send(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md));
+        } catch (Exception e) {
+            log.warn("⚠️ [TicketService] 升级通知构造失败（已忽略）| ticketId={} | {}", ticketId, e.getMessage());
+        }
         return ticketRepository.findById(ticketId);
     }
 

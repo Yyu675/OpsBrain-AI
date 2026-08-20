@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import com.devops.agent.domain.notify.NotifyMessage;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -58,11 +60,15 @@ public class AlertService {
     private final AlertRepository alertRepository;
     private final TicketService ticketService;
     private final AlertWebSocketNotifier alertNotifier;
+    private final com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
 
-    public AlertService(AlertRepository alertRepository, TicketService ticketService, AlertWebSocketNotifier alertNotifier) {
+    public AlertService(AlertRepository alertRepository, TicketService ticketService,
+                        AlertWebSocketNotifier alertNotifier,
+                        com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier) {
         this.alertRepository = alertRepository;
         this.ticketService = ticketService;
         this.alertNotifier = alertNotifier;
+        this.dingTalkNotifier = dingTalkNotifier;
     }
 
     // ==================== 配置注入（application.yml devops.alert.*） ====================
@@ -297,9 +303,41 @@ public class AlertService {
 
             log.info("🎫 [AlertService] 告警自动建单成功 | alertId={} | alertName={} | ticketId={} | priority={} | category={}",
                     alert.getId(), alertName, ticket != null ? ticket.getId() : null, priority, category);
+
+            // L2 通知（方向二）：高危告警强提醒值班 SRE（蓝图 §二 P0/P1 一键弹窗强提醒）。
+            // 旁路——DingTalkNotifier 内部异步 + 失败仅 WARN，不影响建单主流程。
+            String ticketId = ticket != null ? ticket.getId() : null;
+            notifyAlert(alert, alertName, service, priority, description, ticketId);
         } catch (Exception e) {
             log.error("❌ [AlertService] 告警自动建单失败 | alertId={} | alertName={} | error={}",
                     alert.getId(), alertName, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 推送告警通知到钉钉
+     * <p>P0/P1 高危 → @所有人强提醒；P2~P4 → 普通通知。旁路，不阻塞建单。</p>
+     */
+    private void notifyAlert(Alert alert, String alertName, String service,
+                             String priority, String description, String ticketId) {
+        try {
+            String title = (alert.isHighRisk() ? "🚨 高危告警 " : "⚠️ 告警 ") + priority + " · " + alertName;
+            StringBuilder md = new StringBuilder();
+            md.append("### ").append(title).append("\n\n")
+              .append("- **级别**：").append(priority).append(alert.isHighRisk() ? "（需人工介入）" : "").append("\n")
+              .append("- **服务**：").append(service != null && !service.isBlank() ? service : "—").append("\n")
+              .append("- **模块**：").append(alert.getModule() != null ? alert.getModule() : "—").append("\n")
+              .append("- **详情**：").append(description != null ? description : "—").append("\n");
+            if (ticketId != null) {
+                md.append("- **关联工单**：").append(ticketId).append("\n");
+            }
+            NotifyMessage msg = alert.isHighRisk()
+                    ? NotifyMessage.urgent(title, md.toString())
+                    : NotifyMessage.normal(title, md.toString());
+            dingTalkNotifier.send(msg);
+        } catch (Exception e) {
+            // 通知构造异常也不影响建单主流程
+            log.warn("⚠️ [AlertService] 告警通知构造失败（已忽略）| alertId={} | {}", alert.getId(), e.getMessage());
         }
     }
 

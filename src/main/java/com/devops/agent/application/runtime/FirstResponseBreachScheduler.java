@@ -51,6 +51,7 @@ public class FirstResponseBreachScheduler {
 
     private final DevOpsTicketRepository ticketRepository;
     private final TicketService ticketService;
+    private final com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
 
     /**
      * 开关：允许运维在数据迁移或压测期间临时停用，
@@ -60,9 +61,11 @@ public class FirstResponseBreachScheduler {
     private boolean scanEnabled;
 
     public FirstResponseBreachScheduler(DevOpsTicketRepository ticketRepository,
-                                        TicketService ticketService) {
+                                        TicketService ticketService,
+                                        com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier) {
         this.ticketRepository = ticketRepository;
         this.ticketService = ticketService;
+        this.dingTalkNotifier = dingTalkNotifier;
     }
 
     /**
@@ -113,16 +116,19 @@ public class FirstResponseBreachScheduler {
     }
 
     /**
-     * 留痕
+     * 留痕 + 钉钉通知
      * <p>
      * 活动流由 Service 单点写（6.12 契约），此处调 Service 而非直写仓储。
      * </p>
      * <p>
      * <b>不走 WebSocket 推送</b>：{@code /ws/alerts} 的事件契约（6.35）固定为
-     * 12 字段 {@code AlertPayload}，把工单数据塞进告警通道会破坏该契约，
-     * 前端 {@code AlertStreamMode} 也会按告警渲染工单。首响超时的可见性由
-     * ① 活动流留痕 ② {@code GET /tickets/sla/at-risk} 清单 ③ 列表首响状态列
-     * 三处提供，均为拉取式。独立的工单事件推送通道待 L2 通知能力（6.3）落地。
+     * 12 字段 {@code AlertPayload}，把工单数据塞进告警通道会破坏该契约。
+     * 首响超时的可见性由 ① 活动流留痕 ② {@code GET /tickets/sla/at-risk} 清单
+     * ③ 列表首响状态列 ④ <b>钉钉通知（方向二）</b> 四处提供。
+     * </p>
+     * <p>
+     * 钉钉通知为旁路：{@code DingTalkNotifier} 内部异步 + 失败仅 WARN，
+     * 不影响超时标记与活动流留痕主流程。P0/P1 工单超时 @所有人强提醒。
      * </p>
      */
     private void recordAndNotify(DevOpsTicket t) {
@@ -134,6 +140,23 @@ public class FirstResponseBreachScheduler {
             ticketService.recordActivity(t.getId(), "warning", "首响超时", detail, "系统", true);
         } catch (Exception e) {
             log.warn("⚠️ [FirstResponseScan] 活动流留痕失败 | ticketId={} | {}", t.getId(), e.getMessage());
+        }
+        // L2 钉钉通知（方向二）：SLA 首响超时提醒。P0/P1 强提醒值班 SRE。
+        try {
+            String priority = t.getPriority();
+            boolean high = "P0".equalsIgnoreCase(priority) || "P1".equalsIgnoreCase(priority);
+            String title = "⏰ 首响超时 " + priority + " · " + t.getTitle();
+            String md = "### " + title + "\n\n"
+                    + "- **工单**：" + t.getId() + "\n"
+                    + "- **优先级**：" + priority + "\n"
+                    + "- **首响时限**：" + t.getSla() + "\n"
+                    + (overdue != null ? "- **已超时**：" + Math.abs(overdue) + " 分钟\n" : "")
+                    + "- **负责人**：" + (t.getAssignee() != null ? t.getAssignee() : "待分配") + "\n";
+            dingTalkNotifier.send(high
+                    ? com.devops.agent.domain.notify.NotifyMessage.urgent(title, md)
+                    : com.devops.agent.domain.notify.NotifyMessage.normal(title, md));
+        } catch (Exception e) {
+            log.warn("⚠️ [FirstResponseScan] 钉钉通知构造失败（已忽略）| ticketId={} | {}", t.getId(), e.getMessage());
         }
     }
 }

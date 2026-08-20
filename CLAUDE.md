@@ -2870,6 +2870,70 @@ monitoring/alertmanager.yml       路由配置，webhook 指向 host.docker.inte
 2. 真实告警需用户实例（8088）在线才能接收——Alertmanager 推 8088，后端离线时 webhook 连接失败（Alertmanager 会重试）。这是预期行为，非缺陷
 3. 哨兵规则默认注释——真实内存/CPU/磁盘规则只在超阈值时触发，开发机通常不达标，故日常无告警产生（需真实负载或取消注释哨兵才见告警流）
 
+### 6.55 方向二：钉钉通知渠道（L2 主动触达）（2026-08-20）
+
+> **背景**：方向一打通真实告警流后，蓝图 §二要求「P0/P1 高危告警通过钉钉一键弹窗强提醒值班 SRE」。本轮实现钉钉自定义机器人通知发送器，接入告警建单 / SLA 超时 / 工单升级三处钩子。6.3 已拍板「先接钉钉」。
+
+**默认决策（用户未答，按专业判断采用推荐项）**
+
+| 决策点 | 采用 | 理由 |
+| :--- | :--- | :--- |
+| 凭据处理 | **开关默认关**，webhook/secret 从环境变量读 | 不阻塞开发、不泄露凭据；MOCK 模式（关闭时）仅打印日志验证链路 |
+| 工单变更钩子范围 | **只推「升级上报」**，不推普通状态流转 | 群机器人只能 @所有人无法精准 @负责人，逐条状态变更 @所有人会刷屏；升级本身是「需更多人关注」信号，@所有人合理。普通流转有活动流+列表可见即可 |
+
+**新增文件**
+```
+domain/notify/NotifyMessage.java     渠道无关消息模型（title + markdown + urgent 标记）
+domain/notify/DingTalkNotifier.java  钉钉发送器（HmacSHA256 加签 + 异步 + 失败旁路 + 开关）
+```
+
+**三处通知钩子（均旁路，失败仅 WARN 不阻塞主流程）**
+
+| 钩子 | 位置 | 触发 | 紧急度 |
+| :--- | :--- | :--- | :--- |
+| 告警强提醒 | `AlertService.createAutoTicket` 建单后 | 每条自动建单的告警 | P0/P1 → @所有人；P2~P4 → 普通 |
+| SLA 超时 | `FirstResponseBreachScheduler.recordAndNotify` | 首响超时标记成功 | P0/P1 工单 → @所有人 |
+| 工单升级 | `TicketService.escalateTicket` | 升级上报 | 恒 @所有人（升级即强信号） |
+
+**关键决策**
+
+| 决策点 | 选择 | 理由 |
+| :--- | :--- | :--- |
+| HTTP 客户端 | **JDK `java.net.http.HttpClient`（零依赖）** | 不引入 OkHttp/Hutool 等额外依赖；JDK21 原生支持 |
+| 加签 | `sign = urlEncode(base64(HmacSHA256(timestamp+"\n"+secret, secret)))` | 钉钉「加签」安全模式标准算法；未配 secret 则不加签（兼容「关键词」「IP 白名单」模式） |
+| 异步 | 单线程 daemon 线程池 + `CompletableFuture.runAsync` | 不占用调用方线程（告警回调/定时扫描/工单写操作） |
+| 失败处理 | 网络/加签/序列化任何异常只记 WARN 不外抛 | 通知是旁路增值，告警与工单是主业务，绝不因通知失败中断（同 6.34 契约） |
+| 开关关闭时 | MOCK 语义：仅打印 `[DingTalk-MOCK]` 日志 | 开发期不配 webhook 也能验证内容与触发时机 |
+| 消息模型 | 渠道无关 `NotifyMessage` record | 当前只有钉钉，但不绑定钉钉——L2 后续扩展企微/飞书/短信复用 |
+
+**新增契约**
+- **通知失败绝不阻塞主流程**：DingTalkNotifier 内部异步 + 全异常捕获，告警建单/工单写操作不受影响
+- **通知凭据只从环境变量读**：`DINGTALK_WEBHOOK`/`DINGTALK_SECRET`，不写入代码或配置文件（含 access_token 敏感信息）
+- **群机器人通知须克制**：只推「系统主动发现的异常」（告警/超时）与「需更多人关注的信号」（升级），普通状态流转不推——群 @所有人 逐条会刷屏
+- **通知总开关默认关**：需运维显式填 webhook + 开启，未配时 MOCK 打印
+
+**配置项**（全环境变量，满足 6.20 契约）
+```
+devops.notify.dingtalk.enabled   ${DINGTALK_NOTIFY_ENABLED:false}
+devops.notify.dingtalk.webhook   ${DINGTALK_WEBHOOK:}
+devops.notify.dingtalk.secret    ${DINGTALK_SECRET:}
+```
+
+**改动文件**
+- 后端：`AlertService`（+DingTalkNotifier 注入 + `notifyAlert`）、`FirstResponseBreachScheduler`（+注入 + `recordAndNotify` 加通知，更新「待落地」注释为已落地）、`TicketService`（+注入 + `escalateTicket` 加升级通知）、`application.yml`（+`devops.notify.dingtalk`）、`TicketServiceTest`（构造 +DingTalkNotifier mock）
+
+**实测验证（独立 8099 实例 MOCK 模式，测试后数据全部还原）**
+- 启动日志确认开关默认关：`🔕 [DingTalk] 通知已关闭...将以 MOCK 方式仅打印日志`
+- **告警钩子**：推 `severity=critical` 告警 → 建单 `TKT-...0007`(P0) → `🔕 [DingTalk-MOCK]【紧急】🚨 高危告警 P0 · MySQLConnectionPoolFull`（urgent 强提醒正确，`dingtalk-notify` 异步线程）
+- **升级钩子**：调 `/escalate` → `🔕 [DingTalk-MOCK]【紧急】⬆️ 工单升级 P0`（urgent 正确）
+- SLA 超时钩子与升级同构（send + 优先级判 urgent），已编译 + 另两钩子实证覆盖
+- `mvn test` **123/123 通过**（TicketServiceTest 构造已补 mock）；数据还原（告警 0，原 3 工单完好）
+
+**已知限制**
+1. 群机器人只能 @所有人，无法精准 @到工单负责人本人——精准触达需企微/飞书应用消息或钉钉工作通知（需 userId 映射），属后续增强
+2. 通知未做去重/聚合：告警风暴时可能短时多条推送。钉钉端有频控（20 条/分钟），超限时 DingTalkNotifier 记 WARN 不重试。告警聚合待后续
+3. 真实推送需用户配 `DINGTALK_WEBHOOK` + 开启开关——本轮验证为 MOCK 模式（确认钩子触发与消息格式），真实钉钉送达待用户提供 webhook 后验证
+
 ### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
 
 **已验证通过**：
