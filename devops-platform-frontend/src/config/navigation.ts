@@ -23,7 +23,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'trends', label: '趋势分析', path: '/trends', stage: 'L2', visible: false },
   { key: 'alerts', label: '告警事件', path: '/alerts', stage: 'L2', visible: false },
   { key: 'integrations', label: '接入管理', path: '/integrations', stage: 'L2', visible: false },
-  { key: 'approvals', label: '人机协同审批', path: '/approvals', stage: 'L3', visible: false },
+  { key: 'approvals', label: '审批中心', path: '/approvals', stage: 'L3', visible: true },
   { key: 'automation-policies', label: '自动化策略', path: '/automation/policies', stage: 'L3', visible: false },
   { key: 'action-allowlist', label: '动作白名单', path: '/automation/action-allowlist', stage: 'L3', visible: false },
   { key: 'risk-levels', label: '风险等级', path: '/automation/risk-levels', stage: 'L3', visible: false },

@@ -138,6 +138,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      */
     private final ConcurrentHashMap<String, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
 
+    /** 审批服务（方向 D）：高危工单落审批单，替代此前的「丢弃」 */
+    private final com.devops.agent.domain.approval.ApprovalService approvalService;
+
     public DevOpsAgentServiceImpl(SecurityInputGuard securityGuard,
                                    SemanticCacheService cacheService,
                                    DevOpsIntentRouter intentRouter,
@@ -152,6 +155,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                                    ToolRuntimeManager toolRuntimeManager,
                                    SagaCompensationManager sagaManager,
                                    TicketDraftParser draftParser,
+                                   com.devops.agent.domain.approval.ApprovalService approvalService,
                                    ChatMemoryProvider chatMemoryProvider) {
         this.securityGuard = securityGuard;
         this.cacheService = cacheService;
@@ -167,6 +171,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         this.toolRuntimeManager = toolRuntimeManager;
         this.sagaManager = sagaManager;
         this.draftParser = draftParser;
+        this.approvalService = approvalService;
         this.chatMemoryProvider = chatMemoryProvider;
     }
 
@@ -625,7 +630,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
         // ---- 步骤 1：写前审批检查 ----
         if (draft.needsApproval() && approvalRequired) {
-            log.warn("🛑 [SingleWriter] 高风险工单需审批，已阻止写入 | title={} | traceId={}",
+            log.warn("🛑 [SingleWriter] 高风险工单需审批，转入审批队列 | title={} | traceId={}",
                     draft.title(), traceId);
             stateManager.transition(traceId, AgentState.WAITING_APPROVAL,
                     AgentStateTransition.TriggerType.APPROVAL_REQUIRED,
@@ -635,15 +640,37 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
             recordSagaStepWithState(traceId, sessionId, toolName,
                     "待审批未写入: " + draft.title(), null, ToolExecutionState.SKIPPED);
 
+            // 方向 D：落审批单（而非丢弃）。payload 存 TicketDraft JSON，
+            // 批准后 ApprovalOrchestrator.replayCreateTicket 据此重放建单。
+            // 序列化失败则不谎称已入队——记 ERROR 并如实告知模型提交失败。
+            Long approvalId = null;
+            try {
+                String payload = objectMapper.writeValueAsString(draft);
+                approvalId = approvalService.submit(
+                        "CREATE_TICKET", toolName, "CONTROLLED_WRITE",
+                        "创建高优工单: " + draft.title(),
+                        payload, "AI", traceId, sessionId);
+            } catch (Exception e) {
+                log.error("❌ [SingleWriter] 审批单提交失败，工单未创建 | title={} | traceId={} | {}",
+                        draft.title(), traceId, e.getMessage(), e);
+                return new WriteOutcome(null, String.format("""
+                        ⚠️ 工单提交失败（审批单创建异常）。
+
+                        标题: %s
+
+                        请告知用户：系统暂时无法提交审批，请稍后重试。不要声称工单已创建或已进入审批。""",
+                        draft.title()));
+            }
+
             return new WriteOutcome(null, String.format("""
-                    ⏸️ 工单已提交但需人工审批。
+                    ⏸️ 工单已提交审批（审批单 #%d）。
 
                     标题: %s
-                    优先级: %s（高风险）
+                    优先级: %s（高风险，需人工审批）
 
-                    请告知用户：该工单因优先级为 HIGH 已进入审批队列，
-                    审批通过后会自动创建。请勿声称工单已创建成功。""",
-                    draft.title(), draft.priority()));
+                    请告知用户：该工单因优先级高已进入审批队列（单号 #%d），
+                    管理员审批通过后会自动创建。请勿声称工单已创建成功。""",
+                    approvalId, draft.title(), draft.priority(), approvalId));
         }
 
         // ---- 步骤 2：先登记 Saga 步骤（PENDING）----

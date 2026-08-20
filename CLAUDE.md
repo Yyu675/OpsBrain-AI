@@ -3001,8 +3001,65 @@ devops-platform-frontend/src/views/Login.vue          登录页
 **已知限制**
 1. 种子密码默认 admin/admin123（`AUTH_SEED_*` 环境变量可覆盖），启动日志提示改密——生产必须改
 2. WebSocket `/ws/alerts` 暂不鉴权（不在 `/api/**` 拦截范围）——WS 握手鉴权待后续
-3. 角色权限仅做到「登录校验」（checkLogin），细粒度 `checkPermission`/`checkRole` 未启用——路由 `roles`/`permissions` 守卫已预留，后端 `@SaCheckRole` 待接
+3. 角色权限：登录校验（checkLogin）全局生效；细粒度 `@SaCheckRole` 已在 6.57 审批中心接通并验证（非管理员 403）。其余端点的 `@SaCheckRole`/`@SaCheckPermission` 按需增补
 4. 前端 Login 页为独立页面级验证（构建通过 + 后端链路 curl 全验），浏览器端到端交互未跑（需 dev server + 浏览器）
+
+### 6.57 方向 D：L3 人机协同审批闭环（AI 提议 → 人审 → 重放执行）（2026-08-20）
+
+> **背景**：审批「拦截标记」此前已存在（6.10 `writeTicketFromDraft` 检测 `needsApproval` 置 `WAITING_APPROVAL`），但被拦下的动作**直接丢弃**——审批通过后无机制重放执行，「人机协同」名不副实。方向 D 补齐可重放的审批单 + 批准后受控执行。用户拍板动作用 A/B（只读/dry-run）。
+
+**核实发现（避免重复造轮子）**
+
+盘点时发现方向 D 后端**大部分已在前序会话建好**：`ApprovalService`/`ApprovalOrchestrator`/`ApprovalController`/`ApprovalRequest`/`Repository`/`ApprovalStatus`/`SaTokenPermissionProvider` + `init.sql` Table 22 + `GlobalExceptionHandler` 的 `NotRole/NotPermission` handler 均已存在且编译通过。逐一核实（`mvn compile` + 读关键方法）后确认架构正确，未重写。**真缺口是两处未接通**，本轮补上。
+
+**关键决策**
+
+| 决策点 | 选择 | 理由 |
+| :--- | :--- | :--- |
+| 不新建 `ActionPermissionLevel` | **复用 `ToolRiskLevel`**（READ_ONLY/DRAFT/CONTROLLED_WRITE/HIGH_RISK_EXECUTION） | 蓝图 ActionPermissionLevel 三级语义已被现有四级枚举覆盖，新建会造成同一事实两处定义必然漂移（6.20 契约） |
+| 审批单必须可重放 | **payload 存 `TicketDraft` JSON** | 不存动作上下文则批准后无从执行——这是审批单表存在的核心理由。`replayCreateTicket` 反序列化 payload 为 TicketDraft 落库 |
+| APPROVED 与 EXECUTED 分开 | **两个独立状态** | 批准后执行可能失败，须区分「已批准未执行」与「已执行」（既成事实固化，同 B1 首响超时）。执行失败标 `EXECUTE_FAILED`，批准本身不回退（人的决策已成事实） |
+| 拦截点改造 | **落审批单而非丢弃** | `writeTicketFromDraft` 的 `needsApproval` 分支改为 `approvalService.submit(payload=draftJson)`，序列化失败则如实告知模型「提交失败」不谎称入队 |
+| 审批权限 | **`@SaCheckRole("ADMIN")` 类级** | 审批是授权行为仅管理员可执行。`SaTokenPermissionProvider` 实时查 `sys_user.role`（不缓存），`NotRoleException`→403（6.56 曾列「@SaCheckRole 待接」，本轮接通并验证） |
+| 重放建单的 creator | **记审批人（approver）** | AI 提议、人授权，工单归属授权者更可追溯 |
+| **D-4 只读诊断工具/dry-run 跳过** | **不新增 @Tool** | 审批闭环用现有 `createDevOpsTicket`（高优工单）路径已能完整验证「AI 提议→人审→执行」；新增诊断工具会触碰 L2 工具白名单铁律（仅 2 个工具），风险 > 收益。审批单本身即 dry-run 语义（AI 只产草稿不执行，人批准才执行）——已天然实现 |
+
+**本轮实际增量（真缺口）**
+- **拦截点接通**：`DevOpsAgentServiceImpl.writeTicketFromDraft` 注入 `ApprovalService`，高危工单落审批单（payload = TicketDraft JSON），返回文案含审批单号，明确要求模型「勿声称已创建」
+- **前端审批中心**：`views/ApprovalCenter.vue`（状态 tab / 风险标识 / 批准 / 驳回理由必填 / 无权限三态）+ `api/approval.ts` + `config/api.ts` 端点 + 路由 `/approvals` 换真实页 + 导航项 visible
+- **`@SaCheckRole` 验证生效**：6.56 遗留的「细粒度角色校验待接」本轮闭合
+
+**新增契约**
+- **审批动作必须可重放**：审批单存完整动作上下文（payload），不存则批准后无从执行
+- **批准后执行失败不回退批准**：人的决策是既成事实，执行失败标 EXECUTE_FAILED 供人工介入，不撤销批准
+- **审批限管理员**：`@SaCheckRole("ADMIN")`，角色实时查库（不缓存，改 role 立即生效）
+- **不为验证审批而动摇工具白名单**：L2 幻觉防护铁律（仅 searchDevOpsKnowledge/createDevOpsTicket 两工具）优先于新增诊断工具
+
+**新增文件**
+```
+sql/migration_v23_approval_request.sql              审批单表（幂等，+ 同步 init.sql Table 22）
+devops-platform-frontend/src/views/ApprovalCenter.vue   审批中心页
+devops-platform-frontend/src/api/approval.ts            审批 API
+（domain/approval/* 与 ApprovalController/Orchestrator/SaTokenPermissionProvider 前序会话已建）
+```
+
+**改动文件**
+- 后端：`DevOpsAgentServiceImpl`（注入 ApprovalService + 拦截点落审批单）
+- 前端：`config/api.ts`（+APPROVALS）、`router/index.ts`（/approvals 换真实页 + roles:['admin']）、`config/navigation.ts`（审批中心 visible）
+
+**实测验证（独立 8099 实例 MOCK + 审批开关 on，测试后数据全部还原）**
+- 未登录访问 `/approvals` → **401**
+- admin 查待审队列 → 见审批单，total 正确
+- **admin 批准 → status=EXECUTED + 重放建单 `TKT-...0008`，工单数 3→4**（批准后动作真正执行，核心缺口消除）
+- **驳回 → REJECTED + 理由记录，工单数不变**（驳回不建单）
+- **非管理员（临时降 admin 为 OPS）批准 → 403**（`@SaCheckRole` 生效，角色实时查库）
+- `mvn test` **123/123**；前端 `npm run build` 通过（含 ApprovalCenter 产物）
+- 数据还原：审批单 0、工单回原 3 张、admin 角色恢复 ADMIN
+
+**已知限制**
+1. D-4 只读诊断工具/dry-run 动作未做（见上表理由）——审批闭环已用工单路径完整验证，新增工具待有明确运维场景且不动摇工具白名单铁律时再评估
+2. 审批超时自动 EXPIRED 靠 `expireOverdue()`，尚未接定时任务——当前审批单有 24h expiresAt 但无扫描任务标记过期，待接入 Scheduler
+3. 审批中心导航对所有登录用户可见，非管理员点进去是「无权限」三态兜底——精细的按角色隐藏导航项属方向 F（RBAC）范畴
 
 ### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
 

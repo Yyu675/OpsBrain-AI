@@ -1,6 +1,8 @@
 package com.devops.agent.common.exception;
 
 import cn.dev33.satoken.exception.NotLoginException;
+import cn.dev33.satoken.exception.NotPermissionException;
+import cn.dev33.satoken.exception.NotRoleException;
 import com.devops.agent.common.dto.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +50,27 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleNotLoginException(NotLoginException ex) {
         log.debug("🔒 [GlobalException] 未登录/登录失效: type={}", ex.getType());
         return ApiResponse.error(40101, "未登录或登录已失效，请重新登录");
+    }
+
+    /**
+     * 处理 Sa-Token 角色不足（方向 D：审批端点限 ADMIN）
+     * <p>已登录但角色不够 → 403（区别于 401 未登录）。业务码 40103。</p>
+     */
+    @ExceptionHandler(NotRoleException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleNotRoleException(NotRoleException ex) {
+        log.warn("🚫 [GlobalException] 角色不足: 需要角色={}", ex.getRole());
+        return ApiResponse.error(40103, "权限不足：该操作需要「" + ex.getRole() + "」角色");
+    }
+
+    /**
+     * 处理 Sa-Token 权限码不足（方向 F 细粒度权限启用后生效）
+     */
+    @ExceptionHandler(NotPermissionException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleNotPermissionException(NotPermissionException ex) {
+        log.warn("🚫 [GlobalException] 权限不足: 需要权限={}", ex.getPermission());
+        return ApiResponse.error(40103, "权限不足：缺少「" + ex.getPermission() + "」权限");
     }
 
     /**

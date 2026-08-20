@@ -614,6 +614,39 @@ CREATE TABLE IF NOT EXISTS sys_user (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_user_username ON sys_user (username);
 
+-- ---------------------------------------------------------------------
+-- Table 22: sys_approval_request - 审批单（方向 D：L3 人机协同审批）
+-- ---------------------------------------------------------------------
+-- 对齐蓝图 §二：P0/P1 高危故障必须人工确认后 AI 才可执行敏感操作。
+-- payload 存可重放的动作上下文——批准时据此执行；不存则批准后无从执行。
+-- APPROVED 与 EXECUTED 分开：批准后执行可能失败，须区分二者（既成事实固化）。
+-- risk_level 复用 ToolRiskLevel 枚举，不新建 ActionPermissionLevel（避免同一事实两处定义）。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_approval_request (
+    id              BIGSERIAL PRIMARY KEY,
+    action_type     VARCHAR(32)  NOT NULL,        -- CREATE_TICKET / EXECUTE_SCRIPT（预留）
+    tool_name       VARCHAR(64),
+    risk_level      VARCHAR(32)  NOT NULL,        -- READ_ONLY/DRAFT/CONTROLLED_WRITE/HIGH_RISK_EXECUTION
+    summary         VARCHAR(255) NOT NULL,
+    payload         JSONB,                        -- 可重放的动作上下文
+    requester       VARCHAR(64)  NOT NULL DEFAULT 'AI',
+    trace_id        VARCHAR(64),
+    session_id      VARCHAR(64),
+    status          VARCHAR(24)  NOT NULL DEFAULT 'PENDING',  -- PENDING/APPROVED/REJECTED/EXPIRED/EXECUTED/EXECUTE_FAILED
+    approver        VARCHAR(64),
+    decided_at      TIMESTAMP,
+    decision_reason VARCHAR(500),
+    expires_at      TIMESTAMP,
+    executed_at     TIMESTAMP,
+    execute_result  TEXT,
+    create_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_approval_status_time ON sys_approval_request (status, create_time);
+CREATE INDEX IF NOT EXISTS idx_approval_trace ON sys_approval_request (trace_id);
+CREATE INDEX IF NOT EXISTS idx_approval_pending_expire
+    ON sys_approval_request (expires_at) WHERE status = 'PENDING';
+
 -- =====================================================================
 -- Data Migration: v10 孤儿切片清理
 -- =====================================================================

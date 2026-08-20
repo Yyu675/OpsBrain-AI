@@ -108,8 +108,8 @@ const router = createRouter({
       meta: { title: '接入管理', stage: 'L2', hiddenFromNavigation: true, description: '集中管理监控、容器与云平台数据源的连接和健康状态。', capabilities: ['Prometheus 接入', 'Kubernetes 集群', '云平台账号', '连接健康检查'] }
     },
     {
-      path: '/approvals', name: 'approvals', component: lazy(() => import('../views/FutureCapability.vue'), 'Approvals', 'dashboard'),
-      meta: { title: '人机协同审批中心', stage: 'L3', hiddenFromNavigation: true, description: '对中高风险自动化建议执行分级审批并保留完整决策依据。', capabilities: ['待审批队列', 'AI 决策依据', '风险校验', '审批记录'] }
+      path: '/approvals', name: 'approvals', component: lazy(() => import('../views/ApprovalCenter.vue'), 'ApprovalCenter', 'dashboard'),
+      meta: { title: '人机协同审批中心', stage: 'L3', roles: ['admin'], description: '对中高风险自动化建议执行分级审批并保留完整决策依据。', capabilities: ['待审批队列', 'AI 决策依据', '风险校验', '审批记录'] }
     },
     {
       path: '/automation/policies', name: 'automation-policies', component: lazy(() => import('../views/FutureCapability.vue'), 'AutomationPolicies', 'dashboard'),

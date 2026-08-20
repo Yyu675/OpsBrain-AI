@@ -20,6 +20,8 @@ export const API_ENDPOINTS = {
   AUTH_LOGIN: `${API_BASE}/auth/login`,
   AUTH_ME: `${API_BASE}/auth/me`,
   AUTH_LOGOUT: `${API_BASE}/auth/logout`,
+  // 审批中心（方向 D：L3 人机协同审批）
+  APPROVALS: `${API_BASE}/approvals`,
 
   // M8 看板统计
   DASHBOARD_OVERVIEW: `${API_BASE}/dashboard/overview`,
