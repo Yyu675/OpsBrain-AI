@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseDate } from '@/utils/time'
 import { computed, ref } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import {
@@ -54,7 +55,10 @@ const trend = trendQuery.data
 const lastUpdated = computed(() => {
   const ts = overviewQuery.dataUpdatedAt.value
   if (!ts) return ''
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  // 走 parseDate：趋势图 X 轴若按浏览器时区解析，
+  // 跨时区用户看到的时间点会整体平移
+  const d = parseDate(ts)
+  return d ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : String(ts)
 })
 
 /** 刷新：四个查询一并重拉。refetch 会绕过 staleTime */

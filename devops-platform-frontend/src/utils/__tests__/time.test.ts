@@ -143,3 +143,38 @@ describe('formatDate', () => {
     expect(formatDate(null)).toBe('—')
   })
 })
+
+describe('时区处理（后端 LocalDateTime 无时区后缀）', () => {
+  it('无时区字符串按服务器时区(+08:00)解析，而非浏览器本地时区', () => {
+    // 后端 Java LocalDateTime 序列化就是这个形态
+    const d = parseDate('2026-08-24T10:30:00')
+
+    // 不论测试机在哪个时区，都应等于北京时间 10:30
+    expect(d?.getTime()).toBe(Date.parse('2026-08-24T10:30:00+08:00'))
+  })
+
+  it('空格分隔的时间同样按服务器时区解析', () => {
+    expect(parseDate('2026-08-24 10:30:00')?.getTime())
+      .toBe(Date.parse('2026-08-24T10:30:00+08:00'))
+  })
+
+  it('已带时区的输入不被改写', () => {
+    expect(parseDate('2026-08-24T10:30:00Z')?.getTime())
+      .toBe(Date.parse('2026-08-24T10:30:00Z'))
+    expect(parseDate('2026-08-24T10:30:00+09:00')?.getTime())
+      .toBe(Date.parse('2026-08-24T10:30:00+09:00'))
+  })
+
+  it('相对时间不再因时区错算 —— 修复前跨时区可差 12 小时', () => {
+    // 服务器时间 11:30 时，看 10:30 创建的工单
+    const now = Date.parse('2026-08-24T11:30:00+08:00')
+
+    expect(relativeTime('2026-08-24T10:30:00', now)).toBe('1 小时前')
+  })
+
+  it('毫秒数与 Date 对象输入不受影响', () => {
+    const ms = Date.parse('2026-08-24T10:30:00Z')
+    expect(parseDate(ms)?.getTime()).toBe(ms)
+    expect(parseDate(new Date(ms))?.getTime()).toBe(ms)
+  })
+})

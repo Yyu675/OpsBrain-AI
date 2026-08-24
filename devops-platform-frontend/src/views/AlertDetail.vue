@@ -23,7 +23,7 @@ import {
 } from 'lucide-vue-next'
 import { useAlertDetailQuery, useAlertMutations } from '@/api/queries/alerts.query'
 import { levelTagType, statusTagType, getAlertStatusLabel } from '@/utils/alert'
-import { formatAbsolute } from '@/utils/time'
+import { formatAbsolute, parseDate } from '@/utils/time'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
@@ -152,11 +152,16 @@ const durationText = computed(() => {
   if (!a) return '—'
   const startRaw = a.firstOccurredAt ?? a.createTime
   if (!startRaw) return '—'
-  const start = new Date(startRaw).getTime()
-  if (Number.isNaN(start)) return '—'
+  // 必须走 parseDate：后端 LocalDateTime 无时区后缀，
+  // 直接 new Date 会按浏览器时区解析，与 Date.now() 混算后
+  // 跨时区可差出十几小时（见 utils/time.ts 说明）
+  const startDate = parseDate(startRaw)
+  if (!startDate) return '—'
+  const start = startDate.getTime()
   const endRaw = a.resolvedAt
-  const end = endRaw ? new Date(endRaw).getTime() : Date.now()
-  if (Number.isNaN(end)) return '—'
+  const endDate = endRaw ? parseDate(endRaw) : new Date()
+  if (!endDate) return '—'
+  const end = endDate.getTime()
   const mins = Math.max(0, Math.round((end - start) / 60000))
   if (mins < 60) return `${mins} 分钟`
   const h = Math.floor(mins / 60)

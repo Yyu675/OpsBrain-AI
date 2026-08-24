@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseDate } from '@/utils/time'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -83,8 +84,9 @@ function todayStr(): string {
 
 function fmtDueDate(due: string | null | undefined): string {
   if (!due) return ''
-  const d = new Date(due)
-  if (Number.isNaN(d.getTime())) return due
+  // 走 parseDate 统一时区语义，避免「到期日」在跨时区下差一天
+  const d = parseDate(due)
+  if (!d) return due
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${mm}-${dd}`
