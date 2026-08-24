@@ -23,6 +23,7 @@ import { VersionConflictError } from '@/api/services/ticket.service'
 import { fetchTeamMembers } from '@/api/users'
 import { errorMessage } from '@/utils/errors'
 import { notify, handleServerError } from '@/utils/notify'
+import { nowAsBackendTime } from '@/utils/time'
 import type { TeamMember } from '@/api/types'
 import type { FrontendTicket } from '@/api/types/ticket'
 import {
@@ -374,7 +375,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       })
       // 用后端返回值校准（时间戳由服务端生成，避免客户端时钟偏差）
       t.replies[optimisticIndex] = saved
-      t.updatedAt = new Date().toISOString().slice(0, 16).replace('T', ' ')
+      t.updatedAt = nowAsBackendTime()
 
       // 回复会产生活动流记录，重新拉取以保持时间线一致
       await loadActivities(id)
@@ -494,7 +495,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     const snapshot = JSON.parse(JSON.stringify(t)) as Ticket
 
     Object.assign(t, patch)
-    t.updatedAt = new Date().toISOString().slice(0, 16).replace('T', ' ')
+    t.updatedAt = nowAsBackendTime()
 
     try {
       const updated = await apiUpdateTicket(id, {

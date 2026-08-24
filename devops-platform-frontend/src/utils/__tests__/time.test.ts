@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { formatAbsolute, formatDate, parseDate, relativeTime } from '../time'
+import { formatAbsolute, formatDate, nowAsBackendTime, parseDate, relativeTime } from '../time'
 
 /** 固定基准：2026-08-23 12:00:00 本地时间 */
 const NOW = new Date(2026, 7, 23, 12, 0, 0).getTime()
@@ -176,5 +176,51 @@ describe('时区处理（后端 LocalDateTime 无时区后缀）', () => {
     const ms = Date.parse('2026-08-24T10:30:00Z')
     expect(parseDate(ms)?.getTime()).toBe(ms)
     expect(parseDate(new Date(ms))?.getTime()).toBe(ms)
+  })
+})
+
+describe('nowAsBackendTime — 乐观更新的时间戳格式', () => {
+  it('格式与后端字段一致（YYYY-MM-DD HH:mm，无时区后缀）', () => {
+    expect(nowAsBackendTime()).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+  })
+
+  /**
+   * 这是本函数存在的唯一理由，也是它替换掉的那行代码的缺陷所在。
+   *
+   * 旧写法 `new Date().toISOString().slice(0,16).replace('T',' ')` 产出 UTC，
+   * 而该字段的约定是「服务器本地时间（+08:00）不带后缀」，parseDate 按 +08:00 读。
+   * 写 UTC、读 +08:00 → 差 8 小时。实测：北京时间 10:30 编辑工单，
+   * 列表「更新时间」立刻显示「8 小时前」。
+   */
+  it('产出的时间回读后接近当前时刻，不出现 8 小时漂移', () => {
+    const before = Date.now()
+    const parsed = parseDate(nowAsBackendTime())
+    expect(parsed).not.toBeNull()
+
+    // 允许 1 分钟误差（函数截断到分钟）
+    const drift = Math.abs(parsed!.getTime() - before)
+    expect(drift).toBeLessThan(60_000)
+  })
+
+  it('对比：旧的 toISOString 写法确实有 8 小时偏差 —— 锁住不要改回去', () => {
+    const legacy = new Date().toISOString().slice(0, 16).replace('T', ' ')
+    const legacyParsed = parseDate(legacy)!
+    const correctParsed = parseDate(nowAsBackendTime())!
+
+    // 服务器时区固定 +08:00，两种写法必然相差 8 小时
+    const diffHours = Math.round((correctParsed.getTime() - legacyParsed.getTime()) / 3600_000)
+    expect(diffHours).toBe(8)
+  })
+
+  /**
+   * 不断言「刚刚」——本函数截断到分钟，产出的时刻最多可能比"现在"早 59 秒，
+   * 而 relativeTime 的「刚刚」阈值是 30 秒。断言字面量会让用例在
+   * 每分钟的后半段随机失败（我第一版就这么写，实测三次跑挂两次）。
+   *
+   * 真正要保证的是「不出现 8 小时漂移」：只要落在 1 分钟内的相对描述里即可。
+   */
+  it('相对时间不出现小时级漂移', () => {
+    const label = relativeTime(nowAsBackendTime())
+    expect(label === '刚刚' || /^\d+ 秒前$/.test(label)).toBe(true)
   })
 })

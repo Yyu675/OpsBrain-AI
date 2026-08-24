@@ -118,6 +118,22 @@ export default tseslint.config(
       'no-restricted-syntax': ['error', {
         selector: 'NewExpression[callee.name="Date"][arguments.length>0]',
         message: '请改用 @/utils/time 的 parseDate()。后端 LocalDateTime 不带时区，new Date(str) 会按浏览器时区解析，跨时区下时间可差 12 小时。'
+      }, {
+        /**
+         * 禁止 `toISOString()` —— 它返回 UTC。
+         *
+         * 后端所有时间字段的约定是「服务器本地时间（+08:00）且不带时区后缀」，
+         * parseDate 也按 +08:00 解析。把 toISOString 的结果写进这类字段，
+         * 就是写 UTC、读 +08:00，**恒定差 8 小时**。
+         *
+         * 实测：北京时间 10:30 编辑工单，乐观更新把 updatedAt 写成 UTC 的 02:30，
+         * 列表「更新时间」立刻显示「8 小时前」——时间倒流。
+         *
+         * 需要「与后端同格式的当前时刻」用 nowAsBackendTime()；
+         * 真要 UTC（如日志、traceId）请在 utils/time.ts 内实现并加注释说明。
+         */
+        selector: 'CallExpression[callee.property.name="toISOString"]',
+        message: 'toISOString() 返回 UTC，写入后端时间字段会差 8 小时。请改用 @/utils/time 的 nowAsBackendTime()。'
       }],
       // == 在 null/undefined 判断外一律不允许
       eqeqeq: ['error', 'always', { null: 'ignore' }],

@@ -10,6 +10,7 @@ import { showUndoToast } from '@/utils/undoToast'
 // 列宽偏好持久化：loadPersisted/savePersisted 已内建 QuotaExceeded 兜底
 import { debounce, loadPersisted, savePersisted, clearPersisted } from '@/utils/persist'
 import { ticketEvents } from '@/utils/ticketEvents'
+import { nowAsBackendTime } from '@/utils/time'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
@@ -583,7 +584,9 @@ const handleExportCsv = async () => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `工单列表_${new Date().toISOString().slice(0, 10)}.csv`
+    // 用服务器时区的日期而非 UTC：北京时间 0:00-8:00 导出时，
+    // toISOString 给的是前一天，文件名与数据口径对不上
+    a.download = `工单列表_${nowAsBackendTime().slice(0, 10)}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

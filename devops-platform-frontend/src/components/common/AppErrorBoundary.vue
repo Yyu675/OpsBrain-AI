@@ -33,11 +33,22 @@ const backHome = () => {
   window.location.href = '/'
 }
 
+/**
+ * 错误摘要的时间戳，刻意用 UTC。
+ *
+ * 这段摘要是给后端排查用的（用户复制后贴进工单/群里），与服务端日志
+ * 同为 UTC 才好直接比对时间点，且 `Z` 后缀不产生时区歧义。
+ * 与「写入后端时间字段必须用 nowAsBackendTime」是两个不同场景，
+ * 故此处豁免 no-restricted-syntax 规则。
+ */
+// eslint-disable-next-line no-restricted-syntax
+const utcTimestamp = () => new Date().toISOString()
+
 const copySummary = async () => {
   if (!err.value) return
   const lines = [
     `[错误摘要] ${props.scope}`,
-    `时间：${new Date().toISOString()}`,
+    `时间：${utcTimestamp()}`,
     `路径：${route.fullPath}`,
     `URL：${typeof window !== 'undefined' ? window.location.href : '—'}`,
     `UA：${typeof navigator !== 'undefined' ? navigator.userAgent : '—'}`,
