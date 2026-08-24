@@ -21,6 +21,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.beans.factory.annotation.Value;
 
 import jakarta.annotation.PreDestroy;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.HashMap;
@@ -165,7 +167,8 @@ public class DevOpsChatController {
      * @return SSE Emitter
      */
     @PostMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamChatPost(@RequestBody ChatRequest request, HttpServletResponse response) {
+    public SseEmitter streamChatPost(@Valid @RequestBody ChatRequest request,
+                                     HttpServletResponse response) {
         return doStream(
                 request != null ? request.query() : null,
                 request != null ? request.sessionId() : null,
@@ -297,7 +300,17 @@ public class DevOpsChatController {
      * @param query     用户提问（1~1500 字，由 SecurityInputGuard 校验）
      * @param sessionId 会话 ID（多轮对话共享，为空时退化为单轮无记忆）
      */
-    public record ChatRequest(String query, String sessionId) {
+    public record ChatRequest(
+            /**
+             * 用户提问。上限 1500 与 {@code SecurityInputGuard} 保持一致——
+             * 两处不一致会让「DTO 放行但 Guard 拒绝」的请求白白走完鉴权、
+             * 限流、配额预检，浪费一次配额名额才报错。
+             */
+            @Size(max = 1500, message = "提问超过最大长度限制（1500 字），请精简后重试")
+            String query,
+
+            @Size(max = 64, message = "会话 ID 过长")
+            String sessionId) {
     }
 
     /**

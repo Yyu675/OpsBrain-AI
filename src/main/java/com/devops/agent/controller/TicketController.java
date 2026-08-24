@@ -11,6 +11,9 @@ import com.devops.agent.domain.biz.repository.TicketQuery;
 import com.devops.agent.domain.biz.service.TicketAttachmentService;
 import com.devops.agent.domain.biz.service.TicketAiAnalysisService;
 import com.devops.agent.domain.biz.service.TicketService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -153,7 +156,7 @@ public class TicketController {
      * @return 创建后的完整工单（含生成的工单号）
      */
     @PostMapping
-    public ApiResponse<DevOpsTicket> createTicket(@RequestBody CreateTicketRequest req) {
+    public ApiResponse<DevOpsTicket> createTicket(@Valid @RequestBody CreateTicketRequest req) {
         log.info("[TicketController] 创建工单: title={}, priority={}, module={}",
                 req.title(), req.priority(), req.module());
         DevOpsTicket created = ticketService.createTicket(
@@ -457,9 +460,40 @@ public class TicketController {
      * @param creator     创建人，空则 devops-admin
      */
     public record CreateTicketRequest(
-            String title, String priority, String module, String description,
-            String assignee, String category, String sla, String creator,
+            @NotBlank(message = "工单标题不能为空")
+            @Size(max = 255, message = "工单标题不能超过 255 字")
+            String title,
+
+            /**
+             * 优先级。<b>刻意不加 @Pattern</b>：
+             * {@code TicketEnums.Priority.normalize} 兼容旧三档
+             * （HIGH/MEDIUM/LOW）与 URGENT 别名，且非法值兜底 P2。
+             * 在此处收严会直接打死存量客户端与 AI 工具的历史提示词。
+             */
+            @Size(max = 16, message = "优先级取值过长")
+            String priority,
+
+            @Size(max = 64, message = "所属模块不能超过 64 字")
+            String module,
+
+            @NotBlank(message = "问题描述不能为空")
+            @Size(max = 20000, message = "问题描述过长（上限 2 万字），请精简或改用附件")
+            String description,
+
+            @Size(max = 64, message = "负责人名称不能超过 64 字")
+            String assignee,
+
+            @Size(max = 64, message = "分类不能超过 64 字")
+            String category,
+
+            @Size(max = 32, message = "SLA 取值过长")
+            String sla,
+
+            @Size(max = 64, message = "创建人名称不能超过 64 字")
+            String creator,
+
             /** 标签列表，可为 null。此前用户输入的标签在提交时被丢弃 */
+            @Size(max = 20, message = "标签最多 20 个")
             List<String> tags) {
     }
 

@@ -211,6 +211,57 @@ class TicketControllerWebTest {
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("42P01"))));
     }
 
+    // ==================== 字段校验（F3）====================
+
+    @Test
+    @DisplayName("标题为空 → 400 + 40001，且错误消息指明是哪个字段")
+    void blankTitleRejectedWithFieldName() throws Exception {
+        String body = objectMapper.writeValueAsString(Map.of(
+                "title", "   ",
+                "description", "有描述"));
+
+        mockMvc.perform(post("/api/v1/tickets")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                // 字段级信息让前端能定位到具体表单项，而非只显示「参数不合法」
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("title")));
+    }
+
+    @Test
+    @DisplayName("超长标题被拦在 Controller，不会落到数据库触发 500")
+    void overlongTitleRejectedBeforeDb() throws Exception {
+        String body = objectMapper.writeValueAsString(Map.of(
+                "title", "x".repeat(256),   // 列定义是 VARCHAR(255)
+                "description", "有描述"));
+
+        mockMvc.perform(post("/api/v1/tickets")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001));
+    }
+
+    @Test
+    @DisplayName("旧优先级值（HIGH）仍放行 —— 收严会打死存量客户端")
+    void legacyPriorityStillAccepted() throws Exception {
+        when(ticketService.createTicket(anyString(), anyString(), any(), anyString(),
+                any(), any(), any(), any(), any())).thenReturn(sampleTicket());
+
+        String body = objectMapper.writeValueAsString(Map.of(
+                "title", "标题",
+                "description", "描述",
+                "priority", "HIGH"));   // 旧三档值，由领域层 normalize 成 P1
+
+        mockMvc.perform(post("/api/v1/tickets")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
     // ==================== 路由契约 ====================
 
     @Test
