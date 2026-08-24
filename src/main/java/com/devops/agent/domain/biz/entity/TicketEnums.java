@@ -1,5 +1,6 @@
 package com.devops.agent.domain.biz.entity;
 
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -35,6 +36,57 @@ public final class TicketEnums {
         public static String normalize(String status) {
             if (status == null || status.isBlank()) return null;
             return status.trim().toUpperCase();
+        }
+
+        /**
+         * 合法状态流转表。
+         *
+         * <p><b>为什么必须有</b>：此前 {@code updateStatus} 只校验「目标值是否是合法枚举」，
+         * 不校验「从当前状态能否走到目标状态」。于是一张 CLOSED 的工单可以被直接改回
+         * PENDING，一张 VOID（作废）的工单可以被复活——SLA 统计、首响计时、
+         * 复盘归档全部随之失真，而且没有任何报错。
+         *
+         * <p>流转规则：
+         * <ul>
+         *   <li>PENDING（待处理）→ 开始处理 / 直接解决 / 作废</li>
+         *   <li>PROCESSING（处理中）→ 解决 / 退回待处理（误接单）/ 作废</li>
+         *   <li>RESOLVED（已解决）→ 关闭 / 重新打开（验证不通过）</li>
+         *   <li>CLOSED（已关闭）→ <b>终态</b>，仅允许重开（复发）</li>
+         *   <li>VOID（已作废）→ <b>终态，不可逆</b>。作废是审计事实，
+         *       复活会让「这张单到底存不存在」变得不可判定</li>
+         * </ul>
+         */
+        private static final Map<String, Set<String>> ALLOWED_TRANSITIONS = Map.of(
+                PENDING,    Set.of(PROCESSING, RESOLVED, VOID),
+                PROCESSING, Set.of(PENDING, RESOLVED, VOID),
+                RESOLVED,   Set.of(CLOSED, PROCESSING),
+                CLOSED,     Set.of(PROCESSING),
+                VOID,       Set.of()
+        );
+
+        /**
+         * 判断状态流转是否合法。
+         *
+         * @param from 当前状态
+         * @param to   目标状态
+         * @return 合法返回 true；<b>同态视为合法</b>（幂等重试不应报错）
+         */
+        public static boolean canTransition(String from, String to) {
+            String f = normalize(from);
+            String t = normalize(to);
+            if (f == null || t == null) return false;
+            if (f.equals(t)) return true;   // 幂等
+            return ALLOWED_TRANSITIONS.getOrDefault(f, Set.of()).contains(t);
+        }
+
+        /** 该状态可流转到的目标集合，供前端置灰非法选项 */
+        public static Set<String> nextStates(String from) {
+            return ALLOWED_TRANSITIONS.getOrDefault(normalize(from), Set.of());
+        }
+
+        /** 是否为终态（不可再流转，仅 VOID） */
+        public static boolean isTerminal(String status) {
+            return VOID.equals(normalize(status));
         }
 
         private Status() {}

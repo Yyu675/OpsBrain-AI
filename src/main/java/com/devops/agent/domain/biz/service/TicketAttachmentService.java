@@ -12,6 +12,7 @@ import io.minio.http.Method;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -212,6 +213,17 @@ public class TicketAttachmentService {
      *
      * @return 被删除的附件元数据
      */
+    // 事务：附件元数据 + 工单活动流两张表，须整体回滚。
+    //
+    // ⚠️ 对象存储删除（silentRemoveObject）**不在事务保护范围内**——
+    // MinIO 没有事务，一旦删掉就无法随数据库回滚一起恢复。
+    // 因此顺序刻意设计为「先删库、后删对象」：
+    //   - 若删库失败 → 事务回滚，对象仍在，数据一致（只是多占存储）；
+    //   - 若删库成功但删对象失败 → 留下孤儿对象，由存储侧生命周期策略回收，
+    //     用户视角是正确的（附件已消失）。
+    // 反过来「先删对象后删库」则会在删库失败时留下「记录还在但文件已没」的
+    // 死链，用户点下载报 404——那才是真正的不一致。
+    @Transactional(rollbackFor = Exception.class)
     public TicketAttachment delete(Long attachmentId) {
         TicketAttachment meta = attachmentRepository.findById(attachmentId);
         if (meta == null) {
@@ -239,6 +251,8 @@ public class TicketAttachmentService {
      *
      * @return 清理的附件数
      */
+    // 事务同上：库先于对象存储，理由见 delete() 注释
+    @Transactional(rollbackFor = Exception.class)
     public int deleteAllByTicketId(String ticketId) {
         List<TicketAttachment> removed = attachmentRepository.deleteByTicketId(ticketId);
         for (TicketAttachment a : removed) {

@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -76,6 +77,9 @@ public class TicketService {
      * @param sourceTraceId 来源追踪 ID
      * @return 工单流水号
      */
+    // 事务：工单 + 标签 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public String saveTicket(String title, String priority, String module, String description, String stackTrace, String sourceTraceId) {
         log.info("📥 [TicketService] 开始创建工单 - title: {}, priority: {}, module: {}, sourceTraceId: {}",
                 title, priority, module, sourceTraceId);
@@ -273,6 +277,9 @@ public class TicketService {
      * @throws IllegalStateException     工单不存在
      * @throws OptimisticLockException   版本冲突（已被他人修改）
      */
+    // 事务：工单 + 标签 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket updateTicket(String ticketId, DevOpsTicket patch) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
@@ -417,6 +424,9 @@ public class TicketService {
      * @param status   目标状态 PENDING/PROCESSING/RESOLVED/CLOSED/VOID
      * @return 更新后的工单
      */
+    // 事务：工单 + 活动流 + 首响。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket updateStatus(String ticketId, String status) {
         if (status == null || status.isBlank()) {
             throw new IllegalArgumentException("状态不能为空");
@@ -435,6 +445,17 @@ public class TicketService {
         if (target.equals(existing.getStatus())) {
             log.debug("ℹ️ [TicketService] 状态未变化，跳过 | ticketId={} | status={}", ticketId, target);
             return existing;
+        }
+
+        // 流转合法性校验。
+        // 此前只校验「目标值是不是合法枚举」，不校验「能不能从当前状态走过去」——
+        // 于是 CLOSED 可以被改回 PENDING、VOID（作废）可以被复活，
+        // 导致 SLA 统计、首响计时、复盘归档全部失真，且无任何报错。
+        if (!TicketEnums.Status.canTransition(existing.getStatus(), target)) {
+            throw new IllegalStateException(String.format(
+                    "非法状态流转：%s → %s。当前状态允许流转到 %s",
+                    statusLabel(existing.getStatus()), statusLabel(target),
+                    TicketEnums.Status.nextStates(existing.getStatus())));
         }
 
         ticketRepository.updateStatus(ticketId, target);
@@ -465,6 +486,9 @@ public class TicketService {
      * @param assignee 新负责人
      * @return 更新后的工单
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket transferTicket(String ticketId, String assignee) {
         if (assignee == null || assignee.isBlank()) {
             throw new IllegalArgumentException("负责人不能为空");
@@ -499,6 +523,9 @@ public class TicketService {
      * @return 被删除的工单（供前端撤销时回填）
      * @throws IllegalStateException 工单不存在
      */
+    // 事务：工单 + 回复 + 活动流 + 标签 + 处置 + 复盘（6 张表）。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket deleteTicket(String ticketId) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
@@ -652,6 +679,9 @@ public class TicketService {
      *
      * @param reason 升级原因，必填——无理由的升级无法追溯，也无法据此改进流程
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket escalateTicket(String ticketId, String reason, String operator) {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("升级原因不能为空");
@@ -736,6 +766,9 @@ public class TicketService {
      *
      * @return 入库后的动作（含 id）
      */
+    // 事务：处置记录 + 工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public TicketAction addAction(String ticketId, String actionType, String summary,
                                  String detail, String operator, Boolean effective) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
@@ -791,6 +824,9 @@ public class TicketService {
      * 若工单仍为 PENDING，同时推进为 PROCESSING——处置阶段只在处理中才有意义。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket updateStage(String ticketId, String stage, String operator) {
         String s = stage != null ? stage.trim().toUpperCase() : "";
         if (!VALID_STAGES.contains(s)) {
@@ -833,6 +869,9 @@ public class TicketService {
      * MTTM（止损耗时）= mitigated_at - create_time。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket markMitigated(String ticketId, String operator) {
         return updateStage(ticketId, STAGE_MITIGATED, operator);
     }
@@ -880,6 +919,9 @@ public class TicketService {
      *
      * @param category 根因分类（CONFIG/CAPACITY/CODE/.../UNKNOWN），空则 UNKNOWN
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket confirmRootCause(String ticketId, String rootCause,
                                         String category, String operator) {
         if (rootCause == null || rootCause.isBlank()) {
@@ -928,6 +970,9 @@ public class TicketService {
      * 跳过验证的工单不计入 MTTR（6.41 契约）。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket submitVerification(String ticketId, String method, String conclusion,
                                           String verifier) {
         if (method == null || method.isBlank()) {
@@ -980,6 +1025,9 @@ public class TicketService {
      * MTTR 统计时排除这些工单——否则"点一下已解决"就能刷低 MTTR，考核数据失真。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket skipVerification(String ticketId, String reason, String operator) {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("跳过验证的理由不能为空");
@@ -1079,6 +1127,9 @@ public class TicketService {
      * @throws IllegalStateException    工单不存在
      * @throws IllegalArgumentException 参数非法
      */
+    // 事务：回复 + 工单 + 活动流 + 首响。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public TicketReply addReply(String ticketId, String role, String author,
                                 String authorColor, String content) {
         if (content == null || content.isBlank()) {
@@ -1304,6 +1355,9 @@ public class TicketService {
      * @return 作废结果描述
      * @throws IllegalStateException 工单不存在时抛出（补偿失败需人工介入）
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public String voidTicket(String ticketId, String reason) {
         if (ticketId == null || ticketId.isBlank()) {
             throw new IllegalArgumentException("工单号不能为空，无法作废");
