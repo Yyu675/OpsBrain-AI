@@ -18,6 +18,7 @@ const httpMock = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   put: vi.fn(),
+  del: vi.fn(),
 }))
 vi.mock('@/utils/http', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/utils/http')
@@ -30,8 +31,15 @@ import {
   fetchActionStats,
   fetchActions,
   fetchRiskPolicies,
+  createPolicy,
+  deletePolicy,
+  fetchPolicies,
+  simulatePolicies,
+  togglePolicy,
+  togglePolicyDryRun,
   toggleAction,
   updateAction,
+  updatePolicy,
   updateRiskPolicy,
   type ActionPayload,
   type RiskPolicyPayload,
@@ -45,6 +53,7 @@ beforeEach(() => {
   httpMock.get.mockReset()
   httpMock.post.mockReset()
   httpMock.put.mockReset()
+  httpMock.del.mockReset()
 })
 
 afterEach(() => {
@@ -332,5 +341,123 @@ describe('业务错误透传', () => {
         requiresApproval: false,
       })
     ).rejects.toThrow()
+  })
+})
+
+describe('自动化策略 API', () => {
+  const payload = {
+    name: 'P3 Pod 崩溃自动重启',
+    matchAlertLevels: 'P3',
+    matchModule: 'K8S',
+    matchServicePattern: '*',
+    matchAlertNamePattern: 'PodCrashLoopBackOff',
+    actionKey: 'k8s.pod.restart',
+    environment: 'staging',
+    priority: 20,
+    stopOnMatch: true,
+    cooldownMinutes: 30,
+    maxExecutionsPerDay: 10,
+    dryRun: true,
+    enabled: false,
+    version: 0,
+  }
+
+  it('列表：空值不进 URL，enabled: false 保留', async () => {
+    httpMock.get.mockResolvedValue(emptyPage)
+    await fetchPolicies({ keyword: '', environment: 'prod', enabled: false })
+
+    const q = lastGetQuery()
+    expect(q.has('keyword')).toBe(false)
+    expect(q.get('environment')).toBe('prod')
+    expect(q.get('enabled')).toBe('false')
+  })
+
+  it('创建走 POST /governance/policies', async () => {
+    httpMock.post.mockResolvedValue(ok({ id: 1 }))
+    await createPolicy(payload)
+
+    const [url, body] = httpMock.post.mock.calls[0]
+    expect(String(url)).toMatch(/\/governance\/policies$/)
+    expect(body).toMatchObject({ actionKey: 'k8s.pod.restart', dryRun: true })
+  })
+
+  it('dryRun: false 不能被丢掉——它是 body，false 必须显式提交', async () => {
+    httpMock.post.mockResolvedValue(ok({ id: 1 }))
+    await createPolicy({ ...payload, dryRun: false })
+
+    const body = httpMock.post.mock.calls[0][1] as Record<string, unknown>
+    expect(body).toHaveProperty('dryRun', false)
+  })
+
+  it('更新携带 version', async () => {
+    httpMock.put.mockResolvedValue(ok({ id: 7 }))
+    await updatePolicy(7, { ...payload, version: 3 })
+
+    const [url, body] = httpMock.put.mock.calls[0]
+    expect(String(url)).toMatch(/\/governance\/policies\/7$/)
+    expect((body as Record<string, unknown>).version).toBe(3)
+  })
+
+  it('启停是独立端点，只提交 enabled 与 version', async () => {
+    httpMock.post.mockResolvedValue(ok({ id: 7 }))
+    await togglePolicy(7, true, 2)
+
+    const [url, body] = httpMock.post.mock.calls[0]
+    expect(String(url)).toMatch(/\/governance\/policies\/7\/toggle$/)
+    expect(body).toEqual({ enabled: true, version: 2 })
+  })
+
+  it('演练开关是独立端点——关掉它是本模块风险最高的操作，需单独审计', async () => {
+    httpMock.post.mockResolvedValue(ok({ id: 7, dryRun: false }))
+    await togglePolicyDryRun(7, false, 2)
+
+    const [url, body] = httpMock.post.mock.calls[0]
+    expect(String(url)).toMatch(/\/governance\/policies\/7\/dry-run$/)
+    expect(body).toEqual({ dryRun: false, version: 2 })
+  })
+
+  it('删除把 version 放进 query', async () => {
+    httpMock.del.mockResolvedValue(ok({ deleted: true }))
+    await deletePolicy(7, 5)
+
+    expect(String(httpMock.del.mock.calls[0][0])).toContain('version=5')
+  })
+
+  it('预演提交完整输入并透出逐条结论', async () => {
+    httpMock.post.mockResolvedValue(
+      ok({
+        input: {},
+        evaluated: [
+          {
+            policyId: 1, policyName: 'P3 重启', priority: 20,
+            actionKey: 'k8s.pod.restart', dryRun: true,
+            matched: true, skipped: false, reason: '演练中', outcome: 'DRY_RUN',
+          },
+        ],
+        matchedCount: 1,
+        firstEffective: null,
+        summary: '将由策略「P3 重启」处理',
+      })
+    )
+
+    const r = await simulatePolicies({
+      level: 'P3', module: 'K8S', service: 'order-svc',
+      alertName: 'PodCrashLoopBackOff', environment: 'prod',
+    })
+
+    const [url, body] = httpMock.post.mock.calls[0]
+    expect(String(url)).toMatch(/\/governance\/policies\/simulate$/)
+    expect(body).toMatchObject({ level: 'P3', environment: 'prod' })
+    expect(r.evaluated[0].outcome).toBe('DRY_RUN')
+  })
+
+  it('后端 40001（引用了停用动作）会抛出', async () => {
+    httpMock.post.mockResolvedValue({
+      code: 40001,
+      message: '引用的动作已停用，启用策略前请先启用该动作',
+      data: null,
+    })
+
+    await expect(createPolicy(payload)).rejects.toThrow()
   })
 })

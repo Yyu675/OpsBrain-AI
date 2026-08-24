@@ -51,13 +51,19 @@ public class AutomationGovernanceService {
     private static final int MAX_DESCRIPTION_LENGTH = 255;
     private static final int MAX_PATTERN_LENGTH = 255;
 
+    /** 合法告警级别词表，对齐 {@code sys_alert.level} */
+    private static final Set<String> KNOWN_ALERT_LEVELS = Set.of("P0", "P1", "P2", "P3", "P4");
+
     private final RiskPolicyRepository policyRepository;
     private final ActionAllowlistRepository allowlistRepository;
+    private final AutomationPolicyRepository automationPolicyRepository;
 
     public AutomationGovernanceService(RiskPolicyRepository policyRepository,
-                                       ActionAllowlistRepository allowlistRepository) {
+                                       ActionAllowlistRepository allowlistRepository,
+                                       AutomationPolicyRepository automationPolicyRepository) {
         this.policyRepository = policyRepository;
         this.allowlistRepository = allowlistRepository;
+        this.automationPolicyRepository = automationPolicyRepository;
     }
 
     // ==================================================================
@@ -522,5 +528,421 @@ public class AutomationGovernanceService {
             throw new IllegalArgumentException(
                     fieldName + "必须在 " + min + " 到 " + max + " 之间（当前 " + value + "）");
         }
+    }
+
+    // ==================================================================
+    // 自动化策略（v27）
+    // ==================================================================
+
+    /**
+     * 分页查询策略，并装填「所引用动作的当前状态」。
+     *
+     * <p>装填的理由：策略引用的动作可能已被停用。列表页必须显示
+     * 「这条策略引用的动作现在还有效吗」——否则用户会看到一条
+     * 「已启用」的策略，实际永远不会执行，而界面上没有任何迹象。</p>
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> listAutomationPolicies(String keyword, String actionKey,
+                                                      String environment, Boolean enabled,
+                                                      int page, int size) {
+        Map<String, Object> result = automationPolicyRepository.query(
+                keyword, actionKey, environment, enabled, page, size);
+
+        @SuppressWarnings("unchecked")
+        List<AutomationPolicy> items = (List<AutomationPolicy>) result.get("items");
+        for (AutomationPolicy p : items) {
+            applyActionState(p);
+        }
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public AutomationPolicy getAutomationPolicy(long id) {
+        AutomationPolicy p = automationPolicyRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("策略不存在: " + id));
+        applyActionState(p);
+        return p;
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> automationPolicyStats() {
+        return automationPolicyRepository.stats();
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public AutomationPolicy createAutomationPolicy(AutomationPolicy submitted, String operator) {
+        normalizePolicy(submitted);
+        validatePolicyRule(submitted);
+
+        automationPolicyRepository.findByName(submitted.getName()).ifPresent(existing -> {
+            throw new IllegalStateException(
+                    "策略名已存在：" + submitted.getName()
+                            + "（同名策略会让日志里「策略 X 已触发」无法定位是哪一条）");
+        });
+
+        Long id = automationPolicyRepository.insert(submitted, operator);
+        return getAutomationPolicy(id);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public AutomationPolicy updateAutomationPolicy(long id, AutomationPolicy submitted,
+                                                   int expectedVersion, String operator) {
+        automationPolicyRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("策略不存在: " + id));
+
+        normalizePolicy(submitted);
+        validatePolicyRule(submitted);
+
+        // 改名时查重，但要排除自己
+        automationPolicyRepository.findByName(submitted.getName()).ifPresent(other -> {
+            if (!other.getId().equals(id)) {
+                throw new IllegalStateException("策略名已存在：" + submitted.getName());
+            }
+        });
+
+        submitted.setId(id);
+        automationPolicyRepository.update(submitted, expectedVersion, operator);
+        return getAutomationPolicy(id);
+    }
+
+    /**
+     * 启用 / 停用策略。
+     *
+     * <p>启用时复查完整规则，理由与动作白名单相同：策略可能是在
+     * 动作还启用时配好的，之后动作被停用了。不复查就会让
+     * 「停用 → 动作被停 → 重新启用」产出一条永远不会执行的僵尸策略。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AutomationPolicy toggleAutomationPolicy(long id, boolean enabled,
+                                                   int expectedVersion, String operator) {
+        AutomationPolicy existing = automationPolicyRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("策略不存在: " + id));
+
+        if (enabled) {
+            validatePolicyRule(existing);
+        }
+
+        automationPolicyRepository.toggleEnabled(id, enabled, expectedVersion, operator);
+        return getAutomationPolicy(id);
+    }
+
+    /**
+     * 切换演练模式。
+     *
+     * <p><b>关掉 dry_run 是本模块风险最高的单个操作</b>——策略从「只记录」
+     * 变成「真动手」。因此关闭时要重新校验一遍：不能让一条引用了
+     * 已停用动作、或环境已超出授权范围的策略进入真实执行状态。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AutomationPolicy toggleDryRun(long id, boolean dryRun,
+                                         int expectedVersion, String operator) {
+        AutomationPolicy existing = automationPolicyRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("策略不存在: " + id));
+
+        if (!dryRun) {
+            validatePolicyRule(existing);
+        }
+
+        automationPolicyRepository.toggleDryRun(id, dryRun, expectedVersion, operator);
+        return getAutomationPolicy(id);
+    }
+
+    /**
+     * 删除策略。
+     *
+     * <p>与动作白名单不同，策略<b>允许物理删除</b>：它不是审计记录的关联键，
+     * 执行历史里记的是 action_key 与具体目标，删掉一条匹配规则
+     * 不会让历史记录变成孤儿。而策略往往是试出来的，
+     * 不给删除会让列表迅速堆满废弃规则，反而干扰求值顺序的判断。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteAutomationPolicy(long id, int expectedVersion) {
+        automationPolicyRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("策略不存在: " + id));
+        automationPolicyRepository.delete(id, expectedVersion);
+    }
+
+    /**
+     * 匹配预演：给定一个告警，看哪些策略会命中、最终会发生什么。
+     *
+     * <p>这是本模块最有价值的端点。策略配置的核心风险是
+     * <b>「匹配范围与预期不符」</b>——你以为只会匹配 order 服务，
+     * 实际把整个集群都圈进去了，而这件事在真实告警来临前无从发现。</p>
+     *
+     * <p>预演按引擎真实的求值顺序（priority 升序）走一遍，
+     * 逐条给出命中与否、以及命中后的最终判定（含白名单与风险策略的联合结论）。</p>
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> simulate(String level, String module, String service,
+                                        String alertName, String environment) {
+        List<Map<String, Object>> evaluated = new ArrayList<>();
+        Map<String, Object> firstEffective = null;
+        boolean stopped = false;
+
+        for (AutomationPolicy p : automationPolicyRepository.findEnabledInEvalOrder()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("policyId", p.getId());
+            row.put("policyName", p.getName());
+            row.put("priority", p.getPriority());
+            row.put("actionKey", p.getActionKey());
+            row.put("dryRun", p.isDryRun());
+
+            if (stopped) {
+                // 前面已有 stopOnMatch 命中，后续策略引擎根本不会求值。
+                // 如实标注而不是跳过不显示——用户需要知道「这条没被求值」
+                // 与「这条求值了但没匹配」的区别
+                row.put("matched", false);
+                row.put("skipped", true);
+                row.put("reason", "前序策略已命中且设置了「命中即停」，引擎不会求值到这里");
+                evaluated.add(row);
+                continue;
+            }
+
+            boolean envMatch = p.getEnvironment() != null
+                    && p.getEnvironment().equalsIgnoreCase(environment);
+            boolean matched = envMatch && p.matches(level, module, service, alertName);
+            row.put("matched", matched);
+            row.put("skipped", false);
+
+            if (!matched) {
+                row.put("reason", !envMatch
+                        ? "策略生效环境为 " + p.getEnvironment() + "，与本次 " + environment + " 不符"
+                        : describeMismatch(p, level, module, service, alertName));
+                evaluated.add(row);
+                continue;
+            }
+
+            // 命中后还要过白名单与风险策略——策略说要做，不代表允许做
+            Map<String, Object> verdict = evaluate(p.getActionKey(), environment);
+            row.put("actionVerdict", verdict);
+
+            boolean allowed = Boolean.TRUE.equals(verdict.get("allowed"));
+            if (!allowed) {
+                row.put("outcome", "BLOCKED");
+                row.put("reason", "策略命中，但动作被拦截：" + verdict.get("reason"));
+            } else if (p.isDryRun()) {
+                row.put("outcome", "DRY_RUN");
+                row.put("reason", "策略命中且动作允许，但处于演练模式，只记录不执行");
+            } else if (Boolean.TRUE.equals(verdict.get("requiresApproval"))) {
+                row.put("outcome", "PENDING_APPROVAL");
+                row.put("reason", "策略命中，将创建审批单等待人工确认");
+            } else {
+                row.put("outcome", "EXECUTE");
+                row.put("reason", "策略命中，将直接自动执行");
+            }
+
+            if (firstEffective == null) {
+                firstEffective = row;
+            }
+            evaluated.add(row);
+
+            if (p.isStopOnMatch()) {
+                stopped = true;
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("input", Map.of(
+                "level", level == null ? "" : level,
+                "module", module == null ? "" : module,
+                "service", service == null ? "" : service,
+                "alertName", alertName == null ? "" : alertName,
+                "environment", environment));
+        result.put("evaluated", evaluated);
+        result.put("matchedCount", evaluated.stream()
+                .filter(r -> Boolean.TRUE.equals(r.get("matched"))).count());
+        result.put("firstEffective", firstEffective);
+        if (firstEffective == null) {
+            result.put("summary", "没有任何启用中的策略匹配该告警，将走默认流程（自动建单，人工处理）");
+        } else {
+            result.put("summary", "将由策略「" + firstEffective.get("policyName") + "」处理："
+                    + firstEffective.get("reason"));
+        }
+        return result;
+    }
+
+    /** 说清「为什么没匹配」，逐个条件比对。只说结论用户无法自己调整规则 */
+    private String describeMismatch(AutomationPolicy p, String level, String module,
+                                    String service, String alertName) {
+        List<String> reasons = new ArrayList<>();
+        if (!p.matchesLevel(level)) {
+            reasons.add("级别要求 " + p.getMatchAlertLevels() + "，实际 " + level);
+        }
+        if (!p.matchesModule(module)) {
+            reasons.add("模块要求 " + p.getMatchModule() + "，实际 " + module);
+        }
+        if (!p.matchesService(service)) {
+            reasons.add("服务需匹配 " + p.getMatchServicePattern() + "，实际 " + service);
+        }
+        if (!p.matchesAlertName(alertName)) {
+            reasons.add("告警名需匹配 " + p.getMatchAlertNamePattern() + "，实际 " + alertName);
+        }
+        return reasons.isEmpty() ? "条件不满足" : String.join("；", reasons);
+    }
+
+    /**
+     * 装填所引用动作的当前状态与「是否真的会生效」。
+     *
+     * <p>与白名单的 effective 值同理：这个判断放在服务端，
+     * 让前端各自去算必然与引擎漂移。</p>
+     */
+    private void applyActionState(AutomationPolicy p) {
+        Optional<ActionAllowlistEntry> found =
+                allowlistRepository.findByActionKey(p.getActionKey());
+
+        if (found.isEmpty()) {
+            p.setActionEnabled(Boolean.FALSE);
+            p.setEffective(Boolean.FALSE);
+            p.setIneffectiveReason("引用的动作「" + p.getActionKey() + "」不在白名单中");
+            return;
+        }
+
+        ActionAllowlistEntry action = found.get();
+        p.setActionDisplayName(action.getDisplayName());
+        p.setActionRiskLevel(action.getRiskLevel());
+        p.setActionEnabled(action.isEnabled());
+
+        if (!p.isEnabled()) {
+            p.setEffective(Boolean.FALSE);
+            p.setIneffectiveReason("策略未启用");
+        } else if (!action.isEnabled()) {
+            // 这正是必须装填动作状态的原因：策略自己是「已启用」，
+            // 但引用的动作被停用了，实际永远不会执行
+            p.setEffective(Boolean.FALSE);
+            p.setIneffectiveReason("引用的动作「" + action.getDisplayName() + "」已停用");
+        } else if (!action.allowsEnvironment(p.getEnvironment())) {
+            p.setEffective(Boolean.FALSE);
+            p.setIneffectiveReason("动作未在 " + p.getEnvironment() + " 环境开放");
+        } else {
+            p.setEffective(Boolean.TRUE);
+            p.setIneffectiveReason(null);
+        }
+    }
+
+    /**
+     * 策略规则校验。
+     *
+     * <p>与白名单的校验同属一类：跨表约束不能只靠 DB。
+     * 这里额外守住一条「所有匹配条件不能同时为空」——
+     * 那等于「对所有告警执行这个动作」，几乎必然是配错了，
+     * 而它造成的后果是全站范围的。</p>
+     */
+    private void validatePolicyRule(AutomationPolicy p) {
+        requireText(p.getName(), 64, "策略名");
+        if (p.getDescription() != null && p.getDescription().length() > MAX_DESCRIPTION_LENGTH) {
+            throw new IllegalArgumentException("描述不能超过 " + MAX_DESCRIPTION_LENGTH + " 字");
+        }
+        requireRange(p.getPriority(), 1, 9999, "求值顺序");
+        requireRange(p.getCooldownMinutes(), 0, 1440, "冷却期（分钟）");
+        requireRange(p.getMaxExecutionsPerDay(), 1, 1000, "每日执行上限");
+
+        // ── 匹配条件不能全空 ──────────────────────────────────────
+        boolean allBlank = isBlank(p.getMatchAlertLevels())
+                && isBlank(p.getMatchModule())
+                && isWildcard(p.getMatchServicePattern())
+                && isWildcard(p.getMatchAlertNamePattern());
+        if (allBlank) {
+            throw new IllegalArgumentException(
+                    "至少要指定一个匹配条件。全部留空意味着「对所有告警执行该动作」，"
+                            + "影响面是全站范围的");
+        }
+
+        // 级别词表校验：写错的级别（如 P5、Critical）会让策略静默永不匹配
+        if (!isBlank(p.getMatchAlertLevels())) {
+            for (String lv : p.getMatchAlertLevels().split(",")) {
+                String v = lv.trim().toUpperCase(Locale.ROOT);
+                if (v.isEmpty()) {
+                    continue;
+                }
+                if (!KNOWN_ALERT_LEVELS.contains(v)) {
+                    throw new IllegalArgumentException(
+                            "未知告警级别「" + v + "」，可选：" + String.join(" / ",
+                                    new java.util.TreeSet<>(KNOWN_ALERT_LEVELS)));
+                }
+            }
+        }
+
+        // ── 环境词表 ──────────────────────────────────────────────
+        if (p.getEnvironment() == null || !KNOWN_ENVIRONMENTS.contains(p.getEnvironment())) {
+            throw new IllegalArgumentException(
+                    "生效环境不合法，可选：" + String.join(" / ", KNOWN_ENVIRONMENTS));
+        }
+
+        // ── 引用的动作必须存在、启用，且在该环境开放 ────────────────
+        ActionAllowlistEntry action = allowlistRepository.findByActionKey(p.getActionKey())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "引用的动作不存在于白名单：" + p.getActionKey()
+                                + "。请先在「动作白名单」中登记该动作"));
+
+        if (!action.isEnabled()) {
+            throw new IllegalArgumentException(
+                    "引用的动作「" + action.getDisplayName() + "」当前已停用，"
+                            + "启用策略前请先启用该动作——否则策略会成为永不执行的僵尸规则");
+        }
+
+        if (!action.allowsEnvironment(p.getEnvironment())) {
+            throw new IllegalArgumentException(
+                    "动作「" + action.getDisplayName() + "」未在 " + p.getEnvironment()
+                            + " 环境开放（当前开放：" + action.getEnvironments() + "）");
+        }
+
+        // 参数必须是合法 JSON——留到引擎执行时才发现格式错，
+        // 意味着故障当下自愈失败，那是最不能出问题的时刻
+        if (!isBlank(p.getActionParams())) {
+            try {
+                new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readTree(p.getActionParams());
+            } catch (Exception e) {
+                throw new IllegalArgumentException("动作参数不是合法 JSON：" + e.getMessage());
+            }
+        }
+    }
+
+    /** 归一化：去空白、统一大小写 */
+    private void normalizePolicy(AutomationPolicy p) {
+        if (p.getName() != null) {
+            p.setName(p.getName().trim());
+        }
+        if (p.getDescription() != null) {
+            p.setDescription(p.getDescription().trim());
+        }
+        if (p.getMatchAlertLevels() != null) {
+            // 去重保序 + 统一大写，让 "p3, P3 " 存成 "P3"
+            Set<String> levels = new java.util.LinkedHashSet<>();
+            for (String lv : p.getMatchAlertLevels().split(",")) {
+                String v = lv.trim().toUpperCase(Locale.ROOT);
+                if (!v.isEmpty()) {
+                    levels.add(v);
+                }
+            }
+            p.setMatchAlertLevels(String.join(",", levels));
+        }
+        if (p.getMatchModule() != null) {
+            p.setMatchModule(p.getMatchModule().trim().toUpperCase(Locale.ROOT));
+        }
+        if (p.getMatchServicePattern() != null) {
+            p.setMatchServicePattern(p.getMatchServicePattern().trim());
+        }
+        if (p.getMatchAlertNamePattern() != null) {
+            p.setMatchAlertNamePattern(p.getMatchAlertNamePattern().trim());
+        }
+        if (p.getActionKey() != null) {
+            p.setActionKey(p.getActionKey().trim().toLowerCase(Locale.ROOT));
+        }
+        if (p.getEnvironment() != null) {
+            p.setEnvironment(p.getEnvironment().trim().toLowerCase(Locale.ROOT));
+        }
+        if (p.getActionParams() != null && p.getActionParams().isBlank()) {
+            p.setActionParams(null);
+        }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /** 空或纯 {@code *} 都视为「不限制」 */
+    private static boolean isWildcard(String s) {
+        return isBlank(s) || "*".equals(s.trim());
     }
 }

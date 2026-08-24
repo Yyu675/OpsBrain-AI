@@ -281,3 +281,193 @@ export async function evaluateAction(
   })
   return unwrapBiz<EvaluateResult>(res, '校验失败')
 }
+
+// ==================================================================
+// 自动化策略（v27）
+// ==================================================================
+
+/**
+ * 三张表的分工：
+ *   - 动作白名单     —— 能不能做
+ *   - 风险等级策略   —— 怎么做（审批、爆炸半径、升级）
+ *   - 自动化策略     —— 什么时候做（本节）
+ */
+export interface AutomationPolicy {
+  id: number
+  name: string
+  description: string | null
+
+  /** 匹配条件。留空 = 通配（与白名单的「无记录=拒绝」方向相反，是刻意的） */
+  matchAlertLevels: string | null
+  matchModule: string | null
+  matchServicePattern: string | null
+  matchAlertNamePattern: string | null
+
+  /** 引用 ActionAllowlistEntry.actionKey */
+  actionKey: string
+  actionParams: string | null
+  environment: string
+
+  /** 求值顺序，越小越先。列表即按此排序——所见即引擎实际顺序 */
+  priority: number
+  stopOnMatch: boolean
+  /** 冷却期，防「重启→没起来→又告警→又重启」的自动化风暴 */
+  cooldownMinutes: number
+  maxExecutionsPerDay: number
+
+  /** 演练模式：照常匹配与记录，但不执行。新建默认 true */
+  dryRun: boolean
+  enabled: boolean
+
+  version: number
+  updatedBy: string | null
+  updateTime: string | null
+
+  /** 以下由后端装填：所引用动作的当前状态 */
+  actionDisplayName: string | null
+  actionRiskLevel: RiskLevel | null
+  actionEnabled: boolean | null
+  /** 该策略当前是否真会生效（自身启用 + 动作可用） */
+  effective: boolean | null
+  /** 不生效的原因，可直接展示 */
+  ineffectiveReason: string | null
+}
+
+export interface PolicyStats {
+  total: number
+  enabledCount: number
+  dryRunCount: number
+  /** 真正「会动手」的策略数——风险敞口 */
+  liveCount: number
+  prodLiveCount: number
+}
+
+export interface PolicyPayload {
+  name: string
+  description?: string | null
+  matchAlertLevels?: string | null
+  matchModule?: string | null
+  matchServicePattern?: string | null
+  matchAlertNamePattern?: string | null
+  actionKey: string
+  actionParams?: string | null
+  environment: string
+  priority?: number
+  stopOnMatch?: boolean
+  cooldownMinutes?: number
+  maxExecutionsPerDay?: number
+  dryRun?: boolean
+  enabled?: boolean
+  version?: number
+}
+
+export interface PolicyQuery {
+  keyword?: string
+  actionKey?: string
+  environment?: string
+  enabled?: boolean
+  page?: number
+  size?: number
+}
+
+/** 预演中单条策略的求值结果 */
+export interface SimulatedRow {
+  policyId: number
+  policyName: string
+  priority: number
+  actionKey: string
+  dryRun: boolean
+  matched: boolean
+  /** true 表示前序策略已命中且「命中即停」，引擎根本不会求值到这里 */
+  skipped: boolean
+  reason: string
+  outcome?: 'EXECUTE' | 'DRY_RUN' | 'PENDING_APPROVAL' | 'BLOCKED'
+  actionVerdict?: EvaluateResult
+}
+
+export interface SimulateResult {
+  input: Record<string, string>
+  evaluated: SimulatedRow[]
+  matchedCount: number
+  firstEffective: SimulatedRow | null
+  summary: string
+}
+
+export async function fetchPolicies(
+  q: PolicyQuery = {}
+): Promise<PagedResult<AutomationPolicy>> {
+  const payload = await http.get<unknown>(`${API_BASE}/governance/policies${toQuery({ ...q })}`)
+  return unwrapBiz<PagedResult<AutomationPolicy>>(payload, '获取自动化策略失败')
+}
+
+export async function fetchPolicyStats(): Promise<PolicyStats> {
+  const payload = await http.get<unknown>(`${API_BASE}/governance/policies/stats`)
+  return unwrapBiz<PolicyStats>(payload, '获取策略统计失败')
+}
+
+export async function createPolicy(payload: PolicyPayload): Promise<AutomationPolicy> {
+  const res = await http.post<unknown>(`${API_BASE}/governance/policies`, payload)
+  return unwrapBiz<AutomationPolicy>(res, '创建策略失败')
+}
+
+export async function updatePolicy(
+  id: number,
+  payload: PolicyPayload
+): Promise<AutomationPolicy> {
+  const res = await http.put<unknown>(`${API_BASE}/governance/policies/${id}`, payload)
+  return unwrapBiz<AutomationPolicy>(res, '更新策略失败')
+}
+
+export async function togglePolicy(
+  id: number,
+  enabled: boolean,
+  version: number
+): Promise<AutomationPolicy> {
+  const res = await http.post<unknown>(`${API_BASE}/governance/policies/${id}/toggle`, {
+    enabled,
+    version,
+  })
+  return unwrapBiz<AutomationPolicy>(res, enabled ? '启用策略失败' : '停用策略失败')
+}
+
+/**
+ * 切换演练模式。
+ *
+ * 独立端点：关掉演练是本模块风险最高的单个操作——策略从「只记录」
+ * 变成「真动手」。混在通用更新里会让它淹没在 diff 中，审计也无法区分。
+ */
+export async function togglePolicyDryRun(
+  id: number,
+  dryRun: boolean,
+  version: number
+): Promise<AutomationPolicy> {
+  const res = await http.post<unknown>(`${API_BASE}/governance/policies/${id}/dry-run`, {
+    dryRun,
+    version,
+  })
+  return unwrapBiz<AutomationPolicy>(res, '切换演练模式失败')
+}
+
+export async function deletePolicy(id: number, version: number): Promise<void> {
+  const res = await http.del<unknown>(
+    `${API_BASE}/governance/policies/${id}?version=${version}`
+  )
+  unwrapBiz<unknown>(res, '删除策略失败')
+}
+
+/**
+ * 匹配预演：给一个假想告警，看哪些策略命中、最终会发生什么。
+ *
+ * 策略配置的核心风险是**匹配范围与预期不符**——你以为只圈了 order 服务，
+ * 实际把整个集群都包进去了，而这在真实告警来临前无从发现。
+ */
+export async function simulatePolicies(input: {
+  level?: string
+  module?: string
+  service?: string
+  alertName?: string
+  environment: string
+}): Promise<SimulateResult> {
+  const res = await http.post<unknown>(`${API_BASE}/governance/policies/simulate`, input)
+  return unwrapBiz<SimulateResult>(res, '预演失败')
+}

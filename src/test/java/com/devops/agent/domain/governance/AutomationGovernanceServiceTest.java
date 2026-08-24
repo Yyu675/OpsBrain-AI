@@ -43,13 +43,16 @@ class AutomationGovernanceServiceTest {
 
     private RiskPolicyRepository policyRepo;
     private ActionAllowlistRepository allowlistRepo;
+    private AutomationPolicyRepository automationPolicyRepo;
     private AutomationGovernanceService service;
 
     @BeforeEach
     void setUp() {
         policyRepo = mock(RiskPolicyRepository.class);
         allowlistRepo = mock(ActionAllowlistRepository.class);
-        service = new AutomationGovernanceService(policyRepo, allowlistRepo);
+        automationPolicyRepo = mock(AutomationPolicyRepository.class);
+        service = new AutomationGovernanceService(
+                policyRepo, allowlistRepo, automationPolicyRepo);
     }
 
     // ==================== 夹具 ====================

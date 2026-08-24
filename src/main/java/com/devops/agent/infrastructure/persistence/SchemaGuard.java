@@ -73,7 +73,8 @@ public class SchemaGuard {
      * </ul>
      */
     private static final List<String> REQUIRED_TABLES = List.of(
-            "sys_operation_audit", "sys_risk_policy", "sys_action_allowlist");
+            "sys_operation_audit", "sys_risk_policy", "sys_action_allowlist",
+            "sys_automation_policy");
 
     @Value("${devops.schema.fail-fast:false}")
     private boolean failFast;

@@ -86,6 +86,14 @@ public final class AuditActionRegistry {
         put("POST",   "/api/v1/governance/actions",          "governance.action.create");
         put("PUT",    "/api/v1/governance/actions/*",        "governance.action.update");
         put("POST",   "/api/v1/governance/actions/*/toggle", "governance.action.toggle");
+        put("POST",   "/api/v1/governance/policies",         "governance.policy.create");
+        put("PUT",    "/api/v1/governance/policies/*",       "governance.policy.update");
+        put("POST",   "/api/v1/governance/policies/*/toggle", "governance.policy.toggle");
+        put("DELETE", "/api/v1/governance/policies/*",       "governance.policy.delete");
+        // 单列而非并入 policy.update：关掉演练是策略从「只记录」变成「真动手」
+        // 的时刻，事故复盘时要能直接按这个 action 过滤出来，
+        // 而不是在一堆 update 里翻 diff
+        put("POST",   "/api/v1/governance/policies/*/dry-run", "governance.policy.dry-run");
     }
 
     private AuditActionRegistry() {

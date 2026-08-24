@@ -121,8 +121,16 @@ const router = createRouter({
       meta: { title: '人机协同审批中心', stage: 'L3', roles: ['admin'], description: '对中高风险自动化建议执行分级审批并保留完整决策依据。', capabilities: ['待审批队列', 'AI 决策依据', '风险校验', '审批记录'] }
     },
     {
-      path: '/automation/policies', name: 'automation-policies', component: lazy(() => import('../views/FutureCapability.vue'), 'AutomationPolicies', 'dashboard'),
-      meta: { title: '自动化策略', stage: 'L3', hiddenFromNavigation: true, description: '配置告警到动作的匹配条件、审批要求与执行边界。', capabilities: ['触发条件', '动作编排', '审批规则', '生效范围'] }
+      // 占位页已替换为真实实现（L3 配置层，migration_v27）。
+      // 三张表分工：白名单=能不能做、风险策略=怎么做、本页=什么时候做。
+      // roles: admin —— 与另两个治理页一致，后端 @SaCheckRole("ADMIN") 兜底。
+      path: '/automation/policies', name: 'automation-policies',
+      component: lazy(() => import('../views/AutomationPolicies.vue'), 'AutomationPolicies', 'list'),
+      meta: {
+        title: '自动化策略', stage: 'L3', roles: ['admin'],
+        description: '配置告警到动作的匹配条件、执行控制与演练开关。',
+        capabilities: ['触发条件', '动作绑定', '演练模式', '匹配预演']
+      }
     },
     {
       // 占位页已替换为真实实现（L3 配置层，migration_v26）。

@@ -6,6 +6,7 @@ import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.governance.ActionAllowlistEntry;
 import com.devops.agent.domain.governance.ApprovalMode;
 import com.devops.agent.domain.governance.AutomationGovernanceService;
+import com.devops.agent.domain.governance.AutomationPolicy;
 import com.devops.agent.domain.governance.EscalateTarget;
 import com.devops.agent.domain.governance.RiskPolicy;
 import jakarta.validation.Valid;
@@ -40,6 +41,22 @@ import java.util.Map;
  *   <li>PUT    /api/v1/governance/actions/{id}             —— 更新（CAS）</li>
  *   <li>POST   /api/v1/governance/actions/{id}/toggle      —— 启停（CAS）</li>
  *   <li>POST   /api/v1/governance/evaluate                 —— 模拟校验</li>
+ *   <li>GET    /api/v1/governance/policies                 —— 自动化策略分页</li>
+ *   <li>GET    /api/v1/governance/policies/stats           —— 策略统计</li>
+ *   <li>GET    /api/v1/governance/policies/{id}            —— 策略详情</li>
+ *   <li>POST   /api/v1/governance/policies                 —— 新增策略</li>
+ *   <li>PUT    /api/v1/governance/policies/{id}            —— 更新策略（CAS）</li>
+ *   <li>POST   /api/v1/governance/policies/{id}/toggle     —— 策略启停（CAS）</li>
+ *   <li>POST   /api/v1/governance/policies/{id}/dry-run    —— 切换演练模式（CAS）</li>
+ *   <li>DELETE /api/v1/governance/policies/{id}            —— 删除策略（CAS）</li>
+ *   <li>POST   /api/v1/governance/policies/simulate        —— 匹配预演</li>
+ * </ul>
+ *
+ * <h3>三张表的分工</h3>
+ * <ul>
+ *   <li>{@code sys_action_allowlist} —— <b>能不能做</b>（允许清单）</li>
+ *   <li>{@code sys_risk_policy} —— <b>怎么做</b>（审批、爆炸半径、升级）</li>
+ *   <li>{@code sys_automation_policy} —— <b>什么时候做</b>（告警匹配规则）</li>
  * </ul>
  *
  * <h3>权限：全部限 ADMIN</h3>
@@ -128,6 +145,47 @@ public class AutomationGovernanceController {
     public record ToggleRequest(Boolean enabled, Integer version) {}
 
     public record EvaluateRequest(String actionKey, String environment) {}
+
+    /** 自动化策略请求体。数值同样用包装类型，理由见 RiskPolicyRequest */
+    public record AutomationPolicyRequest(
+            @NotBlank(message = "策略名不能为空")
+            @Size(max = 64, message = "策略名不能超过 64 字")
+            String name,
+
+            @Size(max = 255, message = "描述不能超过 255 字")
+            String description,
+
+            String matchAlertLevels,
+            String matchModule,
+            String matchServicePattern,
+            String matchAlertNamePattern,
+
+            @NotBlank(message = "必须指定要执行的动作")
+            String actionKey,
+            String actionParams,
+
+            @NotBlank(message = "生效环境不能为空")
+            String environment,
+
+            Integer priority,
+            Boolean stopOnMatch,
+            Integer cooldownMinutes,
+            Integer maxExecutionsPerDay,
+            Boolean dryRun,
+            Boolean enabled,
+            Integer version
+    ) {}
+
+    public record DryRunRequest(Boolean dryRun, Integer version) {}
+
+    /** 匹配预演的输入：一个假想的告警 */
+    public record SimulateRequest(
+            String level,
+            String module,
+            String service,
+            String alertName,
+            String environment
+    ) {}
 
     // ==================================================================
     // 风险等级策略
@@ -253,8 +311,137 @@ public class AutomationGovernanceController {
     }
 
     // ==================================================================
+    // 自动化策略（v27）
+    // ==================================================================
+
+    @GetMapping("/policies")
+    public ApiResponse<Map<String, Object>> listPolicies(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String actionKey,
+            @RequestParam(required = false) String environment,
+            @RequestParam(required = false) Boolean enabled,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(service.listAutomationPolicies(
+                keyword, actionKey, environment, enabled, page, size));
+    }
+
+    @GetMapping("/policies/stats")
+    public ApiResponse<Map<String, Object>> policyStats() {
+        return ApiResponse.success(service.automationPolicyStats());
+    }
+
+    @GetMapping("/policies/{id}")
+    public ApiResponse<AutomationPolicy> policyDetail(@PathVariable long id) {
+        return ApiResponse.success(service.getAutomationPolicy(id));
+    }
+
+    @PostMapping("/policies")
+    public ApiResponse<AutomationPolicy> createPolicy(
+            @Valid @RequestBody AutomationPolicyRequest req) {
+        return ApiResponse.success(
+                service.createAutomationPolicy(toPolicy(req), currentOperator()), "策略已创建");
+    }
+
+    @PutMapping("/policies/{id}")
+    public ApiResponse<AutomationPolicy> updatePolicy(@PathVariable long id,
+                                                      @Valid @RequestBody AutomationPolicyRequest req) {
+        return ApiResponse.success(
+                service.updateAutomationPolicy(id, toPolicy(req),
+                        requireVersion(req.version()), currentOperator()),
+                "策略已更新");
+    }
+
+    @PostMapping("/policies/{id}/toggle")
+    public ApiResponse<AutomationPolicy> togglePolicy(@PathVariable long id,
+                                                      @RequestBody ToggleRequest req) {
+        if (req.enabled() == null) {
+            throw new IllegalArgumentException("必须指定启用状态");
+        }
+        AutomationPolicy updated = service.toggleAutomationPolicy(
+                id, req.enabled(), requireVersion(req.version()), currentOperator());
+        return ApiResponse.success(updated, req.enabled() ? "策略已启用" : "策略已停用");
+    }
+
+    /**
+     * 切换演练模式。
+     *
+     * <p>独立端点是刻意的：<b>关掉演练是本模块风险最高的单个操作</b>——
+     * 策略从「只记录」变成「真动手」。混在通用更新里会让这个变更
+     * 淹没在 diff 中，审计日志也无法区分「改了个描述」与
+     * 「让策略开始真实执行」。</p>
+     */
+    @PostMapping("/policies/{id}/dry-run")
+    public ApiResponse<AutomationPolicy> togglePolicyDryRun(@PathVariable long id,
+                                                            @RequestBody DryRunRequest req) {
+        if (req.dryRun() == null) {
+            throw new IllegalArgumentException("必须指定演练模式状态");
+        }
+        AutomationPolicy updated = service.toggleDryRun(
+                id, req.dryRun(), requireVersion(req.version()), currentOperator());
+        return ApiResponse.success(updated,
+                req.dryRun() ? "已切回演练模式" : "演练模式已关闭，策略将真实执行");
+    }
+
+    /**
+     * 删除策略。
+     *
+     * <p>策略允许物理删除（动作白名单不允许）：它不是审计记录的关联键，
+     * 执行历史记的是 action_key 与具体目标。而策略往往是试出来的，
+     * 不给删会让列表堆满废弃规则，干扰对求值顺序的判断。</p>
+     */
+    @DeleteMapping("/policies/{id}")
+    public ApiResponse<Map<String, Object>> deletePolicy(
+            @PathVariable long id,
+            @RequestParam(required = false) Integer version) {
+        service.deleteAutomationPolicy(id, requireVersion(version));
+        return ApiResponse.success(Map.of("id", id, "deleted", true), "策略已删除");
+    }
+
+    /**
+     * 匹配预演：给一个假想告警，看哪些策略命中、最终会发生什么。
+     *
+     * <p>这是本模块最有价值的端点。策略配置的核心风险是
+     * <b>匹配范围与预期不符</b>——你以为只圈了 order 服务，
+     * 实际把整个集群都包进去了，而这在真实告警来临前无从发现。</p>
+     */
+    @PostMapping("/policies/simulate")
+    public ApiResponse<Map<String, Object>> simulate(@RequestBody SimulateRequest req) {
+        String env = req.environment() == null || req.environment().isBlank()
+                ? "prod" : req.environment().trim().toLowerCase();
+        return ApiResponse.success(service.simulate(
+                req.level(), req.module(), req.service(), req.alertName(), env));
+    }
+
+    // ==================================================================
     // 内部
     // ==================================================================
+
+    private AutomationPolicy toPolicy(AutomationPolicyRequest req) {
+        AutomationPolicy p = new AutomationPolicy();
+        p.setName(req.name());
+        p.setDescription(req.description());
+        p.setMatchAlertLevels(req.matchAlertLevels());
+        p.setMatchModule(req.matchModule());
+        p.setMatchServicePattern(req.matchServicePattern());
+        p.setMatchAlertNamePattern(req.matchAlertNamePattern());
+        p.setActionKey(req.actionKey());
+        p.setActionParams(req.actionParams());
+        p.setEnvironment(req.environment());
+        p.setPriority(req.priority() == null ? 100 : req.priority());
+        // stopOnMatch 缺省为 true：多条策略同时命中时只执行第一条，
+        // 是更安全的默认（全部执行可能对同一目标连做多个动作）
+        p.setStopOnMatch(req.stopOnMatch() == null || req.stopOnMatch());
+        p.setCooldownMinutes(req.cooldownMinutes() == null ? 30 : req.cooldownMinutes());
+        p.setMaxExecutionsPerDay(
+                req.maxExecutionsPerDay() == null ? 10 : req.maxExecutionsPerDay());
+        // dryRun 缺省为 true：新策略默认只演练不执行。
+        // 缺省成 false 会让「忘了传这个字段」变成「直接上线真实执行」，
+        // 这个方向的默认值错误代价太高
+        p.setDryRun(req.dryRun() == null || req.dryRun());
+        p.setEnabled(Boolean.TRUE.equals(req.enabled()));
+        return p;
+    }
 
     private ActionAllowlistEntry toEntry(ActionRequest req) {
         ActionAllowlistEntry e = new ActionAllowlistEntry();
