@@ -144,6 +144,41 @@ MAVEN_HOME="${MAVEN_USER_HOME}/wrapper/dists/${distributionUrlNameMain-}/$(hash_
 
 exec_maven() {
   unset MVNW_VERBOSE MVNW_USERNAME MVNW_PASSWORD MVNW_REPOURL || :
+
+  # ---------------------------------------------------------------------
+  # CI 诊断增强（仅当 GITHUB_ACTIONS=true 时启用，本地行为完全不变）
+  #
+  # 背景：CI 的原始日志存放在 Azure blob，部分排障环境访问不到，
+  # 而 annotations API 默认只给一句 "Process completed with exit code 1"，
+  # 根本看不出是编译错、依赖解析失败还是测试失败。
+  #
+  # 这里在 CI 下改为「捕获输出 -> 失败时把关键行以 ::error:: 重放」，
+  # 让 GitHub 把它们转成 annotation，从而可通过 API 读取。
+  # 成功时原样输出、不加任何噪音。
+  # ---------------------------------------------------------------------
+  if [ "${GITHUB_ACTIONS-}" = "true" ]; then
+    _mvnw_log="${TMPDIR:-/tmp}/mvnw-ci-$$.log"
+    set +e
+    "$MAVEN_HOME/bin/$MVN_CMD" "$@" 2>&1 | tee "$_mvnw_log"
+    _mvnw_rc=${PIPESTATUS:-$?}
+    # POSIX sh 没有 PIPESTATUS，用 grep 兜底判定
+    if grep -qE "^\[ERROR\]|BUILD FAILURE" "$_mvnw_log"; then _mvnw_rc=1; fi
+    set -e
+    if [ "$_mvnw_rc" != "0" ]; then
+      echo "::group::Maven 失败要点（自动提取）"
+      # 取前 60 条 [ERROR]，去掉 Maven 固定的帮助尾巴
+      grep -E "^\[ERROR\]" "$_mvnw_log" \
+        | grep -vE "re-run Maven|Read the following|http://cwiki|To see the full stack|For more information about the errors" \
+        | head -60 \
+        | while IFS= read -r _line; do
+            _clean=$(printf '%s' "$_line" | sed 's/^\[ERROR\] *//; s/%/%25/g; s/\r/ /g')
+            [ -n "$_clean" ] && echo "::error::$_clean"
+          done
+      echo "::endgroup::"
+    fi
+    exit "$_mvnw_rc"
+  fi
+
   exec "$MAVEN_HOME/bin/$MVN_CMD" "$@" || die "cannot exec $MAVEN_HOME/bin/$MVN_CMD"
 }
 
