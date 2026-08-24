@@ -4,10 +4,15 @@ import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.router.SaHttpMethod;
 import cn.dev33.satoken.router.SaRouter;
 import cn.dev33.satoken.stp.StpUtil;
+import com.devops.agent.common.context.TraceContext;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.util.Arrays;
 
 /**
  * Web 全局配置 - CORS 跨域 + Sa-Token 鉴权拦截器
@@ -39,6 +44,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * @author OpsBrain AI
  * @since 2026-07-15
  */
+@Slf4j
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
@@ -59,17 +65,48 @@ public class WebConfig implements WebMvcConfigurer {
                 );
     }
 
+    /**
+     * 允许跨域的来源（A6/D3）。
+     * <p>
+     * 默认 {@code *} 仅适用于本地开发。<b>生产必须通过环境变量
+     * {@code CORS_ALLOWED_ORIGINS} 显式列举域名</b>，例如
+     * {@code https://ops.example.com,https://admin.example.com}。
+     * </p>
+     * <p>
+     * 为什么不能在生产用 {@code *}：本项目 {@code allowCredentials(true)}，
+     * 而 {@code allowedOriginPatterns("*")} 会<b>回显请求方的 Origin</b>，
+     * 等价于「任意站点都可以带着用户凭证调用本站 API」。
+     * 用户只要在登录状态下访问一个恶意页面，该页面就能以其身份
+     * 读知识库、建工单、走审批。这不是理论风险，是标准的 CSRF/跨站读取路径。
+     * </p>
+     */
+    @Value("${devops.security.cors.allowed-origins:*}")
+    private String allowedOrigins;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        String[] origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toArray(String[]::new);
+
+        if (origins.length == 1 && "*".equals(origins[0])) {
+            log.warn("⚠️ [WebConfig] CORS 允许任意来源且允许携带凭证——仅可用于本地开发。"
+                    + "生产环境请设置 CORS_ALLOWED_ORIGINS 为具体域名列表。");
+        } else {
+            log.info("🔒 [WebConfig] CORS 白名单已启用 | origins={}", String.join(", ", origins));
+        }
+
         registry.addMapping("/api/**")  // 允许所有 /api 开头的接口跨域
-                // allowedOriginPatterns("*")：允许任意来源（localhost/127.0.0.1/LAN IP）。
-                // 与 allowedOrigins 不同，allowedOriginPatterns 支持通配符且会回显实际 Origin
-                // 而非返回 *，因此与 allowCredentials(true) 兼容。
-                // 开发阶段接受任意来源；生产如需收紧，可改为具体域名列表。
-                .allowedOriginPatterns("*")
+                // allowedOriginPatterns 支持通配符且会回显实际 Origin 而非返回 *，
+                // 因此与 allowCredentials(true) 兼容（allowedOrigins("*") 则不兼容）。
+                .allowedOriginPatterns(origins)
                 // 补 PATCH：工单状态/负责人更新用 PATCH，此前遗漏会导致预检失败
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")             // 含 satoken token 头
+                // 暴露 traceId 响应头（A5）：跨域下前端默认<b>读不到</b>自定义响应头，
+                // 必须显式 expose，否则前端拿不到 X-Request-Id，报错时无法回传给后端排查。
+                .exposedHeaders(TraceContext.HEADER)
                 .allowCredentials(true)          // 允许携带 Cookie
                 .maxAge(3600);                   // 预检请求缓存 1 小时
     }

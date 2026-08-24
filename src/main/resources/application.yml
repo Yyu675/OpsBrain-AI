@@ -70,6 +70,15 @@ sa-token:
 
 # ==================== OpsBrain AI 自定义配置 ====================
 devops:
+  # ==================== 安全（A6/D3）====================
+  security:
+    cors:
+      # 允许跨域的来源，逗号分隔。默认 * 仅供本地开发。
+      # ⚠️ 生产必须显式列举，例如：
+      #   CORS_ALLOWED_ORIGINS=https://ops.example.com,https://admin.example.com
+      # 因为本项目 allowCredentials=true，* 等价于「任意站点可携带用户凭证调用本站 API」。
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
   ai:
     # 双模开关：MOCK（开发期不调 API）/ REAL（生产模式）
     mode: ${AI_MODE:MOCK}
@@ -214,6 +223,24 @@ devops:
     # 告警接收总开关。关闭后 AlertWebhookController 仍返回 200 但跳过处理。
     # 用于运维期临时禁入，不改变 Prometheus 重试行为（非 200 会重试）。
     enabled: true
+
+    # ==================== Webhook 端点防护（A6）====================
+    # /api/v1/alerts/webhook 在鉴权白名单内（Alertmanager 带不了 Sa-Token），
+    # 却直接写库并可触发自动建单，因此必须单独加固。
+    webhook:
+      # 共享密钥。请求需带 X-Webhook-Token 头且与此值一致。
+      # 留空 = 不校验（向后兼容既有 alertmanager.yml），仅打一次告警日志。
+      # ⚠️ 生产环境必须通过 ALERT_WEBHOOK_SECRET 设置，否则任何人都能灌入伪造告警。
+      # 配置后需同步在 monitoring/alertmanager.yml 的 webhook_configs 加：
+      #   http_config:
+      #     authorization: { type: Bearer, credentials: <secret> }
+      #   —— 或用 Alertmanager 支持的自定义 header 方式传 X-Webhook-Token。
+      secret: ${ALERT_WEBHOOK_SECRET:}
+      # 单来源 IP 在窗口内允许的最大推送次数；<=0 关闭限流。
+      # 300/分钟 是按「一次较大规模故障的告警量」留的余量：
+      # 正常业务远低于此，而告警风暴（网络分区可产生上万条）会被挡住。
+      rate-limit: ${ALERT_WEBHOOK_RATE_LIMIT:300}
+      rate-window-ms: 60000
     # 自动建单开关。关闭后告警仍入库并去重，但不触发自动建单（Single Writer 契约 6.10）。
     # 适合告警风暴时保护工单系统，风暴过后可手动补单。
     auto-ticket-enabled: true
