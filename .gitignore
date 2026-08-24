@@ -74,3 +74,9 @@ career/
 ### 截图/临时资源 ###
 design-knowledge.png
 knowledge-current.png
+
+### 个人材料（面试/简历/他项目方案）——不属于本项目，不进版本库 ###
+# 这些文件此前躺在 docs/ 根目录，会进每一次 clone，
+# 也会让新人误以为是项目文档。已移入 docs/99-personal/ 并在此忽略。
+# 本地保留可继续使用，只是不再推送。
+docs/99-personal/
