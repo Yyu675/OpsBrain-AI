@@ -153,8 +153,17 @@ const router = createRouter({
       meta: { title: '回滚详情', stage: 'L4', hiddenFromNavigation: true, description: '展示回滚计划、执行步骤、恢复点与最终状态。', capabilities: ['回滚计划', '恢复点', '执行日志', '结果确认'] }
     },
     {
-      path: '/governance/audit-logs', name: 'audit-logs', component: lazy(() => import('../views/FutureCapability.vue'), 'AuditLogs', 'dashboard'),
-      meta: { title: '审计日志', stage: 'L4', hiddenFromNavigation: true, description: '记录自动化决策、审批、执行和配置变更的完整证据链。', capabilities: ['操作审计', '决策审计', '配置变更', '证据导出'] }
+      // 占位页已替换为真实实现：后端 sys_operation_audit 与 sys_agent_call_log
+      // 两张表一直在写，此前前端没有任何入口能看，查「谁改了这张工单」只能连数据库。
+      // roles: admin —— 审计含操作者/IP/AI 问答内容，是高敏数据；
+      // 后端 AuditLogController 有 @SaCheckRole("ADMIN") 兜底，此处只是提前拦截改善体验。
+      path: '/governance/audit-logs', name: 'audit-logs',
+      component: lazy(() => import('../views/AuditLogs.vue'), 'AuditLogs', 'list'),
+      meta: {
+        title: '使用日志', stage: 'L4', roles: ['admin'],
+        description: 'AI 调用与系统写操作的完整审计记录，可按 traceId 下钻完整链路。',
+        capabilities: ['AI 调用日志', '操作审计', 'traceId 链路下钻', '成本与耗时统计']
+      }
     },
     {
       path: '/governance/saga-compensation', name: 'saga-compensation', component: lazy(() => import('../views/FutureCapability.vue'), 'SagaCompensation', 'dashboard'),
