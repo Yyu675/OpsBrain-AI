@@ -235,7 +235,19 @@ export const useTicketsStore = defineStore('tickets', () => {
     } catch (e: unknown) {
       if (requestSequence !== listRequestSequence) return
       error.value = errorMessage(e, '加载工单列表失败')
-      notify.error(error.value)
+      /*
+       * 只记录错误、**不弹提示**，交给调用方决定如何呈现。
+       *
+       * 原来这里 notify.error 之后又 throw，而 TicketList 的 fetchList 会
+       * catch 住写进 listError，再由 DataStateBoundary 渲染成整块错误态
+       * （含原因、建议、重试按钮）。于是同一次失败被报了两遍：
+       * 一个红色 toast + 一整块错误面板，信息完全重复。
+       *
+       * 列表加载失败属于「页面级」故障，页面内的错误态比飘一下的 toast
+       * 更合适——它不会消失、带重试入口、也不会在批量刷新时刷屏。
+       * 写操作（updateStatus / transferTicket 等）仍保留 handleServerError，
+       * 因为那些是「动作级」反馈，没有承载它的页面区域。
+       */
       throw e
     } finally {
       if (requestSequence === listRequestSequence) loading.value = false

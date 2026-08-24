@@ -659,3 +659,54 @@ describe('bulkRestore — 按原索引升序恢复', () => {
     expect(count).toBe(1)
   })
 })
+
+describe('loadTicketsFromBackend — 错误呈现的职责边界', () => {
+  /**
+   * store 只记录错误并抛出，**不弹 toast**。
+   *
+   * 原实现是 notify.error 之后再 throw，而 TicketList 的 fetchList 会 catch
+   * 住写进 listError，由 DataStateBoundary 渲染成整块错误态（含原因、建议、
+   * 重试按钮）。同一次失败被报了两遍：红色 toast + 一整块错误面板。
+   *
+   * 列表加载失败是「页面级」故障，页面内的错误态更合适——不会消失、
+   * 带重试入口、批量刷新时也不刷屏。
+   */
+  it('列表加载失败不弹 toast，交给调用方渲染页面级错误态', async () => {
+    const store = storeWith()
+    api.fetchTickets.mockRejectedValue(new Error('后端 500'))
+
+    await expect(store.loadTicketsFromBackend({ page: 1 })).rejects.toThrow()
+
+    expect(notify.notify.error).not.toHaveBeenCalled()
+    expect(notify.handleServerError).not.toHaveBeenCalled()
+  })
+
+  it('错误仍写入 store.error 供调用方读取', async () => {
+    const store = storeWith()
+    api.fetchTickets.mockRejectedValue(new Error('后端 500'))
+
+    await store.loadTicketsFromBackend({ page: 1 }).catch(() => undefined)
+
+    expect(store.error).toBeTruthy()
+  })
+
+  it('错误必须继续抛出 —— 调用方靠它写 listError', async () => {
+    const store = storeWith()
+    api.fetchTickets.mockRejectedValue(new Error('后端 500'))
+
+    await expect(store.loadTicketsFromBackend({ page: 1 })).rejects.toThrow('后端 500')
+  })
+
+  /**
+   * 写操作是「动作级」反馈——没有承载它的页面区域，
+   * 必须保留 toast，不能因为上面的改动把它们一起改掉。
+   */
+  it('写操作仍走 handleServerError —— 动作级反馈需要 toast', async () => {
+    const store = storeWith(ticket({ id: 'T-1', status: 'pending' }))
+    api.updateTicketStatus.mockRejectedValue(new Error('冲突'))
+
+    await store.updateStatus('T-1', 'processing').catch(() => undefined)
+
+    expect(notify.handleServerError).toHaveBeenCalled()
+  })
+})

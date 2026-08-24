@@ -82,7 +82,17 @@ const switchTab = (tab: string) => {
   activeTab.value = tab
 }
 
+/**
+ * 是否有任意审批正在处理中。
+ *
+ * 用它而非 `actingId === row.id` 做禁用判据——审批批准会触发真实的
+ * 自动化执行，并行下发无法保证顺序，详见模板处的说明。
+ */
+const acting = computed(() => actingId.value !== null)
+
 const doApprove = async (row: ApprovalRequest) => {
+  // 双保险：模板已禁用，但快捷键/程序化调用仍可能绕过
+  if (acting.value) return
   try {
     await ElMessageBox.confirm(
       `确认批准并执行「${row.summary}」吗？批准后系统将立即执行该动作。`,
@@ -110,6 +120,7 @@ const doApprove = async (row: ApprovalRequest) => {
 }
 
 const doReject = async (row: ApprovalRequest) => {
+  if (acting.value) return
   let reason: string
   try {
     const r = await ElMessageBox.prompt(
@@ -234,10 +245,30 @@ const forbidden = computed(() => {
           <el-table-column label="操作" width="170" fixed="right">
             <template #default="{ row }">
               <div v-if="isPending(row)" class="actions">
-                <button class="act act-approve" :disabled="actingId === row.id" @click="doApprove(row)">
-                  <Check :size="14" /> 批准
+                <!--
+                  禁用条件是 `acting`（有任意审批在处理中）而非 `actingId === row.id`。
+
+                  原写法只锁住当前行：用户批准 A 之后（A 正在后端执行动作），
+                  可以立刻点 B 的批准。审批批准即**触发真实的自动化执行**，
+                  两个动作并行下发时，若它们操作同一资源（如同时重启同一服务），
+                  结果不可预测，而审批中心恰恰是「中高风险动作」的闸门。
+
+                  串行化的代价只是多等几秒，收益是执行顺序确定、审计时间线清晰。
+                -->
+                <button
+                  class="act act-approve"
+                  :disabled="acting"
+                  :title="acting && actingId !== row.id ? '有其它审批正在处理，请稍候' : ''"
+                  @click="doApprove(row)"
+                >
+                  <Check :size="14" /> {{ actingId === row.id ? '处理中…' : '批准' }}
                 </button>
-                <button class="act act-reject" :disabled="actingId === row.id" @click="doReject(row)">
+                <button
+                  class="act act-reject"
+                  :disabled="acting"
+                  :title="acting && actingId !== row.id ? '有其它审批正在处理，请稍候' : ''"
+                  @click="doReject(row)"
+                >
                   <X :size="14" /> 驳回
                 </button>
               </div>

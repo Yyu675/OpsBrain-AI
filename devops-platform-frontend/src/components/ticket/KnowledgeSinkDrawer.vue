@@ -16,7 +16,7 @@
  *   - 加载 / 失败 / 空三态严格区分（6.18 契约）
  *   - 发布成功后只发事件，刷新策略由父组件决定（6.17 契约）
  */
-import { notify } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import {
@@ -344,8 +344,10 @@ const handlePublish = async () => {
         // 用户选择留在此页，不做处理
       }
     } else {
-      const err = error as Error
-      notify.error(err?.message || '发布失败，请稍后重试')
+      // 走 handleServerError 而非裸 notify.error：后者直接透传后端原始 message，
+      // 丢掉业务码映射。40009（他人已修改）会显示成一句干巴巴的技术描述，
+      // 却不告诉用户「请刷新后重试」；40005 配额超限与 500 也无从区分。
+      handleServerError(error, { action: '沉淀为知识' })
     }
   } finally {
     publishing.value = false
