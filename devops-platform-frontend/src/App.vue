@@ -11,6 +11,7 @@ import { ElMessageBox } from 'element-plus'
 import { useIdleTimer } from '@/composables/useIdleTimer'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { useAlertNotifications } from '@/composables/useAlertNotifications'
+import { useSessionCleanup } from '@/composables/useSessionCleanup'
 import { useAppStore } from '@/stores/app'
 
 const router = useRouter()
@@ -19,6 +20,11 @@ const app = useAppStore()
 
 // 全局告警通知：连接 /ws/alerts，收到 NEW 告警时推入通知 store
 useAlertNotifications()
+
+// 登出时清掉上一个用户的 AI 对话历史（含知识库引用原文）。
+// 挂在根组件是刻意的：登出有四条路径，逐个加清理必漏一条——
+// 监听登录态这个状态事实才能全覆盖。详见该 composable 的文件头。
+useSessionCleanup()
 
 const compactBodyClass = computed(() => app.settings.compactTable ? 'compact-tables' : '')
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { loadPersisted, savePersisted, onPersistedChange } from '@/utils/persist'
+import { loadPersisted, savePersisted, clearPersisted, onPersistedChange } from '@/utils/persist'
 
 /**
  * AI 对话消息
@@ -330,6 +330,33 @@ export const useChatStore = defineStore('chat', () => {
     persist.flush()
   }
 
+  /**
+   * 清空**所有**会话桶并抹掉本地持久化（登出时调用）。
+   *
+   * 与 {@link clear} 的区别：clear 只重置当前激活会话，用于用户主动
+   * 「开启新对话」；本方法针对的是「换人了」。
+   *
+   * 为什么必须做：对话历史全量落在 localStorage 的 `chat-sessions` 里，
+   * 且**没有任何按用户隔离的键**。登出后不清，下一个在同一台机器登录的人
+   * 打开 AI 助手就能直接看到上一个人的完整问答记录——
+   * 其中包含 AI 从知识库检索出的原文引用（citations 字段随会话一起持久化），
+   * 而知识库本身是有可见性分级的（PUBLIC / 内部）。
+   * 这等于绕过后端刚做的权限域隔离，属于实打实的越权读取。
+   *
+   * 共享值守机、跨班交接同一终端在运维场景里非常普遍，不是极端假设。
+   */
+  function clearAll() {
+    buckets.value = {}
+    activeTicketKey.value = GLOBAL_KEY
+    streamingId.value = null
+    isStreaming.value = false
+    currentTraceId.value = ''
+    // 必须显式 clearPersisted 而非依赖 watch 写入空对象：
+    // persist 是 400ms 防抖的，登出后页面可能立刻跳转/刷新，
+    // 防抖回调来不及执行，磁盘上的旧会话就留下来了。
+    clearPersisted(PERSIST_KEY)
+  }
+
   return {
     // 状态
     messages,
@@ -354,6 +381,7 @@ export const useChatStore = defineStore('chat', () => {
     mergeMetadata,
     finishStreaming,
     removeMessage,
-    clear
+    clear,
+    clearAll
   }
 })
