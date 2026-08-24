@@ -139,9 +139,12 @@ class ContractExportTest {
         for (BizError e : BizError.values()) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("name", e.name());
-            item.put("code", e.getCode());
-            item.put("httpStatus", e.getHttpStatus().value());
-            item.put("retry", e.getRetry().name());
+            // BizError 用 record 风格访问器（code()/httpStatus()/retry()），
+            // 不是 JavaBean 的 getXxx()。写错这里不会有任何运行期表现——
+            // 它压根编译不过，只是此前无人编译过后端而已。
+            item.put("code", e.code());
+            item.put("httpStatus", e.httpStatus().value());
+            item.put("retry", e.retry().name());
             codes.add(item);
         }
         codes.sort((a, b) -> Integer.compare((Integer) a.get("code"), (Integer) b.get("code")));
