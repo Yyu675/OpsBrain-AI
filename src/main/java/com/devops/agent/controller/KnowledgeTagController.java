@@ -4,7 +4,6 @@ import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.rag.KnowledgeTag;
 import com.devops.agent.domain.rag.KnowledgeTagService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -42,7 +41,6 @@ public class KnowledgeTagController {
     }
 
     @PutMapping("/{id}")
-    @Transactional
     public ApiResponse<Object> rename(@PathVariable long id, @RequestBody TagRequest request) {
         try {
             return ApiResponse.success(tagService.rename(id, request.name(), request.description(), request.color()));
@@ -55,7 +53,6 @@ public class KnowledgeTagController {
     }
 
     @PostMapping("/{id}/merge")
-    @Transactional
     public ApiResponse<Object> merge(@PathVariable long id, @RequestBody MergeRequest request) {
         try {
             return ApiResponse.success(tagService.merge(id, request.targetId()));
@@ -65,7 +62,6 @@ public class KnowledgeTagController {
     }
 
     @DeleteMapping("/{id}")
-    @Transactional
     public ApiResponse<Object> delete(@PathVariable long id, @RequestBody(required = false) DeleteRequest request) {
         try {
             tagService.delete(id, request == null ? null : request.replacementId());

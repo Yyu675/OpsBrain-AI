@@ -485,6 +485,11 @@ public class KnowledgeDocRepository {
             long stid = rs.getLong("source_ticket_id");
             d.setSourceTicketId(rs.wasNull() ? null : stid);
             d.setSourceType(rs.getString("source_type"));
+            // C1 可见性。列由 v24 迁移新增，存量行由 DEFAULT 填为 PUBLIC。
+            // 这里仍对 null 兜底：mapper 也被历史快照/视图复用时列可能缺省。
+            String vis = rs.getString("visibility");
+            d.setVisibility(vis != null ? vis : "PUBLIC");
+            d.setOwnerDept(rs.getString("owner_dept"));
             d.setCreateTime(rs.getObject("create_time", LocalDateTime.class));
             d.setUpdateTime(rs.getObject("update_time", LocalDateTime.class));
             return d;

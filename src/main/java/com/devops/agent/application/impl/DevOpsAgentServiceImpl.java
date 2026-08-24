@@ -12,6 +12,9 @@ import com.devops.agent.application.DevOpsAgentService;
 import com.devops.agent.application.router.DevOpsAgentEngine;
 import com.devops.agent.application.router.DevOpsIntentRouter;
 import com.devops.agent.common.context.TraceContext;
+import com.devops.agent.domain.rag.AgentKnowledgeScopeHolder;
+import com.devops.agent.domain.rag.KnowledgeScope;
+import com.devops.agent.domain.rag.KnowledgeScopeResolver;
 import com.devops.agent.common.exception.SecurityGuardException;
 import com.devops.agent.common.guard.SecurityInputGuard;
 import com.devops.agent.application.memory.AgentMemoryManager;
@@ -141,6 +144,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
     /** 审批服务（方向 D）：高危工单落审批单，替代此前的「丢弃」 */
     private final com.devops.agent.domain.approval.ApprovalService approvalService;
 
+    /** C1：知识可见范围解析器。必须在请求线程调用（依赖 Sa-Token ThreadLocal） */
+    private final KnowledgeScopeResolver knowledgeScopeResolver;
+
     public DevOpsAgentServiceImpl(SecurityInputGuard securityGuard,
                                    SemanticCacheService cacheService,
                                    DevOpsIntentRouter intentRouter,
@@ -156,7 +162,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                                    SagaCompensationManager sagaManager,
                                    TicketDraftParser draftParser,
                                    com.devops.agent.domain.approval.ApprovalService approvalService,
-                                   ChatMemoryProvider chatMemoryProvider) {
+                                   ChatMemoryProvider chatMemoryProvider,
+                                   KnowledgeScopeResolver knowledgeScopeResolver) {
         this.securityGuard = securityGuard;
         this.cacheService = cacheService;
         this.intentRouter = intentRouter;
@@ -173,6 +180,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         this.draftParser = draftParser;
         this.approvalService = approvalService;
         this.chatMemoryProvider = chatMemoryProvider;
+        this.knowledgeScopeResolver = knowledgeScopeResolver;
     }
 
     @Override
@@ -193,10 +201,18 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         // （与 6.6 traceId 跨线程同源）。解析为 final 供异步闭包捕获，优先 userId 回退 sessionId。
         final String quotaKey = resolveQuotaKey(sessionId);
 
+        // C1：知识可见范围同样必须在请求线程解析——Sa-Token 登录态是 ThreadLocal，
+        // 切到 sessionExecutor 虚拟线程后就取不到了（与 quotaKey 同源约束）。
+        final KnowledgeScope knowledgeScope = knowledgeScopeResolver.resolveCurrent();
+
         CompletableFuture.runAsync(() -> {
             try {
                 // 设置 traceId 到 ThreadLocal(供工单创建时使用)
                 TraceContext.setTraceId(traceId);
+                // 把可见范围放进本线程，供工具检索取用。
+                // 注意：工具多数时候跑在模型 HTTP 回调线程，取不到本值，
+                // 届时会退化为「仅 PUBLIC」——这是刻意的保守失败方向。
+                AgentKnowledgeScopeHolder.set(knowledgeScope);
 
                 // 初始化会话状态（getOrCreateSession 已置初始态 NEW，无需再迁移到 NEW）
                 stateManager.getOrCreateSession(traceId, sessionId);
@@ -236,7 +252,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                 // ========== 步骤 2: 语义缓存检查 ==========
                 log.debug("🔍 [Step 2/7] 语义缓存检查 | traceId={}", traceId);
-                String cachedAnswer = cacheService.tryHitCache(query);
+                // C2：缓存按权限域隔离。不带 scope 的话，高权限用户问出的答案
+                // 会被低权限用户用一个语义相近的问题命中，绕过全部权限检查。
+                String cachedAnswer = cacheService.tryHitCache(query, knowledgeScope.cacheScopeKey());
 
                 if (cachedAnswer != null) {
                     log.info("⚡ [CacheHit] 命中缓存 | traceId={}", traceId);
@@ -332,8 +350,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 sendErrorEvent(emitter, traceId, 50001, "服务内部异常，请稍后重试或联系管理员");
                 emitter.complete();
             } finally {
-                // 清理 ThreadLocal 防止内存泄漏
+                // 清理 ThreadLocal 防止内存泄漏与跨请求串号
                 TraceContext.clear();
+                AgentKnowledgeScopeHolder.clear();
             }
         }, sessionExecutor);
     }
@@ -472,7 +491,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                         // 步骤 5: 写入语义缓存
                         log.debug("🔍 [Step 5/6] 写入语义缓存 | traceId={}", traceId);
-                        cacheService.putCache(query, finalAnswer);
+                        cacheService.putCache(query, finalAnswer, knowledgeScope.cacheScopeKey());
 
                         // 步骤 6: 异步记账（MVP-4 审计增强 + MVP-7 成本记录）
                         log.debug("🔍 [Step 6/6] 异步记账 | traceId={}", traceId);

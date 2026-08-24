@@ -237,19 +237,20 @@ npm run knip                       # 死代码/死依赖检测
 | P1 | 告警 webhook 免鉴权且无限流 | `WebhookGuard`（共享密钥 + 滑动窗口限流） |
 | P1 | 生产 CORS `*` + allowCredentials | 改 `CORS_ALLOWED_ORIGINS` 白名单 |
 | P2 | 元→分用 `(long)(x*100)` 截断，成本系统性低估 | 改 `Math.round` |
-| P2 | 5 处日志用 `{:.1%}` 格式符，SLF4J 不支持，告警从未生效 | 改标准 `{}` 占位（`CostQuotaManager` 已改） |
+| P2 | 5 处日志用 `{:.1%}` 格式符，SLF4J 不支持，告警从未生效 | 全部改为标准 `{}` 占位 |
+| P1 | 知识库无可见性字段，检索层无权限过滤 | v24 迁移 + `KnowledgeScope` 贯穿检索 SQL |
+| P1 | 语义缓存 key 不含权限维度，可跨用户泄漏 | 缓存键按权限域分区（`cacheScopeKey`） |
+| P1 | `@Transactional` 写在 Controller 层 | 下沉至 `KnowledgeTagService` |
 | — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
 
 ### 待修复
 
 | 级别 | 缺陷 | 位置 | 计划 |
 | :-- | :-- | :-- | :-- |
-| P1 | 知识库无可见性字段，检索层无权限过滤（任意登录用户可检索全部内容，且能经 AI 对话间接套出） | `KnowledgeDoc.java` / `HybridRetrieverService.java` | 阶段 C |
-| P1 | 语义缓存 key 不含权限维度，加权限后会成为绕过通道 | `SemanticCacheService.java:391` | 阶段 C |
-| P1 | `@Transactional` 写在 Controller 层（分层破窗） | `KnowledgeTagController.java:45,58,68` | 阶段 C |
 | P2 | 6 处自建线程池散落各层，无界队列、无监控、无统一优雅停机 | 审查报告 §2 P2-2 | 阶段 C |
-| P2 | 4 处日志仍用 `{:.1%}` 格式符 | `ToolRuntimeManager:481`、`KnowledgeContentCleaner:125`、`KnowledgeDocService:164,602` | 顺手修 |
 | P2 | 后端无 Controller 层测试，93 个端点无契约保护 | `src/test/` | 阶段 C |
+| P2 | AI 对话链路的知识检索恒为「仅 PUBLIC」：工具跑在模型回调线程，取不到 `AgentKnowledgeScopeHolder`。这是<b>刻意的保守失败</b>（宁可少给不可越权），但也意味着 ADMIN 在对话里同样查不到受限文档。需改为每请求构建 AiService 或用 LangChain4j 工具上下文透传 | `AgentKnowledgeScopeHolder` | 阶段 D |
+| P2 | 文档权限变更后必须重建其切片，否则切片上的冗余 `visibility` 会滞后造成越权 | `KnowledgeDocService` | 阶段 C 收尾 |
 | P2 | 前端 knip 存量：23 未用导出 + 53 未用类型 | 前端 | 阶段 D |
 | P2 | 构建产物 `vendor` chunk 达 2.9MB，`manualChunks` 兜底分块未生效 | `vite.config.ts` | 阶段 D |
 | P2 | 两套富文本编辑器并存（wangEditor + md-editor-v3） | `package.json` | 阶段 D |

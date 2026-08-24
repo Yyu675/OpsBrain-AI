@@ -190,6 +190,11 @@ public class DocumentIndexer {
                     .knowledgeSource(doc.getKnowledgeSource() != null ? doc.getKnowledgeSource() : "SOP")
                     .effectiveAt(doc.getEffectiveAt())
                     .expiredAt(doc.getExpiredAt())
+                    // C1：可见性随文档下沉到切片，供检索层免 JOIN 过滤。
+                    // 文档权限变更后必须重建切片，否则会出现
+                    // 「文档已受限但切片仍能被检索到」的越权（见 KnowledgeChunkEntity 注释）。
+                    .visibility(doc.getVisibility() != null ? doc.getVisibility() : "PUBLIC")
+                    .ownerDept(doc.getOwnerDept())
                     .build());
         }
         return entities;

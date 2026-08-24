@@ -60,10 +60,12 @@ public class KnowledgeChunkWriter {
                  chunk_meta, embedding,
                  doc_id, content_hash,
                  version, effective_at, expired_at, status, knowledge_source,
+                 visibility, owner_dept,
                  create_time, update_time)
             VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::vector,
                     ?, ?,
                     ?, ?, ?, ?, ?,
+                    ?, ?,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """;
 
@@ -90,7 +92,12 @@ public class KnowledgeChunkWriter {
                         toTs(e.getEffectiveAt()),
                         toTs(e.getExpiredAt()),
                         e.getStatus() != null ? e.getStatus() : "ACTIVE",
-                        e.getKnowledgeSource() != null ? e.getKnowledgeSource() : "UNKNOWN"
+                        e.getKnowledgeSource() != null ? e.getKnowledgeSource() : "UNKNOWN",
+                        // C1：可见性冗余自所属文档。默认 PUBLIC 而非 null——
+                        // 列有 NOT NULL 约束，且「未标注即公开」与存量数据语义一致。
+                        // 真正的收紧由文档侧显式设置后同步下来。
+                        e.getVisibility() != null ? e.getVisibility() : "PUBLIC",
+                        e.getOwnerDept()
                 });
             }
 

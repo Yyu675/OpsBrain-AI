@@ -162,13 +162,33 @@ public class SemanticCacheService {
      * @param userQuery 用户提问
      * @return 缓存答案（命中）或 null（未命中）
      */
+    /**
+     * 便捷重载：按 PUBLIC 权限域查缓存。
+     * <p>PUBLIC 是<b>最小权限</b>，所以这个默认值是安全的：
+     * 它最多只能命中公开内容，不会越权。需要按用户权限命中受限内容的调用方
+     * 必须显式传 scopeKey。</p>
+     */
     public String tryHitCache(String userQuery) {
+        return tryHitCache(userQuery, null);
+    }
+
+    /**
+     * 便捷重载：按 PUBLIC 权限域写缓存。
+     * <p>同上，写进 PUBLIC 域意味着该答案可被任何人命中，
+     * 因此<b>只应用于确定不含受限内容的答案</b>。</p>
+     */
+    public void putCache(String userQuery, String answer) {
+        putCache(userQuery, answer, null);
+    }
+
+    public String tryHitCache(String userQuery, String scopeKey) {
         if (!cacheEnabled) {
             return null;
         }
         if (userQuery == null || userQuery.isBlank()) {
             return null;
         }
+        final String scope = normalizeScope(scopeKey);
         try {
             long startTime = System.currentTimeMillis();
 
@@ -195,6 +215,12 @@ public class SemanticCacheService {
             double bestSimilarity = 0.0;
 
             for (Map.Entry<String, Embedding> entry : snapshot.entrySet()) {
+                // C2：只在**同一权限域**内比对。热点缓存的键是 "scope|query"，
+                // 跨域的条目直接跳过——否则高权限用户问出的答案会被
+                // 低权限用户用一个语义相近的问题命中，绕过全部权限检查。
+                if (!sameScope(entry.getKey(), scope)) {
+                    continue;
+                }
                 Embedding cached = entry.getValue();
                 // 维度不一致直接跳过：换 Embedding 模型后旧向量残留在内存里，
                 // 原实现会抛 IllegalArgumentException 导致整次缓存查询降级
@@ -255,16 +281,17 @@ public class SemanticCacheService {
      * @param userQuery 用户提问
      * @param answer    Agent 回答
      */
-    public void putCache(String userQuery, String answer) {
+    public void putCache(String userQuery, String answer, String scopeKey) {
         if (!cacheEnabled) {
             return;
         }
         if (userQuery == null || userQuery.isBlank()) {
             return;
         }
+        final String scoped = scopedQueryKey(userQuery, scopeKey);
         // 校验在调用方线程完成（便宜），仅向量化+写 Redis 下沉到写线程池
         try {
-            CompletableFuture.runAsync(() -> doWriteCache(userQuery, answer), cacheExecutor);
+            CompletableFuture.runAsync(() -> doWriteCache(scoped, userQuery, answer), cacheExecutor);
         } catch (Exception e) {
             // runAsync 拒绝任务（线程池关闭）时不让异常逃出调用方
             log.warn("⚠️ 语义缓存写入任务提交失败（不影响主流程）: {}", e.getMessage());
@@ -278,7 +305,7 @@ public class SemanticCacheService {
      * 缓存的错误提示，且缓存命中率虚高。
      * </p>
      */
-    private void doWriteCache(String userQuery, String answer) {
+    private void doWriteCache(String scopedKey, String userQuery, String answer) {
         if (answer == null || answer.isBlank()) {
             log.debug("⏭️ 跳过缓存写入：答案为空 | query=[{}]", preview(userQuery));
             return;
@@ -291,20 +318,23 @@ public class SemanticCacheService {
         try {
             // 1. 先向量化。若失败则不写 Redis——
             // 否则答案进了 Redis 但向量没进内存，该条永远无法被命中，
-            // 只是白占空间直到过期
+            // 只是白占空间直到过期。
+            // 注意向量化用**原始问题**，不能用带权限前缀的 key：
+            // 前缀会污染语义，让相似度计算失真。
             Embedding queryEmbedding = embeddingModel.embed(userQuery).content();
 
-            // 2. 存储答案到 Redis（TTL 由配置决定）
+            // 2. 存储答案到 Redis（TTL 由配置决定）。
+            // C2：Redis key 由 scopedKey 派生，天然按权限域隔离。
             redisTemplate.opsForValue().set(
-                    answerKey(userQuery),
+                    answerKey(scopedKey),
                     answer,
                     cacheTtlSeconds,
                     TimeUnit.SECONDS
             );
 
-            // 3. 加入热点缓存。容量淘汰由 LinkedHashMap 的
-            // removeEldestEntry 自动完成（真 LRU），无需手工裁剪
-            hotQueryVectorCache.put(userQuery, queryEmbedding);
+            // 3. 加入热点缓存。键含权限域前缀，比对时只在同域内进行。
+            // 容量淘汰由 LinkedHashMap 的 removeEldestEntry 自动完成（真 LRU）
+            hotQueryVectorCache.put(scopedKey, queryEmbedding);
 
             log.info("✅ 语义缓存写入成功: query=[{}], answerLength={}, ttl={}s",
                     preview(userQuery), answer.length(), cacheTtlSeconds);
@@ -312,6 +342,41 @@ public class SemanticCacheService {
         } catch (Exception e) {
             log.warn("⚠️ 语义缓存写入失败（不影响主流程）: {}", e.getMessage());
         }
+    }
+
+    // ==================== C2：权限域隔离 ====================
+
+    /**
+     * 权限域分隔符。
+     * <p>用不可见控制字符 (U+0001) 而非 ':' 或 '|'：
+     * 用户问题里完全可能出现后者，那样会让 {@link #sameScope} 的前缀判断
+     * 把「问题中恰好含分隔符」误判为跨域，或反之。控制字符不会出现在正常提问中。</p>
+     */
+    private static final char SCOPE_SEP = '\u0001';
+
+    /**
+     * 规范化权限域标识。
+     * <p>null / 空一律归为 {@code PUBLIC} —— 未标注权限域的调用按最小权限处理，
+     * 而不是塞进某个"通用池"被所有人共享。</p>
+     */
+    private static String normalizeScope(String scopeKey) {
+        return (scopeKey == null || scopeKey.isBlank()) ? "PUBLIC" : scopeKey;
+    }
+
+    /** 构造带权限域前缀的缓存键 */
+    private static String scopedQueryKey(String userQuery, String scopeKey) {
+        return normalizeScope(scopeKey) + SCOPE_SEP + userQuery;
+    }
+
+    /** 判断某个热点缓存键是否属于给定权限域 */
+    private static boolean sameScope(String cacheKey, String scope) {
+        int idx = cacheKey.indexOf(SCOPE_SEP);
+        if (idx < 0) {
+            // 无前缀的历史遗留条目：只允许 PUBLIC 域使用。
+            // 升级后旧条目会在 TTL 到期后自然消失，期间不造成越权。
+            return "PUBLIC".equals(scope);
+        }
+        return cacheKey.regionMatches(0, scope, 0, idx) && idx == scope.length();
     }
 
     /**

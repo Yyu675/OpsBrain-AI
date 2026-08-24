@@ -109,8 +109,13 @@ public class DevOpsTools {
         // 导致下面拼出的片段没有出处，模型无法满足 System Prompt 的
         // 强制溯源要求，进而误答「知识库暂无相关文档」——
         // 即便检索实际已命中。详见 RetrievedChunk 类注释。
+        // C1 权限过滤：范围取自 AgentKnowledgeScopeHolder。
+        // 工具通常运行在模型 HTTP 回调线程，取不到上下文时会退化为
+        // 「仅 PUBLIC」而非放行全部——失败方向必须朝更严，理由见该类注释。
+        com.devops.agent.domain.rag.KnowledgeScope scope =
+                com.devops.agent.domain.rag.AgentKnowledgeScopeHolder.getOrRestrictive();
         List<com.devops.agent.domain.rag.RetrievedChunk> chunks =
-                hybridRetrieverService.retrieveWithSource(keyword, 3);
+                hybridRetrieverService.retrieveWithSource(keyword, 3, scope);
 
         if (chunks == null) {
             // 检索链路故障（向量化/检索服务不可用）——不是「无文档」。

@@ -87,6 +87,16 @@ public class KnowledgeDoc {
      */
     private String sourceType;
 
+    /**
+     * 可见性（C1）：PUBLIC / INTERNAL / RESTRICTED。
+     * <p>默认 PUBLIC —— 与存量数据语义一致（升级前所有文档对所有人可见）。
+     * 若默认 RESTRICTED，升级后知识库会对所有人瞬间"清空"，比权限过宽更像事故。</p>
+     */
+    private String visibility = "PUBLIC";
+
+    /** 归属部门（C1）：仅在 visibility=RESTRICTED 时参与可见性判定 */
+    private String ownerDept;
+
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -166,6 +176,12 @@ public class KnowledgeDoc {
 
     public String getSourceType() { return sourceType; }
     public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+
+    public String getVisibility() { return visibility; }
+    public void setVisibility(String visibility) { this.visibility = visibility; }
+
+    public String getOwnerDept() { return ownerDept; }
+    public void setOwnerDept(String ownerDept) { this.ownerDept = ownerDept; }
 
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
