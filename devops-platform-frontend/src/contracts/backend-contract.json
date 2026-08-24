@@ -1,0 +1,164 @@
+{
+  "_generatedBy": "ContractExportTest —— 请勿手工编辑，改后端后重跑 mvn test",
+  "ticketStatus": {
+    "all": [
+      "PENDING",
+      "PROCESSING",
+      "RESOLVED",
+      "CLOSED",
+      "VOID"
+    ],
+    "transitions": {
+      "PENDING": [
+        "PROCESSING",
+        "RESOLVED",
+        "VOID"
+      ],
+      "PROCESSING": [
+        "PENDING",
+        "RESOLVED",
+        "VOID"
+      ],
+      "RESOLVED": [
+        "CLOSED",
+        "PROCESSING"
+      ],
+      "CLOSED": [
+        "PROCESSING"
+      ],
+      "VOID": []
+    },
+    "terminal": [
+      "VOID"
+    ]
+  },
+  "fieldLimits": {
+    "createTicket": {
+      "assignee": 64,
+      "category": 64,
+      "creator": 64,
+      "description": 20000,
+      "module": 64,
+      "priority": 16,
+      "sla": 32,
+      "tags": 20,
+      "title": 255
+    }
+  },
+  "bizCodes": [
+    {
+      "name": "INVALID_PARAM",
+      "code": 40001,
+      "httpStatus": 400,
+      "retry": "NEVER"
+    },
+    {
+      "name": "PROMPT_INJECTION",
+      "code": 40003,
+      "httpStatus": 403,
+      "retry": "NEVER"
+    },
+    {
+      "name": "STATE_CONFLICT",
+      "code": 40004,
+      "httpStatus": 409,
+      "retry": "NEVER"
+    },
+    {
+      "name": "BUDGET_EXCEEDED",
+      "code": 40006,
+      "httpStatus": 400,
+      "retry": "NEVER"
+    },
+    {
+      "name": "OPTIMISTIC_LOCK",
+      "code": 40009,
+      "httpStatus": 409,
+      "retry": "CLIENT"
+    },
+    {
+      "name": "ENDPOINT_DEPRECATED",
+      "code": 40010,
+      "httpStatus": 410,
+      "retry": "NEVER"
+    },
+    {
+      "name": "DUPLICATE_CONTENT",
+      "code": 40021,
+      "httpStatus": 409,
+      "retry": "NEVER"
+    },
+    {
+      "name": "NOT_LOGIN",
+      "code": 40101,
+      "httpStatus": 401,
+      "retry": "NEVER"
+    },
+    {
+      "name": "NO_PERMISSION",
+      "code": 40103,
+      "httpStatus": 403,
+      "retry": "NEVER"
+    },
+    {
+      "name": "WEBHOOK_UNAUTHORIZED",
+      "code": 40104,
+      "httpStatus": 401,
+      "retry": "NEVER"
+    },
+    {
+      "name": "SECURITY_BLOCKED",
+      "code": 40301,
+      "httpStatus": 403,
+      "retry": "NEVER"
+    },
+    {
+      "name": "NOT_FOUND",
+      "code": 40400,
+      "httpStatus": 404,
+      "retry": "NEVER"
+    },
+    {
+      "name": "RATE_LIMITED",
+      "code": 42901,
+      "httpStatus": 429,
+      "retry": "BACKOFF"
+    },
+    {
+      "name": "INTERNAL_ERROR",
+      "code": 50001,
+      "httpStatus": 500,
+      "retry": "SAFE"
+    },
+    {
+      "name": "SSE_CONNECTION_ERROR",
+      "code": 50002,
+      "httpStatus": 500,
+      "retry": "SAFE"
+    },
+    {
+      "name": "RAG_RETRIEVE_FAILED",
+      "code": 50010,
+      "httpStatus": 500,
+      "retry": "SAFE"
+    },
+    {
+      "name": "LLM_TIMEOUT",
+      "code": 50210,
+      "httpStatus": 504,
+      "retry": "SAFE"
+    },
+    {
+      "name": "LLM_RATE_LIMITED",
+      "code": 50211,
+      "httpStatus": 429,
+      "retry": "BACKOFF"
+    },
+    {
+      "name": "LLM_CONTENT_BLOCKED",
+      "code": 50212,
+      "httpStatus": 502,
+      "retry": "NEVER"
+    }
+  ]
+}
