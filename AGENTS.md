@@ -180,7 +180,37 @@ npm run knip                       # 死代码/死依赖检测
 - `devops.ai.mode` 有 `MOCK` / `REAL` 两态。**任何新增的 AI 相关 Bean 都必须同时提供 Mock 实现**，
   否则 MOCK 模式启动会因缺 Bean 直接失败，破坏"开发期不烧额度"的前提。
 
+### 3.7.1 CI 与「后端从未编译」的教训（2026-08-25 已解除）
+
+后端一度有 189 个文件从未被编译过——沙箱无 JDK、Maven 镜像全不可达，
+CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得记住：
+
+- **孤儿 `catch`**：批量重构删 `try{` 时漏删 `catch` 链。这类错误静态
+  grep 查不出来，但语法检查一定能查出——不依赖任何外部 JAR。
+- **`maven-toolchains-plugin`**：要求 `~/.m2/toolchains.xml` 存在，
+  否则 validate 阶段直接失败，且报错指向 toolchain 而非真实原因。
+  已删除；编译目标版本单点由 `<java.version>` 决定，不要再引入第二处声明。
+- **被编译器拦下的越权**：`putCache` 漏传权限域。若当时改用不带 scope
+  的重载，代码能编译通过，但缓存会跨权限域共享。
+  **编译错误提示「缺少某个上下文参数」时，先想清楚那个参数为什么存在，
+  不要用一个「能过编译」的重载绕过去。**
+
+**CI 日志读取**：原始日志在 Azure blob，部分环境访问不到。
+`mvnw` 已内置：`GITHUB_ACTIONS=true` 时把 Maven `[ERROR]` 重放为
+`::error::`，经 annotations API 可读。改 `mvnw` 时不要破坏这段。
+
 ### 3.8 后端测试
+
+- **`@WebMvcTest` 切片不实例化 `@Repository`**。若某个 `@Component`
+  （如 `OperationAuditInterceptor`）依赖仓储层，它会让整个
+  ApplicationContext 启动失败，表现为该测试类**所有用例一起 ERROR**，
+  报错还指向 NoSuchBeanDefinition。用 `excludeFilters` 排除即可。
+- **`addFilters = false` 是「全关」不是「按需关」**。它会连带关掉
+  `TraceIdFilter`，使 `ApiResponse.traceId` 恒为 null。若测试要断言
+  traceId，需 `@Import` 该 Filter 并用 `MockMvcBuilders.addFilters()`
+  单独织回。
+- **不要为了让测试变绿而删断言**。traceId 缺失在生产上意味着链路无法追踪，
+  断言是对的，该修的是测试装配。
 
 测试必须保护**真实行为、API 契约、数据一致性或回归路径**。
 
@@ -289,6 +319,14 @@ npm run knip                       # 死代码/死依赖检测
 
 ## 更新日志
 
+- **2026-08-25**（十一）：**CI 首次绿灯**（`docs/08-benchmark/18`）。
+  用户启用工作流后后端首次真实编译，共修 8 个真实缺陷：
+  孤儿 catch 语法错误、`maven-toolchains-plugin` 要求不存在的 toolchains.xml、
+  record 组件与静态工厂重名、**语义缓存漏传权限域（被编译器拦下的越权）**、
+  **TtlChatMemoryStore TTL=0 永不回收（生产缺陷）** 等。
+  后端 **310 测试首次全绿**；顺带清理重复的 CI 文件与 1 处前端死代码。
+  另：`mvnw` 在 CI 下会把 Maven 错误重放为 `::error::` 注解——
+  CI 原始日志在 Azure blob，部分环境访问不到，这是唯一可靠的回传通道。
 - **2026-08-25**（十）：**L3 配置层收官**（`docs/08-benchmark/17`）。
   第三个占位路由替换为真实实现：**自动化策略**（告警匹配 → 白名单动作）。
   新增 `migration_v27`（`sys_automation_policy`）、`AutomationPolicy` 领域模型
