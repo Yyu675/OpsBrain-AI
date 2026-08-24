@@ -36,7 +36,6 @@ import RailButton from '@/components/common/RailButton.vue'
 import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { useMediaQuery } from '@/composables/useMediaQuery'
-import KnowledgeRichEditor from '@/components/knowledge/KnowledgeRichEditor.vue'
 import { notify, handleServerError } from '@/utils/notify'
 
 const route = useRoute()
@@ -46,6 +45,19 @@ const MdEditor = defineAsyncComponent(async () => {
   await import('md-editor-v3/lib/style.css')
   return (await import('md-editor-v3')).MdEditor
 })
+
+/**
+ * 富文本编辑器同样异步加载。
+ *
+ * 此前它是静态 import —— 静态依赖会被提升进入口图，
+ * 导致 wangEditor（约 977KB / gzip 327KB）在**每个页面**首屏都被下载，
+ * 哪怕用户从不编辑文档。路由本身是 lazy 的，但静态 import 让 lazy 失效。
+ *
+ * 改为 defineAsyncComponent 后，只有真正切到富文本模式才拉取。
+ */
+const KnowledgeRichEditor = defineAsyncComponent(
+  () => import('@/components/knowledge/KnowledgeRichEditor.vue')
+)
 
 // ==================== 路由 / ID 归一 ====================
 

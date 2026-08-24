@@ -75,7 +75,7 @@ watch(
       safeHtml.value = ''
       return
     }
-    safeHtml.value = safeMarkdown(raw, `doc-${doc.value?.id ?? 'unknown'}-${raw.length}`)
+    safeHtml.value = safeMarkdown(raw, `doc-${doc.value?.id ?? 'unknown'}`)
     await nextTick()
     decorateArticleContent()
     buildToc()

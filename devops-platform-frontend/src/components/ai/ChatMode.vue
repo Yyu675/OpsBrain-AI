@@ -262,7 +262,7 @@ onBeforeUnmount(() => {
             <div
               v-if="msg.role === 'assistant'"
               class="message-text markdown-body"
-              v-html="renderMarkdown(msg.content, msg.id + ':' + msg.content.length)"
+              v-html="renderMarkdown(msg.content, msg.id)"
             ></div>
             <div v-else class="message-text">{{ msg.content }}</div>
 

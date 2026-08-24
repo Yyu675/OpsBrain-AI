@@ -57,8 +57,24 @@ export default defineConfig({
           // TanStack Query 独立成块：它是稳定依赖，与业务代码分离后
           // 业务发版不会让用户重新下载它
           if (id.includes('@tanstack')) return 'vendor-query'
+          // Markdown 渲染链路（marked + dompurify）：阅读页也要用，
+          // 与编辑器分开，避免阅读者被迫下载编辑器
+          if (id.includes('marked') || id.includes('dompurify')) return 'vendor-markdown'
           if (id.includes('vue-router') || id.includes('pinia') || id.includes('/vue/') || id.includes('@vue/')) return 'vendor-vue'
-          return 'vendor'
+
+          /**
+           * 其余依赖**不再归入兜底 'vendor' 块**。
+           *
+           * 原先 `return 'vendor'` 把所有剩余依赖强行合成一个块。
+           * 只要其中有任意一个被入口用到，整块（含只被懒加载路由使用的
+           * 编辑器等）就会被预加载——2.9MB 首屏下发，而其中大半
+           * 普通用户永远用不到。
+           *
+           * 返回 undefined 交回 Rollup 自动分块：它会按实际引用关系
+           * 把「入口用的」与「仅懒加载路由用的」分开，
+           * 只有真正进入对应路由才拉取。
+           */
+          return undefined
         }
       }
     }
