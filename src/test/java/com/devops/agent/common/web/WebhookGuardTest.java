@@ -29,6 +29,7 @@ import static org.mockito.Mockito.when;
 class WebhookGuardTest {
 
     private SlidingWindowRateLimiter limiter;
+    private ClientIpResolver clientIpResolver;
     private WebhookGuard guard;
     private HttpServletRequest request;
 
@@ -40,7 +41,14 @@ class WebhookGuardTest {
         request = mock(HttpServletRequest.class);
         when(request.getRemoteAddr()).thenReturn("10.0.0.1");
 
-        guard = new WebhookGuard(limiter);
+        // WebhookGuard 现在通过 ClientIpResolver 取客户端 IP（不再直接读 getRemoteAddr），
+        // 以免 X-Forwarded-For 被无条件信任导致限流可绕过。
+        // 这里桩成回落 getRemoteAddr，与「无可信代理」时的真实行为一致，
+        // 从而保持本测试原有的 IP 语义不变。
+        clientIpResolver = mock(ClientIpResolver.class);
+        when(clientIpResolver.resolve(any())).thenReturn("10.0.0.1");
+
+        guard = new WebhookGuard(limiter, clientIpResolver);
         ReflectionTestUtils.setField(guard, "secret", "");
         ReflectionTestUtils.setField(guard, "rateLimit", 300);
         ReflectionTestUtils.setField(guard, "rateWindowMs", 60000L);
@@ -107,26 +115,42 @@ class WebhookGuardTest {
         assertEquals(429, ex.getHttpStatus(), "应先被限流拦下，而不是走到密钥比较");
     }
 
+    /**
+     * 限流主体取自 {@link ClientIpResolver}，而不是自己解析 X-Forwarded-For。
+     *
+     * <p>这两个测试原本直接桩 {@code X-Forwarded-For} 头并断言首段被用作限流键——
+     * 那是<b>修复前</b>的行为，且正是当时的缺陷：无条件信任该头意味着
+     * 攻击者随手伪造一个就能换一个限流桶，限流形同虚设。</p>
+     *
+     * <p>修复后 IP 解析职责移入 {@code ClientIpResolver}（只有在请求来自
+     * 可信代理时才采信该头），其取舍由 {@code ClientIpResolverTest} 单独覆盖。
+     * 这里只需保证 WebhookGuard <b>确实走了解析器</b>——
+     * 若哪天有人图省事改回 {@code request.getRemoteAddr()}，本测试会失败。</p>
+     */
     @Test
-    @DisplayName("优先用 X-Forwarded-For 首段作为限流主体，代理后仍能区分真实来源")
-    void usesForwardedForAsIdentity() {
-        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.7, 10.0.0.9");
+    @DisplayName("限流主体来自 ClientIpResolver，而非自行解析请求头")
+    void usesResolverAsIdentity() {
+        when(clientIpResolver.resolve(request)).thenReturn("203.0.113.7");
 
         guard.verify(request);
 
+        org.mockito.Mockito.verify(clientIpResolver).resolve(request);
         org.mockito.Mockito.verify(limiter)
                 .tryAcquire(org.mockito.ArgumentMatchers.eq("webhook"),
                         org.mockito.ArgumentMatchers.eq("203.0.113.7"), anyInt(), anyLong());
     }
 
     @Test
-    @DisplayName("无 X-Forwarded-For 时回退 remoteAddr")
-    void fallsBackToRemoteAddr() {
-        when(request.getHeader("X-Forwarded-For")).thenReturn(null);
+    @DisplayName("不再直接读 X-Forwarded-For——伪造该头不能换限流桶")
+    void ignoresForgedForwardedForHeader() {
+        // 攻击者伪造头，但解析器（无可信代理配置）仍回落到真实 remoteAddr
+        when(request.getHeader("X-Forwarded-For")).thenReturn("1.2.3.4, 5.6.7.8");
+        when(clientIpResolver.resolve(request)).thenReturn("10.0.0.1");
 
         guard.verify(request);
 
         org.mockito.Mockito.verify(limiter)
-                .tryAcquire(anyString(), org.mockito.ArgumentMatchers.eq("10.0.0.1"), anyInt(), anyLong());
+                .tryAcquire(anyString(), org.mockito.ArgumentMatchers.eq("10.0.0.1"),
+                        anyInt(), anyLong());
     }
 }
