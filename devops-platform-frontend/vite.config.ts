@@ -32,7 +32,18 @@ export default defineConfig({
     // 仅影响开发服务器，不影响生产构建。
     allowedHosts: ['.e2b.app', '.gitpod.io', '.github.dev', 'localhost'],
     proxy: {
-      '/ai': {
+      /*
+       * 后端 context-path 是 /ai，但**不能直接用 '/ai' 作为 key**。
+       *
+       * Vite（http-proxy）的字符串 key 是**前缀匹配**，'/ai' 会连带吃掉
+       * 前端自己的路由 `/ai-chat`——直接访问或刷新 AI 对话页时，请求被转发到
+       * 后端 8088，后端没有这个路径（或未启动）就返回 502/404。
+       * 而 AI 对话页挂在全站悬浮按钮上，是高频入口，刷新即白屏。
+       *
+       * 用正则 key 精确限定「/ai 后面必须跟 / 或结束」，
+       * 这样 /ai/api/v1/... 与 /ai/ws/alerts 照常代理，/ai-chat 留给前端路由。
+       */
+      '^/ai(/.*)?$': {
         target: 'http://localhost:8088',
         changeOrigin: true,
         // WebSocket 代理：/ai/ws/alerts 也走此代理，无需前端直连后端 WS 端口
