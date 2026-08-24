@@ -34,6 +34,7 @@ import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
 import { getTrends, type TrendData } from '@/api/dashboard'
 import { mapServiceToModule } from '@/api/utils/dto-converter'
 import { notify, handleServerError } from '@/utils/notify'
+import { useAsyncAction } from '@/composables/useAsyncAction'
 import { useExternalResourceState } from '@/composables/useResourceState'
 import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
 import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
@@ -386,13 +387,25 @@ const raisePriority = async () => {
   } catch {
     return   // 用户取消
   }
-  try {
-    await store.updateTicket(cur.id, { priority: next })
-    notify.success(`已提升为「${getPriorityLabel(next)}」，SLA 时限已重算`)
-  } catch {
-    // store 已提示错误
-  }
+  await priorityAction.run(cur.id, next)
 }
+
+/**
+ * 三个会写活动流的动作统一用 useAsyncAction 做防重入。
+ *
+ * 原实现只有 try/catch、没有「进行中」标记：慢接口下双击「升级上报」
+ * 会提交两次，活动流里出现两条一模一样的记录。而工单时间线是事后复盘
+ * 与追责的依据，脏数据的代价不只是不好看。
+ *
+ * 错误提示交给 store / useAsyncAction，此处不重复弹。
+ */
+const priorityAction = useAsyncAction(
+  async (id: string, next: 'low' | 'medium' | 'high' | 'urgent') => {
+    await store.updateTicket(id, { priority: next })
+    notify.success(`已提升为「${getPriorityLabel(next)}」，SLA 时限已重算`)
+  },
+  { action: '提升优先级' }
+)
 
 /**
  * 确认接单（B1 显式首响）
@@ -451,15 +464,16 @@ const doEscalate = async () => {
   } catch {
     return   // 用户取消
   }
-  try {
-    await escalateTicket(cur.id, reason, app.currentUser.name || '当前用户')
-    await store.loadActivities(cur.id)
-    notify.success('已提交升级，已记入活动流')
-  } catch (e) {
-    console.error('升级失败', e)
-    handleServerError(e, { action: '升级上报' })
-  }
+  await escalateAction.run(cur.id, reason)
 }
+
+const escalateAction = useAsyncAction(
+  async (id: string, reason: string) => {
+    await escalateTicket(id, reason, app.currentUser.name || '当前用户')
+    await store.loadActivities(id)
+  },
+  { action: '升级上报', successMessage: '已提交升级，已记入活动流' }
+)
 
 const closeTicket = () => {
   const cur = ticket.value
@@ -480,15 +494,17 @@ const closeTicket = () => {
     .catch(() => {})
 }
 
+const processingAction = useAsyncAction(
+  async (id: string) => {
+    await store.updateStatus(id, 'processing')
+  },
+  { action: '开始处理', successMessage: '工单已标记为处理中' }
+)
+
 const startProcessing = async () => {
   const cur = ticket.value
   if (!cur) return
-  try {
-    await store.updateStatus(cur.id, 'processing')
-    notify.success('工单已标记为处理中')
-  } catch {
-    // store 已提示错误
-  }
+  await processingAction.run(cur.id)
 }
 
 /**
@@ -983,21 +999,21 @@ watch(ticketId, () => {
                   转派
                 </button>
                 <!-- 拆分为两个按钮：提升优先级会重算 SLA 时限，升级上报只记录不动优先级 -->
-                <button class="btn-outline" @click="raisePriority">
+                <button class="btn-outline" :disabled="priorityAction.pending.value" @click="raisePriority">
                   <ArrowUp :size="16" />
-                  提升优先级
+                  {{ priorityAction.pending.value ? '提升中…' : '提升优先级' }}
                 </button>
-                <button class="btn-outline" @click="doEscalate">
+                <button class="btn-outline" :disabled="escalateAction.pending.value" @click="doEscalate">
                   <TrendingUp :size="16" />
-                  升级上报
+                  {{ escalateAction.pending.value ? '提交中…' : '升级上报' }}
                 </button>
                 <button
                   class="btn-outline"
                   @click="startProcessing"
-                  :disabled="ticket.status === 'processing' || ticket.status === 'resolved' || ticket.status === 'closed' || ticket.status === 'void'"
+                  :disabled="processingAction.pending.value || ticket.status === 'processing' || ticket.status === 'resolved' || ticket.status === 'closed' || ticket.status === 'void'"
                 >
                   <Clock :size="16" />
-                  标记处理中
+                  {{ processingAction.pending.value ? '处理中…' : '标记处理中' }}
                 </button>
                 <button class="btn-outline" @click="closeTicket"
                   :disabled="ticket.status === 'closed' || ticket.status === 'void'"
