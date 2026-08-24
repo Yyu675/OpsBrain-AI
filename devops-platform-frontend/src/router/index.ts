@@ -97,8 +97,14 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: lazy(() => import('../views/Dashboard.vue'), 'Dashboard', 'dashboard'), meta: { title: '运维大屏' } },
     { path: '/help', name: 'help', component: lazy(() => import('../views/HelpCenter.vue'), 'HelpCenter', 'list'), meta: { title: '帮助中心' } },
     {
-      path: '/monitoring', name: 'monitoring', component: lazy(() => import('../views/FutureCapability.vue'), 'Monitoring', 'dashboard'),
-      meta: { title: '实时监控', stage: 'L2', hiddenFromNavigation: true, description: '汇聚告警、指标与服务健康状态，形成面向运维值守的实时态势视图。', capabilities: ['实时指标总览', '服务健康拓扑', '告警流转状态', '值守大盘'] }
+      // 占位页已替换为真实实现（L2 阶段 B）。数据来自后端代理的 Prometheus 查询。
+      path: '/monitoring', name: 'monitoring',
+      component: lazy(() => import('../views/Monitoring.vue'), 'Monitoring', 'dashboard'),
+      meta: {
+        title: '实时监控', stage: 'L2',
+        description: '主机资源与抓取目标的实时态势，数据直接来自 Prometheus。',
+        capabilities: ['实时指标总览', '多实例明细', '迷你趋势', '掉线目标提醒']
+      }
     },
     {
       path: '/trends', name: 'trends', component: lazy(() => import('../views/FutureCapability.vue'), 'Trends', 'dashboard'),
