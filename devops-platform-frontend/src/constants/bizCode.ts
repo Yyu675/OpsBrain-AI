@@ -51,6 +51,9 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
   50001: { title: '服务内部异常', hint: '请稍后重试，若持续出现请联系管理员', retry: 'SAFE' },
   50002: { title: '连接异常', hint: '网络或服务波动，请重试', retry: 'SAFE' },
   50010: { title: '知识检索暂不可用', hint: '这是检索链路故障，不是知识库没有内容', retry: 'SAFE' },
+  // retry 为 NEVER 是刻意的：数据源连不上是环境问题，重试无效。
+  // 提示语引导用户去「接入管理」检查，而不是反复刷新。
+  50020: { title: '监控数据源不可用', hint: '请在「接入管理」中检查 Prometheus 连接', retry: 'NEVER' },
 
   // 5xx 上游模型
   50210: { title: '模型响应超时', hint: '复杂问题耗时较长，可稍后重试或精简问题', retry: 'SAFE' },

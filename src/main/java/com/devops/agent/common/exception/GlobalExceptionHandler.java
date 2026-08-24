@@ -117,6 +117,22 @@ public class GlobalExceptionHandler {
      * {@code RuntimeException} 分支返回 500——把「他人已修改，请刷新」
      * 这种可恢复的业务冲突，误报成了服务器故障。</p>
      */
+    /**
+     * 指标数据源不可用 → 50020 / HTTP 503。
+     *
+     * <p>用 503 而非 500：这不是 OpsBrain 自身故障，而是它依赖的
+     * Prometheus 不可达。503 的语义（服务暂时不可用）也让运维的
+     * 监控告警能正确归类——把它算进 OpsBrain 的 5xx 错误率会误导排障方向。</p>
+     */
+    @ExceptionHandler(com.devops.agent.infrastructure.metrics.MetricsUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ApiResponse<Void> handleMetricsUnavailable(
+            com.devops.agent.infrastructure.metrics.MetricsUnavailableException ex) {
+        // warn 而非 error：数据源没起是常见的开发/部署态，不该淹没真正的异常
+        log.warn("⚠️ [Metrics] 数据源不可用: {}", ex.getMessage());
+        return ApiResponse.error(BizError.METRICS_UNAVAILABLE.code(), ex.getMessage());
+    }
+
     @ExceptionHandler(OptimisticLockException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleOptimisticLockException(OptimisticLockException ex) {

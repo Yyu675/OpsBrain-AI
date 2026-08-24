@@ -343,3 +343,18 @@ devops:
       # 漏一个即成上传后门。
       allowed-extensions: log,txt,json,yaml,yml,xml,csv,md,conf,ini,properties,png,jpg,jpeg,gif,webp,pdf,zip,gz,tar,tgz
 
+
+  # ================= L2 指标数据源（Prometheus）=================
+  # 关键取舍：代理查询，不自建时序存储。
+  # 运维场景下 Prometheus 已是事实标准、用户本来就有；再存一份会出现
+  # 「两套数据对不上，以哪个为准」的无解问题，且副本必然滞后于源。
+  metrics:
+    prometheus:
+      # 默认对齐 docker-compose.dev.yml 的宿主机映射端口（容器内 9090 → 宿主 29090）
+      base-url: ${PROMETHEUS_BASE_URL:http://localhost:29090}
+      # 页面同步等待，超时必须短：一条写错的高基数 PromQL 可能跑几十秒，
+      # 不设超时会占满 Web 线程池，让监控页把主站一起拖垮
+      timeout-ms: ${PROMETHEUS_TIMEOUT_MS:5000}
+      # 关掉后 /api/v1/metrics/** 会返回 50020（数据源不可用），
+      # 而不是让页面卡在加载中——没有 Prometheus 的部署应显式关掉
+      enabled: ${PROMETHEUS_ENABLED:true}

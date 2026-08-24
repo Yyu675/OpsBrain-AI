@@ -66,6 +66,14 @@ public enum BizError {
     SSE_CONNECTION_ERROR(50002, HttpStatus.INTERNAL_SERVER_ERROR, Retry.SAFE, "连接异常，请稍后重试"),
     RAG_RETRIEVE_FAILED(50010, HttpStatus.INTERNAL_SERVER_ERROR, Retry.SAFE, "知识检索服务暂不可用"),
 
+    /**
+     * 指标数据源（Prometheus）不可用。
+     * <p>Retry 是 NEVER 而非 SAFE：这是<b>环境问题</b>而非瞬时抖动，
+     * 重试通常无效。前端应提示去检查数据源接入，
+     * 而不是让用户对着「稍后重试」反复刷新。</p>
+     */
+    METRICS_UNAVAILABLE(50020, HttpStatus.SERVICE_UNAVAILABLE, Retry.NEVER, "监控数据源不可用"),
+
     // ==================== 5xx 上游模型 ====================
     /** 上游超时：可安全重试（未产生副作用） */
     LLM_TIMEOUT(50210, HttpStatus.GATEWAY_TIMEOUT, Retry.SAFE, "模型响应超时"),

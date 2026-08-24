@@ -143,6 +143,12 @@
       "retry": "SAFE"
     },
     {
+      "name": "METRICS_UNAVAILABLE",
+      "code": 50020,
+      "httpStatus": 503,
+      "retry": "NEVER"
+    },
+    {
       "name": "LLM_TIMEOUT",
       "code": 50210,
       "httpStatus": 504,
