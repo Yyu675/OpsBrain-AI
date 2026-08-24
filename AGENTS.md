@@ -218,3 +218,21 @@ npm run knip                       # 死代码/死依赖检测
 ## 更新日志
 
 - **2026-08-24**：初版。从 3206 行的 `CLAUDE.md` 中提炼硬约束，参考 new-api 的 AGENTS.md 组织方式。
+
+---
+
+## 附录：待修缺陷登记（2026-08-24 审查）
+
+改到相关文件时请一并处理，详情见 `docs/08-benchmark/02-技术债审查与推进路线规划.md`。
+
+| 级别 | 缺陷 | 位置 |
+| :-- | :-- | :-- |
+| P0 | `InMemoryChatMemoryStore` 无驱逐路径，会持续泄漏内存 | `AgentEngineConfig.java:96` |
+| P0 | SSE 超时 60s < reasoner 模型 120s，复杂推理必然超时 | `DevOpsChatController.java:109` / `AiModelConfig.java:100` |
+| P0 | `CostQuotaManager` 配额为单机内存态，重启清零且多实例失效 | `CostQuotaManager.java` |
+| P1 | 知识库无可见性字段，检索层无权限过滤 | `KnowledgeDoc.java` / `HybridRetrieverService.java` |
+| P1 | 语义缓存 key 不含权限维度，存在跨用户泄漏路径 | `SemanticCacheService.java:391` |
+| P1 | `@Transactional` 写在 Controller 层（分层破窗） | `KnowledgeTagController.java:45,58,68` |
+| P1 | `mvnw` / `mvnw.cmd` 未提交，仓库无法开箱构建 | 仓库根 |
+| P2 | 两套 traceId 生成逻辑并存（8 位 vs 32 位），且均未接 MDC | `ApiResponse.java` / `DevOpsChatController.java` |
+| P2 | 6 处自建线程池散落各层，无统一管理与监控 | 见审查报告 §2 P2-2 |
