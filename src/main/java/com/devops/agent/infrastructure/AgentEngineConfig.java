@@ -4,6 +4,7 @@ import com.devops.agent.application.router.DevOpsAgentEngine;
 import com.devops.agent.application.runtime.AgentStateManager;
 import com.devops.agent.application.runtime.CostQuotaManager;
 import com.devops.agent.domain.tools.DevOpsTools;
+import com.devops.agent.infrastructure.cache.QuotaCounterStore;
 import com.devops.agent.infrastructure.cache.TtlChatMemoryStore;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -94,9 +95,9 @@ public class AgentEngineConfig {
      * 成本/Token 配额管理器 Bean (MVP-7)
      */
     @Bean
-    public CostQuotaManager costQuotaManager() {
-        log.info("🚀 [AgentEngineConfig] 创建 CostQuotaManager");
-        return new CostQuotaManager();
+    public CostQuotaManager costQuotaManager(QuotaCounterStore quotaCounterStore) {
+        log.info("🚀 [AgentEngineConfig] 创建 CostQuotaManager（配额计数走 Redis）");
+        return new CostQuotaManager(quotaCounterStore);
     }
 
     /**
