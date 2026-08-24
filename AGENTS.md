@@ -221,6 +221,9 @@ npm run knip                       # 死代码/死依赖检测
   `/\evil.com` 与 `/\t/evil.com`（反斜杠按正斜杠解析、控制字符被剥离后重解析）。
 - **表单长度约束禁止用 `maxlength` 静默截断**，改软上限 + 提交前拦截。
   数值须与后端 `@Size` 对齐，并在 `fieldLimits.contract.test.ts` 登记。
+- **前后端共享约束一律走契约导出**，不再手工镜像。后端 `ContractExportTest`
+  反射导出 `src/contracts/backend-contract.json`，前端测试消费它。
+  改了状态机 / `@Size` / `BizError` 后须重跑该测试并提交 JSON 变更。
 - **禁止 `new Date(<后端时间字段>)`**，一律用 `@/utils/time` 的 `parseDate`。
   后端 `LocalDateTime` 序列化后不带时区，`new Date(str)` 按浏览器时区解析，
   跨时区下相对时间可差 12 小时，而绝对时间显示却正常——肉眼几乎发现不了。
@@ -261,6 +264,12 @@ npm run knip                       # 死代码/死依赖检测
 
 ## 更新日志
 
+- **2026-08-24**（六）：推进测试与契约自动化（`docs/08-benchmark/11`）。
+  新增 TicketList 首批组件测试（17 例，为拆分 SFC 建安全网）、
+  前后端契约导出机制（后端反射导出 JSON + 前端 14 例消费，消除手工镜像）。
+  含 new-api 页面移植可行性分析：技术栈完全不同（React vs Vue）不能直接复制，
+  但「使用日志」值得做——后端两张审计表数据已就绪、路由已占位。
+  测试 717 → 748。
 - **2026-08-24**（五）：鉴权与对话链路排查（`docs/08-benchmark/10`）。修复 3 类缺陷：
   SSE 断流致对话框永久卡死、开放重定向校验可被反斜杠绕过、
   表单 maxlength 静默截断粘贴的堆栈。测试 675 → 717。含下一步推进规划。
