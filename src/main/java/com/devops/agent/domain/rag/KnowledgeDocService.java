@@ -194,6 +194,18 @@ public class KnowledgeDocService {
         if (patch.getExpiredAt() != null) existing.setExpiredAt(patch.getExpiredAt());
         if (patch.getKnowledgeSource() != null) existing.setKnowledgeSource(patch.getKnowledgeSource());
         if (patch.getStatus() != null) existing.setStatus(patch.getStatus());
+        // C1：可见性变更需要记录下来，供下方判断是否重建切片
+        boolean visibilityChanged = false;
+        if (patch.getVisibility() != null
+                && !patch.getVisibility().equals(existing.getVisibility())) {
+            existing.setVisibility(patch.getVisibility());
+            visibilityChanged = true;
+        }
+        if (patch.getOwnerDept() != null
+                && !patch.getOwnerDept().equals(existing.getOwnerDept())) {
+            existing.setOwnerDept(patch.getOwnerDept());
+            visibilityChanged = true;
+        }
         existing.setContent(newContent);
         existing.setContentHash(newHash);
 
@@ -203,7 +215,11 @@ public class KnowledgeDocService {
         // 文档显示已发布实则不可检索（6.22 联调发现的真实缺陷）。
         boolean shouldIndexNow = KnowledgeDocLifecycle.shouldBeIndexed(existing.getStatus());
         boolean currentlyIndexed = KnowledgeDocLifecycle.INDEX_INDEXED.equals(existing.getIndexStatus());
-        boolean needReindex = shouldIndexNow && (contentChanged || !currentlyIndexed);
+        // C1：可见性变更也必须重建切片。切片表冗余了 visibility/owner_dept
+        // 供检索层免 JOIN 过滤，若只改文档不刷切片，切片上仍是旧的宽松权限——
+        // 表现为「文档已设为受限，但 AI 与检索接口仍能读到它」，是无声的越权。
+        boolean needReindex = shouldIndexNow
+                && (contentChanged || visibilityChanged || !currentlyIndexed);
         if (needReindex) {
             existing.setIndexStatus(KnowledgeDocLifecycle.INDEX_PENDING);
         }

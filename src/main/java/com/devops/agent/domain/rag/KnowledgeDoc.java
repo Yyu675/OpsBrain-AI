@@ -89,10 +89,17 @@ public class KnowledgeDoc {
 
     /**
      * 可见性（C1）：PUBLIC / INTERNAL / RESTRICTED。
-     * <p>默认 PUBLIC —— 与存量数据语义一致（升级前所有文档对所有人可见）。
-     * 若默认 RESTRICTED，升级后知识库会对所有人瞬间"清空"，比权限过宽更像事故。</p>
+     *
+     * <p><b>字段默认必须是 null，不能是 "PUBLIC"。</b>
+     * 本类同时充当「实体」与「更新补丁（patch）」两种角色，而 update 的合并逻辑是
+     * <b>只覆盖非空字段</b>。若这里默认 "PUBLIC"，那么任何构造出的 patch
+     * （如版本回滚的 {@code new KnowledgeDoc()}）都会携带一个看似显式的 PUBLIC，
+     * 把一篇 RESTRICTED 文档<b>静默降级为全员可见</b>——一次提权，且毫无痕迹。</p>
+     *
+     * <p>入库层面的默认由数据库列的 {@code DEFAULT 'PUBLIC'} 与
+     * Repository 的 null 兜底负责，与存量数据语义一致。</p>
      */
-    private String visibility = "PUBLIC";
+    private String visibility;
 
     /** 归属部门（C1）：仅在 visibility=RESTRICTED 时参与可见性判定 */
     private String ownerDept;
