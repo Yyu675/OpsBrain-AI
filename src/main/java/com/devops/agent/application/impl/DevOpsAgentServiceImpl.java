@@ -346,7 +346,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                 // ========== 步骤 4: 流式执行 Agent 引擎 ==========
                 log.debug("🔍 [Step 4/7] 流式执行 Agent 引擎 | model={} | traceId={}", routedModel, traceId);
-                streamAgent(engine, query, traceId, sessionId, routedModel, startTime, emitter, modelType, quotaKey);
+                streamAgent(engine, query, traceId, sessionId, routedModel, startTime, emitter, modelType, quotaKey,
+                        knowledgeScope);
 
             } catch (SecurityGuardException e) {
                 log.warn("🚫 [SecurityGuard] 拦截 | traceId={} | reason={}", traceId, e.getMessage());
@@ -406,9 +407,17 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         return sessionId;
     }
 
+    /**
+     * @param knowledgeScope 请求线程解析出的可见范围。<b>必须由调用方传入</b>——
+     *                       本方法的回调运行在模型 HTTP 线程，Sa-Token 的
+     *                       ThreadLocal 早已丢失，在这里现取只会得到 null，
+     *                       进而让语义缓存退化成不分权限域的共享缓存
+     *                       （高权限用户的答案会被低权限用户命中）。
+     */
     private void streamAgent(DevOpsAgentEngine engine, String query, String traceId,
                              String sessionId, String routedModel, long startTime,
-                             SseEmitter emitter, CostQuotaManager.ModelType modelType, String quotaKey) {
+                             SseEmitter emitter, CostQuotaManager.ModelType modelType, String quotaKey,
+                             KnowledgeScope knowledgeScope) {
         // 注：会话与 CONTEXT_PREPARED 迁移已由 handleStreamChat 完成，此处不重复
 
         // 收集流式过程中的状态（工具结果、完整答案、引用出处）
@@ -510,6 +519,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                         // 步骤 5: 写入语义缓存
                         log.debug("🔍 [Step 5/6] 写入语义缓存 | traceId={}", traceId);
+                        // 写缓存必须带 scope，且与上面 tryHitCache 用同一个 key 口径。
+                        // 读带 scope 而写不带，会把答案存进「无域」桶里，
+                        // 下一个任意权限的用户都能命中——等于绕过全部权限检查。
                         cacheService.putCache(query, finalAnswer, knowledgeScope.cacheScopeKey());
 
                         // 步骤 6: 异步记账（MVP-4 审计增强 + MVP-7 成本记录）

@@ -28,12 +28,12 @@ import java.util.Objects;
  * @param userId    用户标识，仅用于日志与审计
  * @param dept      所属部门，决定能看到哪些 RESTRICTED 文档；可为 null
  * @param admin     是否管理员（可见全部）
- * @param anonymous 是否匿名（无登录态）
+ * @param anonymousAccess 是否匿名（无登录态）
  *
  * @author OpsBrain AI
  * @since 2026-08-24
  */
-public record KnowledgeScope(String userId, String dept, boolean admin, boolean anonymous) {
+public record KnowledgeScope(String userId, String dept, boolean admin, boolean anonymousAccess) {
 
     /** 管理员可见全部 */
     public static KnowledgeScope admin(String userId, String dept) {
@@ -51,6 +51,11 @@ public record KnowledgeScope(String userId, String dept, boolean admin, boolean 
      * 兜底应当是最小权限，这正是本值的语义。</p>
      */
     public static KnowledgeScope anonymous() {
+        // 注：记录组件命名为 anonymousAccess 而非 anonymous，是为了给这个
+        // 静态工厂让出 anonymous() 这个名字。record 的组件会自动生成同名访问器，
+        // 若组件也叫 anonymous，本方法就成了「返回类型不匹配的访问器」，
+        // 编译期直接报 invalid accessor method。
+        // 让工厂保留短名是刻意的：它在 9 处被调用，而组件访问器无外部使用。
         return new KnowledgeScope(null, null, false, true);
     }
 
@@ -68,8 +73,8 @@ public record KnowledgeScope(String userId, String dept, boolean admin, boolean 
         String v = visibility == null ? "PUBLIC" : visibility;
         return switch (v) {
             case "PUBLIC" -> true;
-            case "INTERNAL" -> !anonymous;
-            case "RESTRICTED" -> !anonymous
+            case "INTERNAL" -> !anonymousAccess;
+            case "RESTRICTED" -> !anonymousAccess
                     && dept != null
                     && Objects.equals(dept, docDept);
             // 未知档位按最严处理：宁可少给，不可多给
@@ -90,7 +95,7 @@ public record KnowledgeScope(String userId, String dept, boolean admin, boolean 
         if (admin) {
             return "TRUE";
         }
-        if (anonymous) {
+        if (anonymousAccess) {
             return "visibility = 'PUBLIC'";
         }
         if (dept == null || dept.isBlank()) {
@@ -103,7 +108,7 @@ public record KnowledgeScope(String userId, String dept, boolean admin, boolean 
 
     /** 与 {@link #toSqlPredicate()} 配套的参数（顺序一致），可能为空数组 */
     public Object[] sqlParams() {
-        if (admin || anonymous || dept == null || dept.isBlank()) {
+        if (admin || anonymousAccess || dept == null || dept.isBlank()) {
             return new Object[0];
         }
         return new Object[]{dept};
@@ -112,7 +117,7 @@ public record KnowledgeScope(String userId, String dept, boolean admin, boolean 
     /** 供日志使用的简短描述（不含敏感信息） */
     public String describe() {
         if (admin) return "ADMIN(全部可见)";
-        if (anonymous) return "ANONYMOUS(仅 PUBLIC)";
+        if (anonymousAccess) return "ANONYMOUS(仅 PUBLIC)";
         return "USER(dept=" + (dept == null ? "-" : dept) + ")";
     }
 
@@ -147,7 +152,7 @@ public record KnowledgeScope(String userId, String dept, boolean admin, boolean 
         if (admin) {
             return "ADMIN";
         }
-        if (anonymous) {
+        if (anonymousAccess) {
             return "PUBLIC";
         }
         if (dept == null || dept.isBlank()) {
