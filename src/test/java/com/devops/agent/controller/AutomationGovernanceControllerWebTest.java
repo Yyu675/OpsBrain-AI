@@ -197,18 +197,18 @@ class AutomationGovernanceControllerWebTest {
 
             mockMvc.perform(put("/api/v1/governance/risk-policies/CONTROLLED_WRITE")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(json(Map.of(
-                                    "approvalMode", "SINGLE",
-                                    "approvalTimeoutMinutes", 30,
-                                    "autoExecuteAllowed", false,
-                                    "maxBlastRadiusPercent", 20,
-                                    "maxBlastRadiusCount", 5,
-                                    "cooldownSeconds", 60,
-                                    "maxRetries", 1,
-                                    "escalateAfterMinutes", 15,
-                                    "escalateTarget", "TICKET",
-                                    "allowedEnvironments", "staging,dev",
-                                    "version", 2))))
+                            .content(json(Map.ofEntries(
+                                    Map.entry("approvalMode", "SINGLE"),
+                                    Map.entry("approvalTimeoutMinutes", 30),
+                                    Map.entry("autoExecuteAllowed", false),
+                                    Map.entry("maxBlastRadiusPercent", 20),
+                                    Map.entry("maxBlastRadiusCount", 5),
+                                    Map.entry("cooldownSeconds", 60),
+                                    Map.entry("maxRetries", 1),
+                                    Map.entry("escalateAfterMinutes", 15),
+                                    Map.entry("escalateTarget", "TICKET"),
+                                    Map.entry("allowedEnvironments", "staging,dev"),
+                                    Map.entry("version", 2)))))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(0));
 
