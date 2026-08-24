@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支的新提交取消尚在跑的旧任务，避免排队浪费
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端 · 编译与测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # 三个测试类需要真实 Spring 上下文（@SpringBootTest）：
+    #   DevopsPlatformBackendApplicationTests / HybridRetrieverIntegrationTest
+    #   / KnowledgeDocRepositorySortTest
+    # 它们跑在 dev profile 上，因此这里的端口与口令必须与
+    # application-dev.yml、docker-compose.dev.yml 完全一致，否则连不上。
+    #   PostgreSQL: 25432 / devops / devops_password / devops_knowledge_db
+    #   Redis:      26379 / devops_redis_pwd
+    # 只起这两个（不用 docker-compose.dev.yml 整套）——MinIO/Prometheus/Adminer
+    # 在 CI 里用不到，起了只拖慢。
+    services:
+      postgres:
+        image: ankane/pgvector:v0.5.1
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops_password
+          POSTGRES_DB: devops_knowledge_db
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d devops_knowledge_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.0-alpine
+        ports:
+          - 26379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 校验 Maven Wrapper 可用
+        # mvnw 曾长期未提交，导致 clone 下来无法开箱构建。
+        # 这一步保证它不会再次丢失或丢掉可执行位。
+        run: |
+          test -x ./mvnw || { echo "::error::mvnw 缺失或没有可执行权限"; exit 1; }
+          ./mvnw -B -ntp --version
+
+      - name: 初始化数据库 Schema
+        # @SpringBootTest 不建表（JPA ddl-auto 非 create），需先执行建表脚本。
+        # 迁移脚本按文件名排序执行——因此新增迁移必须保持编号递增，
+        # 这与 AGENTS.md 里「禁止修改已提交迁移」的约定是同一件事。
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f sql/init.sql
+          for f in $(ls sql/migration_v*.sql | sort -V); do
+            echo "==> $f"
+            psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Redis 密码配置
+        # dev profile 期望 Redis 有密码，而官方镜像默认无密码。
+        # 用 CONFIG SET 在运行时设上，避免为此单独构建镜像。
+        run: |
+          sudo apt-get install -y --no-install-recommends redis-tools >/dev/null 2>&1 || true
+          redis-cli -h localhost -p 26379 CONFIG SET requirepass devops_redis_pwd
+          redis-cli -h localhost -p 26379 -a devops_redis_pwd PING
+
+      - name: 编译与测试
+        # AI_MODE=MOCK：不调真实模型，CI 不烧额度也不依赖外网
+        env:
+          AI_MODE: MOCK
+          SPRING_PROFILES_ACTIVE: dev
+        run: ./mvnw -B -ntp verify
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend:
+    name: 前端 · 类型/规范/测试/构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: devops-platform-frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: devops-platform-frontend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 代码规范
+        run: npm run lint
+
+      - name: 单元测试
+        run: npm run test
+
+      - name: 死代码检测（暂不阻断）
+        # continue-on-error 是<b>临时</b>状态，有明确退出条件。
+        #
+        # 现状：knip 在存量代码上报 23 个未用导出 + 53 个未用类型 + 1 个重复导出，
+        # 这些在本次改动之前就存在（已用 89e4f74 基线核对，数量完全一致）。
+        # 直接设为阻断会让 CI 从第一天起就是红的，而「长期红着的 CI」
+        # 等于没有 CI —— 大家会习惯性忽略，真正的回归也就跟着被忽略。
+        #
+        # 退出条件：存量清零后（属阶段 D 的前端整理工作），
+        # 删掉本行 continue-on-error，让 knip 正式成为门禁。
+        continue-on-error: true
+        run: npm run knip
+
+      - name: 生产构建
+        run: npm run build
