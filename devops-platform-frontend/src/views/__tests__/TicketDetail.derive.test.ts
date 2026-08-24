@@ -171,11 +171,14 @@ vi.mock('@/stores/tickets', async () => {
     useTicketsStore: () => ({
       ...storeStub,
       getById: () => storeStub.current,
-      teamMembers: ref([]),
-      assignees: ref([]),
-      hotTags: ref([]),
-      activities: ref([]),
-      loading: ref(false),
+      // 真实 Pinia store 在组件里访问时 ref 已自动解包，
+      // 代码里直接写 store.teamMembers.find(...)。桩成 ref 会让它变成
+      // Ref 对象而没有 .find —— 这是桩的失真，不是产品缺陷
+      teamMembers: [],
+      assignees: [],
+      hotTags: [],
+      activities: [],
+      loading: false,
     }),
   }
 })
