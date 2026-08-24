@@ -421,6 +421,26 @@ export function useTicketAnalysis(
           analysisContent.value += `\n\n❌ ${data.message || '分析请求失败，请稍后重试'}`
           analysisDone.value = true
           analysisStreaming.value = false
+        },
+
+        /**
+         * 服务端未发 complete 就关流时的兜底。
+         *
+         * fetchEventSource 在流关闭时**正常 resolve**——不抛错、不进 catch、
+         * 不触发 onError。只在 complete/error 里复位 analysisStreaming 的话，
+         * 后端超时切断 / 网关 502 / Nginx proxy_read_timeout 到期这几种情况下
+         * 它会永远停在 true：「停止生成」按钮一直显示、「重新分析」点不动，
+         * 用户只能刷新整个工单详情页。
+         *
+         * 与 ChatMode 是同一个缺陷，上一轮只修了那一处——这里是同类漏网。
+         */
+        onClose: () => {
+          if (!analysisStreaming.value) return   // 已由 complete/error 正常收尾
+          analysisContent.value += analysisContent.value
+            ? '\n\n_（连接已中断，以上为已生成内容）_'
+            : '❌ 连接意外中断，未收到分析结果，请重试'
+          analysisDone.value = true
+          analysisStreaming.value = false
         }
       }, abortController)
     } catch (error: unknown) {
@@ -478,6 +498,20 @@ export function useTicketAnalysis(
           analysisContent.value = replyText
           analysisDone.value = true
           analysisStreaming.value = false
+        },
+
+        // 同 runAnalysis：流被关闭但没收到 complete 时兜底收尾，
+        // 否则 analysisStreaming 永远为 true，整个 AI 面板卡死
+        onClose: () => {
+          if (!analysisStreaming.value) return
+          if (replyText) {
+            replyText += '\n\n_（连接已中断，以上为已生成内容）_'
+            analysisContent.value = replyText
+          } else {
+            analysisContent.value = '❌ 连接意外中断，未收到回复草稿，请重试'
+          }
+          analysisDone.value = true
+          analysisStreaming.value = false
         }
       }, abortController)
       return replyText
@@ -517,6 +551,12 @@ export function useTicketAnalysis(
     if (abortController) {
       abortController.abort()
       abortController = null
+    }
+    // 只 abort 不够：abort 走的是 catch 分支，而组件已卸载、
+    // 那段 catch 未必来得及执行。显式收尾保证状态不会残留为「分析中」
+    if (analysisStreaming.value) {
+      analysisStreaming.value = false
+      analysisDone.value = true
     }
   })
 
