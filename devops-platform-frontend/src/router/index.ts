@@ -181,6 +181,24 @@ const router = createRouter({
       component: lazy(() => import('../views/DesignSystem.vue'), 'DesignSystem', 'detail'),
       meta: { title: '设计系统', public: true, hiddenFromNavigation: true }
     },
+    /*
+     * 仅开发环境：审计日志页的视觉预览入口。
+     *
+     * 真实路由 /governance/audit-logs 需要 admin 且依赖后端接口，
+     * 前端做视觉走查时后端未必在跑、也不一定有管理员账号。
+     * 这条 public 路由只在 DEV 下注册——`import.meta.env.DEV` 在生产构建时
+     * 为字面量 false，整个数组项会被 Vite 静态移除，不会出现在产物里。
+     *
+     * 它指向同一个组件，靠 ?demo=1 走内置演示数据，不碰任何真实接口。
+     */
+    ...(import.meta.env.DEV
+      ? [{
+          path: '/preview/audit-logs',
+          name: 'audit-logs-preview',
+          component: lazy(() => import('../views/AuditLogs.vue'), 'AuditLogsPreview', 'list'),
+          meta: { title: '使用日志（预览）', public: true, hiddenFromNavigation: true }
+        }]
+      : []),
     { path: '/403', name: 'forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权访问', public: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFound, meta: { title: '页面未找到', public: true } }
   ],
