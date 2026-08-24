@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { notify } from '@/utils/notify'
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 // el-table 的排序与列上下文类型（组件本身已全局注册，无需按值引入）
 import type { Sort, TableColumnCtx } from 'element-plus'
@@ -15,6 +15,9 @@ import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
+import {
+  useUrlFilters, defineUrlFilter, enumParser, positiveIntParser, textParser
+} from '@/composables/useUrlFilters'
 import {
   Search, Sparkles, TrendingUp, Clock, AlertCircle,
   Trash2, Plus, X, Calendar,
@@ -41,54 +44,11 @@ import {
 
 const store = useTicketsStore()
 const router = useRouter()
-const route = useRoute()
-
-/**
- * 从 URL query 预置筛选条件
- *
- * 其他页面通过带参链接跳转过来时（如 AI 助手中心的
- * 「前往处理」→ /tickets?priority=urgent），若不读 query，
- * 用户会看到<b>未筛选的全部工单</b>——链接承诺的筛选静默失效。
- *
- * 只接受合法枚举值，非法值忽略而不报错（URL 可能被手工编辑）。
- */
-const applyQueryFilters = () => {
-  const q = route.query
-  const pick = (v: unknown): string | undefined =>
-    typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined
-
-  const priority = pick(q.priority)
-  if (priority && TICKET_PRIORITY_OPTIONS.some(o => o.value === priority)) {
-    priorityFilter.value = priority as TicketPriority
-  }
-
-  const status = pick(q.status)
-  if (status && TICKET_STATUS_OPTIONS.some(o => o.value === status)) {
-    statusFilter.value = status as TicketStatus
-  }
-
-  const assignee = pick(q.assignee)
-  if (assignee) assigneeFilter.value = assignee
-
-  const service = pick(q.service)
-  if (service && SERVICE_OPTIONS.includes(service)) serviceFilter.value = service
-
-  const category = pick(q.category)
-  if (category && CATEGORY_OPTIONS.includes(category)) categoryFilter.value = category
-
-  const keyword = pick(q.keyword)
-  if (keyword) {
-    searchQuery.value = keyword
-    appliedQuery.value = keyword
-  }
-}
 
 // 组件挂载时从后端加载数据与统计
+// URL → 筛选状态的同步已由下方 useUrlFilters 在 setup 期完成（早于 onMounted），
+// 故此处直接拉数据即可，不会出现「先显示全量再跳变」。
 onMounted(async () => {
-  // 先应用 URL 筛选，再拉数据——否则首屏会先显示全量再跳变
-  applyQueryFilters()
-  applyQuerySort()
-
   // 恢复用户调整过的列宽。只接受已知列名与合理数值，
   // 防止旧版本或被篡改的 localStorage 让某列宽度变成 0/负数而不可见
   const saved = loadPersisted<{ widths?: Record<string, number>; resized?: Record<string, boolean> }>(
@@ -354,10 +314,22 @@ const resetColumnWidths = () => {
  * el-table 自带的本地排序只能排当前页，会让用户以为看到的是全量排序结果。
  * </p>
  */
-const sortState = ref<{ prop: string; order: 'ascending' | 'descending' }>({
-  prop: 'createdAt',
-  order: 'descending'
-})
+/**
+ * 拆成 sortBy / sortAsc 两个独立 ref，而非一个对象。
+ *
+ * 原因是 URL 同步：useUrlFilters 按「一个 ref ↔ 一个 query 参数」建模，
+ * 对象 ref 需要自定义 parse/serialize 把两个字段揉进一个参数里，
+ * 既难读也让 `?sortBy=priority` 这种手写链接无法工作。
+ * 拆开后两个参数各自独立，与后端 API 的 sortBy/sortAsc 也是一一对应。
+ */
+const sortBy = ref<string>('createdAt')
+const sortAsc = ref(false)
+
+/** 聚合视图，供 el-table 与 fetchList 使用（保持原有读取方式不变） */
+const sortState = computed<{ prop: string; order: 'ascending' | 'descending' }>(() => ({
+  prop: sortBy.value,
+  order: sortAsc.value ? 'ascending' : 'descending'
+}))
 
 /**
  * 传给 el-table 的初始排序
@@ -373,36 +345,108 @@ const tableSort = computed<Sort>(() => ({
 }))
 
 /**
- * 应用 URL 中的排序参数（如从 SLA 风险面板「按优先级查看全部」跳入）。
+ * 可排序字段白名单，与后端 SORTABLE_COLUMNS 对齐（另加特殊处理的 priority）。
  *
- * 与 applyQueryFilters 分开：sortState 定义在本函数之后，
- * 且排序需白名单校验——非法字段会被后端静默降级为默认排序，
- * 前端先挡住可避免「排序图标显示在 A 列、实际按创建时间排」的错位。
- *
- * 白名单与后端 SORTABLE_COLUMNS 对齐（另加特殊处理的 priority）。
+ * 前端先挡一道的原因：非法字段会被后端静默降级为默认排序，
+ * 而表头的排序箭头仍显示在用户点的那一列——
+ * 「箭头指着 A 列、数据按创建时间排」这种错位比直接报错更难发现。
  */
 const SORTABLE_PROPS = [
   'id', 'title', 'status', 'priority', 'assignee',
   'service', 'category', 'createdAt', 'updatedAt'
-]
+] as const
 
-const applyQuerySort = () => {
-  const raw = route.query.sortBy
-  const prop = typeof raw === 'string' ? raw.trim() : ''
-  if (!prop || !SORTABLE_PROPS.includes(prop)) return
+/**
+ * 日期参数解析：只接受 `YYYY-MM-DD`。
+ *
+ * 不做宽松解析是刻意的——`<input type="date">` 只认这一种格式，
+ * 若放行 `2026/8/1` 之类，URL 里的值填不回输入框，
+ * 用户会看到「链接说筛了日期、输入框却是空的」这种自相矛盾的状态。
+ */
+const dateParser = (raw: string): string | undefined =>
+  /^\d{4}-\d{2}-\d{2}$/.test(raw.trim()) ? raw.trim() : undefined
 
-  const asc = route.query.sortAsc === 'true'
-  sortState.value = { prop, order: asc ? 'ascending' : 'descending' }
-}
+/**
+ * 筛选 / 排序 / 页码与 URL 的**双向**同步。
+ *
+ * 此前本页只**读** URL（供 Dashboard 等页面带参跳转），不写回。后果是：
+ * 用户在页面上调好的「P0 + 未分配 + 近 24h」既不能刷新保留、
+ * 也不能复制链接甩给同事——而「把这个筛选结果发群里」恰恰是
+ * 值守交接时最高频的动作之一。
+ *
+ * 统一到 useUrlFilters 后，读时校验、写时清理、默认值不入 URL 三条行为
+ * 与 KnowledgeBase / AlertList 完全一致，用户能形成稳定预期。
+ *
+ * 关于 sortAsc：它只在 sortBy 非默认时有意义，故 serialize 里跟随判断——
+ * 否则地址栏会出现 `?sortAsc=false` 这种脱离上下文的孤立参数。
+ */
+useUrlFilters([
+  defineUrlFilter({
+    ref: appliedQuery, key: 'keyword', defaultValue: '', parse: textParser(200)
+  }),
+  defineUrlFilter<'all' | TicketStatus>({
+    ref: statusFilter, key: 'status', defaultValue: 'all',
+    parse: enumParser(['all', ...TICKET_STATUS_OPTIONS.map(o => o.value)] as ('all' | TicketStatus)[])
+  }),
+  defineUrlFilter<'all' | TicketPriority>({
+    ref: priorityFilter, key: 'priority', defaultValue: 'all',
+    parse: enumParser(['all', ...TICKET_PRIORITY_OPTIONS.map(o => o.value)] as ('all' | TicketPriority)[])
+  }),
+  defineUrlFilter({
+    ref: serviceFilter, key: 'service', defaultValue: 'all',
+    parse: enumParser(['all', ...SERVICE_OPTIONS])
+  }),
+  defineUrlFilter({
+    ref: categoryFilter, key: 'category', defaultValue: 'all',
+    parse: enumParser(['all', ...CATEGORY_OPTIONS])
+  }),
+  // 负责人名单来自后端（store.assignees），挂载时才拿到，无法用枚举白名单校验。
+  // 用文本解析器 + 长度上限即可：传了不存在的人后端返回空列表，不会出错。
+  defineUrlFilter({
+    ref: assigneeFilter, key: 'assignee', defaultValue: 'all', parse: textParser(64)
+  }),
+  defineUrlFilter({ ref: dateFrom, key: 'from', defaultValue: '', parse: dateParser }),
+  defineUrlFilter({ ref: dateTo, key: 'to', defaultValue: '', parse: dateParser }),
+  defineUrlFilter({
+    ref: tagFilters, key: 'tags', defaultValue: [] as string[],
+    parse: (raw) => {
+      const list = raw.split(',').map(t => t.trim()).filter(Boolean).slice(0, 10)
+      return list.length ? list : undefined
+    },
+    // 数组不能走默认的 String()——会产出 "a,b" 看似正确，但空数组变成 ""
+    // 而 defaultValue 是 []，引用不等导致空数组也被写进 URL
+    serialize: (v) => (v.length ? v.join(',') : undefined)
+  }),
+  defineUrlFilter({
+    ref: sortBy, key: 'sortBy', defaultValue: 'createdAt', parse: enumParser(SORTABLE_PROPS)
+  }),
+  defineUrlFilter({
+    ref: sortAsc, key: 'sortAsc', defaultValue: false,
+    parse: (raw) => (raw === 'true' ? true : raw === 'false' ? false : undefined),
+    serialize: (v) => (v ? 'true' : undefined)
+  }),
+  defineUrlFilter({
+    ref: currentPage, key: 'page', defaultValue: 1, parse: positiveIntParser(10000)
+  })
+])
+
+// URL 里带 keyword 时把它回填到搜索框。
+// 只同步 appliedQuery（真正参与查询的值）是不够的——输入框会是空的，
+// 用户看到「列表明明筛过、搜索框却没内容」，想清掉筛选都不知道从哪下手。
+if (appliedQuery.value) searchQuery.value = appliedQuery.value
 
 const onSortChange = async (data: {
   prop: string | null
   order: 'ascending' | 'descending' | null
 }) => {
   // order 为 null 表示用户点到第三下取消排序 → 回落到默认排序
-  sortState.value = data.order && data.prop
-    ? { prop: data.prop, order: data.order }
-    : { prop: 'createdAt', order: 'descending' }
+  if (data.order && data.prop) {
+    sortBy.value = data.prop
+    sortAsc.value = data.order === 'ascending'
+  } else {
+    sortBy.value = 'createdAt'
+    sortAsc.value = false
+  }
   // 排序变化等于换了一种数据视图，回到第 1 页；否则用户会停在
   // 「按新排序后本不该存在的第 5 页」
   currentPage.value = 1

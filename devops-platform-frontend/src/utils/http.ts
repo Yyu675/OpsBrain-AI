@@ -121,7 +121,9 @@ export function toFriendlyError(e: unknown): FriendlyError {
     case 'TIMEOUT':
       return {
         title: '请求超时',
-        detail: `服务器在 15 秒内未响应${path ? `（${path}）` : ''}`,
+        // 用抛出方带来的实际时长，不写死 15 秒——各调用方可传自定义 timeout
+        // （如导出 CSV 用 60s），写死会让提示与真实等待时间对不上
+        detail: `${e.message || '服务器未在预期时间内响应'}${path ? `（${path}）` : ''}`,
         hint: '可能是后端服务未启动、数据库连接中断或网络不通。请检查后端服务状态和 Docker 容器是否正常运行'
       }
 
@@ -253,11 +255,37 @@ const RETRYABLE_STATUS = [408, 429, 500, 502, 503, 504]
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
+/**
+ * 超时中止的专用理由对象。
+ *
+ * 为什么不能用 `new Error('timeout')`：`AbortController.abort(reason)` 会让
+ * fetch **以该 reason 原样 reject**。普通 Error 的 `name` 是 `'Error'`，
+ * 于是 {@link isAbortError} 判不出来，超时最终被归类成 `NETWORK`——
+ * 用户看到的是「无法连接服务器，请确认后端服务已启动」，
+ * 而真相是服务连上了、只是 15 秒没返回。这两种故障的排查方向完全相反
+ * （一个查进程是否存活，一个查慢查询/线程池），提示给错会把人带偏。
+ *
+ * 用 `TimeoutError` 这个名字与 `AbortSignal.timeout()` 的标准行为对齐。
+ */
+const makeTimeoutReason = (): unknown => {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('请求超时', 'TimeoutError')
+  }
+  // 非浏览器环境（部分测试运行器）兜底：手工构造同名错误
+  const e = new Error('请求超时')
+  e.name = 'TimeoutError'
+  return e
+}
+
 const isAbortError = (e: unknown): boolean => {
   if (!e || typeof e !== 'object') return false
   const name = (e as { name?: string }).name
   return name === 'AbortError' || name === 'TimeoutError'
 }
+
+/** 是否为**超时**中止（区别于调用方主动 abort） */
+const isTimeoutError = (e: unknown): boolean =>
+  !!e && typeof e === 'object' && (e as { name?: string }).name === 'TimeoutError'
 
 const linkSignals = (
   external: AbortSignal | undefined,
@@ -304,7 +332,7 @@ export const httpRequest = async <T = unknown>(
 
   for (let attempt = 0; attempt <= effectiveRetries; attempt++) {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeout)
+    const timeoutId = setTimeout(() => controller.abort(makeTimeoutReason()), timeout)
     const unlink = linkSignals(externalSignal, controller)
 
     try {
@@ -346,11 +374,18 @@ export const httpRequest = async <T = unknown>(
       lastErr = e
       if (externalSignal?.aborted) throw e
       if (isAbortError(e)) {
-        if (attempt < effectiveRetries) {
+        // 只有**超时**才值得重试。非超时的 AbortError 说明有人主动取消了
+        // （组件卸载、用户点「停止」），重试等于无视这个取消意图，
+        // 还会在页面已经销毁后继续打后端。
+        if (isTimeoutError(e) && attempt < effectiveRetries) {
           await sleep(retryDelay * Math.pow(2, attempt))
           continue
         }
-        throw new HttpError('请求超时，请检查网络', 0, 'TIMEOUT', undefined, undefined, url)
+        if (!isTimeoutError(e)) throw e
+        throw new HttpError(
+          `请求超时（${Math.round(timeout / 1000)} 秒未响应）`,
+          0, 'TIMEOUT', undefined, undefined, url
+        )
       }
       if (e instanceof HttpError && !retryOn.includes(e.status)) throw e
       if (attempt < effectiveRetries) {

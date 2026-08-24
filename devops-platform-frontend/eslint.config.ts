@@ -103,6 +103,22 @@ export default tseslint.config(
           message: '请改用 @/utils/notify 的 notify.success/error/warning/info（含冷却去重，避免批量操作刷屏）'
         }]
       }],
+      /**
+       * 禁止 `new Date(<表达式>)` —— 必须改用 `@/utils/time` 的 parseDate。
+       *
+       * 后端所有时间字段都是 Java `LocalDateTime`，序列化成 `2026-08-24T10:30:00`
+       * **不带时区后缀**。ES 规范规定这种形式按**浏览器本地时区**解析，
+       * 而数据是按服务器时区（Asia/Shanghai）产生的。两者不一致时，
+       * 实测美东用户看到「1 小时前创建的工单」显示为「11 小时后」——偏差 12 小时，
+       * 且页面上的绝对时间看起来完全正常，几乎不可能靠肉眼发现。
+       *
+       * parseDate 会给无时区字符串补上 +08:00，是唯一正确的入口。
+       * 无参 `new Date()`（取当前时刻）不受限制，无时区歧义。
+       */
+      'no-restricted-syntax': ['error', {
+        selector: 'NewExpression[callee.name="Date"][arguments.length>0]',
+        message: '请改用 @/utils/time 的 parseDate()。后端 LocalDateTime 不带时区，new Date(str) 会按浏览器时区解析，跨时区下时间可差 12 小时。'
+      }],
       // == 在 null/undefined 判断外一律不允许
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       // 未使用变量：下划线前缀视为有意忽略
@@ -149,6 +165,17 @@ export default tseslint.config(
     files: ['src/utils/notify.ts', 'src/utils/__tests__/notify.test.ts'],
     rules: {
       'no-restricted-imports': 'off',
+    },
+  },
+
+  {
+    /**
+     * time.ts 是 parseDate 的实现本身，必须调用 `new Date(value)`；
+     * 测试文件需要构造固定时刻做断言。这两处是规则的合法例外。
+     */
+    files: ['src/utils/time.ts', '**/*.{test,spec}.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
 

@@ -18,6 +18,7 @@ import {
   debounce,
   getBackup,
   loadPersisted,
+  onPersistWriteFailure,
   readBackupPayload,
   savePersisted,
 } from '../persist'
@@ -213,6 +214,72 @@ describe('localStorage 不可用时的降级', () => {
     })
 
     expect(() => savePersisted('settings', { n: 1 }, 1)).not.toThrow()
+  })
+
+  /**
+   * 「不外抛」不等于「可以静默」。
+   *
+   * 原实现是空 catch，用户调好的列宽 / 主题 / 已读状态会看似保存成功、
+   * 刷新后复原，控制台也没有线索。必须让上层有机会提示。
+   */
+  it('写入失败会通知订阅者，并标出是否为配额超限', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+
+    const seen: Array<{ key: string; quotaExceeded: boolean }> = []
+    const off = onPersistWriteFailure(({ key, quotaExceeded }) => seen.push({ key, quotaExceeded }))
+
+    savePersisted('col-widths', { id: 120 }, 1)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0].key).toBe('col-widths')
+    expect(seen[0].quotaExceeded).toBe(true)
+
+    off()
+  })
+
+  it('非配额类失败（如隐私模式 SecurityError）标记 quotaExceeded=false —— 两者提示策略不同', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+
+    const seen: boolean[] = []
+    const off = onPersistWriteFailure(({ quotaExceeded }) => seen.push(quotaExceeded))
+
+    savePersisted('settings', { n: 1 }, 1)
+
+    expect(seen).toEqual([false])
+    off()
+  })
+
+  it('取消订阅后不再收到通知', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+
+    const fn = vi.fn()
+    const off = onPersistWriteFailure(fn)
+    off()
+
+    savePersisted('settings', { n: 1 }, 1)
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('订阅者自身抛错不影响其他订阅者 —— 一个消费方的 bug 不该拖垮持久化层', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+
+    const good = vi.fn()
+    const offBad = onPersistWriteFailure(() => { throw new Error('consumer bug') })
+    const offGood = onPersistWriteFailure(good)
+
+    expect(() => savePersisted('settings', { n: 1 }, 1)).not.toThrow()
+    expect(good).toHaveBeenCalledTimes(1)
+
+    offBad()
+    offGood()
   })
 
   it('getItem 抛错时 loadPersisted 返回 null 而非崩溃', () => {
