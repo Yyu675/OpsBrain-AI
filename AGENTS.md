@@ -241,6 +241,10 @@ npm run knip                       # 死代码/死依赖检测
 | P1 | 知识库无可见性字段，检索层无权限过滤 | v24 迁移 + `KnowledgeScope` 贯穿检索 SQL |
 | P1 | 语义缓存 key 不含权限维度，可跨用户泄漏 | 缓存键按权限域分区（`cacheScopeKey`） |
 | P1 | `@Transactional` 写在 Controller 层 | 下沉至 `KnowledgeTagService` |
+| P1 | `/chat/stream` 无限流（最贵端点，脚本可打爆额度） | 滑动窗口限流，按 userId 20 次/分钟 |
+| P1 | 写操作无统一审计（L3/L4 合规前置） | v25 `sys_operation_audit` + 拦截器 |
+| P2 | 错误码是散落的魔法数字，前后端各自硬编码 | `BizError` 枚举 + 前端 `bizCode.ts` + **契约测试交叉校验** |
+| P2 | 前端无暗色/无主题能力，639 处硬编码色值 | 四轴令牌 + 桥接层（存量零改动获得暗色） |
 | — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
 
 ### 待修复
