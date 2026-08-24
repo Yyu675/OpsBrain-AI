@@ -32,6 +32,11 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
   40001: { title: '参数不合法', hint: '请检查输入内容后重试', retry: 'NEVER' },
   40003: { title: '请求被安全策略拦截', hint: '请调整提问方式，避免包含指令性内容', retry: 'NEVER' },
   40006: { title: '问题过长', hint: '超出模型上下文窗口，请精简后重新提问', retry: 'NEVER' },
+  40004: {
+    title: '当前状态不允许该操作',
+    hint: '请刷新查看最新状态——例如已作废的工单不能再变更状态',
+    retry: 'NEVER'
+  },
   40009: { title: '数据已被他人修改', hint: '请刷新页面查看最新内容后再提交', retry: 'CLIENT' },
   40010: { title: '接口已废弃', hint: '请升级客户端或联系管理员', retry: 'NEVER' },
   40021: { title: '内容重复', hint: '知识库中已存在高度相似的文档', retry: 'NEVER' },

@@ -1,7 +1,6 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
-import com.devops.agent.common.exception.OptimisticLockException;
 import com.devops.agent.domain.rag.KnowledgeCategory;
 import com.devops.agent.domain.rag.KnowledgeCategoryService;
 import lombok.extern.slf4j.Slf4j;
@@ -83,12 +82,8 @@ public class KnowledgeCategoryController {
     @PutMapping("/documents/{docId}")
     public ApiResponse<Object> moveDocument(
             @PathVariable Long docId, @RequestBody MoveDocumentRequest request) {
-        try {
-            service.moveDocument(docId, request.categoryId(), request.version());
-            return ApiResponse.success(Map.of("id", docId, "moved", true));
-        } catch (OptimisticLockException e) {
-            return ApiResponse.error(40009, e.getMessage());
-        } catch (IllegalArgumentException | IllegalStateException e) {
+        service.moveDocument(docId, request.categoryId(), request.version());
+        return ApiResponse.success(Map.of("id", docId, "moved", true)); catch (IllegalArgumentException | IllegalStateException e) {
             return ApiResponse.error(40001, e.getMessage());
         } catch (Exception e) {
             log.error("移动知识文档失败 | docId={}", docId, e);

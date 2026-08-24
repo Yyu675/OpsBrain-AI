@@ -37,6 +37,14 @@ public enum BizError {
     PROMPT_INJECTION(40003, HttpStatus.FORBIDDEN, Retry.NEVER, "检测到提示词注入，请求已拦截"),
     BUDGET_EXCEEDED(40006, HttpStatus.BAD_REQUEST, Retry.NEVER, "问题过长，超出模型上下文窗口限制"),
 
+    /**
+     * 业务状态冲突：请求本身合法，但当前对象状态不允许该操作
+     * （如对已作废工单改状态、对未发布文档执行回滚）。
+     * <p>沿用项目既有的 40004——全部 27 处 Controller 都用它映射
+     * {@code IllegalStateException}，已是事实标准。</p>
+     */
+    STATE_CONFLICT(40004, HttpStatus.CONFLICT, Retry.NEVER, "当前状态不允许该操作"),
+
     /** 乐观锁冲突：数据已被他人修改，需刷新后由用户决定是否重提交 */
     OPTIMISTIC_LOCK(40009, HttpStatus.CONFLICT, Retry.CLIENT, "数据已被他人修改，请刷新后重试"),
 

@@ -30,14 +30,7 @@ public class KnowledgeTagController {
 
     @PostMapping
     public ApiResponse<Object> create(@RequestBody TagRequest request) {
-        try {
-            return ApiResponse.success(tagService.create(request.name(), request.description(), request.color()));
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("创建知识标签失败", e);
-            return ApiResponse.error(50001, "创建标签失败: " + e.getMessage());
-        }
+        return ApiResponse.success(tagService.create(request.name(), request.description(), request.color()));
     }
 
     @PutMapping("/{id}")

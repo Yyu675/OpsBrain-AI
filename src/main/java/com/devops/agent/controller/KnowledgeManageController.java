@@ -88,12 +88,7 @@ public class KnowledgeManageController {
      */
     @GetMapping("/stats")
     public ApiResponse<Map<String, Object>> getKnowledgeStats() {
-        try {
-            return ApiResponse.success(knowledgeStatsService.getStats());
-        } catch (Exception e) {
-            log.error("查询知识库统计失败", e);
-            return ApiResponse.error(50001, "查询失败: " + e.getMessage());
-        }
+        return ApiResponse.success(knowledgeStatsService.getStats());
     }
 
     /**
@@ -119,11 +114,6 @@ public class KnowledgeManageController {
 
         log.info("查询知识库切片：page={}, size={}, keyword={}", safePage, safeSize, keyword);
 
-        try {
-            return ApiResponse.success(knowledgeStatsService.listChunks(safePage, safeSize, keyword));
-        } catch (Exception e) {
-            log.error("查询知识库切片失败", e);
-            return ApiResponse.error(50001, "查询失败: " + e.getMessage());
-        }
+        return ApiResponse.success(knowledgeStatsService.listChunks(safePage, safeSize, keyword));
     }
 }

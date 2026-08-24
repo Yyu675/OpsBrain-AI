@@ -62,16 +62,11 @@ public class ApprovalController {
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        try {
-            if (status == null || status.isBlank() || "PENDING".equalsIgnoreCase(status)) {
-                return ApiResponse.success(approvalService.listPending(page, size));
-            }
-            String filter = "ALL".equalsIgnoreCase(status) ? null : status.trim().toUpperCase();
-            return ApiResponse.success(approvalService.listByStatus(filter, page, size));
-        } catch (Exception e) {
-            log.error("❌ [ApprovalController] 查询审批列表失败", e);
-            return ApiResponse.error(50001, "查询审批列表失败");
+        if (status == null || status.isBlank() || "PENDING".equalsIgnoreCase(status)) {
+            return ApiResponse.success(approvalService.listPending(page, size));
         }
+        String filter = "ALL".equalsIgnoreCase(status) ? null : status.trim().toUpperCase();
+        return ApiResponse.success(approvalService.listByStatus(filter, page, size));
     }
 
     /** 待审数（前端角标） */

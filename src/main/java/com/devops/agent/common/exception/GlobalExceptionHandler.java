@@ -4,13 +4,17 @@ import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.exception.NotPermissionException;
 import cn.dev33.satoken.exception.NotRoleException;
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.common.error.BizError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import java.util.stream.Collectors;
 
 /**
  * 全局异常处理器
@@ -49,7 +53,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public ApiResponse<Void> handleNotLoginException(NotLoginException ex) {
         log.debug("🔒 [GlobalException] 未登录/登录失效: type={}", ex.getType());
-        return ApiResponse.error(40101, "未登录或登录已失效，请重新登录");
+        return ApiResponse.error(BizError.NOT_LOGIN.code(), BizError.NOT_LOGIN.defaultMessage());
     }
 
     /**
@@ -80,7 +84,59 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException ex) {
         log.warn("⚠️ [GlobalException] 参数校验失败: {}", ex.getMessage());
-        return ApiResponse.error(40001, "参数校验失败: " + ex.getMessage());
+        return ApiResponse.error(BizError.INVALID_PARAM.code(), ex.getMessage());
+    }
+
+    /**
+     * 处理业务状态冲突（F2）。
+     * <p>
+     * 领域层用 {@link IllegalStateException} 表达「请求合法但当前状态不允许」，
+     * 如对已作废工单改状态、对未发布文档回滚。
+     * </p>
+     * <p>
+     * <b>为什么要有这个 handler</b>：此前 27 处 Controller 各自
+     * {@code catch (IllegalStateException e) → error(40004, ...)}。
+     * 映射虽一致，但靠 27 份拷贝维持一致性本身就是隐患——
+     * 任何一处写错都无从发现。收敛到这里后是单一真相。
+     * </p>
+     * <p>
+     * 消息直接透传：领域层抛出的状态冲突消息是<b>写给用户看的</b>
+     * （如「非法状态流转：已关闭 → 待处理」），不含内部实现细节。
+     * </p>
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleIllegalStateException(IllegalStateException ex) {
+        log.warn("⚠️ [GlobalException] 状态冲突: {}", ex.getMessage());
+        return ApiResponse.error(BizError.STATE_CONFLICT.code(), ex.getMessage());
+    }
+
+    /**
+     * 处理乐观锁冲突（F2）。
+     * <p>此前只在个别 Controller 里单独 catch，未覆盖的端点会落到
+     * {@code RuntimeException} 分支返回 500——把「他人已修改，请刷新」
+     * 这种可恢复的业务冲突，误报成了服务器故障。</p>
+     */
+    @ExceptionHandler(OptimisticLockException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleOptimisticLockException(OptimisticLockException ex) {
+        log.warn("⚠️ [GlobalException] 乐观锁冲突: {}", ex.getMessage());
+        return ApiResponse.error(BizError.OPTIMISTIC_LOCK.code(), ex.getMessage());
+    }
+
+    /**
+     * 处理 Bean Validation 校验失败（F3 前置）。
+     * <p>把字段级错误组织成 {@code 字段名: 提示} 的形式返回，
+     * 前端可据此定位到具体表单项，而不是只显示一句笼统的「参数不合法」。</p>
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
+        String detail = ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> e.getField() + ": " + e.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        log.warn("⚠️ [GlobalException] 请求体校验失败: {}", detail);
+        return ApiResponse.error(BizError.INVALID_PARAM.code(), detail);
     }
 
     /**
@@ -96,7 +152,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleNoResourceFoundException(NoResourceFoundException ex) {
         log.debug("🔍 [GlobalException] 资源未找到: {}", ex.getResourcePath());
-        return ApiResponse.error(40400, "资源未找到: " + ex.getResourcePath());
+        return ApiResponse.error(BizError.NOT_FOUND.code(), "资源未找到: " + ex.getResourcePath());
     }
 
     /**
@@ -105,8 +161,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleRuntimeException(RuntimeException ex) {
+        // 不把 ex.getMessage() 下发给用户：它可能含表名、SQL 片段、
+        // 内部类名等实现细节，对攻击者是信息泄漏，对普通用户则毫无意义。
+        // 完整堆栈进日志，用户凭响应里的 traceId 即可让运维定位到这一行。
         log.error("❌ [GlobalException] 运行时异常: ", ex);
-        return ApiResponse.error(50001, "服务内部异常: " + ex.getMessage());
+        return ApiResponse.error(BizError.INTERNAL_ERROR.code(),
+                BizError.INTERNAL_ERROR.defaultMessage() + "，请稍后重试或联系管理员");
     }
 
     /**
@@ -116,6 +176,6 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleException(Exception ex) {
         log.error("💥 [GlobalException] 未知异常: ", ex);
-        return ApiResponse.error(50001, "服务内部异常,请联系管理员");
+        return ApiResponse.error(BizError.INTERNAL_ERROR.code(), "服务内部异常，请联系管理员");
     }
 }

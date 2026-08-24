@@ -1,12 +1,10 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
-import com.devops.agent.common.exception.OptimisticLockException;
 import com.devops.agent.controller.dto.KnowledgeDocDto;
 import com.devops.agent.domain.rag.KnowledgeDoc;
 import com.devops.agent.domain.rag.KnowledgeDocService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -102,40 +100,28 @@ public class KnowledgeDocController {
             @PathVariable Long id,
             @RequestBody KnowledgeDocDto.UpdateRequest req) {
 
-        try {
-            KnowledgeDoc patch = new KnowledgeDoc();
-            patch.setTitle(req.title());
-            patch.setCategory(req.category());
-            patch.setCategoryId(req.categoryId());
-            patch.setAuthor(req.author());
-            patch.setContent(req.content());
-            patch.setSummary(req.summary());
+        KnowledgeDoc patch = new KnowledgeDoc();
+        patch.setTitle(req.title());
+        patch.setCategory(req.category());
+        patch.setCategoryId(req.categoryId());
+        patch.setAuthor(req.author());
+        patch.setContent(req.content());
+        patch.setSummary(req.summary());
 
-            KnowledgeDocService.SaveResult r = docService.update(
-                    id, patch, req.tags(), req.version(), "SYSTEM", req.changeReason());
+        KnowledgeDocService.SaveResult r = docService.update(
+                id, patch, req.tags(), req.version(), "SYSTEM", req.changeReason());
 
-            KnowledgeDoc doc = docService.findById(id, false);
+        KnowledgeDoc doc = docService.findById(id, false);
 
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", id);
-            data.put("version", r.version());
-            data.put("status", doc != null ? doc.getStatus() : null);
-            data.put("retrievable", doc != null && doc.isRetrievable());
-            data.put("indexStatus", r.indexOutcome().status());
-            data.put("nearDuplicates", r.nearDuplicates().stream()
-                    .map(KnowledgeDocDto.NearDuplicate::from).toList());
-            return ApiResponse.success(data);
-
-        } catch (OptimisticLockException e) {
-            return ApiResponse.error(40009, e.getMessage());
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("更新文档失败 | id={}", id, e);
-            return ApiResponse.error(50001, "更新文档失败: " + e.getMessage());
-        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", id);
+        data.put("version", r.version());
+        data.put("status", doc != null ? doc.getStatus() : null);
+        data.put("retrievable", doc != null && doc.isRetrievable());
+        data.put("indexStatus", r.indexOutcome().status());
+        data.put("nearDuplicates", r.nearDuplicates().stream()
+                .map(KnowledgeDocDto.NearDuplicate::from).toList());
+        return ApiResponse.success(data);
     }
 
     // ==================== 生命周期 ====================
@@ -145,22 +131,15 @@ public class KnowledgeDocController {
      */
     @PostMapping("/{id}/publish")
     public ApiResponse<Object> publish(@PathVariable Long id) {
-        try {
-            KnowledgeDocService.IndexOutcome o = docService.publish(id, "SYSTEM");
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", id);
-            data.put("indexStatus", o.status());
-            data.put("retrievable", o.isRetrievable());
-            if (o.status() == KnowledgeDocService.IndexOutcome.Status.FAILED) {
-                data.put("indexError", o.error());
-            }
-            return ApiResponse.success(data);
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("发布文档失败 | id={}", id, e);
-            return ApiResponse.error(50001, "发布失败: " + e.getMessage());
+        KnowledgeDocService.IndexOutcome o = docService.publish(id, "SYSTEM");
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", id);
+        data.put("indexStatus", o.status());
+        data.put("retrievable", o.isRetrievable());
+        if (o.status() == KnowledgeDocService.IndexOutcome.Status.FAILED) {
+            data.put("indexError", o.error());
         }
+        return ApiResponse.success(data);
     }
 
     /**
@@ -170,16 +149,9 @@ public class KnowledgeDocController {
     @PostMapping("/{id}/deprecate")
     public ApiResponse<Object> deprecate(@PathVariable Long id,
                                         @RequestBody(required = false) Map<String, String> body) {
-        try {
-            String reason = body != null ? body.get("reason") : null;
-            docService.deprecate(id, "SYSTEM", reason);
-            return ApiResponse.success(Map.of("id", id, "status", "DEPRECATED"));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("废弃文档失败 | id={}", id, e);
-            return ApiResponse.error(50001, "废弃失败: " + e.getMessage());
-        }
+        String reason = body != null ? body.get("reason") : null;
+        docService.deprecate(id, "SYSTEM", reason);
+        return ApiResponse.success(Map.of("id", id, "status", "DEPRECATED"));
     }
 
     /**
@@ -188,19 +160,12 @@ public class KnowledgeDocController {
     @PostMapping("/{id}/restore")
     public ApiResponse<Object> restore(@PathVariable Long id,
                                        @RequestBody Map<String, Object> body) {
-        try {
-            int version = ((Number) body.get("version")).intValue();
-            KnowledgeDocService.SaveResult r = docService.restore(id, version, "SYSTEM");
-            return ApiResponse.success(Map.of(
-                    "id", id,
-                    "version", r.version(),
-                    "retrievable", r.indexOutcome().isRetrievable()));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("回滚文档失败 | id={}", id, e);
-            return ApiResponse.error(50001, "回滚失败: " + e.getMessage());
-        }
+        int version = ((Number) body.get("version")).intValue();
+        KnowledgeDocService.SaveResult r = docService.restore(id, version, "SYSTEM");
+        return ApiResponse.success(Map.of(
+                "id", id,
+                "version", r.version(),
+                "retrievable", r.indexOutcome().isRetrievable()));
     }
 
     /**
@@ -212,18 +177,9 @@ public class KnowledgeDocController {
     @cn.dev33.satoken.annotation.SaCheckRole("ADMIN")   // 方向 F：物理删除不可逆，限管理员
     public ApiResponse<Object> purge(@PathVariable Long id,
                                      @RequestBody(required = false) Map<String, String> body) {
-        try {
-            String reason = body != null ? body.get("complianceReason") : null;
-            docService.purge(id, "SYSTEM", reason);
-            return ApiResponse.success(Map.of("id", id, "deleted", true));
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("物理删除文档失败 | id={}", id, e);
-            return ApiResponse.error(50001, "物理删除失败: " + e.getMessage());
-        }
+        String reason = body != null ? body.get("complianceReason") : null;
+        docService.purge(id, "SYSTEM", reason);
+        return ApiResponse.success(Map.of("id", id, "deleted", true));
     }
 
     // ==================== 查询 ====================
@@ -288,16 +244,11 @@ public class KnowledgeDocController {
      */
     @GetMapping("/{id}")
     public ApiResponse<Object> detail(@PathVariable Long id) {
-        try {
-            KnowledgeDoc doc = docService.findById(id, true);
-            if (doc == null) {
-                return ApiResponse.error(40004, "文档不存在");
-            }
-            return ApiResponse.success(KnowledgeDocDto.Detail.from(doc));
-        } catch (Exception e) {
-            log.error("查询文档详情失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询失败: " + e.getMessage());
+        KnowledgeDoc doc = docService.findById(id, true);
+        if (doc == null) {
+            return ApiResponse.error(40004, "文档不存在");
         }
+        return ApiResponse.success(KnowledgeDocDto.Detail.from(doc));
     }
 
     /**
@@ -306,15 +257,10 @@ public class KnowledgeDocController {
      */
     @GetMapping("/by-source-ticket/{ticketId}")
     public ApiResponse<Object> bySourceTicket(@PathVariable Long ticketId) {
-        try {
-            List<KnowledgeDoc> docs = docService.findBySourceTicketId(ticketId);
-            List<KnowledgeDocDto.ListItem> items = docs.stream()
-                    .map(KnowledgeDocDto.ListItem::from).toList();
-            return ApiResponse.success(items);
-        } catch (Exception e) {
-            log.error("按源工单反查文档失败 | ticketId={}", ticketId, e);
-            return ApiResponse.error(50001, "查询失败: " + e.getMessage());
-        }
+        List<KnowledgeDoc> docs = docService.findBySourceTicketId(ticketId);
+        List<KnowledgeDocDto.ListItem> items = docs.stream()
+                .map(KnowledgeDocDto.ListItem::from).toList();
+        return ApiResponse.success(items);
     }
 
     /**
@@ -322,13 +268,8 @@ public class KnowledgeDocController {
      */
     @GetMapping("/{id}/versions")
     public ApiResponse<Object> versions(@PathVariable Long id) {
-        try {
-            List<Map<String, Object>> list = docService.listVersions(id);
-            return ApiResponse.success(Map.of("docId", id, "versions", list));
-        } catch (Exception e) {
-            log.error("查询版本历史失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询失败: " + e.getMessage());
-        }
+        List<Map<String, Object>> list = docService.listVersions(id);
+        return ApiResponse.success(Map.of("docId", id, "versions", list));
     }
 
     /**
@@ -383,16 +324,11 @@ public class KnowledgeDocController {
     @GetMapping("/{id}/versions/{version}")
     public ApiResponse<Object> version(
             @PathVariable Long id, @PathVariable int version) {
-        try {
-            KnowledgeDoc doc = docService.findVersion(id, version);
-            if (doc == null) {
-                return ApiResponse.error(40004, "历史版本不存在");
-            }
-            return ApiResponse.success(KnowledgeDocDto.Detail.from(doc));
-        } catch (Exception e) {
-            log.error("查询历史版本失败 | id={} | version={}", id, version, e);
-            return ApiResponse.error(50001, "查询失败: " + e.getMessage());
+        KnowledgeDoc doc = docService.findVersion(id, version);
+        if (doc == null) {
+            return ApiResponse.error(40004, "历史版本不存在");
         }
+        return ApiResponse.success(KnowledgeDocDto.Detail.from(doc));
     }
 
     /**
@@ -400,12 +336,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/reindex/pending")
     public ApiResponse<Object> retryIndexing(@RequestParam(defaultValue = "20") int limit) {
-        try {
-            int succeeded = docService.retryFailedIndexing(limit);
-            return ApiResponse.success(Map.of("retried", succeeded));
-        } catch (Exception e) {
-            log.error("重试向量化失败", e);
-            return ApiResponse.error(50001, "重试失败: " + e.getMessage());
-        }
+        int succeeded = docService.retryFailedIndexing(limit);
+        return ApiResponse.success(Map.of("retried", succeeded));
     }
 }
