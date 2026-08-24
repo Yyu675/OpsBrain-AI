@@ -13,6 +13,7 @@ import { useHotkeys } from '@/composables/useHotkeys'
 import { useAlertNotifications } from '@/composables/useAlertNotifications'
 import { useSessionCleanup } from '@/composables/useSessionCleanup'
 import { useAppStore } from '@/stores/app'
+import { safeInternalPath } from '@/utils/safeRedirect'
 
 const router = useRouter()
 const route = useRoute()
@@ -101,7 +102,9 @@ const onUnauthorized = (e: Event) => {
 
   if (route.meta?.public) return
 
-  router.push({ name: 'login', query: from ? { redirect: from } : {} })
+  // from 来自 http 层读取的 window.location，同样经校验后再作为 redirect 传递，
+  // 避免把一个可控值原样塞进 query 供登录页回跳
+  router.push({ name: 'login', query: from ? { redirect: safeInternalPath(from) } : {} })
 }
 
 onMounted(() => {

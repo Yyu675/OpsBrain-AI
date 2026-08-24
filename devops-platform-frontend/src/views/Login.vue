@@ -11,6 +11,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Bot, User, Lock, Loader2 } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
 import { notify, handleServerError } from '@/utils/notify'
+import { safeInternalPath } from '@/utils/safeRedirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,15 +21,14 @@ const username = ref('')
 const password = ref('')
 const submitting = ref(false)
 
-const redirectTarget = (): string => {
-  const r = route.query.redirect
-  const target = Array.isArray(r) ? r[0] : r
-  // 只接受站内相对路径，防开放重定向
-  if (target && typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')) {
-    return target
-  }
-  return '/'
-}
+/**
+ * 登录后的回跳目标。
+ *
+ * 校验交给 safeInternalPath——原先的 `startsWith('/') && !startsWith('//')`
+ * 挡不住 `/\evil.com` 与 `/\t/evil.com`（反斜杠按正斜杠解析、
+ * 制表符被剥离后重解析），二者都会被浏览器当成 https://evil.com。
+ */
+const redirectTarget = (): string => safeInternalPath(route.query.redirect)
 
 const doLogin = async () => {
   if (submitting.value) return

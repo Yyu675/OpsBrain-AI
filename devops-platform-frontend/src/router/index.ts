@@ -6,6 +6,7 @@ import AppSkeleton from '@/components/common/AppSkeleton.vue'
 import NotFound from '@/views/NotFound.vue'
 import { useAppStore, type Role } from '@/stores/app'
 import { getAuthToken } from '@/utils/http'
+import { safeInternalPath } from '@/utils/safeRedirect'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -296,7 +297,12 @@ router.onError((err, to) => {
     if (reloadInFlight) return
     reloadInFlight = true
     notify.warning('资源加载失败，正在重新加载...')
-    setTimeout(() => window.location.assign(to.fullPath), 400)
+    // 必须经 safeInternalPath：这是全站唯一一处真实的浏览器导航
+    // （vue-router 走 pushState 受同源限制，location.assign 不受）。
+    // to.fullPath 源自用户可控的地址栏，直接 assign 等于把兜底重载
+    // 变成开放重定向的出口。
+    const safePath = safeInternalPath(to.fullPath)
+    setTimeout(() => window.location.assign(safePath), 400)
   }
 })
 

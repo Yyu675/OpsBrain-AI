@@ -146,6 +146,31 @@ const runStream = async (query: string) => {
         onError: (data: SSEErrorEvent) => {
           chat.finishStreaming(`❌ ${data.message || '请求失败，请稍后重试'}`)
           notify.error(data.message || '请求失败，请稍后重试')
+        },
+
+        /**
+         * 流正常结束但**没收到 complete 事件**时的兜底。
+         *
+         * fetchEventSource 在服务端关闭流时会正常 resolve——不抛错、不进 catch。
+         * 若此前既没有 complete 也没有 error（后端超时切断、网关 502 断流、
+         * Nginx proxy_read_timeout 到期都会这样），isStreaming 就永远停在 true：
+         *   - 输入框 :disabled="chat.isStreaming" → 一直禁用
+         *   - 发送按钮被「停止生成」替换，而此时 abortController 已置空，
+         *     stopGeneration 直接 return —— **点了没有任何反应**
+         * 结果是整个对话框彻底卡死，用户只能刷新页面。
+         *
+         * 这里按「是否已有内容」区分收尾文案：有内容说明是中途断流，
+         * 保留已生成部分并注明；完全没内容则如实说明没收到回答。
+         */
+        onClose: () => {
+          if (!chat.isStreaming) return   // 已由 complete/error 正常收尾
+          const partial = chat.streamingMessage?.content ?? ''
+          chat.finishStreaming(
+            partial
+              ? `${partial}\n\n_（连接已中断，以上为已生成内容）_`
+              : '❌ 连接意外中断，未收到回答，请重试'
+          )
+          notify.warning('连接中断，回答可能不完整')
         }
       },
       abortController,
@@ -222,11 +247,22 @@ onMounted(() => {
   scrollToBottom()
 })
 
-// 卸载时中止 SSE，避免 Hub 切模式后 token 继续写入 store 且 isStreaming 永不复位
+/**
+ * 卸载时中止 SSE 并**收尾流式状态**。
+ *
+ * 只 abort 是不够的：abort 会让 chatStream 的 promise 走 catch 分支，
+ * 但组件已卸载、那段 catch 里的 finishStreaming 未必来得及执行；
+ * 而 isStreaming 存在 store（跨组件共享），切走再回来输入框仍是禁用态。
+ * 故这里显式收尾，与 onClose 的兜底同一目的。
+ */
 onBeforeUnmount(() => {
   if (abortController) {
     abortController.abort()
     abortController = null
+  }
+  if (chat.isStreaming) {
+    const partial = chat.streamingMessage?.content ?? ''
+    chat.finishStreaming(partial ? `${partial}\n\n_（已停止生成）_` : '_（已停止生成）_')
   }
 })
 </script>

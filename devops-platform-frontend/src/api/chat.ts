@@ -23,6 +23,15 @@ export interface ChatStreamCallbacks {
   onToken?: (data: SSETokenEvent) => void
   onComplete?: (data: SSECompleteEvent) => void
   onError?: (data: SSEErrorEvent) => void
+  /**
+   * 流关闭时触发（无论是否收到过 complete）。
+   *
+   * **必须提供兜底**：服务端在未发 complete 就关流时（超时切断、网关 502、
+   * Nginx proxy_read_timeout 到期），fetchEventSource 会**正常 resolve**——
+   * 不抛错、不进 catch、不触发 onError。调用方若只在 complete/error 里
+   * 复位「生成中」状态，就会永远停在生成中，输入框禁用、对话框卡死。
+   */
+  onClose?: () => void
 }
 
 /**
@@ -121,6 +130,11 @@ export async function chatStream(
         // 响应体非 JSON（如网关返回的 HTML 错误页），保留状态码描述
       }
       throw new Error(detail)
+    },
+
+    // 流关闭：转交调用方收尾（见 onClose 的契约说明）
+    onclose() {
+      callbacks.onClose?.()
     },
 
     // 处理错误（throw 阻止无限重连）
