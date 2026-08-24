@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ChevronLeft, ChevronRight, Clock, AlertTriangle,
+  Clock, AlertTriangle,
   Send, ArrowUp, ArrowRightLeft, X, Check, Info, Plus,
   Sparkles, BookPlus, Paperclip, Trash2, Download, TrendingUp
 } from 'lucide-vue-next'
@@ -27,21 +27,16 @@ import {
   confirmRootCause,
   submitVerification,
   skipVerification,
-  // B4 复盘
-  getPostmortem,
-  savePostmortem,
-  generateTimelineDraft,
-  listActionItems,
-  addActionItem,
-  updateActionItem,
   type TicketActionRecord,
-  type PostmortemData,
-  type ActionItemData,
   type TicketAttachmentMeta
 } from '@/api/tickets'
 import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
 import { getTrends, type TrendData } from '@/api/dashboard'
 import { mapServiceToModule } from '@/api/utils/dto-converter'
+import { handleServerError } from '@/utils/notify'
+import { useExternalResourceState } from '@/composables/useResourceState'
+import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
+import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
 import AnalysisCard from '@/components/ticket/AnalysisCard.vue'
 import TicketInsights from '@/components/ticket/TicketInsights.vue'
 import KnowledgeSinkDrawer from '@/components/ticket/KnowledgeSinkDrawer.vue'
@@ -49,6 +44,7 @@ import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import PageLoading from '@/components/common/PageLoading.vue'
 import CollapsibleCard from '@/components/common/CollapsibleCard.vue'
+import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -57,48 +53,32 @@ const app = useAppStore()
 
 const ticketId = computed(() => String(route.params.id))
 const ticket = computed(() => store.getById(ticketId.value))
-const loading = ref(true)   // 初始为 true：避免首帧就判定「未找到」
 
 /**
- * 是否确实不存在
- * <p>
- * 必须排除 loading 中的状态。直链访问（书签/刷新/分享链接）时
- * store 是空的，若仅以 {@code !ticket} 判定，会在异步拉取完成前
- * 闪现「工单未找到」，用户会误以为链接失效。
- * </p>
+ * 三态由 useExternalResourceState 统一管理（6.18 契约）。
+ *
+ * 用「外部数据源」变体而非 useResourceState：工单数据归 store 持有
+ * （列表页已加载时详情页无需重拉），composable 再持一份必然与 store 漂移。
+ * 此处只统一状态机——此前手写的 loading/loadError/notFound 三个布尔量，
+ * 与 AlertDetail 的同名量已出现 v-if 条件不一致（`loading` vs `loading && !ticket`）。
  */
-const notFound = computed(() => !loading.value && !loadError.value && !ticket.value)
-
-/**
- * 加载失败标记
- * <p>
- * 与「工单不存在」区分：网络异常时工单可能好好地在库里，
- * 若也显示「工单未找到」会误导用户去查工单是否被删。
- * </p>
- */
-const loadError = ref<unknown>(null)
+const resource = useExternalResourceState(() => !!ticket.value)
+const loading = resource.isLoading
+const loadError = resource.error
+const notFound = resource.isNotFound
 
 /** 加载工单详情（挂载与重试共用） */
-const loadDetail = async () => {
-  loading.value = true
-  loadError.value = null
-  try {
-    if (!ticket.value) {
-      const fetchedTicket = await fetchTicketById(ticketId.value)
-      if (fetchedTicket) {
-        store.addTicket(fetchedTicket)
-      }
+const loadDetail = () => resource.load(async () => {
+  if (!ticket.value) {
+    const fetchedTicket = await fetchTicketById(ticketId.value)
+    if (fetchedTicket) {
+      store.addTicket(fetchedTicket)
     }
-    if (ticket.value) {
-      await store.loadTicketDetail(ticketId.value)
-    }
-  } catch (e) {
-    console.error('加载工单详情失败:', e)
-    loadError.value = e
-  } finally {
-    loading.value = false
   }
-}
+  if (ticket.value) {
+    await store.loadTicketDetail(ticketId.value)
+  }
+})
 
 /**
  * 时间线中以普通气泡渲染的回复
@@ -145,7 +125,10 @@ watch(ticketId, (newId, oldId) => {
   if (newId && newId !== oldId) {
     resetAnalysis()
     actions.value = []
-    postmortem.value = null
+    pm.reset()
+    // 重置三态：使上一工单进行中的请求作废，并回到 loading 避免
+    // 新工单尚未拉到时残留上一工单的终态（error / notFound）
+    resource.reset()
     loadDetail()
     loadSimilarTickets()
     loadRelatedDocs()
@@ -306,8 +289,6 @@ const ticketContextText = computed(() => {
   return `工单编号: ${t.id}\n标题: ${t.title}\n优先级: ${getPriorityLabel(t.priority)}\n状态: ${getStatusLabel(t.status)}\n服务: ${t.service}\n分类: ${t.category}\nSLA: ${t.sla}\n描述: ${t.description}`
 })
 
-const goBack = () => router.push('/tickets')
-
 const submitReply = async () => {
   const cur = ticket.value
   if (!cur) return
@@ -439,7 +420,7 @@ const doAcknowledge = async () => {
     ElMessage.success('已确认接单')
   } catch (e) {
     console.error('确认接单失败', e)
-    ElMessage.error(`确认接单失败：${(e as Error).message}`)
+    handleServerError(e, { action: '确认接单' })
   } finally {
     acknowledging.value = false
   }
@@ -454,7 +435,7 @@ const doAcknowledge = async () => {
 const doEscalate = async () => {
   const cur = ticket.value
   if (!cur) return
-  let reason = ''
+  let reason: string
   try {
     const r = await ElMessageBox.prompt(
       '请说明升级原因（例如：超出本级处理能力、需跨团队协同、影响面扩大）',
@@ -476,7 +457,7 @@ const doEscalate = async () => {
     ElMessage.success('已提交升级，已记入活动流')
   } catch (e) {
     console.error('升级失败', e)
-    ElMessage.error(`升级失败：${(e as Error).message}`)
+    handleServerError(e, { action: '升级上报' })
   }
 }
 
@@ -558,7 +539,7 @@ const doSubmitVerification = async () => {
     verifyDialogVisible.value = false
     ElMessage.success(f.skip ? '已跳过验证，工单标记为已解决' : '验证通过，工单已解决')
   } catch (e) {
-    ElMessage.error(`验证失败：${(e as Error).message}`)
+    handleServerError(e, { action: '提交验证' })
   } finally {
     verifySubmitting.value = false
   }
@@ -626,7 +607,7 @@ const doAddAction = async () => {
     actionDialogVisible.value = false
     ElMessage.success('处置动作已记录')
   } catch (e) {
-    ElMessage.error(`记录失败：${(e as Error).message}`)
+    handleServerError(e, { action: '记录处置动作' })
   } finally {
     actionSubmitting.value = false
   }
@@ -647,7 +628,7 @@ const doUpdateStage = async (stage: string) => {
     await store.loadActivities(cur.id)
     ElMessage.success(`已切换到「${STAGES.find(s => s.value === stage)?.label || stage}」`)
   } catch (e) {
-    ElMessage.error(`阶段切换失败：${(e as Error).message}`)
+    handleServerError(e, { action: '切换处置阶段' })
   }
 }
 
@@ -668,7 +649,7 @@ const doMarkMitigated = async () => {
     await store.loadActivities(cur.id)
     ElMessage.success('已标记止损（业务已恢复，根因可能未定位）')
   } catch (e) {
-    ElMessage.error(`标记止损失败：${(e as Error).message}`)
+    handleServerError(e, { action: '标记止损' })
   }
 }
 
@@ -725,7 +706,7 @@ const doConfirmRootCause = async () => {
     rootCauseDialogVisible.value = false
     ElMessage.success('根因已确认')
   } catch (e) {
-    ElMessage.error(`确认失败：${(e as Error).message}`)
+    handleServerError(e, { action: '确认根因' })
   } finally {
     rootCauseSubmitting.value = false
   }
@@ -733,117 +714,32 @@ const doConfirmRootCause = async () => {
 
 // ==================== B4 复盘 ====================
 
-const postmortem = ref<PostmortemData | null>(null)
-const postmortemLoading = ref(false)
-const pmDrawerVisible = ref(false)
-const pmForm = ref({ timeline: '', impactScope: '', impactDuration: null as number | null | undefined, lessons: '' })
-const pmActionItems = ref<ActionItemData[]>([])
-const pmSaving = ref(false)
-const newActionItem = ref({ content: '', owner: '', dueDate: '' })
+/**
+ * 复盘逻辑已抽到 useTicketPostmortem（原本 120 行内联在此文件中）。
+ * 该文件近 2900 行，复盘是其中交互面最窄、最独立的一块。
+ */
+const pm = useTicketPostmortem({
+  getTicketId: () => ticket.value?.id ?? null,
+  getOperator: () => app.currentUser.name || "当前用户",
+  // 保存复盘会在后端记活动流，需刷新时间线
+  onSaved: (ticketId) => store.loadActivities(ticketId)
+})
+// 解构出模板要用的 ref/方法：模板中写 pm.xxx.value 虽能过类型检查，
+// 但不符合 Vue 惯例（模板自动解包 ref），解构后与其它 composable 用法一致
+const {
+  drawerVisible: pmDrawerVisible,
+  form: pmForm,
+  newActionItem: pmNewActionItem,
+  actionItems: pmActionItems,
+  postmortem: pmRecord,
+  saving: pmSaving,
+  open: openPmDrawer,
+  generateDraft: pmGenerateDraft,
+  save: pmSave,
+  addItem: pmAddItem,
+  updateItemStatus: pmUpdateItemStatus,
+} = pm
 
-const loadPostmortem = async () => {
-  const cur = ticket.value
-  if (!cur) return
-  postmortemLoading.value = true
-  try {
-    const pm = await getPostmortem(cur.id)
-    postmortem.value = pm
-    if (pm) {
-      pmForm.value = {
-        timeline: pm.timeline || '',
-        impactScope: pm.impactScope || '',
-        impactDuration: pm.impactDuration,
-        lessons: pm.lessons || ''
-      }
-      pmActionItems.value = await listActionItems()
-    }
-  } catch (e) {
-    console.warn('加载复盘失败', e)
-  } finally {
-    postmortemLoading.value = false
-  }
-}
-
-const openPmDrawer = async () => {
-  pmDrawerVisible.value = true
-  if (!postmortem.value) {
-    await loadPostmortem()
-    if (!postmortem.value) {
-      // 首次打开自动生成时间线草稿
-      try {
-        const draft = await generateTimelineDraft(ticket.value!.id)
-        pmForm.value.timeline = draft
-      } catch { /* 降级为空 */ }
-    }
-  }
-}
-
-const generateDraft = async () => {
-  const cur = ticket.value
-  if (!cur) return
-  try {
-    pmForm.value.timeline = await generateTimelineDraft(cur.id)
-    ElMessage.success('时间线草稿已生成')
-  } catch (e) {
-    ElMessage.error('草稿生成失败')
-  }
-}
-
-const doSavePostmortem = async () => {
-  const cur = ticket.value
-  if (!cur || pmSaving.value) return
-  pmSaving.value = true
-  try {
-    const saved = await savePostmortem(cur.id, {
-      ticketId: cur.id,
-      timeline: pmForm.value.timeline,
-      impactScope: pmForm.value.impactScope,
-      impactDuration: pmForm.value.impactDuration,
-      lessons: pmForm.value.lessons
-    }, app.currentUser.name || '当前用户')
-    postmortem.value = saved
-    await store.loadActivities(cur.id)
-    ElMessage.success('复盘已保存')
-  } catch (e) {
-    ElMessage.error(`保存失败：${(e as Error).message}`)
-  } finally {
-    pmSaving.value = false
-  }
-}
-
-const doAddActionItem = async () => {
-  const cur = ticket.value
-  if (!cur || !postmortem.value?.id) return
-  if (!newActionItem.value.content.trim()) {
-    ElMessage.warning('改进项内容不能为空')
-    return
-  }
-  try {
-    const item = await addActionItem(cur.id, {
-      postmortemId: postmortem.value.id,
-      content: newActionItem.value.content.trim(),
-      owner: newActionItem.value.owner.trim() || undefined,
-      dueDate: newActionItem.value.dueDate || undefined
-    })
-    pmActionItems.value = [...pmActionItems.value, item]
-    newActionItem.value = { content: '', owner: '', dueDate: '' }
-    ElMessage.success('改进项已添加')
-  } catch (e) {
-    ElMessage.error(`添加失败：${(e as Error).message}`)
-  }
-}
-
-const doUpdateActionItemStatus = async (itemId: number, status: string) => {
-  try {
-    await updateActionItem(itemId, status)
-    pmActionItems.value = pmActionItems.value.map(i =>
-      i.id === itemId ? { ...i, status } : i
-    )
-    ElMessage.success('状态已更新')
-  } catch (e) {
-    ElMessage.error(`更新失败：${(e as Error).message}`)
-  }
-}
 
 /** AI 生成回复草稿填入回复框 */
 const handleGenerateReply = async () => {
@@ -943,7 +839,7 @@ const onAttachmentSelected = async (e: Event) => {
     attachments.value = [...attachments.value, saved]
     ElMessage.success(`已上传 ${saved.originalName}`)
   } catch (err) {
-    ElMessage.error((err as Error).message || '上传失败')
+    handleServerError(err, { action: '上传附件' })
   } finally {
     uploading.value = false
   }
@@ -954,7 +850,7 @@ const downloadAttachment = async (item: TicketAttachmentMeta) => {
     const url = await fetchAttachmentDownloadUrl(item.id)
     window.open(url, '_blank', 'noopener')
   } catch (err) {
-    ElMessage.error((err as Error).message || '获取下载链接失败')
+    handleServerError(err, { action: '获取下载链接' })
   }
 }
 
@@ -973,7 +869,7 @@ const removeAttachment = async (item: TicketAttachmentMeta) => {
     attachments.value = attachments.value.filter(a => a.id !== item.id)
     ElMessage.success('附件已删除')
   } catch (err) {
-    ElMessage.error((err as Error).message || '删除失败')
+    handleServerError(err, { action: '删除附件' })
   }
 }
 
@@ -1006,12 +902,12 @@ watch(ticketId, () => {
   <div class="ticket-detail">
 
     <!-- 加载态 -->
-    <main v-if="loading && !ticket" class="main-container">
+    <main v-if="loading" class="main-container">
       <PageLoading tip="正在加载工单详情…" />
     </main>
 
     <!-- 加载失败 -->
-    <main v-else-if="loadError && !ticket" class="main-container">
+    <main v-else-if="loadError" class="main-container">
       <ApiErrorState
         :error="loadError"
         retry-label="重试"
@@ -1036,16 +932,14 @@ watch(ticketId, () => {
     </main>
 
     <template v-else-if="ticket">
-      <!-- Breadcrumb -->
+      <!-- Breadcrumb（统一为首页起始的递进链路） -->
       <div class="breadcrumb-container">
-        <div class="breadcrumb">
-          <a href="javascript:void(0)" class="breadcrumb-back" @click="goBack">
-            <ChevronLeft :size="16" />
-            智能工单
-          </a>
-          <ChevronRight :size="16" class="breadcrumb-sep" />
-          <span class="breadcrumb-current">{{ ticket.id }}</span>
-        </div>
+        <AppBreadcrumb
+          :items="[
+            { label: '智能工单', to: '/tickets' },
+            { label: ticket.id }
+          ]"
+        />
       </div>
 
       <!-- Two-column layout -->
@@ -1609,60 +1503,19 @@ watch(ticketId, () => {
       </template>
     </el-dialog>
 
-    <!-- ========== B4 复盘抽屉 ========== -->
-    <el-drawer v-model="pmDrawerVisible" title="复盘归档" size="700px" :close-on-click-modal="false">
-      <div class="pm-drawer">
-        <div class="pm-section">
-          <div class="pm-section-head">
-            <h4>时间线</h4>
-            <button class="link-btn" @click="generateDraft">生成草稿</button>
-          </div>
-          <textarea v-model="pmForm.timeline" class="form-input pm-textarea" rows="10" placeholder="可自动生成草稿后编辑"></textarea>
-        </div>
-        <div class="pm-section">
-          <h4>影响与教训</h4>
-          <div class="form-row">
-            <label>影响范围</label>
-            <input v-model="pmForm.impactScope" type="text" class="form-input" placeholder="受影响的服务/用户/时长" />
-          </div>
-          <div class="form-row">
-            <label>影响时长(分钟)</label>
-            <input v-model.number="pmForm.impactDuration" type="number" class="form-input" min="0" />
-          </div>
-          <div class="form-row">
-            <label>经验教训</label>
-            <textarea v-model="pmForm.lessons" class="form-input" rows="4"></textarea>
-          </div>
-        </div>
-        <div class="pm-section">
-          <h4>改进项</h4>
-          <div class="pm-action-list">
-            <div v-for="item in pmActionItems" :key="item.id" class="pm-action-item">
-              <span class="pm-action-content">{{ item.content }}</span>
-              <span v-if="item.owner" class="pm-action-owner">@{{ item.owner }}</span>
-              <span v-if="item.dueDate" class="pm-action-due">{{ item.dueDate }}</span>
-              <select :value="item.status" class="pm-action-status" @change="doUpdateActionItemStatus(item.id!, ($event.target as HTMLSelectElement).value)">
-                <option value="OPEN">待开始</option>
-                <option value="DOING">进行中</option>
-                <option value="DONE">已完成</option>
-                <option value="DROPPED">已放弃</option>
-              </select>
-            </div>
-            <div v-if="!pmActionItems.length" class="pm-empty">暂无改进项</div>
-          </div>
-          <div class="pm-action-add">
-            <input v-model="newActionItem.content" type="text" class="form-input" placeholder="改进项内容" />
-            <input v-model="newActionItem.owner" type="text" class="form-input pm-owner-input" placeholder="责任人" />
-            <input v-model="newActionItem.dueDate" type="date" class="form-input pm-date-input" />
-            <button class="btn-outline" @click="doAddActionItem">添加</button>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="pmDrawerVisible = false">关闭</el-button>
-        <el-button type="primary" :disabled="pmSaving" @click="doSavePostmortem">保存复盘</el-button>
-      </template>
-    </el-drawer>
+    <!-- ========== B4 复盘抽屉（拆分为独立组件，逻辑见 useTicketPostmortem） ========== -->
+    <PostmortemDrawer
+      v-model:visible="pmDrawerVisible"
+      v-model:form="pmForm"
+      v-model:new-action-item="pmNewActionItem"
+      :action-items="pmActionItems"
+      :postmortem="pmRecord"
+      :saving="pmSaving"
+      @generate-draft="pmGenerateDraft"
+      @save="pmSave"
+      @add-item="pmAddItem"
+      @update-item-status="pmUpdateItemStatus"
+    />
   </div>
 </template>
 
@@ -1679,35 +1532,7 @@ watch(ticketId, () => {
   padding: 16px 24px 8px;
 }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, #9CA3AF);
-}
-
-.breadcrumb-back {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-primary-light, #2A6BC6);
-  text-decoration: none;
-
-  &:hover {
-    text-decoration: underline;
-  }
-}
-
-.breadcrumb-sep {
-  color: var(--color-text-tertiary, #9CA3AF);
-}
-
-.breadcrumb-current {
-  color: var(--color-text-primary, #111827);
-  font-weight: var(--weight-medium, 500);
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
-}
+/* 面包屑内部样式已随 AppBreadcrumb 公共组件收敛（容器定位仍由本页负责） */
 
 /* ========== Main Container ========== */
 .main-container {
@@ -2761,89 +2586,6 @@ watch(ticketId, () => {
   color: var(--color-text-secondary, #4b5563);
   cursor: pointer;
 }
-
-/* ===== B4 复盘抽屉 ===== */
-.pm-drawer {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.pm-section h4 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary, #1f2937);
-  margin: 0 0 10px 0;
-}
-
-.pm-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.pm-section-head h4 { margin: 0; }
-
-.pm-textarea {
-  font-family: var(--font-mono, monospace);
-  font-size: 13px;
-  line-height: 1.6;
-  resize: vertical;
-}
-
-.pm-action-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pm-action-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--color-bg-sunken, #F9FAFB);
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.pm-action-content { flex: 1; color: var(--color-text-primary, #1f2937); }
-.pm-action-owner { color: var(--color-text-secondary, #4b5563); font-size: 12px; }
-.pm-action-due { color: var(--color-text-tertiary, #9ca3af); font-size: 12px; }
-.pm-action-status {
-  padding: 2px 8px;
-  border: 1px solid var(--color-border, #E5E7EB);
-  border-radius: 4px;
-  font-size: 12px;
-  background: #fff;
-}
-
-.pm-empty {
-  text-align: center;
-  color: var(--color-text-tertiary, #9ca3af);
-  font-size: 13px;
-  padding: 16px;
-}
-
-.pm-action-add {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.pm-owner-input { width: 100px !important; }
-.pm-date-input { width: 130px !important; }
-
-.link-btn {
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 13px;
-  color: var(--color-primary, #3B82F6);
-  cursor: pointer;
-}
-.link-btn:hover { text-decoration: underline; }
 
 /* ===== B2 处置阶段切换 + 动作列表 ===== */
 .stage-switcher {

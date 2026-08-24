@@ -33,7 +33,7 @@ export const loadPersisted = <T>(
 ): T | null => {
   const raw = safeGet(key)
   if (!raw) return null
-  let parsed: PersistPayload<T> | null = null
+  let parsed: PersistPayload<T> | null
   try {
     parsed = JSON.parse(raw) as PersistPayload<T>
   } catch {

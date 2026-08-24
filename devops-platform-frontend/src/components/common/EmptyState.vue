@@ -10,7 +10,7 @@ interface Props {
   size?: 'compact' | 'default' | 'large'
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   icon: () => Inbox,
   title: '暂无数据',
   description: '',

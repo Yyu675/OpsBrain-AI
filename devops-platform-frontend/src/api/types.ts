@@ -8,7 +8,7 @@
 /**
  * 统一响应包装（非流式接口）
  */
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   code: number
   message: string
   data: T
@@ -37,10 +37,13 @@ export type SSEEventType = 'start' | 'tool_status' | 'token' | 'complete' | 'err
 
 /**
  * SSE 基础事件
+ *
+ * data 的具体形状由 event 决定（见下方 SSEStartEvent / SSETokenEvent 等）。
+ * 用 unknown 强制消费方先按 event 分支再窄化，避免直接当作某一类事件误读字段。
  */
 export interface SSEEvent {
   event: SSEEventType
-  data: any
+  data: unknown
 }
 
 /**
@@ -79,7 +82,11 @@ export interface SSECompleteEvent {
   citations: string[]    // 引用出处
   toolResults?: Array<{  // 工具调用结果
     toolName: string
-    result: any
+    /**
+     * 工具返回载荷。形状随 toolName 而异（如 createDevOpsTicket 返回 { ticketId }），
+     * 消费方需自行窄化——用 unknown 而非 any，强制调用点做显式类型断言。
+     */
+    result: unknown
   }>
 }
 

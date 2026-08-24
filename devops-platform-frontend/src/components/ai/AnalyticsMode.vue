@@ -206,13 +206,15 @@ watch(() => props.active, (on) => {
           工单趋势
           <span class="chart-scope">{{ scopeLabel }}</span>
         </h4>
-        <TrendChart
-          :labels="trend.days"
-          :series="ticketSeries"
-          height="220px"
-          left-axis-name="单"
-          :enable-zoom="trend.days.length > 14"
-        />
+        <PanelErrorBoundary scope="工单趋势" min-height="220px">
+          <TrendChart
+            :labels="trend.days"
+            :series="ticketSeries"
+            height="220px"
+            left-axis-name="单"
+            :enable-zoom="trend.days.length > 14"
+          />
+        </PanelErrorBoundary>
       </section>
 
       <!-- AI 调用趋势 -->
@@ -226,14 +228,16 @@ watch(() => props.active, (on) => {
           <span class="chart-scope chart-scope--fixed">全局</span>
           <span class="chart-hint">命中率分母为有效查询，已剔除拒绝/失败调用</span>
         </h4>
-        <TrendChart
-          :labels="trend.days"
-          :series="callSeries"
-          height="220px"
-          left-axis-name="%"
-          right-axis-name="元"
-          :enable-zoom="trend.days.length > 14"
-        />
+        <PanelErrorBoundary scope="AI 调用趋势" min-height="220px">
+          <TrendChart
+            :labels="trend.days"
+            :series="callSeries"
+            height="220px"
+            left-axis-name="%"
+            right-axis-name="元"
+            :enable-zoom="trend.days.length > 14"
+          />
+        </PanelErrorBoundary>
       </section>
     </div>
   </div>

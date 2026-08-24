@@ -3,11 +3,6 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ChevronRight,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
   Share2,
   History,
   Edit2,
@@ -31,6 +26,12 @@ import KnowledgeTreeSidebar from '@/components/knowledge/KnowledgeTreeSidebar.vu
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import PageLoading from '@/components/common/PageLoading.vue'
+import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import CollapseToggle from '@/components/common/CollapseToggle.vue'
+import RailButton from '@/components/common/RailButton.vue'
+import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
+import { useHotkeys } from '@/composables/useHotkeys'
+import { handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,20 +47,22 @@ const restoringVersion = ref<number | null>(null)
 const actionLoading = ref<'publish' | 'reindex' | 'deprecate' | 'restore' | 'purge' | null>(null)
 let relatedRequestSequence = 0
 
-/** 左侧知识树折叠状态（持久化到 localStorage） */
-const leftSidebarCollapsed = ref(localStorage.getItem('kd-left-collapsed') === 'true')
-// 修复：原为 === 'false'，导致状态被反转——折叠后存 'true'，刷新读 'true'==='false' 得 false
-// 又展开（选择被丢弃）；展开后存 'false'，刷新反而变折叠。左栏一直是对的，只有右栏错。
-const rightSidebarCollapsed = ref(localStorage.getItem('kd-right-collapsed') === 'true')
+/**
+ * 左右侧栏折叠状态。
+ *
+ * 折叠/持久化/过渡动画/命中区已统一收敛到 CollapsiblePanel，
+ * 此处只保留状态与实例引用供快捷键与图标轨使用。
+ */
+const leftSidebarCollapsed = ref(false)
+const rightSidebarCollapsed = ref(false)
+const leftPanelRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
+const rightPanelRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
 
-const toggleLeftSidebar = () => {
-  leftSidebarCollapsed.value = !leftSidebarCollapsed.value
-  try { localStorage.setItem('kd-left-collapsed', String(leftSidebarCollapsed.value)) } catch { /* */ }
-}
-const toggleRightSidebar = () => {
-  rightSidebarCollapsed.value = !rightSidebarCollapsed.value
-  try { localStorage.setItem('kd-right-collapsed', String(rightSidebarCollapsed.value)) } catch { /* */ }
-}
+// `[` 收左栏（目录）、`]` 收右栏（大纲）。useHotkeys 已排除输入框聚焦场景
+useHotkeys([
+  { key: '[', description: '收起/展开目录', handler: () => leftPanelRef.value?.toggle() },
+  { key: ']', description: '收起/展开大纲', handler: () => rightPanelRef.value?.toggle() }
+])
 
 // Markdown → HTML → DOMPurify 净化
 // 注意：不能用 async computed 直接 v-html（Promise 不会被 Vue 解包），
@@ -233,7 +236,7 @@ const publishDoc = async () => {
     }
     await load()
   } catch (e) {
-    ElMessage.error(`发布失败：${(e as Error).message}`)
+    handleServerError(e, { action: '发布文档' })
   } finally {
     actionLoading.value = null
   }
@@ -253,7 +256,7 @@ const retryIndex = async () => {
     }
     await load()
   } catch (e) {
-    ElMessage.error(`重试向量化失败：${(e as Error).message}`)
+    handleServerError(e, { action: '重试向量化' })
   } finally {
     actionLoading.value = null
   }
@@ -277,7 +280,7 @@ const restoreDeprecated = async () => {
     await store.undoDeprecate(d.id, d.version)
     await load()
   } catch (e) {
-    ElMessage.error(`恢复失败：${(e as Error).message}`)
+    handleServerError(e, { action: '恢复文档' })
   } finally {
     actionLoading.value = null
   }
@@ -308,7 +311,7 @@ const removeDoc = async () => {
     })
     await load()
   } catch (e) {
-    ElMessage.error(`删除失败：${(e as Error).message}`)
+    handleServerError(e, { action: '废弃文档' })
   } finally {
     actionLoading.value = null
   }
@@ -318,7 +321,7 @@ const removeDoc = async () => {
 const purgeDoc = async () => {
   const d = doc.value
   if (!d) return
-  let reason = ''
+  let reason: string
   try {
     const res = await ElMessageBox.prompt(
       '彻底删除将不可恢复，仅限合规场景（如内容违规、涉密等需审计举证）。请输入删除理由，将记录用于审计。',
@@ -334,8 +337,9 @@ const purgeDoc = async () => {
     )
     reason = (res.value ?? '').trim()
   } catch (e) {
-    if (e === 'cancel' || (e as { action?: string })?.action === 'cancel') return
-    ElMessage.error(`删除失败：${(e as Error).message}`)
+    // handleServerError 内部会识别 ElMessageBox 的取消（isAbortLike），
+    // 取消时不弹提示，故无需在此手写 cancel 判断
+    handleServerError(e, { action: '物理删除' })
     return
   }
   if (!reason) return
@@ -345,7 +349,7 @@ const purgeDoc = async () => {
     ElMessage.success('文档已彻底删除')
     router.push('/knowledge')
   } catch (e) {
-    ElMessage.error(`删除失败：${(e as Error).message}`)
+    handleServerError(e, { action: '物理删除' })
   } finally {
     actionLoading.value = null
   }
@@ -386,7 +390,7 @@ const rollbackVersion = async (version: number) => {
     ElMessage.success(`已回滚到 v${version}`)
     await Promise.all([load(), store.loadVersions(d.id)])
   } catch (e) {
-    ElMessage.error(`回滚失败：${(e as Error).message}`)
+    handleServerError(e, { action: '回滚版本' })
   } finally {
     restoringVersion.value = null
   }
@@ -411,12 +415,25 @@ const compareAction = async (version: number) => {
   <div class="knowledge-detail">
     <div class="detail-workspace">
       <!-- 左侧知识树（可折叠） -->
-      <div class="sidebar-wrapper" :class="{ collapsed: leftSidebarCollapsed }">
-        <KnowledgeTreeSidebar v-show="!leftSidebarCollapsed" :current-doc-id="docId" mode="detail" @changed="load" />
-        <button class="sidebar-toggle left-toggle" @click="toggleLeftSidebar" :title="leftSidebarCollapsed ? '展开目录' : '收起目录'">
-          <component :is="leftSidebarCollapsed ? PanelLeftOpen : PanelLeftClose" :size="18" />
-        </button>
-      </div>
+      <CollapsiblePanel
+        ref="leftPanelRef"
+        side="left"
+        storage-key="kd-left-collapsed"
+        label="目录"
+        :width="260"
+        :rail-width="40"
+        @update:collapsed="leftSidebarCollapsed = $event"
+      >
+        <!-- 折叠态：单图标入口。知识树是层级结构，折叠后无法有意义地压成图标列表，
+             故图标轨仅由组件内置的展开按钮承担（点击即展开） -->
+        <template #default="{ toggle }">
+          <KnowledgeTreeSidebar :current-doc-id="docId" mode="detail" @changed="load">
+            <template #title-actions>
+              <CollapseToggle side="left" label="目录" @click="toggle" />
+            </template>
+          </KnowledgeTreeSidebar>
+        </template>
+      </CollapsiblePanel>
       <main ref="mainContainer" class="main-container">
       <!-- 加载中 -->
       <PageLoading v-if="store.detailStatus === 'loading'" tip="加载中..." />
@@ -447,18 +464,20 @@ const compareAction = async (version: number) => {
           <!-- 阅读纸 -->
           <article class="reader-paper">
             <div class="paper-top">
-              <nav class="breadcrumb">
-                <button class="breadcrumb-back" @click="router.push('/knowledge')" title="返回知识库">
-                  <ChevronRight :size="14" style="transform:rotate(180deg)" />
-                  <span>返回</span>
-                </button>
-                <span class="breadcrumb-sep"></span>
-                <RouterLink to="/knowledge" class="breadcrumb-link">运维知识库</RouterLink>
-                <ChevronRight :size="14" class="breadcrumb-separator" />
-                <span class="breadcrumb-item">{{ doc.category || '未分类' }}</span>
-                <ChevronRight :size="14" class="breadcrumb-separator" />
-                <span class="breadcrumb-item current" :title="doc.title">{{ doc.title }}</span>
-              </nav>
+              <!--
+                统一面包屑：首页起始逐级递进。
+                原实现在层级链左侧另有一个「< 返回」按钮，与「运维知识库」这一级
+                语义重复（都是回列表页）；且链路不含首页，书签直达时回不到根节点。
+                分类一级不可点击——按分类筛选需带 query，与「点父级回上一层」语义不同，
+                筛选入口在列表页侧栏。
+              -->
+              <AppBreadcrumb
+                :items="[
+                  { label: '知识库', to: '/knowledge' },
+                  { label: doc.category || '未分类' },
+                  { label: doc.title }
+                ]"
+              />
 
               <div class="paper-toolbar">
                 <button class="tb-icon-btn" title="版本历史" @click="openVersions">
@@ -487,7 +506,13 @@ const compareAction = async (version: number) => {
                   <RefreshCw :size="14" />
                   {{ actionLoading === 'restore' ? '恢复中...' : '恢复并发布' }}
                 </button>
-                <button v-if="doc.status === 'DEPRECATED'" class="tb-btn tb-btn-danger" :disabled="!!actionLoading" @click="purgeDoc">
+                <button
+                  v-if="doc.status === 'DEPRECATED'"
+                  v-permission.disable="{ roles: ['admin'] }"
+                  class="tb-btn tb-btn-danger"
+                  :disabled="!!actionLoading"
+                  @click="purgeDoc"
+                >
                   <FileX :size="14" />
                   {{ actionLoading === 'purge' ? '删除中...' : '彻底删除' }}
                 </button>
@@ -560,15 +585,41 @@ const compareAction = async (version: number) => {
             </div>
           </article>
 
-          <!-- 右侧文章大纲 / 文档信息 -->
-          <!-- 右侧大纲/信息（可折叠） -->
-          <button class="sidebar-toggle right-toggle" @click="toggleRightSidebar" :title="rightSidebarCollapsed ? '展开大纲' : '收起大纲'">
-            <component :is="rightSidebarCollapsed ? PanelRightOpen : PanelRightClose" :size="18" />
-          </button>
-          <aside v-show="!rightSidebarCollapsed" class="yuque-rightbar">
+          <!-- 右侧文章大纲 / 文档信息（可折叠；折叠后以章节圆点保留阅读位置） -->
+          <CollapsiblePanel
+            ref="rightPanelRef"
+            side="right"
+            storage-key="kd-right-collapsed"
+            label="大纲"
+            :width="260"
+            sticky
+            @update:collapsed="rightSidebarCollapsed = $event"
+          >
+            <!--
+              折叠态图标轨：每个章节一个小圆点，当前阅读章节高亮放大，点击直接跳转。
+              这是本次改造收益最大的一处——原实现折叠后是纯空白窄条，
+              读长文时收起大纲就完全失去「读到哪了」的位置感。
+            -->
+            <template #rail>
+              <RailButton
+                v-for="item in toc"
+                :key="item.id"
+                dot
+                :title="item.text"
+                :active="activeToc === item.id"
+                @click="scrollToToc(item.id)"
+              />
+            </template>
+
+            <template #default="{ toggle }">
+            <aside class="yuque-rightbar">
             <div class="rightbar-panel">
               <div class="toc">
-                <div class="toc-title">文章大纲</div>
+                <div class="toc-title toc-title-actions">
+                  <!-- 右侧栏的折叠按钮放**左端**：镜像对称，贴近它要让出的主内容区 -->
+                  <CollapseToggle side="right" label="大纲" @click="toggle" />
+                  <span>文章大纲</span>
+                </div>
                 <button
                   v-for="item in toc"
                   :key="item.id"
@@ -603,6 +654,8 @@ const compareAction = async (version: number) => {
               </div>
             </div>
           </aside>
+          </template>
+          </CollapsiblePanel>
         </div>
       </template>
       </main>
@@ -714,38 +767,7 @@ const compareAction = async (version: number) => {
   overflow: hidden;
 }
 
-/* 侧栏折叠 */
-.sidebar-wrapper {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  position: relative;
-}
-.sidebar-wrapper.collapsed {
-  width: auto;
-}
-.sidebar-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  flex-shrink: 0;
-  border: none;
-  background: var(--color-surface-hover, #F8F9FB);
-  cursor: pointer;
-  color: var(--color-text-tertiary, #9CA3AF);
-  transition: all 0.15s;
-}
-.sidebar-toggle:hover {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #409eff);
-}
-.left-toggle {
-  border-right: 1px solid var(--color-border-light, #E5E7EB);
-}
-.right-toggle {
-  border-left: 1px solid var(--color-border-light, #E5E7EB);
-}
+/* 侧栏折叠（容器/过渡/命中区/持久化）已统一由 CollapsiblePanel 负责，此处不再重复定义 */
 
 .main-container {
   flex: 1;
@@ -777,14 +799,10 @@ const compareAction = async (version: number) => {
   box-sizing: border-box;
 }
 
+/* 宽度与吸顶交由 CollapsiblePanel（sticky prop）负责，此处只管内部呈现 */
 .yuque-rightbar {
-  width: 240px;
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
+  width: 100%;
   height: 100%;
-  max-height: 100vh;
   overflow-y: auto;
   background: var(--color-surface-hover);
   border-left: 1px solid var(--color-border-light);
@@ -805,69 +823,7 @@ const compareAction = async (version: number) => {
   margin-bottom: 20px;
 }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.breadcrumb-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  font-family: var(--font-body);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s ease;
-
-  &:hover {
-    background: var(--color-bg-sunken);
-  }
-}
-
-.breadcrumb-sep {
-  width: 1px;
-  height: 16px;
-  background: var(--color-border);
-  flex-shrink: 0;
-}
-
-.breadcrumb-link {
-  color: var(--color-text-secondary);
-  text-decoration: none;
-  transition: color 0.15s ease;
-
-  &:hover {
-    color: var(--color-primary);
-  }
-}
-
-.breadcrumb-separator {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.breadcrumb-item {
-  color: var(--color-text-secondary);
-
-  &.current {
-    color: var(--color-text-primary);
-    font-weight: var(--weight-medium);
-    max-width: 320px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
+/* 面包屑样式已随 AppBreadcrumb 公共组件收敛，本页不再重复定义 */
 
 .paper-toolbar {
   display: flex;
@@ -1352,6 +1308,21 @@ const compareAction = async (version: number) => {
   font-weight: var(--weight-medium);
   color: var(--color-text-tertiary);
   margin-bottom: 10px;
+}
+
+/* 标题行内含折叠按钮时改为两端对齐——折叠控制与它所控制的内容同处一行。
+   右侧栏的按钮在**左端**（镜像对称），故用 gap 而非 space-between，
+   并让文案占据剩余宽度靠左排布。 */
+.toc-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 抵消按钮自身内边距，使其视觉左边缘与下方列表对齐 */
+  margin-left: -4px;
+}
+.toc-title-actions > span {
+  flex: 1;
+  min-width: 0;
 }
 
 .toc-item {

@@ -10,7 +10,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Bot, User, Lock, Loader2 } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
-import { toFriendlyError } from '@/utils/http'
+import { handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,7 +42,7 @@ const doLogin = async () => {
     ElMessage.success('登录成功')
     router.replace(redirectTarget())
   } catch (e) {
-    ElMessage.error(toFriendlyError(e).detail)
+    handleServerError(e, { action: '登录' })
   } finally {
     submitting.value = false
   }

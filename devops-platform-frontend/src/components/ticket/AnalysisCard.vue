@@ -11,7 +11,7 @@
 import { Sparkles, Copy, RefreshCw, Square, ThumbsUp, ThumbsDown } from 'lucide-vue-next'
 import type { StructuredAnalysis } from '@/composables/useTicketAnalysis'
 
-const props = defineProps<{
+defineProps<{
   content: string
   streaming: boolean
   done: boolean

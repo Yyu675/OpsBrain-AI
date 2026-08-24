@@ -16,6 +16,7 @@ import { TICKET_PRIORITY_OPTIONS } from '@/constants/ticket'
 import { useAppStore } from '@/stores/app'
 import { loadDraft, saveDraft, clearDraft } from '@/utils/draftStorage'
 import { useFocusTrap } from '@/utils/focusTrap'
+import { isAbortLike } from '@/utils/errors'
 import { useDirtyGuard } from '@/composables/useDirtyGuard'
 import { chatStream } from '@/api/chat'
 import type { SSETokenEvent, SSEToolStatusEvent, SSEErrorEvent } from '@/api/types'
@@ -340,8 +341,8 @@ const aiSuggest = async () => {
     } else {
       ElMessage.info('AI 分析完成，但未产生可采纳的建议')
     }
-  } catch (error: any) {
-    if (error?.name === 'AbortError' || aiAbort?.signal.aborted) {
+  } catch (error: unknown) {
+    if (isAbortLike(error) || aiAbort?.signal.aborted) {
       // 用户关闭弹窗或主动中断，静默处理
     } else {
       console.error('[TicketFormDialog] AI 分类失败', error)

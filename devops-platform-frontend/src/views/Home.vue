@@ -1,21 +1,40 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { BookOpen, Zap, BarChart3, ArrowRight, Plus, Monitor } from 'lucide-vue-next'
+import { ref, onMounted, computed } from 'vue'
+import { BookOpen, Zap, BarChart3, ArrowRight, Plus, Monitor, Lock } from 'lucide-vue-next'
 import heroImage from '@/assets/image_0_yi19x4.jpg'
 import SafeImage from '@/components/common/SafeImage.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import { getDashboardOverview } from '@/api/dashboard'
+import { useAppStore } from '@/stores/app'
 
 interface StatItem {
   label: string
   value: string
 }
 
-const loading = ref(true)
+const app = useAppStore()
+
+/**
+ * 访客态（未登录）不拉取统计。
+ *
+ * 首页是公开路由，但 /dashboard/overview 在 `/api/**` 受 SaInterceptor 保护。
+ * 访客调用必然 401 → http 层派发 auth:unauthorized → 被踢回登录页，
+ * 「访客默认看首页」的需求即失效。故此处显式跳过，改为提示登录后查看。
+ */
+const isGuest = computed(() => !app.isAuthenticated)
+
+const loading = ref(false)
 const stats = ref<StatItem[]>([])
 const loadError = ref<unknown>(null)
 
 const reload = async () => {
+  if (isGuest.value) {
+    // 访客态：不发请求，也不算加载失败——它不是错误，是未登录
+    loading.value = false
+    loadError.value = null
+    stats.value = []
+    return
+  }
   loading.value = true
   loadError.value = null
   try {
@@ -90,7 +109,17 @@ const features = [
     </section>
 
     <!-- Stats Bar -->
-    <section v-if="loading" class="stats-section">
+    <!-- 访客态：不发请求，如实提示需登录，不冒充「暂无数据」（口径契约 6.38） -->
+    <section v-if="isGuest" class="stats-section">
+      <div class="stats-container">
+        <RouterLink to="/login" class="stats-guest">
+          <Lock :size="15" />
+          <span>登录后查看平台运行数据</span>
+          <ArrowRight :size="14" />
+        </RouterLink>
+      </div>
+    </section>
+    <section v-else-if="loading" class="stats-section">
       <div class="stats-container">
         <div v-for="n in 4" :key="n" class="stat-item">
           <div class="stat-loading" />
@@ -316,6 +345,29 @@ const features = [
 
 .stat-item {
   text-align: center;
+}
+
+/* 访客态提示：横跨整行（容器是 4 列 grid），中性色不做成错误态 */
+.stats-guest {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  margin: 0 auto;
+  border: 1px dashed var(--color-border, #d9dee7);
+  border-radius: var(--radius-md, 8px);
+  color: var(--color-text-tertiary, #9CA3AF);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+
+  &:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    background: var(--color-primary-lighter, #E8F0FC);
+  }
 }
 
 .stat-value {

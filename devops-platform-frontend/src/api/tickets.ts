@@ -1,12 +1,12 @@
 /**
  * 工单 API - 工单管理接口
- * 重新导出服务层接口，保持向后兼容
+ *
+ * 重新导出服务层接口。视图与 store 统一从此处导入，
+ * 不直接依赖 services/ticket.service —— 便于将来替换实现层。
  */
 
 export {
   fetchTickets,
-  fetchTickets as getTickets,
-  fetchTicketByTraceId,
   fetchTicketById,
   fetchTicketStats,
   createTicket,
@@ -28,8 +28,6 @@ export {
   confirmRootCause,
   submitVerification,
   skipVerification,
-  fetchClosureMetrics,
-  fetchRootCauseStats,
   // B4 复盘
   getPostmortem,
   savePostmortem,

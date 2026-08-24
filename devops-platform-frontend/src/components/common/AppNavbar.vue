@@ -2,13 +2,14 @@
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Monitor, Bell, User, Settings, LogOut, CheckCheck } from 'lucide-vue-next'
+import { Monitor, Bell, User, Settings, LogOut, LogIn, CheckCheck } from 'lucide-vue-next'
 import ProfileDialog from '@/components/common/ProfileDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
 import AvatarFallback from '@/components/common/AvatarFallback.vue'
 import { useAppStore } from '@/stores/app'
 import { useNotificationsStore, type AppNotification } from '@/stores/notifications'
 import { primaryNavigationItems } from '@/config/navigation'
+import { usePendingApprovalCountQuery } from '@/api/queries/approval.query'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +21,22 @@ const notificationsStore = useNotificationsStore()
 const navItems = computed(() =>
   primaryNavigationItems.filter(i => !i.roles || app.hasRole(i.roles as Array<'admin' | 'operator' | 'viewer' | 'guest'>))
 )
+
+/**
+ * 审批中心待审角标。
+ *
+ * 只对管理员启用——该端点限 ADMIN（后端 @SaCheckRole），
+ * 非管理员请求会得到 403，既无意义又会污染控制台。
+ * 拉取失败降级为 0（不显示角标）：角标是增值提示，
+ * 失败不该弹错误打扰用户（同 6.51 趋势加载失败的降级策略）。
+ *
+ * 用 Query 而非手写请求 + 自定义事件：审批决策后 ApprovalCenter 的
+ * mutation 会 invalidate approvalKeys.all，本角标共用该前缀，
+ * 因此**自动刷新**。此前需要「emit('approval-decided') → 此处订阅」
+ * 的手工通路，发布方与订阅方分离在两个文件，漏一处角标就停在旧数字。
+ */
+const canSeeApprovals = computed(() => app.isAuthenticated && app.hasRole(['admin']))
+const { count: approvalPending } = usePendingApprovalCountQuery(canSeeApprovals)
 
 const prefetchers: Record<string, () => Promise<unknown>> = {
   home: () => import('@/views/Home.vue'),
@@ -130,7 +147,9 @@ const handleClickOutside = (e: MouseEvent) => {
   if (!target.closest('.user-wrapper')) showUserMenu.value = false
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
   hoverTimers.forEach(t => clearTimeout(t))
@@ -161,10 +180,23 @@ onBeforeUnmount(() => {
           @touchstart.passive="doPrefetch(item.key)"
         >
           {{ item.label }}
+          <!-- 待审角标：仅审批中心且有待审项时显示 -->
+          <span
+            v-if="item.key === 'approvals' && approvalPending > 0"
+            class="nav-badge"
+            :title="`${approvalPending} 项待审批`"
+          >{{ approvalPending > 99 ? '99+' : approvalPending }}</span>
         </RouterLink>
       </div>
 
       <div class="navbar-actions">
+        <!-- 访客态：通知与用户菜单都无意义（通知需受保护 API、用户信息为空），改为登录入口 -->
+        <RouterLink v-if="!app.isAuthenticated" to="/login" class="login-btn">
+          <LogIn :size="16" />
+          登录
+        </RouterLink>
+
+        <template v-else>
         <!-- Notification -->
         <div class="notification-wrapper">
           <button
@@ -244,6 +276,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+        </template>
       </div>
     </div>
 
@@ -303,6 +336,9 @@ onBeforeUnmount(() => {
 }
 
 .nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 12px;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
@@ -311,6 +347,21 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm);
   transition: all 0.15s ease;
   white-space: nowrap;
+}
+
+/* 待审角标：跟在导航文字后，不用绝对定位——导航项宽度随文案变化，
+   绝对定位会在不同标签下错位 */
+.nav-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--state-error);
+  color: #fff;
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  line-height: 18px;
+  text-align: center;
 }
 
 .nav-link:hover {
@@ -332,6 +383,25 @@ onBeforeUnmount(() => {
 /* Notification */
 .notification-wrapper {
   position: relative;
+}
+
+/* 访客态登录入口——替代通知铃与用户菜单 */
+.login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium, 500);
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+
+  &:hover {
+    opacity: 0.88;
+  }
 }
 
 .notification-btn {

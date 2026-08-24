@@ -8,6 +8,7 @@ import {
 } from 'lucide-vue-next'
 import { listActionItems, updateActionItem, type ActionItemData } from '@/api/tickets'
 import { useTicketsStore } from '@/stores/tickets'
+import { handleServerError } from '@/utils/notify'
 
 defineOptions({ name: 'ActionItemBoard' })
 
@@ -103,7 +104,7 @@ const doUpdateStatus = async (item: ActionItemData, status: string) => {
     items.value = items.value.map(i => (i.id === item.id ? updated : i))
     ElMessage.success(`已更新为「${STATUS_LABELS[status] || status}」`)
   } catch (e) {
-    ElMessage.error(`更新失败：${(e as Error).message}`)
+    handleServerError(e, { action: '更新改进项' })
   }
 }
 

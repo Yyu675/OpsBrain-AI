@@ -12,11 +12,11 @@
  * 排序（最新告警在前），REST 列表接口不暴露 sortBy 参数——故本页不做
  * 「可点击排序」列（客户端排序只会排当前页，是 6.37 已明确的静默错误）。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Bell, AlertTriangle, CheckCircle, RefreshCw, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
-import { fetchAlerts, acknowledgeAlert, resolveAlert } from '@/api/alerts'
-import type { Alert, AlertStatus, AlertsResponse } from '@/api/types'
+import { Bell, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-vue-next'
+import type { Alert, AlertStatus } from '@/api/types'
+import { useAlertListQuery, useAlertMutations } from '@/api/queries/alerts.query'
 import {
   levelTagType,
   statusTagType,
@@ -24,24 +24,54 @@ import {
   ALERT_STATUS_OPTIONS,
   ALERT_LEVEL_OPTIONS
 } from '@/utils/alert'
-import { toFriendlyError } from '@/utils/http'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
+import ServerPagination from '@/components/common/ServerPagination.vue'
+import { useServerPaginationFrom } from '@/composables/useServerPagination'
 
 // ==================== 状态 ====================
-
-const alerts = ref<Alert[]>([])
-const total = ref(0)
-const totalPages = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(10)
 
 const statusFilter = ref<AlertStatus | ''>('')
 const levelFilter = ref<string | ''>('')
 
-const listLoading = ref(false)
-const listError = ref<unknown>(null)
+/**
+ * 分页 + 数据拉取由 TanStack Query 驱动。
+ *
+ * 相比此前的手写 fetchList：筛选与页码进 queryKey，**参数变化自动重拉**，
+ * 不需要在每个筛选控件的 change 里手动调 fetchList（漏一个就出现
+ * 「改了筛选但列表没变」）；写操作后走 invalidateQueries 声明式失效，
+ * 不需要记住「这个操作该刷新哪几处」（6.17 缺陷根源）。
+ *
+ * total/totalPages 来自 Query 的响应，故用 useServerPaginationFrom
+ * 从中派生——分页状态自己再存一份必然与响应漂移。
+ */
+const pageRef = ref(1)
+const sizeRef = ref(10)
+
+const listQuery = useAlertListQuery({
+  page: pageRef,
+  size: sizeRef,
+  status: statusFilter,
+  level: levelFilter,
+})
+
+const pagination = useServerPaginationFrom(
+  { total: () => listQuery.total.value, totalPages: () => listQuery.totalPages.value },
+  { pageSize: 10 }
+)
+// 让 composable 的 currentPage 与传给 Query 的 pageRef 是同一个 ref，
+// 这样 goToPage 改页码即触发 Query 重拉，无需手动调用
+const { currentPage, total, totalPages, pageNumbers, pageStart, pageEnd } = pagination
+watch(currentPage, (p) => { pageRef.value = p })
+watch(() => pagination.pageSize.value, (s) => { sizeRef.value = s })
+
+const alerts = listQuery.alerts
+const listLoading = listQuery.isLoading
+const listError = listQuery.error
+
+/** 处置动作（确认/恢复）。成功后自动失效告警领域全部查询 */
+const { acknowledge: ackMutation, resolve: resolveMutation } = useAlertMutations()
 
 /** 当前行正在执行确认/恢复的告警 id（防重复点击 + 行内 loading） */
 const actionLoadingId = ref<number | null>(null)
@@ -53,77 +83,49 @@ const firingCount = computed(
   () => alerts.value.filter(a => a.status === 'FIRING').length
 )
 
-// ==================== 数据拉取 ====================
+// ==================== 数据操作 ====================
 
-const fetchList = async () => {
-  const asParam = (v: string) => (v === '' ? undefined : v)
-  listLoading.value = true
-  listError.value = null
-  try {
-    const data: AlertsResponse = await fetchAlerts({
-      page: currentPage.value,
-      size: pageSize.value,
-      status: asParam(statusFilter.value),
-      level: asParam(levelFilter.value)
-    })
-    alerts.value = data.alerts
-    total.value = data.total
-    totalPages.value = data.totalPages
-    // 末页删空后退一页，避免停留在空白页
-    if (alerts.value.length === 0 && currentPage.value > 1 && data.total > 0) {
-      currentPage.value = Math.max(1, data.totalPages)
-      await fetchList()
-    }
-  } catch (e) {
-    console.error('加载告警列表失败:', e)
-    listError.value = e
-  } finally {
-    listLoading.value = false
+/** 手动刷新：Query 的 refetch 会绕过 staleTime 强制重拉 */
+const fetchList = () => listQuery.refetch()
+
+/**
+ * 末页删空后退一页（6.17）。
+ *
+ * Query 拉取完成后检查：当前页无数据但总数不为 0，说明本页被删空了。
+ * 用 watch 而非塞进 queryFn——queryFn 应保持纯粹的数据获取。
+ */
+watch(
+  () => [alerts.value.length, total.value] as const,
+  ([count]) => {
+    if (listQuery.isFetching.value) return
+    pagination.retreatIfEmptied(count)
   }
-}
+)
 
 // ==================== 分页 ====================
+// 页码序列与区间计算见 useServerPagination（与 TicketList 共用同一实现）
+// 页码变化经上方 watch 同步到 Query 的 queryKey，自动触发重拉
 
-const pageNumbers = computed(() => {
-  const totalP = Math.max(1, totalPages.value)
-  const cur = currentPage.value
-  const pages: (number | 'ellipsis')[] = []
-  if (totalP <= 5) {
-    for (let i = 1; i <= totalP; i++) pages.push(i)
-    return pages
-  }
-  pages.push(1)
-  if (cur > 3) pages.push('ellipsis')
-  const start = Math.max(2, cur - 1)
-  const end = Math.min(totalP - 1, cur + 1)
-  for (let i = start; i <= end; i++) pages.push(i)
-  if (cur < totalP - 2) pages.push('ellipsis')
-  pages.push(totalP)
-  return pages
-})
-
-const pageStart = computed(() => (currentPage.value - 1) * pageSize.value + 1)
-const pageEnd = computed(() => Math.min(currentPage.value * pageSize.value, total.value))
-
-const goToPage = async (p: number) => {
-  if (p < 1 || p > totalPages.value || p === currentPage.value) return
-  currentPage.value = p
-  await fetchList()
+const goToPage = (p: number) => {
+  pagination.goToPage(p)
 }
 
-const resetPageOnFilterChange = async () => {
-  currentPage.value = 1
-  await fetchList()
+const resetPageOnFilterChange = () => {
+  // 筛选变化等于换了数据视图，回第 1 页——否则用户停在
+  // 「按新条件本不该存在的第 5 页」。
+  // 筛选本身已在 queryKey 中，变化即自动重拉，此处只需复位页码
+  pagination.resetPage()
 }
 
 const clearFilters = () => {
   statusFilter.value = ''
   levelFilter.value = ''
-  currentPage.value = 1
-  void fetchList()
+  pagination.resetPage()
 }
 
 // ==================== 处置动作 ====================
+// 成功后的列表刷新由 mutation 的 onSuccess → invalidateQueries 完成，
+// 不再手动 await fetchList()——那是 6.17「写操作后忘记重拉」的成因
 
 /**
  * 人工确认告警（FIRING → ACKNOWLEDGED，幂等）
@@ -131,11 +133,10 @@ const clearFilters = () => {
 const acknowledge = async (row: Alert) => {
   actionLoadingId.value = row.id
   try {
-    await acknowledgeAlert(row.id)
+    await ackMutation.mutateAsync(row.id)
     ElMessage.success('已确认告警')
-    await fetchList()
-  } catch (e) {
-    ElMessage.error(toFriendlyError(e).detail)
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
   } finally {
     actionLoadingId.value = null
   }
@@ -159,19 +160,16 @@ const resolve = async (row: Alert) => {
   }
   actionLoadingId.value = row.id
   try {
-    await resolveAlert(row.id)
+    await resolveMutation.mutateAsync(row.id)
     ElMessage.success('已标记恢复')
-    await fetchList()
-  } catch (e) {
-    ElMessage.error(toFriendlyError(e).detail)
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
   } finally {
     actionLoadingId.value = null
   }
 }
 
-onMounted(() => {
-  void fetchList()
-})
+// 首次加载由 Query 自动触发（挂载即拉取），无需 onMounted
 </script>
 
 <template>
@@ -181,6 +179,7 @@ onMounted(() => {
       <div class="page-header-card">
         <div class="page-header">
           <div>
+            <AppBreadcrumb :items="[{ label: '告警事件' }]" class="page-breadcrumb" />
             <h1 class="page-title">告警事件</h1>
             <p class="page-subtitle">查看、确认与处置 Prometheus 告警，追溯关联工单</p>
           </div>
@@ -379,39 +378,17 @@ onMounted(() => {
       </div>
 
       <!-- Pagination -->
-      <div v-if="alerts.length > 0 || totalPages > 1" class="pagination">
-        <div class="pagination-info">
-          显示 {{ pageStart }}-{{ pageEnd }} 共 {{ total }} 条
-        </div>
-        <div class="pagination-controls">
-          <button
-            class="pagination-btn-chevron"
-            :disabled="currentPage === 1"
-            @click="goToPage(currentPage - 1)"
-          >
-            <ChevronLeft :size="16" />
-          </button>
-          <div class="pagination-pages">
-            <template v-for="(p, idx) in pageNumbers">
-              <span v-if="p === 'ellipsis'" :key="`e-${idx}`" class="pagination-ellipsis">...</span>
-              <button
-                v-else
-                :key="`p-${idx}`"
-                class="pagination-page"
-                :class="{ active: currentPage === p }"
-                @click="goToPage(p)"
-              >{{ p }}</button>
-            </template>
-          </div>
-          <button
-            class="pagination-btn-chevron"
-            :disabled="currentPage >= totalPages"
-            @click="goToPage(currentPage + 1)"
-          >
-            <ChevronRight :size="16" />
-          </button>
-        </div>
-      </div>
+      <ServerPagination
+        v-if="alerts.length > 0 || totalPages > 1"
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :total="total"
+        :page-start="pageStart"
+        :page-end="pageEnd"
+        :page-numbers="pageNumbers"
+        margin-top="16px"
+        @page-change="goToPage"
+      />
     </main>
   </div>
 </template>
@@ -707,74 +684,4 @@ onMounted(() => {
   font-family: var(--font-mono, monospace);
 }
 
-/* ===== 分页 ===== */
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 16px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.pagination-info {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pagination-btn-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
-  &:disabled { opacity: 0.4; cursor: not-allowed; }
-}
-
-.pagination-pages {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.pagination-page {
-  min-width: 32px;
-  height: 32px;
-  padding: 0 6px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover { border-color: var(--color-primary); color: var(--color-primary); }
-
-  &.active {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: var(--color-text-inverse);
-  }
-}
-
-.pagination-ellipsis {
-  color: var(--color-text-tertiary);
-  padding: 0 2px;
-}
 </style>

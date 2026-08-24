@@ -90,6 +90,16 @@ export const useNotificationsStore = defineStore('notifications', {
         console.warn('[notifications] 后端告警拉取失败，保留现有通知:', e)
       }
     },
+    /**
+     * 清空内存中的通知列表（登出时调用）。
+     *
+     * 只清 items，不清 readIds / dismissedIds——后两者是"用户已处理过哪些告警"的
+     * 状态记忆，同一浏览器重新登录后仍应生效，不该被登出抹掉。
+     * items 本身不持久化，登录后由 loadFromBackend 重新拉取重建。
+     */
+    clearItems() {
+      this.items = []
+    },
     markRead(id: number) {
       const n = this.items.find(x => x.id === id)
       if (!n) return

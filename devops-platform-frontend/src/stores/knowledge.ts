@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 // 只保留 clearPersisted：用于清理旧版本写入的本地 mock 文章缓存。
 // 文档数据权威来源是后端（筛选/分页/生命周期全部由后端执行），
 // 不再持久化到 localStorage（原因见 CLAUDE.md 6.18）。
 import { clearPersisted } from '@/utils/persist'
+import { errorMessage } from '@/utils/errors'
+import { useResourceState } from '@/composables/useResourceState'
 import {
   fetchKnowledgeDocs,
   fetchKnowledgeDocDetail,
@@ -101,10 +103,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         libraryTotal.value = result.totalElements
       }
       return result
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (requestSequence !== listRequestSequence) return
-      loadError.value = e.message || '加载文档列表失败'
-      ElMessage.error(loadError.value || '加载文档列表失败')
+      loadError.value = errorMessage(e, '加载文档列表失败')
+      ElMessage.error(loadError.value)
       throw e
     } finally {
       if (requestSequence === listRequestSequence) loading.value = false
@@ -135,40 +137,38 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   // ==================== 详情（三态） ====================
 
-  const detail = ref<KnowledgeDocDetail | null>(null)
-  const detailStatus = ref<'loading' | 'ready' | 'notFound' | 'error'>('loading')
-  const detailError = ref<string | null>(null)
-  /** 原始错误对象，供 ApiErrorState 做友好提示 */
-  const detailErrorObj = ref<unknown>(null)
-  let detailRequestSequence = 0
+  /**
+   * 三态由 useResourceState 统一管理（6.18 契约）。
+   *
+   * 此前 store 内手写了一份与 composable 完全同构的状态机（含请求序号防竞态），
+   * 与 AlertDetail / TicketDetail 各自的手写实现并存三份——同一契约三处实现
+   * 必然漂移（实际已漂移：两个详情页的 v-if 条件不一致）。现统一到一处。
+   */
+  const detailResource = useResourceState<KnowledgeDocDetail>()
+  const detail = detailResource.data
+  const detailStatus = detailResource.status
+  const detailErrorObj = detailResource.error
+  /** 错误文案（兼容既有消费方；原始对象走 detailErrorObj 给 ApiErrorState） */
+  const detailError = computed(() =>
+    detailResource.isError.value ? errorMessage(detailResource.error.value, '加载文档详情失败') : null
+  )
 
   /**
    * 加载文档详情
    * <p>三态严格区分：loading（等待）/ notFound（确实不存在）/ error（网络或服务异常，可重试）。</p>
+   * <p>`fetchKnowledgeDocDetail` 对 40004 抛 NotFoundDocError，此处转为 null——
+   * useResourceState 以「resolve(null) = 确实不存在、reject = 加载失败」为约定，
+   * 转换后两种来源的 notFound 判定才一致。</p>
    */
   const loadDetail = async (id: number) => {
-    const requestSequence = ++detailRequestSequence
-    detailStatus.value = 'loading'
-    detailError.value = null
-    detailErrorObj.value = null
-    detail.value = null
-    try {
-      const result = await fetchKnowledgeDocDetail(id)
-      if (requestSequence !== detailRequestSequence) return null
-      detail.value = result
-      detailStatus.value = 'ready'
-      return result
-    } catch (e) {
-      if (requestSequence !== detailRequestSequence) return null
-      if ((e as NotFoundDocError)?.isNotFound) {
-        detailStatus.value = 'notFound'
-      } else {
-        detailStatus.value = 'error'
-        detailError.value = (e as Error).message || '加载文档详情失败'
-        detailErrorObj.value = e
+    return detailResource.load(async () => {
+      try {
+        return await fetchKnowledgeDocDetail(id)
+      } catch (e) {
+        if ((e as NotFoundDocError)?.isNotFound) return null
+        throw e
       }
-      throw e
-    }
+    })
   }
 
   // ==================== 侧栏聚合（全库跨页） ====================
@@ -364,10 +364,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       const result = await compareKnowledgeDocVersions(id, fromV, toV)
       if (seq !== compareRequestSequence) return
       compareResult.value = result
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (seq !== compareRequestSequence) return
       console.warn('[KnowledgeStore] 版本对比失败', e)
-      ElMessage.error(e?.message || '版本对比失败')
+      ElMessage.error(errorMessage(e, '版本对比失败'))
     } finally {
       if (seq === compareRequestSequence) compareLoading.value = false
     }

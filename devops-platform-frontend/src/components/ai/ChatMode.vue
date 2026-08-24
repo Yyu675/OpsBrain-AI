@@ -10,6 +10,7 @@ import { safeMarkdown } from '@/utils/safeMarkdown'
 import type { SSEStartEvent, SSEToolStatusEvent, SSETokenEvent, SSECompleteEvent, SSEErrorEvent } from '@/api/types'
 import { useChatStore, type ChatMessage } from '@/stores/chat'
 import { copyText } from '@/utils/clipboard'
+import { errorMessage, isAbortLike } from '@/utils/errors'
 
 /**
  * 对话模式（AI 独立对话页 AiChatView 的对话问答子模式）
@@ -112,17 +113,19 @@ const runStream = async (query: string) => {
 
           // 识别工单创建结果
           if (data.toolResults) {
-            const ticketTool = data.toolResults.find((t: any) => t.toolName === 'createDevOpsTicket')
+            const ticketTool = data.toolResults.find(t => t.toolName === 'createDevOpsTicket')
             if (ticketTool?.result) {
               try {
-                const result = typeof ticketTool.result === 'string'
+                // result 声明为 unknown（形状随工具而异），此处按 createDevOpsTicket 的契约窄化
+                const parsed: unknown = typeof ticketTool.result === 'string'
                   ? JSON.parse(ticketTool.result)
                   : ticketTool.result
+                const ticketId = (parsed as { ticketId?: string } | null)?.ticketId
 
-                if (result.ticketId) {
-                  chat.mergeMetadata({ ticketId: result.ticketId })
-                  emit('ticket-created', result.ticketId)
-                  ElMessage.success({ message: `工单 ${result.ticketId} 创建成功！`, duration: 5000 })
+                if (ticketId) {
+                  chat.mergeMetadata({ ticketId })
+                  emit('ticket-created', ticketId)
+                  ElMessage.success({ message: `工单 ${ticketId} 创建成功！`, duration: 5000 })
                 }
               } catch (e) {
                 console.error('解析工单结果失败:', e)
@@ -148,15 +151,15 @@ const runStream = async (query: string) => {
       abortController,
       chat.ensureSession('global')   // 三层记忆：全局抽屉专用会话（'global' 伪键）
     )
-  } catch (error: any) {
+  } catch (error: unknown) {
     // 主动中断不算错误
-    if (error?.name === 'AbortError' || abortController?.signal.aborted) {
+    if (isAbortLike(error) || abortController?.signal.aborted) {
       const msg = chat.streamingMessage
       const partial = msg?.content ?? ''
       chat.finishStreaming(partial ? `${partial}\n\n_（已停止生成）_` : '_（已停止生成）_')
       return
     }
-    chat.finishStreaming(`❌ 连接失败：${error.message || '网络错误'}`)
+    chat.finishStreaming(`❌ 连接失败：${errorMessage(error)}`)
     ElMessage.error('连接失败，请检查网络或稍后重试')
   } finally {
     abortController = null

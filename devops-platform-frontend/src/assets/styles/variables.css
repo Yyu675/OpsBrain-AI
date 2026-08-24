@@ -203,3 +203,29 @@
 .compact-tables .kb-grid {
   gap: 12px;
 }
+
+/* ==================== 页面面包屑间距 ====================
+   AppBreadcrumb 自身只管内部排版；它与页面标题的间距属页面布局职责。
+   一级页面（知识库/工单/告警/审批/改进项）用法一致，故在此统一定义一次，
+   避免 5 个页面各写一遍 margin 而后续漂移。 */
+.page-breadcrumb {
+  margin-bottom: 8px;
+}
+
+/* ==================== 权限禁用（v-permission.disable） ====================
+   指令在无权限时加此 class 并置 disabled。样式必须存在，否则按钮
+   看起来可点却点不动——用户会以为界面卡了而反复点击。
+   注意：后端 @SaCheckRole 才是安全底线，本样式只是体验层提示（6.59 契约）。*/
+.is-permission-disabled {
+  opacity: 0.45;
+  cursor: not-allowed !important;
+  filter: grayscale(0.6);
+}
+
+.is-permission-disabled:hover {
+  /* 抑制原有 hover 效果，避免仍暗示可交互 */
+  background: inherit !important;
+  border-color: inherit !important;
+  transform: none !important;
+  box-shadow: none !important;
+}

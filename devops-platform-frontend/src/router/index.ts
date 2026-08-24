@@ -1,9 +1,10 @@
 import { createRouter, createWebHistory, type RouteComponent } from 'vue-router'
 import { defineAsyncComponent, h, defineComponent, type Component } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AppSkeleton from '@/components/common/AppSkeleton.vue'
 import NotFound from '@/views/NotFound.vue'
 import { useAppStore, type Role } from '@/stores/app'
+import { getAuthToken } from '@/utils/http'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -15,7 +16,13 @@ declare module 'vue-router' {
     hiddenFromNavigation?: boolean
     description?: string
     capabilities?: string[]
-    /** 公开路由（无需登录即可访问，如登录页）——方向三鉴权守卫据此放行 */
+    /**
+     * 公开路由（无需登录即可访问）——鉴权守卫据此放行。
+     *
+     * 当前公开集：首页 `/`、登录页 `/login`、无权访问 `/403`、404 兜底。
+     * 首页公开的前提是它不得调用受保护 API（见 Home.vue 访客态分支），
+     * 否则访客访问会 401 → 派发 auth:unauthorized → 被踢回登录页，公开形同虚设。
+     */
     public?: boolean
   }
 }
@@ -77,7 +84,7 @@ const lazy = (
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', name: 'home', component: lazy(() => import('../views/Home.vue'), 'Home', 'dashboard'), meta: { title: '首页' } },
+    { path: '/', name: 'home', component: lazy(() => import('../views/Home.vue'), 'Home', 'dashboard'), meta: { title: '首页', public: true } },
     { path: '/knowledge', name: 'knowledge', component: lazy(() => import('../views/KnowledgeBase.vue'), 'KnowledgeBase', 'list'), meta: { title: '知识库' } },
     { path: '/knowledge/editor/:id', name: 'knowledge-editor', component: lazy(() => import('../views/KnowledgeEditor.vue'), 'KnowledgeEditor', 'detail'), meta: { title: '编辑文章' } },
     { path: '/knowledge/:id', name: 'knowledge-detail', component: lazy(() => import('../views/KnowledgeDetail.vue'), 'KnowledgeDetail', 'detail'), meta: { title: '文章详情' } },
@@ -156,8 +163,8 @@ const router = createRouter({
       meta: { title: '人工介入中心', stage: 'L4', hiddenFromNavigation: true, description: '集中处理自动化无法安全闭环的异常任务与升级请求。', capabilities: ['介入队列', '上下文快照', '接管操作', '恢复自动化'] }
     },
     { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
-    { path: '/403', name: 'forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权访问' } },
-    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFound, meta: { title: '页面未找到' } }
+    { path: '/403', name: 'forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权访问', public: true } },
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFound, meta: { title: '页面未找到', public: true } }
   ],
   scrollBehavior(to, _from, saved) {
     if (saved) return saved
@@ -166,25 +173,86 @@ const router = createRouter({
   }
 })
 
-router.beforeEach((to) => {
+/**
+ * 登录提示弹窗是否已打开。
+ *
+ * 连续导航（如快速点击两个受保护菜单）会触发两次守卫，
+ * 不加此标记会弹出堆叠的两个弹窗，用户要点两次才能关掉。
+ */
+let loginPromptOpen = false
+
+/**
+ * 访客访问受保护路由时的登录提示。
+ *
+ * 返回 true 表示用户选择前往登录，false 表示留在原处。
+ *
+ * 注册说明：后端 AuthController 仅提供 login/me/logout，无注册端点，
+ * 账号由管理员在 sys_user 开通。故文案为「联系管理员开通」而非提供注册入口——
+ * 不做点了没反应的假注册（项目契约：半成品不提供交互）。
+ */
+const promptLogin = async (targetTitle: string): Promise<boolean> => {
+  if (loginPromptOpen) return false
+  loginPromptOpen = true
+  try {
+    await ElMessageBox.confirm(
+      `访问「${targetTitle}」需要先登录。若还没有账号，请联系管理员开通。`,
+      '请先登录',
+      {
+        type: 'info',
+        confirmButtonText: '前往登录',
+        cancelButtonText: '留在当前页',
+        closeOnClickModal: false
+      }
+    )
+    return true
+  } catch {
+    // 取消 / 关闭 / Esc 均视为不登录
+    return false
+  } finally {
+    loginPromptOpen = false
+  }
+}
+
+router.beforeEach(async (to, from) => {
   const app = useAppStore()
   const meta = to.meta || {}
 
-  // 公开路由（登录页等）直接放行
+  // 公开路由（首页、登录页、错误页）直接放行——访客默认落在首页而非登录页
   if (meta.public) {
     return true
   }
 
-  // 方向三真实鉴权：未登录一律跳登录页，带 redirect 回跳。
-  // isAuthenticated 由 main.ts 启动时 restoreSession() 依据本地 token 预置。
-  if (!app.isAuthenticated) {
-    return {
-      name: 'login',
-      query: { redirect: to.fullPath }
-    }
+  /*
+   * 未登录判定：不能只看内存里的 isAuthenticated。
+   *
+   * 内存态为 false 但本地仍有 token 的情形是真实存在的：
+   * - 启动竞态：restoreSession() 尚未 resolve 时用户已触发导航
+   * - 开发期 HMR：store 被热替换重建，内存态回到初值 false 而 token 仍在
+   * - restoreSession 因服务暂时不可达而未能确立登录态
+   *
+   * 这些情形下弹「请先登录」是误判——用户明明持有有效凭证。
+   * 故此处先向服务端确认一次，只有服务端明确说凭证无效才提示登录。
+   * 已登录（内存态 true）时不会走到这里，无额外请求开销。
+   */
+  if (!app.isAuthenticated && getAuthToken()) {
+    await app.restoreSession()
   }
 
-  // 已登录：再校验角色 / 权限（预留，当前多数路由未设 roles/permissions）
+  // 访客访问受保护模块：弹窗提示，由用户决定是否前往登录
+  if (!app.isAuthenticated) {
+    const goLogin = await promptLogin((meta.title as string) || '该功能')
+    if (goLogin) {
+      return {
+        name: 'login',
+        query: { redirect: to.fullPath }
+      }
+    }
+    // 选择留在当前页：初始导航（直接输地址/刷新）时没有"当前页"可留，
+    // 中止导航会白屏，故回落首页。
+    return from.name ? false : { name: 'home' }
+  }
+
+  // 已登录：再校验角色 / 权限
   if (meta.roles && !app.hasRole(meta.roles)) {
     return {
       name: 'forbidden',

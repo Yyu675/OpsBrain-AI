@@ -193,6 +193,8 @@ function connect(): void {
   try {
     ws = new WebSocket(buildWsUrl())
   } catch (e) {
+    // 构造失败通常是 URL 非法或协议不被支持——原因必须留痕，否则只看到「连接失败」无从排查
+    console.warn('[AlertStream] WebSocket 构造失败', e)
     connectionState.value = 'error'
     scheduleReconnect()
     return

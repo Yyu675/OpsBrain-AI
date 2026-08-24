@@ -675,15 +675,10 @@ export async function skipVerification(id: string, reason: string, operator: str
   return convertBackendTicketToFrontend(data)
 }
 
-export async function fetchClosureMetrics(): Promise<Record<string, unknown>> {
-  const payload = await http.get<unknown>(`${API_ENDPOINTS.TICKETS}/metrics/closure`)
-  return unwrapBiz<Record<string, unknown>>(payload, '获取闭环度量失败')
-}
-
-export async function fetchRootCauseStats(): Promise<Record<string, number>> {
-  const payload = await http.get<unknown>(`${API_ENDPOINTS.TICKETS}/root-cause/stats`)
-  return unwrapBiz<Record<string, number>>(payload, '获取根因统计失败')
-}
+// 闭环度量（GET /tickets/metrics/closure）与根因聚合（GET /tickets/root-cause/stats）
+// 的前端封装统一在 api/dashboard.ts 的 getClosureMetrics / getRootCauseStats——
+// 那里带具体的 ClosureMetrics 类型且已被 Dashboard 消费。此处曾有一份返回
+// Record<string, unknown> 的重复封装，零调用且类型更弱，已删除避免两处漂移。
 
 // ==================== B4 复盘归档 ====================
 

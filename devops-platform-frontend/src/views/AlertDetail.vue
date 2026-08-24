@@ -13,20 +13,19 @@
  * 处置时间线由已有字段派生（createTime/firstOccurredAt/lastOccurredAt/
  * acknowledgedAt/resolvedAt），不新增表——告警本就是单实体，无子表。
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ChevronLeft, Bell, CheckCircle, AlertTriangle, Clock, Loader2,
+  Bell, CheckCircle, AlertTriangle, Clock, Loader2,
   RefreshCw, Hash, Server, Boxes, Radio, Ticket
 } from 'lucide-vue-next'
-import { fetchAlertById, acknowledgeAlert, resolveAlert } from '@/api/alerts'
-import type { Alert } from '@/api/types'
+import { useAlertDetailQuery, useAlertMutations } from '@/api/queries/alerts.query'
 import { levelTagType, statusTagType, getAlertStatusLabel } from '@/utils/alert'
-import { toFriendlyError } from '@/utils/http'
 import { formatAbsolute } from '@/utils/time'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
+import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 
 defineOptions({ name: 'AlertDetail' })
 
@@ -35,53 +34,47 @@ const router = useRouter()
 
 const alertId = computed(() => String(route.params.id ?? ''))
 
-const alert = ref<Alert | null>(null)
-/** 初值 true：初值 false 会让首帧就判定为「未找到」（6.18 契约） */
-const loading = ref(true)
-const loadError = ref<unknown>(null)
-const acting = ref(false)
+/**
+ * 数据与三态由 TanStack Query 驱动。
+ *
+ * queryKey 含 alertId，切换 id 自动重拉且**自带竞态防护**——
+ * Query 会丢弃陈旧请求的结果，不会出现「上一条告警的数据落到当前页」
+ * （6.39 家族）。因此不再需要手写 watch + reset。
+ *
+ * 三态映射（6.18 契约：notFound 与 error 必须分开）：
+ * - isLoading            → 加载中
+ * - error                → 加载失败，数据可能仍在，给重试
+ * - data === null        → 确实不存在（api 层对 40004 返回 null 而非抛错）
+ */
+const detailQuery = useAlertDetailQuery(alertId)
+const { acknowledge: ackMutation, resolve: resolveMutation } = useAlertMutations()
 
-/** 确实不存在：排除加载中与加载失败两态后才成立 */
-const notFound = computed(() => !loading.value && !loadError.value && !alert.value)
+const alert = detailQuery.data
+const loading = detailQuery.isLoading
+const loadError = detailQuery.error
+const notFound = computed(() =>
+  !detailQuery.isLoading.value && !detailQuery.error.value && detailQuery.data.value === null
+)
 
-const loadDetail = async () => {
-  loading.value = true
-  loadError.value = null
-  try {
-    alert.value = await fetchAlertById(alertId.value)
-  } catch (e) {
-    console.error('[AlertDetail] 加载告警详情失败', e)
-    loadError.value = e
-  } finally {
-    loading.value = false
-  }
-}
+/** 处置中：两个 mutation 任一进行中都算 */
+const acting = computed(() => ackMutation.isPending.value || resolveMutation.isPending.value)
 
-// 同路由切换 id（如从关联告警跳转）时 onMounted 不触发，必须 watch
-watch(alertId, (next, prev) => {
-  if (next && next !== prev) {
-    alert.value = null
-    void loadDetail()
-  }
-})
-
-onMounted(() => {
-  void loadDetail()
-})
+/** 手动刷新（加载失败时的重试入口） */
+const loadDetail = () => detailQuery.refetch()
 
 // ==================== 处置动作 ====================
+// 处置成功后的数据刷新由 mutation 的 onSuccess → invalidateQueries 完成。
+// 此前是把响应直接赋给 alert.value——Query 的 data 是缓存驱动的只读值，
+// 且失效重拉能一并更新列表页的缓存，比只改当前页的局部状态更完整
 
 const doAcknowledge = async () => {
   const cur = alert.value
   if (!cur || acting.value) return
-  acting.value = true
   try {
-    alert.value = await acknowledgeAlert(cur.id)
+    await ackMutation.mutateAsync(cur.id)
     ElMessage.success('已确认告警')
-  } catch (e) {
-    ElMessage.error(toFriendlyError(e).detail)
-  } finally {
-    acting.value = false
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
   }
 }
 
@@ -97,14 +90,11 @@ const doResolve = async () => {
   } catch {
     return
   }
-  acting.value = true
   try {
-    alert.value = await resolveAlert(cur.id)
+    await resolveMutation.mutateAsync(cur.id)
     ElMessage.success('已标记恢复')
-  } catch (e) {
-    ElMessage.error(toFriendlyError(e).detail)
-  } finally {
-    acting.value = false
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
   }
 }
 
@@ -189,14 +179,14 @@ const goList = () => router.push('/alerts')
 <template>
   <div class="alert-detail">
     <main class="main-container">
-      <!-- 面包屑 -->
+      <!-- 面包屑（统一为首页起始的递进链路，分隔符与全站一致） -->
       <div class="breadcrumb">
-        <button class="crumb-link" type="button" @click="goList">
-          <ChevronLeft :size="14" />
-          告警事件
-        </button>
-        <span class="crumb-sep">/</span>
-        <span class="crumb-current">{{ alertId || '详情' }}</span>
+        <AppBreadcrumb
+          :items="[
+            { label: '告警事件', to: '/alerts' },
+            { label: alertId ? `告警 #${alertId}` : '详情' }
+          ]"
+        />
       </div>
 
       <!-- 加载中 -->
@@ -380,33 +370,11 @@ const goList = () => router.push('/alerts')
 }
 
 /* ===== 面包屑 ===== */
+/* 面包屑容器（内部样式已随 AppBreadcrumb 公共组件收敛） */
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
   margin-bottom: 16px;
-}
-
-.crumb-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: none;
-  background: transparent;
-  padding: 0;
-  font-size: var(--text-sm);
-  font-family: var(--font-body);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-
-  &:hover { color: var(--color-primary); }
-}
-
-.crumb-current {
-  color: var(--color-text-primary);
-  font-family: var(--font-mono, monospace);
 }
 
 /* ===== 三态卡 ===== */

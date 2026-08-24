@@ -105,13 +105,14 @@ const hasTrend = computed(() => !!props.trend && props.trend.days.length > 0)
         <span v-if="trend && trend.windowDays" class="insight-count">{{ trend.windowDays }} 天</span>
       </div>
       <div v-if="trendLoading" class="insight-loading">加载中...</div>
-      <TrendChart
-        v-else-if="hasTrend"
-        :labels="trend!.days"
-        :series="trendSeries"
-        height="120px"
-        :show-legend="false"
-      />
+      <PanelErrorBoundary v-else-if="hasTrend" scope="趋势" min-height="120px" compact>
+        <TrendChart
+          :labels="trend!.days"
+          :series="trendSeries"
+          height="120px"
+          :show-legend="false"
+        />
+      </PanelErrorBoundary>
       <div v-else class="insight-empty">趋势数据不可用</div>
       <!-- 图例文字化：迷你图关掉了图例，否则在窄栏里会挤掉图形 -->
       <div v-if="hasTrend" class="trend-legend">

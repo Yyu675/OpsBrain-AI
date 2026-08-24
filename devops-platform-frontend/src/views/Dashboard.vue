@@ -1,27 +1,69 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import {
-  getDashboardOverview, getClosureMetrics, getRootCauseStats, getTrends,
-  type ClosureMetrics, type TrendData
-} from '../api/dashboard'
-import type { DashboardOverview } from '../api/types'
+  useClosureMetricsQuery,
+  useDashboardOverviewQuery,
+  useRootCauseStatsQuery,
+  useTrendsQuery,
+} from '@/api/queries/dashboard.query'
 import PageLoading from '@/components/common/PageLoading.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import TrendChart, { type TrendSeries } from '@/components/common/TrendChart.vue'
+import SlaRiskPanel from '@/components/dashboard/SlaRiskPanel.vue'
 
 defineOptions({ name: 'Dashboard' })
-const loading = ref(true)
-const loadError = ref<unknown>(null)
-const data = ref<DashboardOverview | null>(null)
-const lastUpdated = ref<string>('')
 
-// B5 闭环度量
-const closure = ref<ClosureMetrics | null>(null)
-const rootCauseStats = ref<Record<string, number>>({})
+/**
+ * 四个区块各自独立查询（TanStack Query）。
+ *
+ * 此前是 `Promise.all` + 各自 `.catch(返回兜底值)`：降级逻辑藏在 catch 里，
+ * 失败的区块只能显示空白，用户无从重试。现在每个查询有独立的 loading/error，
+ * 模板按各自状态渲染——趋势加载失败只让图表区降级、能单独重试，
+ * 不影响已加载成功的 KPI（6.51 契约）。
+ */
+const overviewQuery = useDashboardOverviewQuery()
+const closureQuery = useClosureMetricsQuery()
+const rootCauseQuery = useRootCauseStatsQuery()
 
-// L2 趋势（方案 B-1）：接真实 ECharts，替代此前的纯文本成本列表
-const trend = ref<TrendData | null>(null)
+/**
+ * 趋势窗口天数。
+ *
+ * 本页固定 7 天（窗口切换在 AI 助手中心的趋势分析里，此处不重复提供入口）。
+ * 仍用 ref 而非常量：useTrendsQuery 需要 Ref 以便把天数纳入 queryKey，
+ * 将来若加窗口切换只需改这个值，查询会自动重拉。
+ */
+const trendDays = ref(7)
+const trendQuery = useTrendsQuery(trendDays)
+
+// KPI 主数据：它失败即整页错误态，其余区块都是它的补充
+const data = overviewQuery.data
+const loading = overviewQuery.isLoading
+const loadError = overviewQuery.error
+
+const closure = closureQuery.data
+const rootCauseStats = rootCauseQuery.stats
+const trend = trendQuery.data
+
+/**
+ * 数据更新时间：从 Query 的 dataUpdatedAt 派生。
+ *
+ * 此前是刷新时手动 `new Date().toLocaleTimeString()`——那记录的是
+ * 「点刷新的时刻」而非「数据实际获取的时刻」，缓存命中时二者不同。
+ */
+const lastUpdated = computed(() => {
+  const ts = overviewQuery.dataUpdatedAt.value
+  if (!ts) return ''
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+})
+
+/** 刷新：四个查询一并重拉。refetch 会绕过 staleTime */
+const loadDashboard = () => {
+  void overviewQuery.refetch()
+  void closureQuery.refetch()
+  void rootCauseQuery.refetch()
+  void trendQuery.refetch()
+}
 
 /** 工单趋势：柱（新建）+ 折线（验证通过） */
 const ticketTrendSeries = computed<TrendSeries[]>(() => {
@@ -109,43 +151,14 @@ const rootCauseTop = computed(() =>
     .slice(0, 5)
 )
 
-// 加载看板数据
-const loadDashboard = async () => {
-  loading.value = true
-  loadError.value = null
-  try {
-    // AI 指标与工单闭环指标并行加载，互不阻塞。
-    // 趋势加载失败只让图表区降级为空，不阻塞 KPI——趋势是增值信息，
-    // 让它把整页拖挂不划算（同闭环度量的降级策略）
-    const [overview, closureData, rcStats, trendData] = await Promise.all([
-      getDashboardOverview(),
-      getClosureMetrics().catch(e => { console.warn('闭环度量加载失败', e); return null }),
-      getRootCauseStats().catch(e => { console.warn('根因统计加载失败', e); return {} }),
-      getTrends(7).catch(e => { console.warn('趋势数据加载失败', e); return null })
-    ])
-    data.value = overview
-    closure.value = closureData
-    rootCauseStats.value = rcStats ?? {}
-    trend.value = trendData
-    lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  } catch (error) {
-    console.error('加载看板数据失败', error)
-    loadError.value = error
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(() => {
-  loadDashboard()
-})
+// 首次加载由 Query 自动触发（挂载即拉取），无需 onMounted
 </script>
 
 <template>
   <div class="dashboard">
     <main class="main-container">
       <div class="content-wrapper">
-        <!-- 页头：刷新 + 更新时间 -->
+        <!-- 页头：刷新 + 更新时间（面包屑已移除——导航栏已高亮「数据概览」，重复即冗余） -->
         <div class="dashboard-header">
           <button class="refresh-btn" :disabled="loading" @click="loadDashboard">
             <RefreshCw :size="16" :class="{ 'is-loading': loading }" />
@@ -180,6 +193,15 @@ onMounted(() => {
             </div>
           </div>
 
+          <!--
+            SLA 风险清单（B1 端点落地）
+            置于趋势图之前：这是「需立即行动」的信息，而趋势是回顾性分析。
+            自行管理三态与刷新，加载失败不影响本页其余区块。
+          -->
+          <div class="data-grid data-grid--single sla-risk-row">
+            <SlaRiskPanel />
+          </div>
+
           <!-- 数据详情 -->
           <div class="data-grid">
             <!-- 模型分布 -->
@@ -210,15 +232,23 @@ onMounted(() => {
                 <h3>{{ trend ? `近 ${trend.windowDays} 日成本与命中率` : '成本与命中率趋势' }}</h3>
               </div>
               <div class="panel-body">
-                <TrendChart
-                  v-if="trend && trend.days.length"
-                  :labels="trend.days"
-                  :series="costTrendSeries"
-                  height="240px"
-                  left-axis-name="%"
-                  right-axis-name="元"
-                />
-                <AppEmpty v-else size="sm" description="暂无趋势数据" />
+                <!--
+                  面板级错误隔离：ECharts 渲染异常（如异常数据导致内部报错）
+                  若不隔离会被 App 级 AppErrorBoundary 捕获而整页变红，
+                  连本已加载成功的 KPI 也看不到了。趋势是增值信息，
+                  不应拖挂主体（同 6.51 的降级策略）。
+                -->
+                <PanelErrorBoundary scope="成本趋势" min-height="240px">
+                  <TrendChart
+                    v-if="trend && trend.days.length"
+                    :labels="trend.days"
+                    :series="costTrendSeries"
+                    height="240px"
+                    left-axis-name="%"
+                    right-axis-name="元"
+                  />
+                  <AppEmpty v-else size="sm" description="暂无趋势数据" />
+                </PanelErrorBoundary>
               </div>
             </div>
           </div>
@@ -231,14 +261,16 @@ onMounted(() => {
                 <span class="panel-hint">验证通过按 MTTR 口径统计，跳过验证的工单不计入</span>
               </div>
               <div class="panel-body">
-                <TrendChart
-                  v-if="trend && trend.days.length"
-                  :labels="trend.days"
-                  :series="ticketTrendSeries"
-                  height="240px"
-                  left-axis-name="单"
-                />
-                <AppEmpty v-else size="sm" description="暂无趋势数据" />
+                <PanelErrorBoundary scope="工单趋势" min-height="240px">
+                  <TrendChart
+                    v-if="trend && trend.days.length"
+                    :labels="trend.days"
+                    :series="ticketTrendSeries"
+                    height="240px"
+                    left-axis-name="单"
+                  />
+                  <AppEmpty v-else size="sm" description="暂无趋势数据" />
+                </PanelErrorBoundary>
               </div>
             </div>
           </div>
@@ -404,6 +436,11 @@ onMounted(() => {
 /* 工单趋势独占整行：双系列折线+柱在半宽下会挤到看不清 */
 .data-grid--single {
   grid-template-columns: 1fr;
+}
+
+/* SLA 风险清单单独一行，与下方数据详情留出间距 */
+.sla-risk-row {
+  margin-bottom: 16px;
 }
 
 .data-panel {

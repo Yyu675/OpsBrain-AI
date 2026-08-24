@@ -12,9 +12,11 @@ import { ticketEvents } from '@/utils/ticketEvents'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
+import ServerPagination from '@/components/common/ServerPagination.vue'
+import { useServerPaginationFrom } from '@/composables/useServerPagination'
 import {
   Search, Sparkles, TrendingUp, Clock, AlertCircle,
-  Trash2, Plus, X, ChevronLeft, ChevronRight, Calendar,
+  Trash2, Plus, X, Calendar,
   RefreshCw, ChevronDown, LayoutList, LayoutGrid, Settings2
 } from 'lucide-vue-next'
 import {
@@ -29,6 +31,12 @@ import {
 } from '@/stores/tickets'
 import { TICKET_STATUS_OPTIONS, TICKET_PRIORITY_OPTIONS } from '@/constants/ticket'
 import { exportTicketsCsv } from '@/api/tickets'
+import {
+  firstResponseText,
+  firstResponseTitle,
+  slaRemainText,
+  slaSeverity
+} from '@/utils/sla'
 
 const store = useTicketsStore()
 const router = useRouter()
@@ -78,6 +86,7 @@ const applyQueryFilters = () => {
 onMounted(async () => {
   // 先应用 URL 筛选，再拉数据——否则首屏会先显示全量再跳变
   applyQueryFilters()
+  applyQuerySort()
 
   // 恢复用户调整过的列宽。只接受已知列名与合理数值，
   // 防止旧版本或被篡改的 localStorage 让某列宽度变成 0/负数而不可见
@@ -155,8 +164,26 @@ const dateTo = ref('')
 const advancedOpen = ref(false)
 const viewMode = ref<'list' | 'card'>('list')
 
-const currentPage = ref(1)
-const pageSize = ref(10)
+/**
+ * 分页状态与页码计算统一由 useServerPagination 提供。
+ *
+ * 用「外部数据源」变体：total/totalPages 由 store 持有（后端全量统计），
+ * composable 再存一份必然与 store 漂移。
+ *
+ * 此前本页与 AlertList 各写一份 pageNumbers/pageStart/pageEnd，算法相同
+ * 却已在样式上漂移（chevron 36 vs 32px、圆角 md vs sm 等）。
+ */
+const pagination = useServerPaginationFrom(
+  { total: () => store.total, totalPages: () => Math.max(1, store.totalPages) },
+  { pageSize: 10 }
+)
+const {
+  currentPage, pageSize, totalPages,
+  pageNumbers, pageStart, pageEnd
+} = pagination
+/** 匹配总数（后端按当前筛选统计） */
+const totalCount = pagination.total
+
 const selectedIds = ref<string[]>([])
 
 // ==================== el-table：列宽 / 排序 / 选择 ====================
@@ -344,6 +371,29 @@ const tableSort = computed<Sort>(() => ({
   order: sortState.value.order
 }))
 
+/**
+ * 应用 URL 中的排序参数（如从 SLA 风险面板「按优先级查看全部」跳入）。
+ *
+ * 与 applyQueryFilters 分开：sortState 定义在本函数之后，
+ * 且排序需白名单校验——非法字段会被后端静默降级为默认排序，
+ * 前端先挡住可避免「排序图标显示在 A 列、实际按创建时间排」的错位。
+ *
+ * 白名单与后端 SORTABLE_COLUMNS 对齐（另加特殊处理的 priority）。
+ */
+const SORTABLE_PROPS = [
+  'id', 'title', 'status', 'priority', 'assignee',
+  'service', 'category', 'createdAt', 'updatedAt'
+]
+
+const applyQuerySort = () => {
+  const raw = route.query.sortBy
+  const prop = typeof raw === 'string' ? raw.trim() : ''
+  if (!prop || !SORTABLE_PROPS.includes(prop)) return
+
+  const asc = route.query.sortAsc === 'true'
+  sortState.value = { prop, order: asc ? 'ascending' : 'descending' }
+}
+
 const onSortChange = async (data: {
   prop: string | null
   order: 'ascending' | 'descending' | null
@@ -384,20 +434,10 @@ const onRowClick = (row: Ticket, column: TableColumnCtx<Ticket> | null) => {
  *
  * 状态由后端计算（`firstResponseState`）——「即将超时」的阈值属业务规则，
  * 不应散落在各前端页面各写一遍。
+ *
+ * 文案逻辑统一在 utils/sla（SLA 风险面板同样消费），此处只保留
+ * 页面私有的 CSS class 映射。
  */
-const frLabel = (row: { firstResponseState?: string; firstResponseMinutes?: number | null }) => {
-  switch (row.firstResponseState) {
-    case 'RESPONDED': {
-      const m = row.firstResponseMinutes
-      // 已首响时顺带展示 MTTA，比单说「已响应」信息量更大
-      return m === null || m === undefined ? '已响应' : `${m} 分钟响应`
-    }
-    case 'BREACHED': return '首响超时'
-    case 'AT_RISK': return '即将超时'
-    default: return '待首响'
-  }
-}
-
 const frClass = (row: { firstResponseState?: string }) => {
   switch (row.firstResponseState) {
     case 'RESPONDED': return 'fr-ok'
@@ -407,24 +447,11 @@ const frClass = (row: { firstResponseState?: string }) => {
   }
 }
 
-/** 首响 tooltip：补充首响人与剩余时间 */
-const frTitle = (row: {
-  firstResponseState?: string
-  firstResponder?: string | null
-  responseRemainingMinutes?: number | null
-}) => {
-  if (row.firstResponseState === 'RESPONDED') {
-    return row.firstResponder ? `首响人：${row.firstResponder}` : '已首响'
-  }
-  const r = row.responseRemainingMinutes
-  if (r === null || r === undefined) return '待首响'
-  return r < 0 ? `首响已超时 ${Math.abs(r)} 分钟` : `距首响截止还剩 ${r} 分钟`
-}
-
 /** SLA 进度配色：超时红 / ≥70% 橙 / 其余正常 */
 const slaClass = (row: { slaProgress?: number; slaBreached?: boolean }) => {
-  if (row.slaBreached) return 'sla-breached'
-  if ((row.slaProgress ?? 0) >= 70) return 'sla-warning'
+  const severity = slaSeverity(row)
+  if (severity === 'breached') return 'sla-breached'
+  if (severity === 'warning') return 'sla-warning'
   return 'sla-normal'
 }
 
@@ -442,27 +469,8 @@ const RC_LABELS: Record<string, string> = {
 }
 const rcLabel = (cat: string) => RC_LABELS[cat] || cat
 
-/**
- * SLA 剩余时间文案（B0 起后端提供 slaRemainingMinutes）
- *
- * 「还剩 45 分钟」比「已消耗 75%」可行动得多。
- * null 表示无法计算（缺 deadline 且 SLA 串无法解析）——此时退回百分比，
- * 而不是显示「还剩 0 分钟」谎报为即将超时。
- */
-const slaRemainText = (row: { slaRemainingMinutes?: number | null; slaProgress?: number; slaBreached?: boolean }) => {
-  const m = row.slaRemainingMinutes
-  if (m === null || m === undefined) {
-    // 降级：无剩余时间数据时如实退回百分比口径
-    return row.slaBreached ? '已超时' : `已消耗 ${row.slaProgress ?? 0}%`
-  }
-  const abs = Math.abs(m)
-  const text = abs >= 1440
-    ? `${Math.floor(abs / 1440)} 天 ${Math.floor((abs % 1440) / 60)} 小时`
-    : abs >= 60
-      ? `${Math.floor(abs / 60)} 小时 ${abs % 60} 分钟`
-      : `${abs} 分钟`
-  return m < 0 ? `已超时 ${text}` : `还剩 ${text}`
-}
+// SLA 剩余时间文案（slaRemainText）与首响文案已统一到 utils/sla，
+// SLA 风险面板同样消费——两处各写一遍必然在「已超时」措辞与降级口径上漂移。
 
 const dialogVisible = ref(false)
 
@@ -477,8 +485,7 @@ const dialogVisible = ref(false)
 const pagedTickets = computed(() => store.tickets)
 
 /** 匹配总数与总页数均来自后端 */
-const totalCount = computed(() => store.total)
-const totalPages = computed(() => Math.max(1, store.totalPages))
+/** 匹配总数与总页数均来自后端，见上方 useServerPaginationFrom */
 
 /**
  * 拉取当前条件下的数据
@@ -551,37 +558,16 @@ const fetchList = async () => {
   }
 }
 
-const pageNumbers = computed(() => {
-  const total = totalPages.value
-  const cur = currentPage.value
-  const pages: (number | 'ellipsis')[] = []
-  if (total <= 5) {
-    for (let i = 1; i <= total; i++) pages.push(i)
-    return pages
-  }
-  pages.push(1)
-  if (cur > 3) pages.push('ellipsis')
-  const start = Math.max(2, cur - 1)
-  const end = Math.min(total - 1, cur + 1)
-  for (let i = start; i <= end; i++) pages.push(i)
-  if (cur < total - 2) pages.push('ellipsis')
-  pages.push(total)
-  return pages
-})
-
-/** 当前页区间起始与结束（页面脚注「显示 X-Y 共 N 条」） */
-const pageStart = computed(() => (currentPage.value - 1) * pageSize.value + 1)
-const pageEnd = computed(() => Math.min(currentPage.value * pageSize.value, totalCount.value))
+// 页码序列与区间计算见 useServerPagination（与 AlertList 共用同一实现）
 
 const goToPage = async (p: number) => {
-  if (p < 1 || p > totalPages.value || p === currentPage.value) return
-  currentPage.value = p
-  await fetchList()
+  // 返回 false 表示越界或未变化，此时不必重新拉取
+  if (pagination.goToPage(p)) await fetchList()
 }
 
 /** 筛选变化：回到第 1 页并重新拉取 */
 const resetPageOnFilterChange = async () => {
-  currentPage.value = 1
+  pagination.resetPage()
   await fetchList()
 }
 
@@ -998,6 +984,12 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
       <!-- 高级筛选面板 -->
       <div v-if="advancedOpen" class="advanced-filter-panel">
+        <!--
+          单一自适应网格容纳 5 个下拉 + 日期区间，不再拆成两行。
+          原实现是「5 个定宽下拉左对齐」+「日期单独一行」+「标签单独一行」=3 行，
+          宽屏下每行右侧都空掉数百 px；`auto-fit + minmax` 让列数随容器宽度自动增减，
+          既填满可用宽度又不会把单个控件拉得过宽（上限 1fr 由列数分摊）。
+        -->
         <div class="advanced-filter-grid">
           <select v-model="statusFilter" class="filter-select" @change="resetPageOnFilterChange">
             <option value="all">全部状态</option>
@@ -1020,16 +1012,15 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
             <!-- 名单来自后端 sys_team_member（A2），不再硬编码编造姓名 -->
             <option v-for="a in store.assignees" :key="a" :value="a">{{ a }}</option>
           </select>
-        </div>
-        <div class="advanced-filter-grid">
+          <!-- 日期区间跨 2 列（两个 input + 分隔符比单个下拉宽） -->
           <div class="date-range-group">
             <span class="date-range-label">创建时间</span>
             <input type="date" v-model="dateFrom" class="filter-date-input" @change="resetPageOnFilterChange" />
             <span class="date-range-sep">–</span>
             <input type="date" v-model="dateTo" class="filter-date-input" @change="resetPageOnFilterChange" />
           </div>
-          <button class="btn-clear-advanced" @click="advancedOpen = false">收起</button>
         </div>
+        <!-- 标签与「收起」同排：标签自身换行填充，收起按钮固定在行尾 -->
         <div v-if="store.hotTags.length" class="advanced-filter-tags">
           <span class="tag-filter-label">标签</span>
           <button
@@ -1040,6 +1031,11 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
             :class="{ active: tagFilters.includes(tag) }"
             @click="toggleTagFilter(tag)"
           >{{ tag }}</button>
+          <button class="btn-clear-advanced" @click="advancedOpen = false">收起</button>
+        </div>
+        <!-- 无热门标签时仍需「收起」入口 -->
+        <div v-else class="advanced-filter-tags advanced-filter-tags--empty">
+          <button class="btn-clear-advanced" @click="advancedOpen = false">收起</button>
         </div>
       </div>
 
@@ -1069,7 +1065,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
               <button v-for="a in store.assignees" :key="a" @click="applyBulkAssign(a)">{{ a }}</button>
             </div>
           </div>
-          <button class="bulk-btn bulk-btn-danger" @click="bulkDelete">
+          <button v-permission.disable="{ roles: ['admin'] }" class="bulk-btn bulk-btn-danger" @click="bulkDelete">
             <Trash2 :size="14" />
             批量删除
           </button>
@@ -1154,7 +1150,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
                     </div>
                     <div class="peek-row">
                       <span class="peek-label">首响</span>
-                      <span class="peek-value" :class="frClass(row)">{{ frLabel(row) }}<template v-if="row.firstResponder"> · {{ row.firstResponder }}</template></span>
+                      <span class="peek-value" :class="frClass(row)">{{ firstResponseText(row) }}<template v-if="row.firstResponder"> · {{ row.firstResponder }}</template></span>
                     </div>
                     <div class="peek-row">
                       <span class="peek-label">负责人 · 状态</span>
@@ -1250,8 +1246,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
             :min-width="96"
           >
             <template #default="{ row }">
-              <span class="fr-badge" :class="frClass(row)" :title="frTitle(row)">
-                {{ frLabel(row) }}
+              <span class="fr-badge" :class="frClass(row)" :title="firstResponseTitle(row)">
+                {{ firstResponseText(row) }}
               </span>
             </template>
           </el-table-column>
@@ -1352,7 +1348,12 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
                 <button class="action-icon-btn" title="编辑" @click.stop="openEditDialog(row)">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
-                <button class="action-icon-btn action-icon-btn-danger" title="删除" @click.stop="deleteTicket(row)">
+                <button
+                  v-permission.disable="{ roles: ['admin'] }"
+                  class="action-icon-btn action-icon-btn-danger"
+                  title="删除"
+                  @click.stop="deleteTicket(row)"
+                >
                   <Trash2 :size="14" />
                 </button>
               </div>
@@ -1414,39 +1415,15 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
       </div>
 
       <!-- Pagination (对齐设计稿) -->
-      <div class="pagination">
-        <div class="pagination-info">
-          显示 {{ pageStart }}-{{ pageEnd }} 共 {{ totalCount }} 条
-        </div>
-        <div class="pagination-controls">
-          <button
-            class="pagination-btn-chevron"
-            :disabled="currentPage === 1"
-            @click="goToPage(currentPage - 1)"
-          >
-            <ChevronLeft :size="16" />
-          </button>
-          <div class="pagination-pages">
-            <template v-for="(p, idx) in pageNumbers">
-              <span v-if="p === 'ellipsis'" :key="`e-${idx}`" class="pagination-ellipsis">...</span>
-              <button
-                v-else
-                :key="`p-${idx}`"
-                class="pagination-page"
-                :class="{ active: currentPage === p }"
-                @click="goToPage(p)"
-              >{{ p }}</button>
-            </template>
-          </div>
-          <button
-            class="pagination-btn-chevron"
-            :disabled="currentPage >= totalPages"
-            @click="goToPage(currentPage + 1)"
-          >
-            <ChevronRight :size="16" />
-          </button>
-        </div>
-      </div>
+      <ServerPagination
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :total="totalCount"
+        :page-start="pageStart"
+        :page-end="pageEnd"
+        :page-numbers="pageNumbers"
+        @page-change="goToPage"
+      />
     </main>
 
     <!--
@@ -1937,32 +1914,46 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   }
 }
 
+/*
+  自适应网格：列数随容器宽度自动增减，控件填满可用宽度但不被拉宽。
+
+  此前两版都不理想：
+  - `flex: 1` → 5 个下拉横向拉满整行，宽屏上每个宽达 300px+，扫读困难
+  - 定宽 176px 左对齐 → 宽屏右侧空掉约 600px（截图 3 的问题）
+  `auto-fit + minmax(160px, 1fr)` 是两者的解：容器能放几列就放几列，
+  剩余宽度由这几列均分（单列不会超过 1fr 的分摊值），不留右侧空白也不过宽。
+*/
 .advanced-filter-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   align-items: center;
-  gap: 8px;
+  gap: 8px 10px;
   margin-bottom: 8px;
 }
 .advanced-filter-grid:last-child { margin-bottom: 0; }
 
-/* 下拉与日期改为定宽左对齐：此前用 flex:1 会把 5 个下拉横向拉满整行，
-   在宽屏上每个下拉宽达 300px+，留下大量视觉空白且扫读困难 */
 .advanced-filter-panel .filter-select {
-  flex: 0 0 auto;
-  width: 176px;
+  /* 宽度由 grid 列分配，此处不再定宽 */
+  width: 100%;
+  min-width: 0;
   padding: 6px 10px;
   border: 1px solid var(--color-border-light, #E5E7EB);
   border-radius: 6px;
   font-size: 0.8125rem;
   background: var(--color-surface, #fff);
 }
-/* 日期收窄为一组「创建时间 [从]–[到]」 */
+
+/*
+  日期区间跨 2 列：内含两个 date input + 标签 + 分隔符，
+  占单列会把两个 input 压到不可用的宽度。
+  窄屏（单列布局）时 span 2 会溢出，故 640px 以下退回 1 列。
+*/
 .date-range-group {
+  grid-column: span 2;
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 0 0 auto;
+  min-width: 0;
 }
 .date-range-label {
   font-size: 0.75rem;
@@ -1972,15 +1963,23 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .date-range-sep {
   color: var(--color-text-tertiary, #9ca3af);
   font-size: 0.75rem;
+  flex-shrink: 0;
 }
 .advanced-filter-panel .filter-date-input {
-  flex: 0 0 auto;
-  width: 150px;
+  /* 两个 input 均分日期组的剩余宽度 */
+  flex: 1;
+  min-width: 0;
   padding: 6px 10px;
   border: 1px solid var(--color-border-light, #E5E7EB);
   border-radius: 6px;
   font-size: 0.8125rem;
 }
+
+@media (max-width: 640px) {
+  .date-range-group { grid-column: span 1; }
+}
+
+/* 「收起」固定在标签行尾——标签用 flex-wrap 填充，auto 把按钮推到行尾 */
 .btn-clear-advanced {
   margin-left: auto;
   padding: 6px 14px;
@@ -1989,6 +1988,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   color: var(--color-text-tertiary, #9ca3af);
   cursor: pointer;
   font-size: 0.8125rem;
+  flex-shrink: 0;
 }
 .btn-clear-advanced:hover { color: var(--color-primary, #409eff); }
 
@@ -2016,6 +2016,11 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 6px;
   margin-top: 8px;
+}
+
+/* 无热门标签时本行只承载「收起」按钮，去掉上边距避免出现空白带 */
+.advanced-filter-tags--empty {
+  margin-top: 0;
 }
 
 .tag-filter-label {
@@ -2534,73 +2539,6 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   margin: 0;
 }
 
-/* Pagination - 对齐设计稿 */
-.pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.pagination-info {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pagination-btn-chevron {
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
-}
-
-.pagination-pages { display: flex; gap: 4px; }
-
-.pagination-page {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-
-  &:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-lighter); }
-  &.active {
-    border-color: var(--color-primary);
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
-  }
-}
-
-.pagination-ellipsis {
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-}
 
 /* 刷新按钮旋转动画 */
 .spin-animation {

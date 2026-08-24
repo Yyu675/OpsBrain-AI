@@ -13,12 +13,23 @@ import router from './router'
 import { permission } from './directives/permission'
 import { toFriendlyError, HttpError } from './utils/http'
 import { useAppStore } from './stores/app'
+import { VueQueryPlugin, vueQueryOptions } from './config/queryClient'
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
+/**
+ * TanStack Query：服务端状态管理。
+ *
+ * 配置见 config/queryClient.ts——关键是关掉 Query 层重试（http.ts 已有）
+ * 与窗口聚焦自动重拉（会干扰服务端分页列表）。
+ *
+ * Query 内部捕获查询错误存入 `error` 字段，不外抛，
+ * 故下方 unhandledrejection 兜底无需为它调整。
+ */
+app.use(VueQueryPlugin, vueQueryOptions)
 app.directive('permission', permission)
 
 // 已展示过的错误去重 key，避免同一错误同时被 errorHandler 和 unhandledrejection 重复 toast

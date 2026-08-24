@@ -7,14 +7,14 @@
  *
  * 对齐蓝图 §二：P0/P1 高危动作必须人工审查确认后才执行。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ShieldCheck, RefreshCw, Check, X, Clock, AlertTriangle } from 'lucide-vue-next'
 import {
-  listApprovals, approveApproval, rejectApproval,
-  type ApprovalRequest, type ApprovalPage
-} from '@/api/approval'
-import { toFriendlyError } from '@/utils/http'
+  useApprovalListQuery,
+  useApprovalMutations,
+  type ApprovalRequest,
+} from '@/api/queries/approval.query'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
@@ -43,11 +43,23 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const activeTab = ref('PENDING')
-const items = ref<ApprovalRequest[]>([])
-const total = ref(0)
-const loading = ref(false)
-const loadError = ref<unknown>(null)
 const actingId = ref<number | null>(null)
+
+/**
+ * 列表与决策由 TanStack Query 驱动。
+ *
+ * activeTab 进 queryKey，切 tab 自动重拉（不需在 switchTab 里手调 fetchList）；
+ * 决策成功后 invalidateQueries 一次，列表与导航栏待审角标同时更新——
+ * 替掉了此前「emit('approval-decided') → 导航栏订阅」的手工事件通路。
+ */
+const listQuery = useApprovalListQuery(activeTab)
+const { approve: approveMutation, reject: rejectMutation } = useApprovalMutations()
+
+const items = listQuery.items
+const loading = listQuery.isLoading
+const loadError = listQuery.error
+// listQuery.total 未在模板渲染（迁移前也是如此，属既有情况）——
+// 本页无分页控件，审批量小时逐条看完即可。若将来加分页再接上
 
 const riskTagType = (risk: string): 'danger' | 'warning' | 'info' => {
   if (risk === 'HIGH_RISK_EXECUTION') return 'danger'
@@ -61,25 +73,13 @@ const statusTagType = (s: string): 'danger' | 'warning' | 'success' | 'info' => 
   return 'info'
 }
 
-const fetchList = async () => {
-  loading.value = true
-  loadError.value = null
-  try {
-    const data: ApprovalPage = await listApprovals(activeTab.value, 1, 50)
-    items.value = data.items
-    total.value = data.total
-  } catch (e) {
-    console.error('[审批中心] 加载失败', e)
-    loadError.value = e
-  } finally {
-    loading.value = false
-  }
-}
+/** 手动刷新（错误态重试入口） */
+const fetchList = () => listQuery.refetch()
 
 const switchTab = (tab: string) => {
   if (tab === activeTab.value) return
+  // tab 已在 queryKey 中，改值即触发重拉
   activeTab.value = tab
-  void fetchList()
 }
 
 const doApprove = async (row: ApprovalRequest) => {
@@ -92,22 +92,25 @@ const doApprove = async (row: ApprovalRequest) => {
   } catch { return }
   actingId.value = row.id
   try {
-    const updated = await approveApproval(row.id)
+    const updated = await approveMutation.mutateAsync(row.id)
+    // 批准成功但执行失败必须如实区分（6.57 契约：人的决策已成事实，
+    // 执行失败标 EXECUTE_FAILED 供人工介入，不能笼统报「已批准」）
     if (updated.status === 'EXECUTE_FAILED') {
       ElMessage.warning(`已批准，但执行失败：${updated.executeResult || '未知原因'}`)
     } else {
       ElMessage.success(`已批准并执行：${updated.executeResult || '成功'}`)
     }
-    await fetchList()
-  } catch (e) {
-    ElMessage.error(toFriendlyError(e).detail)
+    // 列表与导航栏待审角标由 mutation 的 invalidateQueries 一并刷新，
+    // 不再需要手动 fetchList + emit('approval-decided')
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
   } finally {
     actingId.value = null
   }
 }
 
 const doReject = async (row: ApprovalRequest) => {
-  let reason = ''
+  let reason: string
   try {
     const r = await ElMessageBox.prompt(
       `驳回「${row.summary}」，请填写驳回理由（必填，将记入审计）：`,
@@ -123,11 +126,10 @@ const doReject = async (row: ApprovalRequest) => {
   } catch { return }
   actingId.value = row.id
   try {
-    await rejectApproval(row.id, reason)
+    await rejectMutation.mutateAsync({ id: row.id, reason })
     ElMessage.success('已驳回')
-    await fetchList()
-  } catch (e) {
-    ElMessage.error(toFriendlyError(e).detail)
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
   } finally {
     actingId.value = null
   }
@@ -139,7 +141,7 @@ const forbidden = computed(() => {
   return !!e && (e.status === 403 || e.bizCode === 40103 || e.bizCode === 40301)
 })
 
-onMounted(() => void fetchList())
+// 首次加载由 Query 自动触发（挂载即拉取），无需 onMounted
 </script>
 
 <template>

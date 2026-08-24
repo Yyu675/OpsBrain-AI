@@ -105,10 +105,12 @@ const shortenUrl = (url?: string): string => {
  */
 export function toFriendlyError(e: unknown): FriendlyError {
   if (!(e instanceof HttpError)) {
-    const msg = e instanceof Error ? e.message : String(e || '未知错误')
+    // Error 的 message 可能为空串，此时 String(e || ...) 的短路判断也救不了
+    // （空 message 的 Error 对象本身是 truthy）——须显式兜底，否则 UI 提示框空白
+    const raw = e instanceof Error ? e.message : String(e ?? '')
     return {
       title: '发生意外错误',
-      detail: msg,
+      detail: raw || '未知错误',
       hint: '请刷新页面重试，如问题持续请联系管理员'
     }
   }
@@ -162,7 +164,8 @@ export function toFriendlyError(e: unknown): FriendlyError {
       }
       return {
         title: `请求失败（HTTP ${e.status}）`,
-        detail: e.message,
+        // 后端可能返回空 body（无 message），空串会让提示框空白
+        detail: e.message || `服务器返回 HTTP ${e.status}${path ? `（${path}）` : ''}`,
         hint: '请稍后重试'
       }
 
@@ -211,7 +214,7 @@ export function toFriendlyError(e: unknown): FriendlyError {
     default:
       return {
         title: '请求失败',
-        detail: e.message,
+        detail: e.message || `未识别的错误类型（${e.code}）${path ? `：${path}` : ''}`,
         hint: '请稍后重试'
       }
   }

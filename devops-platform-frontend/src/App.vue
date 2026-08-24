@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bot } from 'lucide-vue-next'
 import AppErrorBoundary from '@/components/common/AppErrorBoundary.vue'
 import NetworkBanner from '@/components/common/NetworkBanner.vue'
 import AppNavbar from '@/components/common/AppNavbar.vue'
+import HotkeysDialog from '@/components/common/HotkeysDialog.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useIdleTimer } from '@/composables/useIdleTimer'
+import { useHotkeys } from '@/composables/useHotkeys'
 import { useAlertNotifications } from '@/composables/useAlertNotifications'
 import { useAppStore } from '@/stores/app'
 
@@ -32,6 +34,8 @@ useIdleTimer({
   warnAfter: () => warnMs.value,
   timeoutAfter: () => timeoutMs.value,
   onWarn(remainingMs: number) {
+    // 访客本就未登录，不存在"会话过期"——弹窗是无意义骚扰
+    if (!app.isAuthenticated) return
     const seconds = Math.round(remainingMs / 1000)
     warnCloseFn?.()
     let closed = false
@@ -71,11 +75,25 @@ useIdleTimer({
   }
 })
 
-// 方向三：监听 http 层派发的 401 事件（token 失效/未登录），跳登录页并带回跳路径。
+/**
+ * 监听 http 层派发的 401 事件（token 失效 / 未登录）。
+ *
+ * 分两种情形：
+ * - 在受保护页面：登录已失效，跳登录页并带回跳路径
+ * - 在公开页面（首页等）：访客本就未登录，只收敛为访客态**不跳转**——
+ *   否则一个漏判访客态的接口调用就能把停留在首页的访客踢去登录页，
+ *   「访客默认看首页」的需求即失效
+ */
 const onUnauthorized = (e: Event) => {
   const detail = (e as CustomEvent).detail as { from?: string } | undefined
   const from = detail?.from
   if (route.path === '/login') return
+
+  // token 已失效，本地状态同步收敛（http 层已清 token）
+  app.resetToGuest()
+
+  if (route.meta?.public) return
+
   router.push({ name: 'login', query: from ? { redirect: from } : {} })
 }
 
@@ -85,6 +103,17 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('auth:unauthorized', onUnauthorized)
 })
+
+/**
+ * 快捷键帮助面板（`?` 唤起）。
+ *
+ * 挂在根组件而非各页面：面板内容由 useActiveHotkeys 从当前页真实注册的
+ * 快捷键派生，各页面只管注册自己的键，无需各自挂一份面板。
+ */
+const hotkeysVisible = ref(false)
+useHotkeys([
+  { key: '?', description: '打开快捷键面板', handler: () => { hotkeysVisible.value = true } }
+])
 </script>
 
 <template>
@@ -107,6 +136,8 @@ onBeforeUnmount(() => {
     >
       <Bot :size="24" />
     </button>
+    <!-- 快捷键帮助面板：内容由当前页真实注册的快捷键派生 -->
+    <HotkeysDialog v-model:visible="hotkeysVisible" />
   </div>
 </template>
 

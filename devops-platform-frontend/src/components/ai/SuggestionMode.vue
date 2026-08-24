@@ -159,7 +159,17 @@ const colorClass = (c: KpiItem['color']) => `kpi-icon-${c}`
 </template>
 
 <style scoped lang="scss">
+/*
+  高度撑满 + 自身滚动。
+  宿主 AiChatView 的 .mode-body 是 `overflow: hidden` 的 flex 容器——
+  子项不自行滚动的话，内容超高会被直接裁掉而非出现滚动条（用户看不到下半部分）。
+  另三个模式组件（ChatMode / AnalyticsMode / AlertStreamMode）本就有 height:100%，
+  只有本组件漏了。
+*/
 .suggestion-mode {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
   padding: 20px;
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import type { Component } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Search, ChevronDown, Rocket, BookOpen, Ticket, Settings, Monitor
@@ -75,7 +76,7 @@ const faqs = ref<Faq[]>([
 ])
 
 interface Category {
-  icon: any
+  icon: Component
   title: string
   description: string
   routeTo?: string

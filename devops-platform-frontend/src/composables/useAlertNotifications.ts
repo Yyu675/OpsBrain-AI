@@ -1,14 +1,19 @@
-import { onMounted, onBeforeUnmount } from 'vue'
+import { onMounted, onBeforeUnmount, watch } from 'vue'
 import { useNotificationsStore } from '@/stores/notifications'
+import { useAppStore } from '@/stores/app'
 import { formatAbsolute } from '@/utils/time'
 
 /**
  * 全局告警通知监听
  *
- * 在 App.vue 挂载时：
+ * 仅在**已登录**时工作：
  * 1. 从后端拉取最近告警重建通知列表（loadFromBackend，修复会话级刷新丢失）
  * 2. 连接 /ws/alerts WebSocket，收到 NEW 告警事件时实时推入通知
  * 3. 断线后按指数退避自动重连
+ *
+ * 为何要判登录态：`GET /alerts` 在 `/api/**` 受 SaInterceptor 保护，
+ * 访客调用会 401 → http 层派发 auth:unauthorized → 把停留在公开首页的访客踢去登录页。
+ * 故访客态不拉取不连接，登录后由 watch 自动启动、登出时停止并清空列表。
  *
  * 与 AlertStreamMode.vue 的 WS 连接独立：
  * AlertStreamMode 是告警流视图（全量事件），本 composable 只关注 NEW → 通知。
@@ -38,6 +43,7 @@ let disposed = false
 
 export function useAlertNotifications() {
   const notifications = useNotificationsStore()
+  const app = useAppStore()
 
   const buildUrl = (): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -108,18 +114,41 @@ export function useAlertNotifications() {
     }
   }
 
-  onMounted(() => {
-    disposed = false
-    void notifications.loadFromBackend()
-    connect()
-  })
-
-  onBeforeUnmount(() => {
+  /** 关闭连接并停止重连（登出 / 卸载时调用） */
+  const stop = () => {
     disposed = true
     clearReconnectTimer()
+    reconnectAttempt = 0
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
       ws.close()
     }
     ws = null
+  }
+
+  /** 拉取历史 + 建立连接（已登录时调用） */
+  const start = () => {
+    disposed = false
+    void notifications.loadFromBackend()
+    connect()
+  }
+
+  onMounted(() => {
+    // 访客态不启动——见文件头注释：会 401 把访客踢出公开首页
+    if (app.isAuthenticated) start()
   })
+
+  // 登录态变化驱动启停：登录后自动接上，登出后断连并清空上一用户的通知
+  watch(
+    () => app.isAuthenticated,
+    (authed) => {
+      if (authed) {
+        start()
+      } else {
+        stop()
+        notifications.clearItems()
+      }
+    }
+  )
+
+  onBeforeUnmount(stop)
 }

@@ -6,7 +6,7 @@ import {
   Search, Plus, Layers, Server, Network, Database, Boxes, ShieldCheck,
   GitBranch, Folder, Clock, RefreshCw, List, LayoutGrid,
   ChevronLeft, ChevronRight, FileText, Settings2, Pencil, Trash2, GitMerge,
-  PanelLeftOpen, PanelLeftClose
+  Tag as TagIcon
 } from 'lucide-vue-next'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import {
@@ -23,27 +23,29 @@ import { debounce } from '@/utils/persist'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import RelativeTime from '@/components/common/RelativeTime.vue'
+import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import CollapseToggle from '@/components/common/CollapseToggle.vue'
+import RailButton from '@/components/common/RailButton.vue'
+import { useHotkeys } from '@/composables/useHotkeys'
+import { handleServerError } from '@/utils/notify'
 
 const router = useRouter()
 const route = useRoute()
 const store = useKnowledgeStore()
 
 /**
- * 侧栏（文档分类 + 标签）折叠状态，持久化到 localStorage
+ * 侧栏（文档分类 + 标签）折叠状态。
  *
- * 此前列表页完全没有折叠能力，而详情页/编辑页都有——三个页面交互不一致。
- * 键名沿用 kb-/kd-/ke- 前缀惯例（kb=KnowledgeBase）。
- * 注意判等必须是 === 'true'：写成 === 'false' 会让状态反转
- * （折叠后刷新又展开，展开后刷新变折叠），详情页/编辑页此前就是这个 BUG。
+ * 折叠/持久化/过渡动画/命中区已统一收敛到 CollapsiblePanel，
+ * 本页只需持有状态供快捷键与图标轨使用（三页此前各写一套 CSS 已开始漂移）。
  */
-const sidebarCollapsed = ref(localStorage.getItem('kb-sidebar-collapsed') === 'true')
+const sidebarCollapsed = ref(false)
+const sidebarRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
 
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-  try {
-    localStorage.setItem('kb-sidebar-collapsed', String(sidebarCollapsed.value))
-  } catch { /* 隐私模式/配额超限：折叠仍可用，仅不持久化 */ }
-}
+// `[` 收起/展开侧栏。useHotkeys 已排除输入框聚焦场景，不会干扰搜索框输入
+useHotkeys([
+  { key: '[', description: '收起/展开分类栏', handler: () => sidebarRef.value?.toggle() }
+])
 
 // 从 URL 恢复筛选状态
 const searchQuery = ref(String(route.query.q ?? ''))
@@ -95,7 +97,7 @@ const loadManagedTags = async () => {
   try {
     managedTags.value = await fetchKnowledgeTags()
   } catch (error) {
-    ElMessage.error((error as Error).message || '加载标签失败')
+    handleServerError(error, { action: '加载标签' })
   } finally {
     tagsLoading.value = false
   }
@@ -115,7 +117,7 @@ const createTag = async () => {
     await Promise.all([loadManagedTags(), store.loadHotTags()])
     ElMessage.success('标签已创建')
   } catch (error) {
-    ElMessage.error((error as Error).message || '创建标签失败')
+    handleServerError(error, { action: '创建标签' })
   }
 }
 
@@ -131,7 +133,7 @@ const renameTag = async (tag: KnowledgeTag) => {
     ElMessage.success('标签已重命名')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error((error as Error).message || '重命名标签失败')
+    handleServerError(error, { action: '重命名标签' })
   }
 }
 
@@ -151,7 +153,7 @@ const mergeTag = async (tag: KnowledgeTag) => {
     ElMessage.success('标签已合并')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error((error as Error).message || '合并标签失败')
+    handleServerError(error, { action: '合并标签' })
   }
 }
 
@@ -178,7 +180,7 @@ const removeTag = async (tag: KnowledgeTag) => {
     ElMessage.success('标签已删除')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error((error as Error).message || '删除标签失败')
+    handleServerError(error, { action: '删除标签' })
   }
 }
 
@@ -328,12 +330,58 @@ onMounted(() => {
 
     <!-- ===== Content ===== -->
     <div class="main-container">
-      <!-- Left Sidebar（可折叠，与详情页/编辑页同款交互） -->
-      <div class="sidebar-wrapper" :class="{ collapsed: sidebarCollapsed }">
-        <aside class="sidebar" v-show="!sidebarCollapsed">
+      <!-- Left Sidebar（折叠按钮在「文档分类」标题行内；折叠后留图标轨可继续切换筛选） -->
+      <CollapsiblePanel
+        ref="sidebarRef"
+        side="left"
+        storage-key="kb-sidebar-collapsed"
+        label="分类与标签"
+        :width="264"
+        @update:collapsed="sidebarCollapsed = $event"
+      >
+        <!-- 折叠态图标轨：当前筛选项高亮，点击直接切换，无需先展开 -->
+        <template #rail>
+          <RailButton
+            title="全部文档"
+            :active="noActiveCategory"
+            :count="store.libraryTotal"
+            @click="clearFilters"
+          >
+            <Layers :size="17" />
+          </RailButton>
+          <div class="rail-divider" />
+          <RailButton
+            v-for="category in store.categories"
+            :key="category.id"
+            :title="categoryLabel(category)"
+            :active="activeCategory === category.name"
+            :count="category.docCount"
+            @click="selectCategory(category.name)"
+          >
+            <component :is="categoryIcon(category.name)" :size="17" />
+          </RailButton>
+          <template v-if="store.hotTags.length">
+            <div class="rail-divider" />
+            <RailButton
+              v-for="item in store.hotTags.slice(0, 8)"
+              :key="item.tag"
+              :title="`标签: ${item.tag}（${item.count}）`"
+              :active="activeTag === item.tag"
+              @click="selectTag(item.tag)"
+            >
+              <TagIcon :size="15" />
+            </RailButton>
+          </template>
+        </template>
+
+        <template #default="{ toggle }">
+        <aside class="sidebar">
         <!-- Categories -->
         <div class="sidebar-section">
-          <div class="sidebar-title">文档分类</div>
+          <div class="sidebar-title sidebar-title-actions">
+            <span>文档分类</span>
+            <CollapseToggle side="left" label="分类与标签" @click="toggle" />
+          </div>
           <div class="category-list">
             <button
               class="category-header"
@@ -393,16 +441,8 @@ onMounted(() => {
           <p v-else class="sidebar-empty">暂无标签</p>
         </div>
         </aside>
-        <!-- 折叠后保留窄条，可一键展开（与详情页/编辑页同款） -->
-        <button
-          class="sidebar-toggle"
-          type="button"
-          :title="sidebarCollapsed ? '展开分类与标签' : '收起分类与标签'"
-          @click="toggleSidebar"
-        >
-          <component :is="sidebarCollapsed ? PanelLeftOpen : PanelLeftClose" :size="18" />
-        </button>
-      </div>
+        </template>
+      </CollapsiblePanel>
 
       <!-- Right Content -->
       <main class="content-area">
@@ -719,62 +759,22 @@ onMounted(() => {
   }
 }
 
-/* ===== Sidebar 折叠容器（与详情页/编辑页同款交互） ===== */
-.sidebar-wrapper {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  position: relative;
+/* 折叠态图标轨内的分组分隔线（折叠/过渡/命中区等由 CollapsiblePanel 统一负责） */
+.rail-divider {
+  width: 18px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-border-light, #E5E7EB);
   flex-shrink: 0;
-
-  @media (max-width: 1024px) {
-    width: 100%;
-  }
-}
-
-/* 折叠后只占窄条按钮的宽度，空间让给内容区 */
-.sidebar-wrapper.collapsed {
-  width: auto;
-}
-
-.sidebar-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  min-height: 72px;
-  align-self: stretch;
-  flex-shrink: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-hover, #F8F9FB);
-  cursor: pointer;
-  color: var(--color-text-tertiary, #9CA3AF);
-  transition: all 0.15s ease;
-
-  &:hover {
-    background: var(--color-primary-lighter, #E8F0FC);
-    color: var(--color-primary);
-  }
-
-  /* 移动端侧栏改为上下堆叠，折叠条横置更自然 */
-  @media (max-width: 1024px) {
-    width: 100%;
-    min-height: 32px;
-    align-self: auto;
-  }
 }
 
 /* ===== Sidebar ===== */
 .sidebar {
-  width: 240px;
-  min-width: 240px;
+  width: 100%;
   padding-right: 24px;
   border-right: 1px solid var(--color-border-light);
 
   @media (max-width: 1024px) {
-    width: 100%;
-    min-width: 0;
     padding-right: 0;
     border-right: none;
   }

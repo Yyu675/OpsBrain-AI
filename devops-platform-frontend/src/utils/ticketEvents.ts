@@ -11,15 +11,33 @@
  *   // 订阅
  *   onMounted(() => ticketEvents.on('ticket-created', handler))
  *   onBeforeUnmount(() => ticketEvents.off('ticket-created', handler))
+ *
+ * 载荷类型由 EventPayloads 集中声明——新增事件必须在此登记，
+ * 否则 emit/on 的调用点会在编译期报错，避免发布方与订阅方对载荷理解不一致。
  */
 
-type EventName = 'ticket-created' | 'ticket-form-submitted'
+/** 事件名 → 载荷参数元组。新增事件在此登记。 */
+export interface EventPayloads {
+  /** AI 建单成功，载荷为后端返回的工单号 */
+  'ticket-created': [ticketId: string]
+  /** 手动工单表单提交成功，无载荷 */
+  'ticket-form-submitted': []
+}
+// 曾有 'approval-decided'：审批决策后通知导航栏刷新待审角标。
+// 已删除——该通路被 TanStack Query 的失效链路替代：
+// ApprovalCenter 的 mutation invalidate approvalKeys.all，
+// 导航栏角标共用该前缀因此自动刷新，不再需要发布/订阅两处手工配对。
 
-type EventCallback = (...args: any[]) => void
+export type EventName = keyof EventPayloads
 
-const listeners = new Map<EventName, Set<EventCallback>>()
+export type EventCallback<N extends EventName> = (...args: EventPayloads[N]) => void
 
-function getSet(name: EventName): Set<EventCallback> {
+/** 内部存储擦除具体事件的参数类型，读写两端由公开方法签名保证类型安全 */
+type AnyCallback = (...args: never[]) => void
+
+const listeners = new Map<EventName, Set<AnyCallback>>()
+
+function getSet(name: EventName): Set<AnyCallback> {
   let s = listeners.get(name)
   if (!s) {
     s = new Set()
@@ -29,16 +47,18 @@ function getSet(name: EventName): Set<EventCallback> {
 }
 
 export const ticketEvents = {
-  on(name: EventName, cb: EventCallback): void {
-    getSet(name).add(cb)
+  on<N extends EventName>(name: N, cb: EventCallback<N>): void {
+    getSet(name).add(cb as AnyCallback)
   },
 
-  off(name: EventName, cb: EventCallback): void {
-    getSet(name).delete(cb)
+  off<N extends EventName>(name: N, cb: EventCallback<N>): void {
+    getSet(name).delete(cb as AnyCallback)
   },
 
-  emit(name: EventName, ...args: any[]): void {
-    getSet(name).forEach(cb => cb(...args))
+  emit<N extends EventName>(name: N, ...args: EventPayloads[N]): void {
+    // 复制一份再遍历：订阅方在回调中 off 自己时不会破坏本次遍历
+    const snapshot = Array.from(getSet(name))
+    snapshot.forEach(cb => (cb as unknown as EventCallback<N>)(...args))
   },
 
   /** 清理所有订阅（仅测试用） */

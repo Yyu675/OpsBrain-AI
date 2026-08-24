@@ -21,6 +21,8 @@ import {
 import { VersionConflictError } from '@/api/services/ticket.service'
 // A2：负责人名录改由后端下发，不再硬编码编造名单
 import { fetchTeamMembers } from '@/api/users'
+import { errorMessage } from '@/utils/errors'
+import { handleServerError } from '@/utils/notify'
 import type { TeamMember } from '@/api/types'
 import type { FrontendTicket } from '@/api/types/ticket'
 import {
@@ -231,11 +233,10 @@ export const useTicketsStore = defineStore('tickets', () => {
       // 恢复它会与 total/筛选框状态不一致（详见 store 顶部说明）
 
       return result
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (requestSequence !== listRequestSequence) return
-      error.value = e.message || '加载工单列表失败'
-      const errorMsg = error.value || '加载工单列表失败'
-      ElMessage.error(errorMsg)
+      error.value = errorMessage(e, '加载工单列表失败')
+      ElMessage.error(error.value)
       throw e
     } finally {
       if (requestSequence === listRequestSequence) loading.value = false
@@ -393,12 +394,20 @@ export const useTicketsStore = defineStore('tickets', () => {
         // version 同步失败不阻塞主流程，后续冲突由 40009 兜底
       }
     } catch (e) {
-      // 回滚：移除乐观插入的那条
-      if (t.replies[optimisticIndex] === reply) {
+      // 回滚：移除乐观插入的那条。
+      //
+      // 不能用 `t.replies[optimisticIndex] === reply` 判断——
+      // t.replies 是 Pinia 响应式数组，push 原始对象后按索引取回的是**代理**，
+      // 永不等于原对象，导致回滚条件恒为 false、**回滚从未执行**。
+      // 后果正是本段要防的：没落库的回复留在时间线上，用户以为发送成功了。
+      //
+      // 改为按索引边界校验：期间若有其它回复插入（如后台拉取），
+      // 长度会变化，此时按索引删除可能误删他人的回复，故仅在长度未变时删除。
+      if (t.replies.length === optimisticIndex + 1) {
         t.replies.splice(optimisticIndex, 1)
       }
       console.error('[TicketsStore] 回复提交失败，已回滚', e)
-      ElMessage.error(`回复失败：${(e as Error).message}`)
+      handleServerError(e, { action: '提交回复' })
       throw e
     }
   }
@@ -470,7 +479,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       // 回滚，避免 UI 显示未落库的状态
       t.status = oldStatus
       console.error('[TicketsStore] 状态变更失败，已回滚', e)
-      ElMessage.error(`状态变更失败：${(e as Error).message}`)
+      handleServerError(e, { action: '变更状态' })
       throw e
     }
   }
@@ -559,7 +568,7 @@ export const useTicketsStore = defineStore('tickets', () => {
         }
       } else {
         console.error('[TicketsStore] 工单更新失败，已回滚', e)
-        ElMessage.error(`更新失败：${(e as Error).message}`)
+        handleServerError(e, { action: '更新工单' })
       }
       throw e
     }
@@ -586,7 +595,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     } catch (e) {
       t.assignee = oldAssignee
       console.error('[TicketsStore] 转派失败，已回滚', e)
-      ElMessage.error(`转派失败：${(e as Error).message}`)
+      handleServerError(e, { action: '转派工单' })
       throw e
     }
   }
@@ -606,7 +615,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       await apiDeleteTicket(id)
     } catch (e) {
       console.error('[TicketsStore] 删除失败', e)
-      ElMessage.error(`删除失败：${(e as Error).message}`)
+      handleServerError(e, { action: '删除工单' })
       throw e
     }
 
@@ -647,7 +656,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       return recreated
     } catch (e) {
       console.error('[TicketsStore] 恢复工单失败', e)
-      ElMessage.error(`恢复失败：${(e as Error).message}`)
+      handleServerError(e, { action: '恢复工单' })
       return null
     }
   }
@@ -799,7 +808,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     } catch (e) {
       t.tags = snapshot
       console.error('[TicketsStore] 标签更新失败，已回滚', e)
-      ElMessage.error(`标签更新失败：${(e as Error).message}`)
+      handleServerError(e, { action: '更新标签' })
       throw e
     }
   }

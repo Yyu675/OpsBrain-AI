@@ -1,6 +1,13 @@
 <script setup lang="ts">
+/**
+ * 快捷键帮助面板。
+ *
+ * 清单由 useActiveHotkeys() 从「当前页面真实注册」的快捷键派生，
+ * 不维护静态列表——静态列表会与实际注册漂移，最终向用户展示不存在的快捷键。
+ */
 import { X, Keyboard } from 'lucide-vue-next'
 import { useFocusTrap } from '@/utils/focusTrap'
+import { useActiveHotkeys } from '@/composables/useHotkeys'
 import { ref, watch } from 'vue'
 
 interface Props { visible: boolean }
@@ -26,16 +33,7 @@ watch(() => props.visible, v => {
   }
 })
 
-const hotkeys: Array<{ combo: string; description: string }> = [
-  { combo: '/', description: '聚焦搜索框（列表页）' },
-  { combo: 'N', description: '新建（工单 / 文章，视当前页面）' },
-  { combo: 'Esc', description: '关闭弹窗 / 清除筛选' },
-  { combo: 'G 然后 H', description: '跳转到首页' },
-  { combo: 'G 然后 T', description: '跳转到工单列表' },
-  { combo: 'G 然后 K', description: '跳转到知识库' },
-  { combo: 'G 然后 D', description: '跳转到数据大屏' },
-  { combo: '?', description: '打开快捷键面板' }
-]
+const hotkeys = useActiveHotkeys()
 </script>
 
 <template>
@@ -54,14 +52,15 @@ const hotkeys: Array<{ combo: string; description: string }> = [
           </header>
           <div class="dialog-body">
             <div class="hint">按下 <kbd>?</kbd> 随时打开此面板。焦点在输入框时快捷键失效。</div>
-            <ul class="key-list">
+            <ul v-if="hotkeys.length" class="key-list">
               <li v-for="hk in hotkeys" :key="hk.combo">
                 <span class="key-combo">
-                  <kbd v-for="(part, i) in hk.combo.split(' ')" :key="i">{{ part }}</kbd>
+                  <kbd v-for="(part, i) in hk.combo.split(' + ')" :key="i">{{ part }}</kbd>
                 </span>
                 <span class="key-desc">{{ hk.description }}</span>
               </li>
             </ul>
+            <p v-else class="key-empty">当前页面没有可用的快捷键。</p>
           </div>
         </div>
       </div>
@@ -135,6 +134,14 @@ const hotkeys: Array<{ combo: string; description: string }> = [
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
   margin-bottom: 12px;
+}
+
+.key-empty {
+  margin: 0;
+  padding: 16px 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  text-align: center;
 }
 
 .key-list {

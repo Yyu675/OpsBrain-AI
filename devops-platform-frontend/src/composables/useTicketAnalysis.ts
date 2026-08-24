@@ -24,6 +24,7 @@ import {
 import { fetchKnowledgeDocs } from '@/api/knowledge'
 import { copyText } from '@/utils/clipboard'
 import { safeMarkdown } from '@/utils/safeMarkdown'
+import { errorMessage, isAbortLike } from '@/utils/errors'
 import type { FrontendTicket } from '@/api/types/ticket'
 import type { KnowledgeDocListItem } from '@/api/types'
 import type {
@@ -43,7 +44,16 @@ export interface StructuredAnalysis {
 
 // ==================== 纯函数：解析 ====================
 
-const extractCitationsFromText = (text: string): string[] => {
+/**
+ * 从回答文本回退提取引用出处。
+ *
+ * 语义缓存命中时工具不执行，后端 complete 事件的 citations 为空（6.20），
+ * 此时只能从正文的【来源：文档标题 - 章节】标记回退提取，
+ * 否则缓存命中的回答会丢失全部溯源信息。
+ *
+ * 导出供测试：溯源是 L1 幻觉防护的一环，格式解析出错等于静默丢证据。
+ */
+export const extractCitationsFromText = (text: string): string[] => {
   const matches = text.matchAll(/【来源：([^-】]+?)\s*-\s*([^】]+?)】/g)
   const result: string[] = []
   for (const m of matches) {
@@ -76,7 +86,7 @@ export function parseStructuredAnalysis(raw: string): StructuredAnalysis {
   if (!raw || !raw.trim()) return result
 
   const sections = raw.split(/(?=^##\s+)/m)
-  let otherBuf: string[] = []
+  const otherBuf: string[] = []
 
   for (const section of sections) {
     const trimmed = section.trim()
@@ -412,11 +422,11 @@ export function useTicketAnalysis(
           analysisStreaming.value = false
         }
       }, abortController)
-    } catch (error: any) {
-      if (error?.name === 'AbortError' || abortController?.signal.aborted) {
+    } catch (error: unknown) {
+      if (isAbortLike(error) || abortController?.signal.aborted) {
         analysisContent.value += '\n\n_（已停止生成）_'
       } else {
-        analysisContent.value += `\n\n❌ 连接失败：${error.message || '网络错误'}`
+        analysisContent.value += `\n\n❌ 连接失败：${errorMessage(error)}`
       }
       analysisDone.value = true
       analysisStreaming.value = false
@@ -451,7 +461,7 @@ export function useTicketAnalysis(
     try {
       let replyText = ''
       await chatStream(replyQuery, {
-        onStart: () => {}, // eslint-disable-next-line
+        onStart: () => {},
         onToolStatus: () => {},
         onToken: (data: SSETokenEvent) => {
           replyText += data.text
@@ -470,11 +480,11 @@ export function useTicketAnalysis(
         }
       }, abortController)
       return replyText
-    } catch (error: any) {
-      if (error?.name === 'AbortError' || abortController?.signal.aborted) {
+    } catch (error: unknown) {
+      if (isAbortLike(error) || abortController?.signal.aborted) {
         analysisContent.value += '\n\n_（已停止生成）_'
       } else {
-        analysisContent.value += `\n\n❌ 连接失败：${error.message || '网络错误'}`
+        analysisContent.value += `\n\n❌ 连接失败：${errorMessage(error)}`
       }
       analysisDone.value = true
       analysisStreaming.value = false

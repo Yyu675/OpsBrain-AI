@@ -6,11 +6,11 @@ import { marked } from 'marked'
 import TurndownService from 'turndown'
 import DOMPurify from 'dompurify'
 import {
-  ArrowLeft, Save, Send, Upload, Sparkles, Settings2, FileText, Plus,
+  Save, Send, Upload, Sparkles, Settings2, FileText, Plus,
   Pencil, Trash2, BookOpen, Eye, Code2, ChevronDown, Lightbulb,
   Table2, Minus, Heading2, Heading3, SquareTerminal, Wrench,
   ListChecks, TriangleAlert, BookTemplate, MoreHorizontal,
-  PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
+  ListTree,
 } from 'lucide-vue-next'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { useDirtyGuard } from '@/composables/useDirtyGuard'
@@ -21,7 +21,6 @@ import {
   fetchKnowledgeCategories,
   fetchKnowledgeTags,
   VersionConflictError,
-  NotFoundDocError,
 } from '@/api/knowledge'
 import type {
   KnowledgeCategoryEntity,
@@ -31,7 +30,14 @@ import type {
   KnowledgeTag,
 } from '@/api/types'
 import KnowledgeTreeSidebar from '@/components/knowledge/KnowledgeTreeSidebar.vue'
+import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import CollapseToggle from '@/components/common/CollapseToggle.vue'
+import RailButton from '@/components/common/RailButton.vue'
+import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
+import { useHotkeys } from '@/composables/useHotkeys'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import KnowledgeRichEditor from '@/components/knowledge/KnowledgeRichEditor.vue'
+import { handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -98,20 +104,35 @@ const editorPreview = ref(true)
 const editorMode = ref<'visual' | 'markdown'>('visual')
 const starterDismissed = ref(false)
 
-/** 左树折叠状态（持久化） */
-const leftSidebarCollapsed = ref(localStorage.getItem('ke-left-collapsed') === 'true')
-/** 右侧面板折叠状态（持久化） */
-// 修复：原为 === 'false'，导致状态被反转（折叠后刷新又展开，展开后刷新变折叠）
-const rightSidebarCollapsed = ref(localStorage.getItem('ke-right-collapsed') === 'true')
+/**
+ * 左右侧栏折叠状态。
+ *
+ * 折叠/持久化/过渡动画/命中区已统一收敛到 CollapsiblePanel，
+ * 此处只保留状态与实例引用供快捷键与图标轨使用。
+ */
+const leftSidebarCollapsed = ref(false)
+const rightSidebarCollapsed = ref(false)
+const leftPanelRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
+const rightPanelRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
 
-const toggleLeftSidebar = () => {
-  leftSidebarCollapsed.value = !leftSidebarCollapsed.value
-  try { localStorage.setItem('ke-left-collapsed', String(leftSidebarCollapsed.value)) } catch { /* */ }
-}
-const toggleRightSidebar = () => {
-  rightSidebarCollapsed.value = !rightSidebarCollapsed.value
-  try { localStorage.setItem('ke-right-collapsed', String(rightSidebarCollapsed.value)) } catch { /* */ }
-}
+/**
+ * `[` 收左栏（目录）、`]` 收右栏（大纲/属性）。
+ *
+ * 编辑器正文是 contenteditable / textarea，useHotkeys 已排除可编辑元素，
+ * 故在正文中打 `[` `]` 不会误触折叠。
+ */
+/**
+ * 窄屏（≤760px）下右栏改由已有的悬浮抽屉（mobileSideOpen）控制，
+ * 此时禁用 CollapsiblePanel 的折叠——否则两套开合入口并存会互相矛盾：
+ * 用户先折叠再点抽屉按钮，内容因已折叠而未渲染，按钮看似失灵。
+ * 断点与下方 `@media (max-width: 760px)` 的 `.ce-sidebar` 抽屉样式保持一致。
+ */
+const isNarrowScreen = useMediaQuery('(max-width: 760px)')
+
+useHotkeys([
+  { key: '[', description: '收起/展开目录', handler: () => leftPanelRef.value?.toggle() },
+  { key: ']', description: '收起/展开侧栏', handler: () => rightPanelRef.value?.toggle() }
+])
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 
 const starterTemplates = [
@@ -175,7 +196,32 @@ const publishOnChange = computed({
 watch(formData, () => { isDirty.value = true }, { deep: true })
 watch(publishOnChange, () => { isDirty.value = true })
 
-useDirtyGuard(isDirty, { message: '有未保存的文档内容' })
+/**
+ * 离开确认（三选一）。
+ *
+ * 草稿已由 saveDraft 自动暂存到本机，故「离开」与「丢弃」是两件不同的事：
+ * - 本机暂存并离开 → 草稿留着，下次进来自动恢复
+ * - 放弃 → clearDraft 彻底丢掉这次编辑
+ * - 关闭/Esc → 留在页面继续编辑
+ *
+ * 原先这段逻辑在页内「返回知识库」按钮的 handleBack 里，只覆盖点那个按钮的路径；
+ * 现统一到 useDirtyGuard 的 onBeforeRouteLeave，面包屑跳转、导航栏跳转、
+ * 浏览器后退全部走同一套确认，不会有绕过草稿保护的入口。
+ */
+useDirtyGuard(isDirty, {
+  message: '有未提交的内容，是否暂存到本机后离开？',
+  title: '提示',
+  confirmText: '本机暂存并离开',
+  discardText: '放弃',
+  onConfirm: () => {
+    handleSaveDraft()
+    isDirty.value = false
+  },
+  onDiscard: () => {
+    clearDraft(draftKey.value)
+    isDirty.value = false
+  }
+})
 
 let autoSaveTimer: number | null = null
 const currentDraftState = (): EditorDraftState => ({
@@ -353,7 +399,16 @@ const loadDoc = async () => {
   loadingEdit.value = true
   try {
     const d = await store.loadDetail(docId)
-    if (!d) return
+    // store.loadDetail 不再抛错（三态收敛到 useResourceState 后，
+    // 「不存在」与「加载失败」都以返回 null 表示），故按 store 状态区分：
+    // notFound 跳回列表，error 由页面的三态区渲染重试入口
+    if (!d) {
+      if (store.detailStatus === 'notFound') {
+        ElMessage.error('文档不存在或已被删除')
+        router.replace('/knowledge')
+      }
+      return
+    }
     if (d.status === 'DEPRECATED' || d.status === 'ARCHIVED') {
       ElMessage.warning('已废弃或已归档文档需要先恢复才能编辑')
       router.replace(`/knowledge/${docId}`)
@@ -416,12 +471,9 @@ const loadDoc = async () => {
       }
     }
   } catch (e) {
-    if ((e as NotFoundDocError)?.isNotFound) {
-      ElMessage.error('文档不存在或已被删除')
-      router.replace('/knowledge')
-    } else {
-      ElMessage.error(`加载文档失败：${(e as Error).message}`)
-    }
+    // store.loadDetail 已不抛错（notFound/error 均返回 null 并置 store 状态），
+    // 此处兜住的是本函数其余步骤的异常（草稿恢复、内容转换等）
+    handleServerError(e, { action: '加载文档' })
   } finally {
     loadingEdit.value = false
   }
@@ -522,7 +574,7 @@ const createCategoryFromSettings = async () => {
     ElMessage.success('分类已创建')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error((error as Error).message || '创建分类失败')
+    handleServerError(error, { action: '创建分类' })
   }
 }
 
@@ -535,7 +587,7 @@ const generateSummary = () => {
   const source = isHtmlContent(formData.value.content)
     ? new DOMParser().parseFromString(formData.value.content, 'text/html').body.textContent ?? ''
     : formData.value.content
-  const text = source.replace(/[#*`>\-\[\]()!]/g, '')
+  const text = source.replace(/[#*`>\-[\]()!]/g, '')
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -689,7 +741,7 @@ const handleSave = async (publishAfterSave = false) => {
       // 禁止自动覆盖：提示刷新让用户看到最新内容后再提交（6.11）
       ElMessage.error('该文档已被他人修改，请刷新查看最新内容后重新提交')
     } else {
-      ElMessage.error(`保存失败：${(e as Error).message}`)
+      handleServerError(e, { action: '保存文档' })
     }
   } finally {
     saving.value = false
@@ -699,31 +751,8 @@ const handleSave = async (publishAfterSave = false) => {
 const handleSaveAndPublish = () => handleSave(true)
 const handleSaveClick = () => handleSave()
 
-// ==================== 返回列表 ====================
-
-const handleBack = async () => {
-  if (isDirty.value) {
-    try {
-      await ElMessageBox.confirm('有未提交的内容，是否暂存到本机后离开？', '提示', {
-        confirmButtonText: '本机暂存并离开',
-        cancelButtonText: '放弃',
-        distinguishCancelAndClose: true,
-        type: 'warning',
-      })
-      handleSaveDraft()
-      isDirty.value = false
-    } catch (action) {
-      if (action === 'cancel') {
-        clearDraft(draftKey.value)
-        isDirty.value = false
-      } else {
-        // 点击关闭按钮表示继续编辑，不离开页面。
-        return
-      }
-    }
-  }
-  router.push('/knowledge')
-}
+// 返回列表：由面包屑（AppBreadcrumb）+ useDirtyGuard 的离开确认统一承担，
+// 原页内 handleBack 已删除——它只覆盖点那一个按钮的路径，无法拦住其它离开入口。
 
 const scrollEditorToHeading = async (item: { text: string }) => {
   activeSideTab.value = 'toc'
@@ -822,17 +851,22 @@ const primaryLabel = computed(() =>
 
 <template>
   <div class="knowledge-editor">
-    <!-- 页内工具栏：返回 + 标题 + 保存状态 + 操作按钮 -->
+    <!-- 页内工具栏：面包屑 + 标题 + 保存状态 + 操作按钮 -->
     <header class="ce-toolbar">
       <div class="ce-toolbar-inner">
         <div class="ce-toolbar-left">
-          <button class="ce-btn-back" type="button" @click="handleBack">
-            <ArrowLeft :size="18" />
-            <span>返回知识库</span>
-          </button>
-          <span class="ce-toolbar-sep" />
-          <BookOpen :size="16" class="ce-kb-icon" />
-          <span class="ce-toolbar-doc-title">{{ formData.title || '无标题文档' }}</span>
+          <!--
+            统一为首页起始的递进面包屑，替代原「返回知识库」按钮。
+            未保存草稿的离开确认由 useDirtyGuard 的 onBeforeRouteLeave 兜住——
+            它拦截所有路由离开（含面包屑跳转），不会因换成 RouterLink 而绕过。
+          -->
+          <AppBreadcrumb
+            :items="[
+              { label: '知识库', to: '/knowledge' },
+              { label: formData.title || '无标题文档' }
+            ]"
+            :current-max-width="260"
+          />
         </div>
         <div class="ce-toolbar-right">
           <div class="ce-save-status">
@@ -885,18 +919,28 @@ const primaryLabel = computed(() =>
     </div>
 
     <div v-else class="ce-workspace">
-      <!-- 左侧知识树（可折叠） -->
-      <div class="sidebar-wrapper" :class="{ collapsed: leftSidebarCollapsed }">
-        <KnowledgeTreeSidebar
-          v-show="!leftSidebarCollapsed"
-          :current-doc-id="id"
-          mode="editor"
-          @changed="loadCategoriesAndTags"
-        />
-        <button class="sidebar-toggle left-toggle" @click="toggleLeftSidebar" :title="leftSidebarCollapsed ? '展开目录' : '收起目录'">
-          <component :is="leftSidebarCollapsed ? PanelLeftOpen : PanelLeftClose" :size="18" />
-        </button>
-      </div>
+      <!-- 左侧知识树（折叠按钮在知识树自己的标题行内） -->
+      <CollapsiblePanel
+        ref="leftPanelRef"
+        side="left"
+        storage-key="ke-left-collapsed"
+        label="目录"
+        :width="260"
+        :rail-width="40"
+        @update:collapsed="leftSidebarCollapsed = $event"
+      >
+        <template #default="{ toggle }">
+          <KnowledgeTreeSidebar
+            :current-doc-id="id"
+            mode="editor"
+            @changed="loadCategoriesAndTags"
+          >
+            <template #title-actions>
+              <CollapseToggle side="left" label="目录" @click="toggle" />
+            </template>
+          </KnowledgeTreeSidebar>
+        </template>
+      </CollapsiblePanel>
       <div v-if="mobileSideOpen" class="ce-side-mask" @click="mobileSideOpen = false" />
       <div class="ce-body">
       <!-- 居中纸面编辑器 -->
@@ -994,12 +1038,49 @@ const primaryLabel = computed(() =>
         </div>
       </main>
 
-      <!-- 右侧设置面板（可折叠） -->
-      <button class="sidebar-toggle right-toggle" @click="toggleRightSidebar" :title="rightSidebarCollapsed ? '展开面板' : '收起面板'">
-        <component :is="rightSidebarCollapsed ? PanelRightOpen : PanelRightClose" :size="18" />
-      </button>
-      <aside v-show="!rightSidebarCollapsed" class="ce-sidebar" :class="{ 'mobile-open': mobileSideOpen }">
+      <!-- 右侧设置面板（可折叠；折叠后图标轨可直接切到大纲/属性 tab） -->
+      <CollapsiblePanel
+        ref="rightPanelRef"
+        side="right"
+        storage-key="ke-right-collapsed"
+        label="侧栏"
+        :width="240"
+        :disabled="isNarrowScreen"
+        @update:collapsed="rightSidebarCollapsed = $event"
+      >
+        <!--
+          折叠态图标轨：点击图标既展开侧栏又切到对应 tab——
+          比「先展开、再点 tab」两步操作更直接。
+        -->
+        <template #rail="{ toggle }">
+          <RailButton
+            title="文章大纲"
+            :active="activeSideTab === 'toc'"
+            :count="tocItems.length"
+            @click="activeSideTab = 'toc'; toggle()"
+          >
+            <ListTree :size="17" />
+          </RailButton>
+          <RailButton
+            title="文档属性"
+            :active="activeSideTab === 'settings'"
+            @click="activeSideTab = 'settings'; toggle()"
+          >
+            <Settings2 :size="16" />
+          </RailButton>
+        </template>
+
+        <template #default="{ toggle }">
+        <aside class="ce-sidebar" :class="{ 'mobile-open': mobileSideOpen }">
         <div class="ce-side-tabs">
+          <!-- 右侧栏的折叠按钮放**左端**：镜像对称，贴近它要让出的主内容区 -->
+          <CollapseToggle
+            v-if="!isNarrowScreen"
+            class="ce-side-collapse"
+            side="right"
+            label="侧栏"
+            @click="toggle"
+          />
           <button
             class="ce-side-tab"
             :class="{ active: activeSideTab === 'toc' }"
@@ -1147,6 +1228,8 @@ const primaryLabel = computed(() =>
           </button>
         </template>
       </aside>
+      </template>
+      </CollapsiblePanel>
       </div>
     </div>
   </div>
@@ -1194,47 +1277,13 @@ const primaryLabel = computed(() =>
   flex-shrink: 0;
 }
 
-.ce-btn-back, .ce-btn-ghost, .ce-btn-primary, .ce-btn-more, .ce-mobile-side { border: 0; outline: 0; }
+.ce-btn-ghost, .ce-btn-primary, .ce-btn-more, .ce-mobile-side { border: 0; outline: 0; }
 .ce-mobile-side { display: none; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 5px; color: var(--color-text-secondary); }
 .ce-mobile-side:hover { color: var(--color-primary); background: var(--color-primary-lighter); }
 .ce-side-mask { display: none; }
 
-.ce-btn-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease;
-
-  &:hover {
-    background: var(--color-bg-sunken);
-    color: var(--color-text-primary);
-  }
-}
-
-.ce-toolbar-sep {
-  width: 1px;
-  height: 20px;
-  background: var(--color-border-light);
-  flex-shrink: 0;
-}
-
-.ce-kb-icon { flex-shrink: 0; color: var(--color-primary); }
-
-.ce-toolbar-doc-title {
-  max-width: 300px;
-  overflow: hidden;
-  color: var(--color-text-primary);
-  font-size: 14px;
-  font-weight: var(--weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* 原「返回知识库」按钮及其配套（分隔线/图标/标题）的样式已删除——
+   该按钮已被 AppBreadcrumb 面包屑取代，DOM 不存在，这些规则已成死代码。 */
 
 .ce-title-input {
   flex: 1;
@@ -1400,34 +1449,7 @@ const primaryLabel = computed(() =>
   overflow: hidden;
 }
 
-/* 侧栏折叠 */
-.sidebar-wrapper {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  position: relative;
-}
-.sidebar-wrapper.collapsed {
-  width: auto;
-}
-.sidebar-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  flex-shrink: 0;
-  border: none;
-  background: var(--color-surface-hover, #F8F9FB);
-  cursor: pointer;
-  color: var(--color-text-tertiary, #9CA3AF);
-  transition: all 0.15s;
-}
-.sidebar-toggle:hover {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #409eff);
-}
-.left-toggle { border-right: 1px solid var(--color-border-light, #E5E7EB); }
-.right-toggle { border-left: 1px solid var(--color-border-light, #E5E7EB); }
+/* 侧栏折叠（容器/过渡/命中区/持久化）已统一由 CollapsiblePanel 负责，此处不再重复定义 */
 
 .ce-body {
   flex: 1;
@@ -1590,9 +1612,9 @@ const primaryLabel = computed(() =>
 .ce-category-control > button:hover { border-color: var(--color-primary-light); color: var(--color-primary); }
 
 /* 右侧设置面板 */
+/* 宽度由 CollapsiblePanel 的 width prop 控制，此处只管内部呈现 */
 .ce-sidebar {
-  width: 240px;
-  flex-shrink: 0;
+  width: 100%;
   height: 100%;
   box-sizing: border-box;
   display: flex;
@@ -1608,9 +1630,16 @@ const primaryLabel = computed(() =>
 
 .ce-side-tabs {
   display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--color-border-light);
   margin: 0 -16px 2px;
   padding: 0 16px;
+  flex-shrink: 0;
+}
+
+/* 折叠按钮在 tab 行左端（镜像对称：右侧栏的控件贴近主内容区） */
+.ce-side-collapse {
+  margin-right: 4px;
   flex-shrink: 0;
 }
 
@@ -1881,7 +1910,7 @@ const primaryLabel = computed(() =>
 /* ==================== 响应式 ==================== */
 
 @media (max-width: 1050px) {
-  .ce-sidebar { width: 210px; }
+  /* 宽度已由 CollapsiblePanel 的 width prop 控制，此处只收窄正文内边距 */
   .ce-main { padding-inline: 10px; }
 }
 
@@ -1898,7 +1927,6 @@ const primaryLabel = computed(() =>
   }
 
   .ce-save-status { display: none; }
-  .ce-toolbar-doc-title { max-width: 180px; }
 }
 
 @media (max-width: 760px) {
@@ -1919,9 +1947,8 @@ const primaryLabel = computed(() =>
   .ce-sidebar.mobile-open { transform: translateX(0); }
   .ce-side-mask { position: fixed; z-index: 80; inset: 56px 0 0; display: block; background: rgba(17, 24, 39, 0.32); }
   .ce-mobile-side { display: inline-flex; }
-  .ce-btn-ghost span, .ce-btn-outline span, .ce-btn-back span { display: none; }
-  .ce-btn-ghost, .ce-btn-outline, .ce-btn-back { width: 34px; justify-content: center; padding: 0; }
-  .ce-toolbar-doc-title { max-width: 104px; }
+  .ce-btn-ghost span, .ce-btn-outline span { display: none; }
+  .ce-btn-ghost, .ce-btn-outline { width: 34px; justify-content: center; padding: 0; }
   .ce-paper { padding: 22px 20px 36px; box-sizing: border-box; }
   .ce-doc-title { font-size: 25px; }
   .ce-paper-meta { flex-wrap: wrap; height: auto; padding-bottom: 8px; }

@@ -29,6 +29,7 @@ import type {
   KnowledgeCategoryTreeNode,
   KnowledgeTreeDocument,
 } from '@/api/types'
+import { handleServerError } from '@/utils/notify'
 
 const props = withDefaults(defineProps<{
   currentDocId?: number | null
@@ -125,7 +126,7 @@ async function loadTree() {
     }
     expanded.value = new Set(expanded.value)
   } catch (error) {
-    ElMessage.error((error as Error).message || '目录树加载失败')
+    handleServerError(error, { action: '加载目录树' })
   } finally {
     loading.value = false
   }
@@ -171,7 +172,7 @@ async function addCategory(parent?: KnowledgeCategoryTreeNode) {
     ElMessage.success('分类已创建')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error((error as Error).message || '创建分类失败')
+    handleServerError(error, { action: '创建分类' })
   }
 }
 
@@ -192,7 +193,7 @@ async function renameCategory(category: KnowledgeCategoryTreeNode) {
     ElMessage.success('分类已重命名')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error((error as Error).message || '重命名失败')
+    handleServerError(error, { action: '重命名分类' })
   }
 }
 
@@ -209,7 +210,7 @@ async function removeCategory(category: KnowledgeCategoryTreeNode) {
     ElMessage.success('分类已删除')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error((error as Error).message || '删除分类失败')
+    handleServerError(error, { action: '删除分类' })
   }
 }
 
@@ -233,7 +234,7 @@ async function handleMoveCommand(command: string, doc: KnowledgeTreeDocument) {
       ElMessage.warning('文档已被其他人修改，目录已刷新，请确认后重试移动')
       return
     }
-    ElMessage.error((error as Error).message || '移动文档失败')
+    handleServerError(error, { action: '移动文档' })
   }
 }
 
@@ -253,6 +254,14 @@ defineExpose({ refresh: loadTree })
       <div class="kts-brand">
         <BookOpen :size="17" />
         <span>运维知识库</span>
+        <!--
+          标题行操作位：供调用方放折叠按钮。
+          折叠控制应与它所控制的内容同处一行，而本组件的标题行结构属自身职责，
+          故以插槽形式让出位置，而非让外层在 DOM 外另放一个游离控件。
+        -->
+        <span class="kts-brand-actions">
+          <slot name="title-actions" />
+        </span>
         <button class="kts-mobile-close" type="button" title="关闭目录" @click="mobileOpen = false">
           <X :size="17" />
         </button>
@@ -411,6 +420,8 @@ defineExpose({ refresh: loadTree })
 
 .kts-head { padding: 14px 12px 12px; border-bottom: 1px solid var(--color-border-light); }
 .kts-brand { height: 28px; display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font-size: 14px; font-weight: 600; color: var(--color-text-primary); }
+/* 标题行操作位靠右——margin-left:auto 把折叠按钮推到行尾，与标题同一水平线 */
+.kts-brand-actions { margin-left: auto; display: inline-flex; align-items: center; }
 .kts-mobile-close { display: none; margin-left: auto; color: var(--color-text-tertiary); }
 .kts-search { height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid var(--color-border-light); border-radius: 6px; background: var(--color-bg); color: var(--color-text-tertiary); }
 .kts-search:focus-within { border-color: var(--color-primary-light); background: var(--color-bg-elevated); }
