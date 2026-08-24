@@ -468,6 +468,17 @@ const submit = async () => {
           </header>
 
           <div class="dialog-body">
+            <!--
+              表单分组：按「填写心智」而非字段类型划分。
+              一屏十几个字段平铺时，用户无法判断哪些必填、哪些可以先跳过；
+              分组后每组 2-4 项，配合小标题形成节奏，扫读成本显著下降。
+            -->
+            <section class="form-section">
+              <h4 class="form-section-title">
+                基本信息
+                <span class="form-section-hint">描述这是什么问题</span>
+              </h4>
+
             <!-- 标题 -->
             <div class="form-row">
               <label class="form-label required">工单标题</label>
@@ -519,6 +530,14 @@ const submit = async () => {
             </div>
 
             <!-- 分类 / 服务 -->
+            </section>
+
+            <section class="form-section">
+              <h4 class="form-section-title">
+                归类与定级
+                <span class="form-section-hint">决定路由与 SLA 时限</span>
+              </h4>
+
             <div class="form-row form-row-2">
               <div>
                 <label class="form-label required">工单分类</label>
@@ -535,6 +554,14 @@ const submit = async () => {
             </div>
 
             <!-- 负责人 / SLA -->
+            </section>
+
+            <section class="form-section">
+              <h4 class="form-section-title">
+                处理安排
+                <span class="form-section-hint">可留空，创建后再指派</span>
+              </h4>
+
             <div class="form-row form-row-2">
               <div>
                 <label class="form-label">负责人</label>
@@ -614,6 +641,7 @@ const submit = async () => {
               <label class="form-label">附件</label>
               <div class="form-hint">工单创建后，可在详情页上传附件</div>
             </div>
+            </section>
           </div>
 
           <footer class="dialog-footer">
@@ -693,6 +721,34 @@ const submit = async () => {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+/* ── 表单分组（G3）─────────────────────────────────────────
+   用「小标题 + 细分隔线」而非卡片：卡片会在弹窗里套出第二层容器，
+   视觉层级过重，反而让弹窗显得拥挤。 */
+.form-section {
+  padding-bottom: var(--space-4, 16px);
+  margin-bottom: var(--space-4, 16px);
+  border-bottom: 1px solid var(--border-1);
+}
+.form-section:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+.form-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2, 8px);
+  margin: 0 0 var(--space-3, 12px);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.form-section-hint {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 400;
+  color: var(--text-3);
 }
 
 .form-row {
