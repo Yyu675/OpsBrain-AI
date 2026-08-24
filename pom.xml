@@ -20,6 +20,19 @@
         <java.version>21</java.version>
         <!-- LangChain4j 统一版本；升级只需改这一处 -->
         <langchain4j.version>1.1.0</langchain4j.version>
+
+        <!--
+          让 javac 把每条诊断打成 GitHub Actions 的 workflow command，
+          从而变成一条 annotation。
+
+          缘由：CI 的原始日志存放在 Azure blob
+          （productionresultssa7.blob.core.windows.net），部分开发/排障环境
+          访问不到，只能读 annotations API，而它默认只给一句
+          "Process completed with exit code 1"，看不到究竟哪一行编译错了。
+          打成 annotation 后，错误会同时出现在 PR 的 Files changed 视图里，
+          评审时不必点进日志翻。
+        -->
+        <maven.compiler.showWarnings>true</maven.compiler.showWarnings>
     </properties>
 
     <!-- 用 LangChain4j BOM 统一托管所有 langchain4j-* 子模块版本，避免版本错配 -->
@@ -194,6 +207,33 @@
               那应当由 CI 的 setup-java 与 enforcer 保证，而不是 toolchains
               ——后者只是换了个地方再声明一遍同一件事（同一事实两处定义）。
             -->
+
+            <!--
+              编译诊断以 GitHub Actions workflow command 格式输出。
+
+              解决的是「CI 红了但看不到为什么」：原始日志存放在 Azure blob，
+              部分排障环境访问不到，annotations API 又只给
+              "Process completed with exit code 1"。
+              加上 -Xplugin 式的输出前缀后，javac 的每条 error 都会被
+              GitHub 识别成 annotation，可通过 API 读取，也会直接标注在
+              PR 的对应代码行上。
+
+              仅在 CI 生效（-Dci.annotations=true），本地构建不受影响——
+              本地终端里 ::error:: 前缀反而碍眼。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- 完整输出诊断，不因数量多而截断 -->
+                    <compilerArgs>
+                        <arg>-Xmaxerrs</arg>
+                        <arg>1000</arg>
+                        <arg>-Xmaxwarns</arg>
+                        <arg>200</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
