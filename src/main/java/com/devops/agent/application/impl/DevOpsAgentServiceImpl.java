@@ -905,14 +905,16 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
     private void recordLogAsync(String traceId, String query, String answer, String model,
                                  boolean isCached, int latencyMs, double cost, String citations,
                                  String operationType, String affectedResources, String operatorId) {
-        CompletableFuture.runAsync(() -> {
+        // A5：审计线程池是独立线程，MDC 不会自动传播。用 TraceContext.wrap 搬运，
+        // 否则「记账失败」这类日志将不带 traceId，恰恰是最需要关联排查的场景。
+        CompletableFuture.runAsync(TraceContext.wrap(() -> {
             try {
                 logService.saveLog(traceId, query, answer, model, isCached, latencyMs, cost, citations,
                         operationType, affectedResources, operatorId);
             } catch (Exception e) {
                 log.error("❌ [AgentLog] 记账失败 | traceId={}", traceId, e);
             }
-        }, auditExecutor);
+        }), auditExecutor);
     }
 
     /**

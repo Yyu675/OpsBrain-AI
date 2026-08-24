@@ -4,12 +4,12 @@ import com.devops.agent.application.router.DevOpsAgentEngine;
 import com.devops.agent.application.runtime.AgentStateManager;
 import com.devops.agent.application.runtime.CostQuotaManager;
 import com.devops.agent.domain.tools.DevOpsTools;
+import com.devops.agent.infrastructure.cache.TtlChatMemoryStore;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
-import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -64,6 +64,24 @@ public class AgentEngineConfig {
     private int maxMessages;
 
     /**
+     * 对话窗口空闲多久后回收（分钟）。与 Redis 热记忆 TTL 对齐，
+     * 进程内窗口没有理由比热记忆活得更久。
+     */
+    @Value("${devops.ai.memory.hot-ttl-minutes:120}")
+    private long memoryTtlMinutes;
+
+    /**
+     * 进程内并发保留的会话窗口数上限。超出后按最后访问时间 LRU 淘汰，
+     * 用于防御 TTL 窗口内瞬时涌入大量会话（压测/爬虫）造成的内存尖峰。
+     */
+    @Value("${devops.ai.memory.max-sessions:5000}")
+    private int memoryMaxSessions;
+
+    /** 对话窗口清扫间隔（分钟） */
+    @Value("${devops.ai.memory.sweep-interval-minutes:5}")
+    private long memorySweepIntervalMinutes;
+
+    /**
      * Agent 状态管理器 Bean (MVP-2)
      */
     @Bean
@@ -82,19 +100,30 @@ public class AgentEngineConfig {
     }
 
     /**
-     * ChatMemory 存储后端 - 内存存储（多轮记忆）
+     * ChatMemory 存储后端 - 带 TTL 与容量上限的内存存储（多轮记忆）
      * <p>
      * LangChain4j 按 memoryId（即 sessionId）隔离不同会话的对话历史。
-     * InMemoryChatMemoryStore 在进程内存中维护多个会话窗口，适用于单实例部署。
-     * 分布式部署时可替换为 Redis / PostgreSQL backed store。
+     * </p>
+     * <p>
+     * <b>A1 修复（2026-08-24）</b>：此前直接返回裸 {@code InMemoryChatMemoryStore}，
+     * 而它<b>只增不减</b>——没有任何 TTL/容量上限，且全项目无一处调用
+     * {@code deleteMessages()}。叠加 {@code DevOpsChatController} 在 sessionId 为空时
+     * 退化为 {@code sessionId = traceId}（每请求一个 UUID）的行为，
+     * <b>每次匿名单轮对话都会永久新增一个条目</b>，数周内必然 OOM。
+     * 现改为 {@link TtlChatMemoryStore} 装饰器，按最后访问时间驱逐。
+     * </p>
+     * <p>
+     * TTL 取值与热记忆对齐：{@code devops.ai.memory.hot-ttl-minutes}（默认 120 分钟）
+     * 是 Redis 热记忆的静默回收时长，进程内对话窗口没有理由比它活得更久。
      * </p>
      *
      * @return ChatMemoryStore Bean
      */
     @Bean
     public ChatMemoryStore chatMemoryStore() {
-        log.info("🚀 [AgentEngineConfig] 创建 InMemoryChatMemoryStore（多轮记忆后端）");
-        return new InMemoryChatMemoryStore();
+        log.info("🚀 [AgentEngineConfig] 创建 TtlChatMemoryStore（多轮记忆后端）| ttl={}min | maxEntries={}",
+                memoryTtlMinutes, memoryMaxSessions);
+        return new TtlChatMemoryStore(memoryTtlMinutes, memoryMaxSessions, memorySweepIntervalMinutes);
     }
 
     /**

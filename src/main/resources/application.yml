@@ -5,6 +5,16 @@ spring:
   profiles:
     active: ${spring_profiles_active:dev}
 
+  # ==================== 异步请求超时（A2 修复）====================
+  # SSE（SseEmitter）走 Spring MVC 异步请求通道，受此值约束。
+  # 超时层级必须满足：MVC async > SSE emitter > 模型总超时，
+  # 否则内层还在正常工作，外层已经把连接掐断。
+  # 此前未配置，默认值随容器而定（Tomcat 常见 30s 或不限），
+  # 与 SSE 的 60s、reasoner 模型的 120s 三者互不协调。
+  mvc:
+    async:
+      request-timeout: ${MVC_ASYNC_TIMEOUT_MS:180000}
+
   # 数据源配置（由 profile 具体化）
   datasource:
     driver-class-name: org.postgresql.Driver
@@ -18,6 +28,16 @@ server:
   port: 8088
   servlet:
     context-path: /ai
+
+# ==================== 日志（A5：全链路 traceId）====================
+# %X{traceId} 从 MDC 读取，由 TraceIdFilter 在请求入口写入。
+# 没有它，日志里就无法把一次请求的所有行串起来——这是排障效率的地基。
+# 未经 Filter 的线程（定时任务/异步回调）若未用 TraceContext.wrap 搬运 MDC，
+# 此处会打印为空，属预期行为，可据此发现遗漏的跨线程传递点。
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n"
 
 spring.servlet.multipart:
   # 单文件与单请求上限。与 devops.storage.attachment.max-file-size 保持一致，
@@ -85,6 +105,24 @@ devops:
     # 幻觉防护 L4 相似度熔断
     hallucination:
       min-similarity-score: 0.73
+
+    # ==================== SSE 流式推送（A2 修复）====================
+    # 超时层级铁律（不得倒挂）：
+    #   spring.mvc.async.request-timeout (180s)
+    #     > devops.ai.sse.timeout-ms      (150s)
+    #       > reasoner 模型总超时          (120s = alibaba.timeout * 2)
+    #         > turbo 模型超时             (60s  = alibaba.timeout)
+    #
+    # 此前 SseEmitter 硬编码 60s，而 reasoner 模型允许跑 120s，
+    # 导致「复杂堆栈分析」这一核心场景必然在 60s 被前端判超时，
+    # 而后端模型仍在计费运行。改配置项后三层对齐。
+    sse:
+      # SSE 连接总超时（毫秒）。必须 > 最慢模型的总超时（reasoner 120s）。
+      timeout-ms: ${SSE_TIMEOUT_MS:150000}
+      # 心跳间隔（毫秒）。长时间无数据时，Nginx/网关等中间代理可能
+      # 按空闲超时主动断连（常见默认 60s）。定期发送 SSE 注释帧
+      # （": heartbeat"）保活，该帧不触发前端 onmessage，无副作用。
+      heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:15000}
 
     # 文档索引配置（DocumentIndexer 读取）
     index:

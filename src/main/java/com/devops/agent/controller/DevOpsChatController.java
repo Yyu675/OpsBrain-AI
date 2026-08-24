@@ -14,11 +14,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import org.springframework.beans.factory.annotation.Value;
+
+import jakarta.annotation.PreDestroy;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 对话接入与流式推送控制器
@@ -47,11 +55,42 @@ public class DevOpsChatController {
     private final ObjectMapper objectMapper;
     private final AgentLogService agentLogService;
 
+    /**
+     * SSE 连接总超时（毫秒）。
+     * <p><b>A2 修复</b>：原为硬编码 60000L，比 reasoner 模型的总超时
+     * （{@code alibaba.timeout * 2} = 120s）还短，导致复杂推理场景
+     * 必然在 60s 被判超时，而后端模型仍在计费运行。
+     * 现由配置驱动，默认 150s，满足「MVC async > SSE > 模型」层级。</p>
+     */
+    @Value("${devops.ai.sse.timeout-ms:150000}")
+    private long sseTimeoutMs;
+
+    /** SSE 心跳间隔（毫秒），用于穿透中间代理的空闲超时 */
+    @Value("${devops.ai.sse.heartbeat-interval-ms:15000}")
+    private long sseHeartbeatMs;
+
+    /**
+     * SSE 心跳调度器。
+     * <p>单线程守护足够：心跳任务本身极轻（写一个注释帧），
+     * 且每个连接只注册一个周期任务。</p>
+     */
+    private final ScheduledExecutorService heartbeatScheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "sse-heartbeat");
+                t.setDaemon(true);
+                return t;
+            });
+
     public DevOpsChatController(DevOpsAgentService agentService, ObjectMapper objectMapper,
                                 AgentLogService agentLogService) {
         this.agentService = agentService;
         this.objectMapper = objectMapper;
         this.agentLogService = agentLogService;
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        heartbeatScheduler.shutdownNow();
     }
 
     /**
@@ -105,8 +144,8 @@ public class DevOpsChatController {
         // 生成追踪 ID
         String traceId = generateTraceId();
 
-        // 创建 SSE Emitter (60秒超时)
-        SseEmitter emitter = new SseEmitter(60000L);
+        // 创建 SSE Emitter。超时由配置驱动（A2），必须 > 最慢模型总超时。
+        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
 
         // 设置防缓冲响应头(防止 Nginx/代理缓冲导致延迟)
         response.setHeader("Cache-Control", "no-cache, no-transform");
@@ -128,11 +167,34 @@ public class DevOpsChatController {
                 traceId, sessionId != null ? sessionId : "<单轮>", method, query.length(),
                 query.substring(0, Math.min(50, query.length())));
 
+        // ========== SSE 心跳（A2）==========
+        // 中间代理（Nginx proxy_read_timeout 默认 60s）在长时间无数据时会主动断连。
+        // reasoner 模型「首 token 前」的思考期很容易超过 60s，届时连接已被代理掐断，
+        // 用户看到的是「莫名其妙断线」而非超时提示。
+        // 注释帧（以 ":" 开头）是 SSE 规范定义的保活手段，浏览器 EventSource 与
+        // fetch-event-source 都会忽略它，不触发任何前端事件，无副作用。
+        //
+        // 用 AtomicReference 持有句柄：心跳任务自身需要在发送失败时取消自己，
+        // 而 lambda 内无法引用尚未初始化完成的局部变量。
+        final AtomicReference<ScheduledFuture<?>> heartbeatRef = new AtomicReference<>();
+        heartbeatRef.set(heartbeatScheduler.scheduleWithFixedDelay(() -> {
+            try {
+                emitter.send(SseEmitter.event().comment("heartbeat"));
+            } catch (Exception e) {
+                // 连接已关闭（客户端断开/已 complete）。取消心跳，避免任务空转堆积。
+                // 这里不调 cancelStream：连接关闭会由 onError/onCompletion 回调处理，
+                // 重复取消会重建取消标记造成残留（P2-23 教训）。
+                log.debug("💓 [ChatController] 心跳发送失败，连接已关闭，停止心跳 | traceId={}", traceId);
+                cancelHeartbeat(heartbeatRef);
+            }
+        }, sseHeartbeatMs, sseHeartbeatMs, TimeUnit.MILLISECONDS));
+
         // 注册超时和错误回调
         // P2-25：SSE 断开时通知 Agent 服务取消流式执行，防止后端继续跑完模型流并写库建单。
         // traceId 已由闭包捕获，无需 ThreadLocal。
         emitter.onTimeout(() -> {
-            log.warn("⏰ [ChatController] SSE 超时 | traceId={}", traceId);
+            log.warn("⏰ [ChatController] SSE 超时 | traceId={} | timeoutMs={}", traceId, sseTimeoutMs);
+            cancelHeartbeat(heartbeatRef);
             agentService.cancelStream(traceId);
             try {
                 sendErrorEvent(emitter, traceId, 50002, "连接超时");
@@ -144,6 +206,7 @@ public class DevOpsChatController {
 
         emitter.onError((ex) -> {
             log.error("❌ [ChatController] SSE 异常 | traceId={} | detail={}", traceId, ex.getMessage(), ex);
+            cancelHeartbeat(heartbeatRef);
             agentService.cancelStream(traceId);
             try {
                 sendErrorEvent(emitter, traceId, 50001, "连接异常，请稍后重试或联系管理员");
@@ -155,7 +218,10 @@ public class DevOpsChatController {
 
         emitter.onCompletion(() -> {
             log.info("✅ [ChatController] SSE 完成 | traceId={}", traceId);
-            // 正常完成不取消：取消标记已由 streamAgent 轮询循环 finally 清理，
+            // 心跳必须在此取消：正常完成是最主要的终止路径，
+            // 漏取消会让调度器里堆积永不结束的任务（每次对话泄漏一个）。
+            cancelHeartbeat(heartbeatRef);
+            // 正常完成不取消流：取消标记已由 streamAgent 轮询循环 finally 清理，
             // 此处再调 cancelStream 会重建标记导致残留（P2-23 教训）。
             // 取消只在超时/错误（流可能仍在跑）时发出。
         });
@@ -173,6 +239,19 @@ public class DevOpsChatController {
      * @param sessionId 会话 ID（多轮对话共享，为空时退化为单轮无记忆）
      */
     public record ChatRequest(String query, String sessionId) {
+    }
+
+    /**
+     * 取消心跳任务（幂等）。
+     * <p>所有终止路径（complete / timeout / error / 发送失败）都必须调用，
+     * 否则调度器里会堆积永不结束的周期任务——每次对话泄漏一个，
+     * 与本次修复的 ChatMemoryStore 泄漏是同类问题。</p>
+     */
+    private void cancelHeartbeat(AtomicReference<ScheduledFuture<?>> ref) {
+        ScheduledFuture<?> f = ref.getAndSet(null);
+        if (f != null) {
+            f.cancel(false);
+        }
     }
 
     /**
