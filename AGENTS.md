@@ -232,6 +232,13 @@ npm run knip                       # 死代码/死依赖检测
 - **多 Tab 共用筛选 ref 时，切 Tab 必须清掉对方专属的筛选**。
   否则请求仍携带它、而当前 Tab 的 `hasFilters` 不算它 →
   「清除筛选」按钮不显示，用户看到被隐形过滤的列表且无从清除。
+- **`chatStream` 必须提供 `onClose`**（已加 eslint 规则强制）。
+  该缺陷在项目里出现过三次，均因新增调用点时照抄旧写法。
+- **禁止直接读 `X-Forwarded-For` 或 `getRemoteAddr()`**，一律走
+  `ClientIpResolver`。XFF 客户端可伪造：无条件信任会让限流被绕过
+  （每次换值＝换限流键）、审计 IP 可伪造。只有 remoteAddr 属于
+  `devops.security.trusted-proxies` 时才采信，且取**最后一段**
+  （左侧是客户端可写的部分）。
 - **禁止 `new Date(<后端时间字段>)`**，一律用 `@/utils/time` 的 `parseDate`。
   后端 `LocalDateTime` 序列化后不带时区，`new Date(str)` 按浏览器时区解析，
   跨时区下相对时间可差 12 小时，而绝对时间显示却正常——肉眼几乎发现不了。
@@ -272,6 +279,11 @@ npm run knip                       # 死代码/死依赖检测
 
 ## 更新日志
 
+- **2026-08-24**（八）：前后端联合排查（`docs/08-benchmark/13`）。
+  后端修 X-Forwarded-For 无条件信任致**限流被绕过 + 审计 IP 可伪造**
+  （新增 `ClientIpResolver` 统一入口 + `trusted-proxies` 配置）；
+  前端横向扫全部 5 个 `chatStream` 调用点，补齐第 3、4 处 SSE 断流卡死，
+  并加 lint 规则终结该缺陷类。前端测试 782 → 790。
 - **2026-08-24**（七）：新增模块自查（`docs/08-benchmark/12`）。修复 3 类缺陷：
   使用日志切 Tab 筛选残留致隐形过滤、越界页码产出矛盾区间文案（影响三页）、
   **登出后 Query 缓存残留致下一个登录者先看到上一个人的数据**。
