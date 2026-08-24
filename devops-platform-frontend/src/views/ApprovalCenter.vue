@@ -17,8 +17,7 @@ import {
   type ApprovalRequest,
 } from '@/api/queries/approval.query'
 import RelativeTime from '@/components/common/RelativeTime.vue'
-import AppEmpty from '@/components/common/AppEmpty.vue'
-import ApiErrorState from '@/components/common/ApiErrorState.vue'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 
 const STATUS_TABS = [
   { value: 'PENDING', label: '待审批' },
@@ -178,17 +177,22 @@ const forbidden = computed(() => {
         <h3>无审批权限</h3>
         <p>审批为管理员专属操作，当前账号无权访问。</p>
       </div>
-      <div v-else-if="loading && items.length === 0" class="skeleton-wrap">
-        <div v-for="n in 5" :key="n" class="skeleton-bar" />
-      </div>
-      <div v-else-if="loadError" class="state-wrap">
-        <ApiErrorState :error="loadError" compact retry-label="重试" @retry="fetchList" />
-      </div>
-      <div v-else-if="items.length === 0" class="state-wrap">
-        <AppEmpty size="sm" :description="activeTab === 'PENDING' ? '暂无待审批事项' : '无记录'" />
-      </div>
-
-      <div v-else class="table-container">
+      <!--
+        四态统一（与 TicketList / AlertList 共用）。
+        注意原实现的错误分支没有 `items.length === 0` 条件：切 tab 时
+        若请求失败，已加载的列表会被整个换成错误页。Boundary 改为保留旧数据
+        并在顶部给可重试的提示条——审批场景下让手上的待办凭空消失是不可接受的。
+      -->
+      <DataStateBoundary
+        v-else
+        :loading="loading"
+        :error="loadError"
+        :count="items.length"
+        :empty-description="activeTab === 'PENDING' ? '暂无待审批事项' : '无记录'"
+        :skeleton-rows="5"
+        @retry="fetchList"
+      >
+      <div class="table-container">
         <el-table :data="items" border stripe row-key="id">
           <el-table-column label="风险" width="96" align="center">
             <template #default="{ row }">
@@ -242,6 +246,7 @@ const forbidden = computed(() => {
           </el-table-column>
         </el-table>
       </div>
+      </DataStateBoundary>
     </main>
   </div>
 </template>
@@ -259,9 +264,6 @@ const forbidden = computed(() => {
 .tab { padding: 6px 16px; border: 1px solid var(--color-border-light); border-radius: 20px; background: var(--color-surface); font-size: var(--text-sm); font-family: var(--font-body); color: var(--color-text-secondary); cursor: pointer; transition: all .15s; &:hover{color: var(--color-primary);} &.active{background: var(--color-primary); border-color: var(--color-primary); color:#fff;} }
 .state-wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:240px; background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding:32px; h3{margin:0; color: var(--color-text-primary);} p{margin:0; font-size: var(--text-sm); color: var(--color-text-secondary);} }
 .state-icon-warn { color: var(--color-warning, var(--warning)); }
-.skeleton-wrap { display:flex; flex-direction:column; gap:12px; background: var(--color-surface); border-radius: var(--radius-lg); padding:24px; box-shadow: var(--shadow-sm); }
-.skeleton-bar { height:20px; border-radius:6px; background: linear-gradient(90deg,var(--surface-2) 25%,var(--border-1) 37%,var(--surface-2) 63%); background-size:400% 100%; animation: shimmer 1.4s ease infinite; }
-@keyframes shimmer { 0%{background-position:100% 50%;} 100%{background-position:0 50%;} }
 @keyframes spin { from{transform:rotate(0);} to{transform:rotate(360deg);} }
 .table-container { background: var(--color-surface); border-radius: var(--radius-lg); padding:8px; box-shadow: var(--shadow-sm); overflow:hidden; }
 .summary-cell { display:flex; flex-direction:column; gap:2px; }

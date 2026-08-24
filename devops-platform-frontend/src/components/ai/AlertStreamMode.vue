@@ -25,11 +25,10 @@
 
     <!-- 已连接但无告警 -->
     <div v-if="connectionState === 'connected' && alerts.length === 0" class="state-empty">
-      <EmptyState
-        :icon="Bell"
+      <AppEmpty
         title="暂无告警"
         description="当前没有活跃告警，系统运行正常"
-        size="compact"
+        size="sm"
       />
     </div>
 
@@ -116,7 +115,7 @@
 import { ref, watch, onBeforeUnmount, computed } from 'vue'
 import { Bell, BellDot, AlertTriangle, CheckCircle, RefreshCw, Loader, Monitor, User } from 'lucide-vue-next'
 import type { Component } from 'vue'
-import EmptyState from '@/components/common/EmptyState.vue'
+import AppEmpty from '@/components/common/AppEmpty.vue'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 
 // ==================== 类型定义 ====================

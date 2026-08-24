@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { notify } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
@@ -11,9 +11,8 @@ import { showUndoToast } from '@/utils/undoToast'
 import { debounce, loadPersisted, savePersisted, clearPersisted } from '@/utils/persist'
 import { ticketEvents } from '@/utils/ticketEvents'
 import RelativeTime from '@/components/common/RelativeTime.vue'
-import AppEmpty from '@/components/common/AppEmpty.vue'
-import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
 import {
   useUrlFilters, defineUrlFilter, enumParser, positiveIntParser, textParser
@@ -79,16 +78,41 @@ onMounted(async () => {
     columnVisible.value = merged
   }
 
-  try {
-    await Promise.all([
-      fetchList(),        // 带筛选条件的首屏加载
-      store.loadStats(),  // 「今日新增」等 KPI 只能由后端全量统计得出
-      store.loadHotTags(), // 标签筛选选项需跨全表聚合，不能只取当前页
-      store.loadTeamMembers() // A2：负责人筛选与批量指派名单来自后端，不再硬编码
-    ])
-    ticketEvents.on('ticket-created', handleTicketCreated)
-  } catch (e) {
-    console.error('加载工单列表失败:', e)
+  /*
+   * 事件订阅必须在拉数据**之前**、且在 try 之外注册。
+   *
+   * 原实现把 `ticketEvents.on` 放在 Promise.all 之后、try 之内：
+   * 四个并行请求里任意一个失败（如统计接口 500），整个 try 就跳到 catch，
+   * 订阅永远不会注册。此后用户新建的工单不会插进列表——
+   * 表现为「创建成功提示弹了、列表里却没有」，用户以为工单丢了，
+   * 而实际上只是列表没刷新。这类耦合失败极难排查。
+   */
+  ticketEvents.on('ticket-created', handleTicketCreated)
+
+  /*
+   * 四个请求用 allSettled 而非 all：它们互相独立，
+   * 统计接口挂了不该让工单列表也没有（all 会在首个 reject 时短路，
+   * 剩下三个的结果全被丢弃）。
+   * 列表自身的错误由 fetchList 写入 listError → DataStateBoundary 渲染，
+   * 这里只需对「非主数据」的失败做降级提示。
+   */
+  const [, statsR, tagsR, membersR] = await Promise.allSettled([
+    fetchList(),        // 带筛选条件的首屏加载；错误已由 listError 承接
+    store.loadStats(),  // 「今日新增」等 KPI 只能由后端全量统计得出
+    store.loadHotTags(), // 标签筛选选项需跨全表聚合，不能只取当前页
+    store.loadTeamMembers() // A2：负责人筛选与批量指派名单来自后端，不再硬编码
+  ])
+
+  // 辅助数据失败不阻塞主流程，但必须告诉用户「哪块降级了」——
+  // 否则标签筛选空着、负责人下拉空着，用户会以为系统里真的没有这些数据
+  const degraded: string[] = []
+  if (statsR.status === 'rejected') degraded.push('统计卡片')
+  if (tagsR.status === 'rejected') degraded.push('标签筛选')
+  if (membersR.status === 'rejected') degraded.push('负责人名单')
+  if (degraded.length) {
+    notify.warning(`${degraded.join('、')}加载失败，工单列表不受影响`, {
+      key: 'ticket-list-aux-degraded'
+    })
   }
 })
 
@@ -566,8 +590,10 @@ const handleExportCsv = async () => {
     URL.revokeObjectURL(url)
     notify.success('导出成功')
   } catch (e) {
-    console.error('导出 CSV 失败:', e)
-    notify.error('导出失败，请稍后重试')
+    // 走 handleServerError 而非裸 notify.error：后者丢掉业务码映射，
+    // 导出配额超限（40005）与后端 500 会显示同一句「导出失败，请稍后重试」，
+    // 前者用户等一会儿确实能好，后者等多久都没用
+    handleServerError(e, { action: '导出工单' })
   } finally {
     exporting.value = false
   }
@@ -1121,24 +1147,28 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
         </div>
       </div>
 
-      <!-- 加载骨架 / 错误 / 空态（列表与卡片视图共享） -->
-      <div v-if="listLoading && pagedTickets.length === 0" class="ticket-skeleton-wrap">
-        <div v-for="n in 6" :key="'skel-'+n" class="skeleton-bar"></div>
-      </div>
-      <div v-else-if="listError && pagedTickets.length === 0" class="ticket-state-wrap">
-        <ApiErrorState :error="listError" compact retry-label="重试" @retry="fetchList" />
-      </div>
-      <div v-else-if="pagedTickets.length === 0" class="ticket-state-wrap">
-        <AppEmpty
-          :kind="hasFilters ? 'search' : 'default'"
-          size="sm"
-          :description="hasFilters ? '筛选无命中，试试调整条件' : '暂无工单，点击「创建工单」开始'"
-        />
-      </div>
+      <!--
+        加载骨架 / 错误 / 空态 / 内容四态统一交给 DataStateBoundary。
 
+        除了消除与 AlertList 等页面的重复实现，这里真正修掉的是：
+        翻页与改筛选时**完全没有加载反馈**——listLoading 此前只用于
+        首屏骨架的条件里，有数据后再请求时界面纹丝不动，慢接口下
+        用户会以为点击没生效而反复点。Boundary 会在保留内容的同时
+        在顶部走一条细进度条。
+      -->
+      <DataStateBoundary
+        :loading="listLoading"
+        :error="listError"
+        :count="pagedTickets.length"
+        :filtered="hasFilters"
+        empty-description="暂无工单，点击「创建工单」开始"
+        filtered-description="筛选无命中，试试调整条件"
+        :skeleton-rows="6"
+        @retry="fetchList"
+      >
       <!-- 列表视图：el-table 提供原生列宽拖拉（border + resizable）
            列宽变化持久化到 localStorage，刷新后保持用户调整的布局 -->
-      <div v-else-if="viewMode === 'list'" class="table-container">
+      <div v-if="viewMode === 'list'" class="table-container">
         <el-table
           class="tickets-table"
           :data="pagedTickets"
@@ -1458,6 +1488,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
           </div>
         </div>
       </div>
+      </DataStateBoundary>
 
       <!-- Pagination (对齐设计稿) -->
       <ServerPagination
@@ -2537,39 +2568,6 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   font-weight: var(--weight-medium);
 
   &:hover { text-decoration: underline; }
-}
-
-.ticket-state-wrap {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 40px 16px;
-  margin-bottom: 16px;
-  text-align: center;
-  color: var(--color-text-tertiary);
-  font-size: var(--text-sm);
-}
-
-.ticket-skeleton-wrap {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 16px;
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.skeleton-bar {
-  height: 20px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s infinite;
-  border-radius: 4px;
-}
-@keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
 }
 
 .error-state-inline {

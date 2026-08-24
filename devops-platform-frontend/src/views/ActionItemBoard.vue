@@ -4,12 +4,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
-  ClipboardList, Filter, AlertCircle, CheckCircle2,
+  ClipboardList, Filter, AlertCircle,
   ArrowRight, Loader2, CalendarClock
 } from 'lucide-vue-next'
 import { listActionItems, updateActionItem, type ActionItemData } from '@/api/tickets'
 import { useTicketsStore } from '@/stores/tickets'
 import { notify, handleServerError } from '@/utils/notify'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 
 defineOptions({ name: 'ActionItemBoard' })
 
@@ -19,6 +20,11 @@ const store = useTicketsStore()
 // ==================== 筛选 ====================
 
 const filters = ref({ status: '', owner: '', overdue: false })
+
+/** 是否处于筛选状态——决定空态说「还没有数据」还是「筛选没命中」 */
+const hasFilters = computed(() =>
+  !!filters.value.status || !!filters.value.owner.trim() || filters.value.overdue
+)
 
 const STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
@@ -169,27 +175,24 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- 加载中 -->
-      <div v-if="loading" class="board-state">
-        <Loader2 :size="24" class="spin" />
-        <p>加载改进项中...</p>
-      </div>
-
-      <!-- 加载失败 -->
-      <div v-else-if="loadError" class="board-state">
-        <AlertCircle :size="24" class="err-icon" />
-        <p>加载失败</p>
-        <button class="btn-outline" @click="loadItems">重试</button>
-      </div>
-
-      <!-- 空态 -->
-      <div v-else-if="!items.length" class="board-state">
-        <CheckCircle2 :size="24" class="empty-icon" />
-        <p>当前条件下暂无改进项</p>
-      </div>
-
-      <!-- 列表 -->
-      <div v-else class="item-list">
+      <!--
+        四态统一交给 DataStateBoundary。
+        原实现的 `v-if="loading"` 不带 length 判断，改筛选时已有列表会整个
+        消失换成加载态、加载完再出现——内容闪断。Boundary 的「有数据优先」
+        策略会保留旧内容并在顶部走一条细进度条。
+      -->
+      <DataStateBoundary
+        :loading="loading"
+        :error="loadError"
+        :count="items.length"
+        :filtered="hasFilters"
+        empty-description="当前还没有登记改进项"
+        filtered-description="当前筛选条件下没有改进项，试试放宽条件"
+        :skeleton-rows="5"
+        skeleton-height="64px"
+        @retry="loadItems"
+      >
+        <div class="item-list">
         <div
           v-for="item in items"
           :key="item.id"
@@ -219,8 +222,9 @@ onMounted(() => {
               <option v-for="s in STATUS_OPTIONS" :key="s.value" :value="s.value" :disabled="!s.value">{{ STATUS_LABELS[s.value] || s.label }}</option>
             </select>
           </div>
+          </div>
         </div>
-      </div>
+      </DataStateBoundary>
     </main>
   </div>
 </template>

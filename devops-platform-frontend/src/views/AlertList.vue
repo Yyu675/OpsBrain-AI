@@ -26,9 +26,8 @@ import {
   ALERT_LEVEL_OPTIONS
 } from '@/utils/alert'
 import RelativeTime from '@/components/common/RelativeTime.vue'
-import AppEmpty from '@/components/common/AppEmpty.vue'
-import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
 import {
   useUrlFilters,
@@ -278,23 +277,19 @@ const resolve = async (row: Alert) => {
         </div>
       </div>
 
-      <!-- 加载 / 错误 / 空态 -->
-      <div v-if="listLoading && alerts.length === 0" class="alert-skeleton-wrap">
-        <div v-for="n in 6" :key="'skel-' + n" class="skeleton-bar" />
-      </div>
-      <div v-else-if="listError && alerts.length === 0" class="alert-state-wrap">
-        <ApiErrorState :error="listError" compact retry-label="重试" @retry="fetchList" />
-      </div>
-      <div v-else-if="alerts.length === 0" class="alert-state-wrap">
-        <AppEmpty
-          :kind="hasFilters ? 'search' : 'default'"
-          size="sm"
-          :description="hasFilters ? '筛选无命中，试试调整条件' : '暂无告警，系统运行正常'"
-        />
-      </div>
-
+      <!-- 加载 / 错误 / 空态 / 内容四态统一（与 TicketList 共用同一实现） -->
+      <DataStateBoundary
+        :loading="listLoading"
+        :error="listError"
+        :count="alerts.length"
+        :filtered="hasFilters"
+        empty-description="暂无告警，系统运行正常"
+        filtered-description="筛选无命中，试试调整条件"
+        :skeleton-rows="6"
+        @retry="fetchList"
+      >
       <!-- 列表 -->
-      <div v-else class="table-container">
+      <div class="table-container">
         <el-table class="alerts-table" :data="alerts" border stripe row-key="id">
           <!-- 级别 -->
           <el-table-column label="级别" width="80" align="center">
@@ -412,6 +407,7 @@ const resolve = async (row: Alert) => {
           </el-table-column>
         </el-table>
       </div>
+      </DataStateBoundary>
 
       <!-- Pagination -->
       <ServerPagination
@@ -561,40 +557,10 @@ const resolve = async (row: Alert) => {
   &:hover { color: var(--state-error); background: rgba(220, 38, 38, 0.06); }
 }
 
-/* ===== 加载骨架 / 空态 / 错误 ===== */
-.alert-skeleton-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  box-shadow: var(--shadow-sm);
-}
-
-.skeleton-bar {
-  height: 20px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, var(--color-bg-sunken, var(--surface-2)) 25%, var(--border-1) 37%, var(--color-bg-sunken, var(--surface-2)) 63%);
-  background-size: 400% 100%;
-  animation: shimmer 1.4s ease infinite;
-}
-
-@keyframes shimmer {
-  0% { background-position: 100% 50%; }
-  100% { background-position: 0 50%; }
-}
-
+/* 骨架与空态已收敛到 SkeletonRows / DataStateBoundary */
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-.alert-state-wrap {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
 }
 
 /* ===== 表格 ===== */
