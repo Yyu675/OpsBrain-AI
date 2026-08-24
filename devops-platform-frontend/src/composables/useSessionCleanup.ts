@@ -1,4 +1,6 @@
 import { watch } from 'vue'
+import { useQueryClient } from '@tanstack/vue-query'
+
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 
@@ -37,6 +39,7 @@ import { useChatStore } from '@/stores/chat'
 export function useSessionCleanup(): void {
   const app = useAppStore()
   const chat = useChatStore()
+  const queryClient = useQueryClient()
 
   watch(
     () => app.isAuthenticated,
@@ -47,6 +50,23 @@ export function useSessionCleanup(): void {
       // 反而会把用户上次未读完的对话在冷启动时抹掉。
       if (wasAuthed === true && !authed) {
         chat.clearAll()
+
+        /*
+         * 清空 TanStack Query 缓存。
+         *
+         * 与对话历史是同一类问题，只是载体不同：Query 的 gcTime 是 5 分钟，
+         * 期间工单列表、告警、审批队列、审计日志都原样留在内存里。
+         * 下一个用户在同一标签页登录后，若命中相同 queryKey，
+         * **会先看到上一个人的数据**（stale-while-revalidate 的默认行为：
+         * 先渲染缓存再后台刷新）。
+         *
+         * 对只读用户尤其严重——他本无权看到的工单标题、审批摘要、
+         * 审计里的 AI 问答，会在刷新完成前的那一瞬间完整呈现。
+         *
+         * 用 clear() 而非 invalidateQueries()：后者只标记过期、数据仍在缓存中，
+         * 挡不住「先渲染旧数据」这一步。这里要的是**移除**，不是「下次重拉」。
+         */
+        queryClient.clear()
       }
     }
   )
