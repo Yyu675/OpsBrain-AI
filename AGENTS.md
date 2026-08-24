@@ -319,6 +319,12 @@ CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得�
 
 ## 更新日志
 
+- **2026-08-25**（十二）：**阶段 B 启动 + 冗余清理**（`docs/08-benchmark/19`）。
+  Prometheus 集成 B1+B2（`PrometheusClient` / `MetricsCatalog` / 5 个端点），
+  **关键取舍：代理查询不自建 TSDB**；补 `AutomationGovernanceController`
+  契约测试 24 例（Controller 覆盖 1/18 → 2/18）；
+  清理 docs 冗余（个人材料移出版本库 + 删对话残留，累计 -6408 行）。
+  新增 `BizError.METRICS_UNAVAILABLE(50020)`，前端契约测试当场抓出不一致。
 - **2026-08-25**（十一）：**CI 首次绿灯**（`docs/08-benchmark/18`）。
   用户启用工作流后后端首次真实编译，共修 8 个真实缺陷：
   孤儿 catch 语法错误、`maven-toolchains-plugin` 要求不存在的 toolchains.xml、
