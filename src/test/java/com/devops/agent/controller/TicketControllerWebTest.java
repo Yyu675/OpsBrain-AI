@@ -8,6 +8,7 @@ import com.devops.agent.domain.biz.service.TicketAttachmentService;
 import com.devops.agent.domain.biz.service.TicketService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,20 +67,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 type = FilterType.ASSIGNABLE_TYPE,
                 classes = {
                         com.devops.agent.controller.config.WebConfig.class,
-                        // OperationAuditInterceptor / TraceIdFilter 都是 @Component，
-                        // 会被 @WebMvcTest 的组件扫描拉进切片，但它们依赖
-                        // OperationAuditRepository（@Repository，切片不实例化 JDBC 层），
-                        // 于是整个 ApplicationContext 启动失败——表现为本类 12 个用例
-                        // 全部 ERROR，且报错信息指向 NoSuchBeanDefinition 而非契约本身。
-                        // 审计与 traceId 的行为由各自的单元测试覆盖，不该混进契约测试。
-                        com.devops.agent.common.audit.OperationAuditInterceptor.class,
-                        com.devops.agent.common.web.TraceIdFilter.class
+                        // OperationAuditInterceptor 是 @Component，会被 @WebMvcTest 的
+                        // 组件扫描拉进切片，但它依赖 OperationAuditRepository
+                        // （@Repository —— 切片不实例化 JDBC 层），导致整个
+                        // ApplicationContext 启动失败：本类 12 个用例一起 ERROR，
+                        // 报错还指向 NoSuchBeanDefinition，与契约本身毫无关系。
+                        // 审计行为由 AuditActionRegistryTest 等单独覆盖。
+                        //
+                        // 注意：TraceIdFilter 不在排除之列——它没有任何依赖，
+                        // 且 traceId 是本类要断言的契约的一部分（见 getTicketById）。
+                        com.devops.agent.common.audit.OperationAuditInterceptor.class
                 }),
         excludeAutoConfiguration = {
                 org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class
         })
+// addFilters = false 关掉 Sa-Token 等鉴权 Filter（切片里缺少其运行时上下文），
+// 但这会连带关掉 TraceIdFilter，使 ApiResponse.traceId 恒为 null。
+// traceId 是本类断言的契约之一，故用 @Import 把它作为 Bean 显式装回，
+// 再由下面的 @BeforeEach 手工织入 MockMvc。
 @AutoConfigureMockMvc(addFilters = false)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, com.devops.agent.common.web.TraceIdFilter.class})
 class TicketControllerWebTest {
 
     @Autowired
@@ -87,6 +94,30 @@ class TicketControllerWebTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private com.devops.agent.common.web.TraceIdFilter traceIdFilter;
+
+    @Autowired
+    private org.springframework.web.context.WebApplicationContext context;
+
+    /**
+     * 手工把 TraceIdFilter 织回 MockMvc。
+     *
+     * <p>{@code addFilters = false} 是为了关掉 Sa-Token 的鉴权 Filter
+     * （切片里没有它的运行时上下文，否则所有请求返回 401），
+     * 但它是「全关」而非「按需关」，会把 TraceIdFilter 一起关掉，
+     * 使 {@code ApiResponse.traceId} 恒为 null。
+     * traceId 是本类断言的契约之一（排障入口，必须始终存在），
+     * 所以这里单独把它加回来——只加这一个，鉴权仍保持关闭。</p>
+     */
+    @BeforeEach
+    void setUpMockMvc() {
+        mockMvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
+                .webAppContextSetup(context)
+                .addFilters(traceIdFilter)
+                .build();
+    }
 
     @MockitoBean
     private TicketService ticketService;
