@@ -224,6 +224,14 @@ npm run knip                       # 死代码/死依赖检测
 - **前后端共享约束一律走契约导出**，不再手工镜像。后端 `ContractExportTest`
   反射导出 `src/contracts/backend-contract.json`，前端测试消费它。
   改了状态机 / `@Size` / `BizError` 后须重跑该测试并提交 JSON 变更。
+- **登出必须清理所有数据载体**，不只是持久化那一层。当前已覆盖：
+  localStorage（token/身份/对话）、内存 store（通知列表）、
+  **TanStack Query 缓存**（`queryClient.clear()`，gcTime 5 分钟内会被
+  下一个登录者先读到）。新增任何跨会话存活的数据载体时，
+  同步在 `useSessionCleanup` 登记。
+- **多 Tab 共用筛选 ref 时，切 Tab 必须清掉对方专属的筛选**。
+  否则请求仍携带它、而当前 Tab 的 `hasFilters` 不算它 →
+  「清除筛选」按钮不显示，用户看到被隐形过滤的列表且无从清除。
 - **禁止 `new Date(<后端时间字段>)`**，一律用 `@/utils/time` 的 `parseDate`。
   后端 `LocalDateTime` 序列化后不带时区，`new Date(str)` 按浏览器时区解析，
   跨时区下相对时间可差 12 小时，而绝对时间显示却正常——肉眼几乎发现不了。
@@ -264,6 +272,10 @@ npm run knip                       # 死代码/死依赖检测
 
 ## 更新日志
 
+- **2026-08-24**（七）：新增模块自查（`docs/08-benchmark/12`）。修复 3 类缺陷：
+  使用日志切 Tab 筛选残留致隐形过滤、越界页码产出矛盾区间文案（影响三页）、
+  **登出后 Query 缓存残留致下一个登录者先看到上一个人的数据**。
+  其中 2 个是上一轮自己引入/漏掉的。测试 762 → 782。
 - **2026-08-24**（六）：推进测试与契约自动化（`docs/08-benchmark/11`）。
   新增 TicketList 首批组件测试（17 例，为拆分 SFC 建安全网）、
   前后端契约导出机制（后端反射导出 JSON + 前端 14 例消费，消除手工镜像）。
