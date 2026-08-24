@@ -265,6 +265,9 @@ npm run knip                       # 死代码/死依赖检测
 | P2 | 6 处线程池无界队列、无优雅停机 | `ManagedExecutors` 统一工厂，按失败代价选拒绝策略 |
 | P2 | 639 处硬编码色值，暗色下露白 | 465 处替换为语义令牌（-76%）|
 | P2 | 工单表单无分组 | 按填写心智分三组 |
+| P1 | **跨时区时间解析错误**：后端 LocalDateTime 无时区后缀，前端按浏览器时区解析，相对时间/时长可差 12 小时（绝对时间显示却正常，极难察觉） | `parseDate` 补服务器时区 +08:00 |
+| P1 | **Markdown 缓存键碰撞**：key 用「内容长度」，同长度不同内容返回过期 HTML（运维文档改数字看不到新值） | 内部附加 FNV-1a 内容指纹 |
+| P1 | 首屏 JS 2169 KB（`manualChunks` 兜底块把懒加载路由的编辑器焊进首屏） | 移除兜底块，545 KB（-75%）|
 | P2 | URL 筛选状态三处实现不一致（TicketList 只读不写、AlertList 完全没有） | `useUrlFilters` 统一实现，已接入 AlertList |
 | — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
 
