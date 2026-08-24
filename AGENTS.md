@@ -195,6 +195,13 @@ npm run knip                       # 死代码/死依赖检测
   禁止在组件里手写字符串数组——写操作后的 `invalidateQueries` key 对不上会静默失效不了，
   表现为"改完数据列表没更新"，极难排查。
 - 后端新增/变更业务码时，前端 `toFriendlyError` 必须同步。
+- **禁止 `new Date(<后端时间字段>)`**，一律用 `@/utils/time` 的 `parseDate`。
+  后端 `LocalDateTime` 序列化后不带时区，`new Date(str)` 按浏览器时区解析，
+  跨时区下相对时间可差 12 小时，而绝对时间显示却正常——肉眼几乎发现不了。
+  已加 eslint `no-restricted-syntax` 强制（无参 `new Date()` 不受限）。
+- **登出时必须清除含业务内容的本地持久化**。`chat-sessions` 不按用户隔离，
+  其 `citations` 存的是知识库原文；不清 = 下一个登录者越权读到内部文档。
+  新增此类持久化时，同步在 `useSessionCleanup` 登记。
 
 ---
 
@@ -228,6 +235,10 @@ npm run knip                       # 死代码/死依赖检测
 
 ## 更新日志
 
+- **2026-08-24**（二）：前端全方位深度核查（`docs/08-benchmark/07`）。修复 4 类缺陷：
+  登出后对话历史残留致知识库越权读取（P0）、超时误报为网络故障（P1）、
+  时区解析残留点（P1）、持久化静默失效 + readIds 无界增长（P2）。
+  测试 604 → 627。
 - **2026-08-24**：初版。从 3206 行的 `CLAUDE.md` 中提炼硬约束，参考 new-api 的 AGENTS.md 组织方式。
 
 ---
@@ -278,9 +289,9 @@ npm run knip                       # 死代码/死依赖检测
 | P2 | Controller 测试仅覆盖 TicketController（12 用例），其余 15 个 Controller 无契约保护 | `src/test/` | 按需扩展 |
 | P2 | AI 对话链路的知识检索恒为「仅 PUBLIC」：工具跑在模型回调线程，取不到 `AgentKnowledgeScopeHolder`。这是<b>刻意的保守失败</b>（宁可少给不可越权），但也意味着 ADMIN 在对话里同样查不到受限文档。需改为每请求构建 AiService 或用 LangChain4j 工具上下文透传 | `AgentKnowledgeScopeHolder` | 阶段 D |
 | P2 | 文档权限变更后必须重建其切片，否则切片上的冗余 `visibility` 会滞后造成越权 | `KnowledgeDocService` | 阶段 C 收尾 |
-| P2 | `TicketList` / `KnowledgeBase` 的 URL 状态仍是各自实现，待统一到 `useUrlFilters` | 前端 | 按需 |
-| P2 | 前端 knip 存量：23 未用导出 + 53 未用类型 | 前端 | 阶段 D |
-| P2 | 构建产物 `vendor` chunk 达 2.9MB，`manualChunks` 兜底分块未生效 | `vite.config.ts` | 阶段 D |
+| ~~P2~~ | ~~`TicketList` 的 URL 状态各自实现~~ **已统一到 `useUrlFilters`**（`3319c07`）。剩 `KnowledgeBase`（自写一套）与 `AlertList`（完全没有） | 前端 | 按需 |
+| P2 | 前端 knip 存量：24 未用导出 + 57 未用类型。其中 `broadcastPersistChange` 是**真死代码**——`onPersistedChange` 有消费方但从无人调用广播端，意味着跨标签页同步实际只走 `storage` 事件，BroadcastChannel 路径形同虚设，需确认是否为遗漏 | 前端 | 阶段 D |
+| ~~P2~~ | ~~构建产物 `vendor` chunk 达 2.9MB~~ **已修**：首屏 2169KB → 545KB（`9cc3eaa`）。`vendor-echarts` 570KB 经实测已是按需引入的下限（core 本身占 293KB），不再优化 | `vite.config.ts` | 完成 |
 | P2 | 两套富文本编辑器并存（wangEditor + md-editor-v3） | `package.json` | 阶段 D |
 
 ### 🔴 头号阻塞：CI 未启用，2543 行后端代码从未编译
