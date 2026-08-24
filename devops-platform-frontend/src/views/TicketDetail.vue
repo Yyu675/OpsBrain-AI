@@ -12,10 +12,6 @@ import { canTransitionStatus, isTerminalStatus } from '@/constants/ticket'
 import { useAppStore } from '@/stores/app'
 import {
   fetchTicketById,
-  fetchTicketAttachments,
-  uploadTicketAttachment,
-  fetchAttachmentDownloadUrl,
-  deleteTicketAttachment,
   // B1 首响 / 升级
   acknowledgeTicket,
   escalateTicket,
@@ -28,10 +24,10 @@ import {
   confirmRootCause,
   submitVerification,
   skipVerification,
-  type TicketActionRecord,
-  type TicketAttachmentMeta
+  type TicketActionRecord
 } from '@/api/tickets'
 import { useTicketClosure, initialOf } from '@/composables/useTicketClosure'
+import { useTicketAttachments } from '@/composables/useTicketAttachments'
 import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
 import { getTrends, type TrendData } from '@/api/dashboard'
 import { mapServiceToModule } from '@/api/utils/dto-converter'
@@ -790,72 +786,18 @@ const removeTag = async (tag: string) => {
 }
 
 // ==================== 附件 ====================
-const attachments = ref<TicketAttachmentMeta[]>([])
-const attachmentsLoading = ref(false)
-const uploading = ref(false)
-const fileInputRef = ref<HTMLInputElement | null>(null)
-
-const loadAttachments = async () => {
-  const id = ticketId.value
-  if (!id) return
-  attachmentsLoading.value = true
-  try {
-    attachments.value = await fetchTicketAttachments(id)
-  } catch (e) {
-    console.warn('加载附件失败', e)
-    attachments.value = []
-  } finally {
-    attachmentsLoading.value = false
-  }
-}
-
-const pickAttachment = () => fileInputRef.value?.click()
-
-const onAttachmentSelected = async (e: Event) => {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  const cur = ticket.value
-  if (!file || !cur) return
-  uploading.value = true
-  try {
-    const saved = await uploadTicketAttachment(cur.id, file, app.currentUser.name)
-    attachments.value = [...attachments.value, saved]
-    notify.success(`已上传 ${saved.originalName}`)
-  } catch (err) {
-    handleServerError(err, { action: '上传附件' })
-  } finally {
-    uploading.value = false
-  }
-}
-
-const downloadAttachment = async (item: TicketAttachmentMeta) => {
-  try {
-    const url = await fetchAttachmentDownloadUrl(item.id)
-    window.open(url, '_blank', 'noopener')
-  } catch (err) {
-    handleServerError(err, { action: '获取下载链接' })
-  }
-}
-
-const removeAttachment = async (item: TicketAttachmentMeta) => {
-  try {
-    await ElMessageBox.confirm(`确定删除附件「${item.originalName}」？`, '删除附件', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
-    })
-  } catch {
-    return
-  }
-  try {
-    await deleteTicketAttachment(item.id)
-    attachments.value = attachments.value.filter(a => a.id !== item.id)
-    notify.success('附件已删除')
-  } catch (err) {
-    handleServerError(err, { action: '删除附件' })
-  }
-}
+// 逻辑已抽到 useTicketAttachments：它是本文件交互面最窄、
+// 与其余逻辑耦合最少的一块（不参与状态机、不写活动流、不影响闭环进度）。
+// 「切换工单先清空再重载」「加载失败只降级不弹错、上传失败必须提示」
+// 等取舍连同注释一并搬走。
+const {
+  attachments, attachmentsLoading, uploading, fileInputRef,
+  loadAttachments, pickAttachment, onAttachmentSelected,
+  downloadAttachment, removeAttachment,
+} = useTicketAttachments({
+  ticketId,
+  getOperator: () => app.currentUser.name,
+})
 
 // ==================== 知识沉淀 ====================
 const sinkOpen = ref(false)
@@ -873,11 +815,6 @@ const onSinkGotoDoc = (docId: number) => {
   sinkOpen.value = false
   router.push(`/knowledge/${docId}`)
 }
-
-watch(ticketId, () => {
-  attachments.value = []
-  loadAttachments()
-})
 
 // onBeforeUnmount 由 useTicketAnalysis composable 处理 abort
 </script>
@@ -1330,8 +1267,14 @@ watch(ticketId, () => {
                   </div>
                 </li>
               </ul>
+              <!--
+                用 :ref 动态绑定而非字符串 ref="fileInputRef"：
+                后者与 script setup 变量的关联 vue-tsc 识别不到，
+                会误报 "declared but its value is never read"。
+                动态绑定是显式引用，类型检查能看见。
+              -->
               <input
-                ref="fileInputRef"
+                :ref="(el) => (fileInputRef = el as HTMLInputElement | null)"
                 type="file"
                 class="attach-file-input"
                 @change="onAttachmentSelected"
