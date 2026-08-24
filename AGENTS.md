@@ -203,6 +203,17 @@ npm run knip                       # 死代码/死依赖检测
   忘写 finally 会让按钮永久禁用，比不加防护更糟。
 - 空态只用 `AppEmpty`（`EmptyState` 已删除）。区分 `filtered` 与否——
   「还没有数据」和「筛选没命中」对应的用户下一步动作完全不同。
+- **状态流转类控件必须由 `canTransitionStatus` 驱动**，禁止手写
+  `status === 'x' || status === 'y'`。二者曾漂移出 8 处不一致，
+  其中「已解决/已关闭 → 重新打开」被误禁用，导致故障复发只能新建工单、
+  MTTR 统计失真。新增状态相关 UI 时同步在 `ticketStatus.ui.test.ts` 加断言。
+- **禁止 `toISOString()`**（已加 eslint 规则）。它返回 UTC，而后端时间字段
+  约定是「服务器本地时间 +08:00 不带后缀」，写入即差 8 小时。
+  需要「与后端同格式的当前时刻」用 `@/utils/time` 的 `nowAsBackendTime()`。
+- **Vite 代理 key 用正则而非字符串**：字符串是前缀匹配，`'/ai'` 会吞掉
+  前端路由 `/ai-chat`。现为 `'^/ai(/.*)?$'`。改代理配置后务必逐路由实测。
+- WebSocket 停止时**必须先解绑回调再 close**。close 是异步的，
+  在途消息仍会触发 onmessage——登出后会把上一个用户的数据写进新会话。
 - **禁止 `new Date(<后端时间字段>)`**，一律用 `@/utils/time` 的 `parseDate`。
   后端 `LocalDateTime` 序列化后不带时区，`new Date(str)` 按浏览器时区解析，
   跨时区下相对时间可差 12 小时，而绝对时间显示却正常——肉眼几乎发现不了。
@@ -243,6 +254,10 @@ npm run knip                       # 死代码/死依赖检测
 
 ## 更新日志
 
+- **2026-08-24**（四）：分模块逐项排查（`docs/08-benchmark/09`）。修复 5 类缺陷：
+  工单 UI 绕过状态机致 8 处流转判定错误（重开被完全阻断）、乐观更新写 UTC 致
+  时间倒流 8 小时、登出后在途 WS 消息泄漏他人告警、知识库版本冲突后用户被困住、
+  Vite 代理吞掉 /ai-chat 路由致刷新白屏。测试 652 → 675。
 - **2026-08-24**（三）：展示效果与兜底机制统一（`docs/08-benchmark/08`）。
   新增 `DataStateBoundary` / `SkeletonRows` / `useAsyncAction` 三个基础件，
   删除重复的 `EmptyState`。修复 6 处缺陷：三处状态机漂移导致的内容闪断/列表被清空、
