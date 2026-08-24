@@ -258,6 +258,7 @@ npm run knip                       # 死代码/死依赖检测
 | P2 | 前端无暗色/无主题能力，639 处硬编码色值 | 四轴令牌 + 桥接层（存量零改动获得暗色） |
 | P0 | **工单域 6 张表写操作零事务**，deleteTicket 中途失败留孤儿数据 | 14 个多表写方法加 `@Transactional` |
 | P1 | 工单状态机缺失，CLOSED 可回 PENDING、VOID 可复活 | `TicketEnums.Status.canTransition` + 前端置灰 + 契约测试 |
+| P1 | 迁移漏执行会静默损坏功能（缺 visibility 列→检索全挂，却表现为「知识库暂不可用」） | `SchemaGuard` 启动期自检，生产可设 `SCHEMA_FAIL_FAST=true` |
 | — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
 
 ### 待修复
@@ -275,6 +276,18 @@ npm run knip                       # 死代码/死依赖检测
 | P2 | 前端 knip 存量：23 未用导出 + 53 未用类型 | 前端 | 阶段 D |
 | P2 | 构建产物 `vendor` chunk 达 2.9MB，`manualChunks` 兜底分块未生效 | `vite.config.ts` | 阶段 D |
 | P2 | 两套富文本编辑器并存（wangEditor + md-editor-v3） | `package.json` | 阶段 D |
+
+### 🔴 头号阻塞：CI 未启用，2543 行后端代码从未编译
+
+`ci/github-actions-ci.yml` 已就绪但因 GitHub App 权限限制无法由 AI 推送到
+`.github/workflows/`。**启用只需 30 秒**：
+
+```bash
+git mv ci/github-actions-ci.yml .github/workflows/ci.yml && git commit && git push
+```
+
+在此之前不建议继续叠加新功能——40 个文件的改动一次性编译，错误会更难定位。
+详见 `docs/08-benchmark/05-项目阶段评估与风险清单.md`。
 
 ### ⚠️ 本轮后端改动尚未编译验证
 
