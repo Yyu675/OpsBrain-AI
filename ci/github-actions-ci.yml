@@ -96,6 +96,9 @@ jobs:
         env:
           AI_MODE: MOCK
           SPRING_PROFILES_ACTIVE: dev
+          # 开启 Schema 自检的严格模式：迁移漏执行会让 @SpringBootTest 直接失败，
+          # 而不是等到运行时用户点检索才发现
+          SCHEMA_FAIL_FAST: 'true'
         run: ./mvnw -B -ntp verify
 
       - name: 上传测试报告
