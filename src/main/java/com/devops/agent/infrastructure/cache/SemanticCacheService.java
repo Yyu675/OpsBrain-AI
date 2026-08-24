@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import com.devops.agent.infrastructure.concurrent.ManagedExecutors;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -14,7 +15,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -139,11 +139,11 @@ public class SemanticCacheService {
         // P2-26：缓存写入线程池。固定 2 线程（daemon），
         // 专供 putCache 的向量化远程调用（≈200ms），避免阻塞调用方。
         // 用后置写池而非调用方线程执行，关闭无语义（daemon 不阻止 JVM 退出）
-        cacheExecutor = Executors.newFixedThreadPool(2, r -> {
-            Thread t = new Thread(r, "semantic-cache-writer");
-            t.setDaemon(true);
-            return t;
-        });
+        // F4：有界队列 + 丢弃告警。原 Executors.newFixedThreadPool 的队列
+        // 是无界的，缓存写入若堆积会无声涨到 OOM。
+        // 缓存写入属「丢了只影响命中率」，不该用 CallerRuns 拖慢对话主链路，
+        // 故队列满时直接丢弃并告警（与审计池的取舍相反，见 ManagedExecutors 注释）。
+        cacheExecutor = ManagedExecutors.forBestEffort("semantic-cache-writer", 2, 500);
         log.info("🧠 [SemanticCache] 初始化 | enabled={} | threshold={} | ttl={}s | 热点容量={}",
                 cacheEnabled, similarityThreshold, cacheTtlSeconds, capacity);
     }
@@ -377,6 +377,16 @@ public class SemanticCacheService {
             return "PUBLIC".equals(scope);
         }
         return cacheKey.regionMatches(0, scope, 0, idx) && idx == scope.length();
+    }
+
+    /**
+     * 关闭写线程池（F4）。
+     * <p>daemon 线程不阻止 JVM 退出，但重新部署时给在途的缓存写入
+     * 留一点时间，避免刚算好的向量白算。缓存不是关键数据，等 3 秒足够。</p>
+     */
+    @jakarta.annotation.PreDestroy
+    public void shutdownExecutor() {
+        ManagedExecutors.shutdownGracefully(cacheExecutor, "semantic-cache-writer", 3);
     }
 
     /**

@@ -53,6 +53,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutionException;
+import com.devops.agent.infrastructure.concurrent.ManagedExecutors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -129,7 +131,13 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      * 与会话执行器物理隔离，避免记账高峰挤占会话线程导致 SSE 延迟。
      * </p>
      */
-    private final Executor auditExecutor = Executors.newFixedThreadPool(2);
+    // F4：改用有界队列。Executors.newFixedThreadPool 内部是无参
+    // LinkedBlockingQueue（容量 Integer.MAX_VALUE），审计任务堆积时会
+    // 无声无息地涨到 OOM——线程池指标一切正常，直到内存耗尽。
+    // 审计属「丢了就是证据缺失」，故队列满时用 CallerRuns 退化为同步写，
+    // 宁可让这次请求慢一点，也不丢记账。
+    private final ExecutorService auditExecutor =
+            ManagedExecutors.forCriticalWrites("agent-audit", 2, 1000);
 
     /**
      * 取消标记表（P2-25）。
@@ -181,6 +189,17 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         this.approvalService = approvalService;
         this.chatMemoryProvider = chatMemoryProvider;
         this.knowledgeScopeResolver = knowledgeScopeResolver;
+    }
+
+    /**
+     * 优雅停机（F4）：重新部署时把队列里待写的审计落完再退出。
+     * <p>此前无 @PreDestroy，重启会静默丢弃在途记账。</p>
+     * <p>sessionExecutor 是虚拟线程 per-task 执行器，无队列可积压，
+     * 且 SSE 连接本身会被容器关闭，无需额外处理。</p>
+     */
+    @jakarta.annotation.PreDestroy
+    public void shutdownExecutors() {
+        ManagedExecutors.shutdownGracefully(auditExecutor, "agent-audit", 5);
     }
 
     @Override
