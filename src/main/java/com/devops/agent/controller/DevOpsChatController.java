@@ -2,6 +2,8 @@ package com.devops.agent.controller;
 
 import com.devops.agent.application.DevOpsAgentService;
 import com.devops.agent.domain.biz.service.AgentLogService;
+import com.devops.agent.infrastructure.cache.SlidingWindowRateLimiter;
+import cn.dev33.satoken.stp.StpUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -69,6 +73,14 @@ public class DevOpsChatController {
     @Value("${devops.ai.sse.heartbeat-interval-ms:15000}")
     private long sseHeartbeatMs;
 
+    /** C4：单用户对话限流阈值，<=0 关闭 */
+    @Value("${devops.ai.chat.rate-limit:20}")
+    private int chatRateLimit;
+
+    /** C4：对话限流窗口（毫秒） */
+    @Value("${devops.ai.chat.rate-window-ms:60000}")
+    private long chatRateWindowMs;
+
     /**
      * SSE 心跳调度器。
      * <p>单线程守护足够：心跳任务本身极轻（写一个注释帧），
@@ -81,11 +93,36 @@ public class DevOpsChatController {
                 return t;
             });
 
+    private final SlidingWindowRateLimiter rateLimiter;
+
     public DevOpsChatController(DevOpsAgentService agentService, ObjectMapper objectMapper,
-                                AgentLogService agentLogService) {
+                                AgentLogService agentLogService,
+                                SlidingWindowRateLimiter rateLimiter) {
         this.agentService = agentService;
         this.objectMapper = objectMapper;
         this.agentLogService = agentLogService;
+        this.rateLimiter = rateLimiter;
+    }
+
+    /**
+     * 解析限流主体。
+     * <p>优先 userId——按 IP 限流会让同一出口 NAT 后的所有同事共享额度，
+     * 一个人刷爆全组都用不了，这在企业内网是常态而非例外。</p>
+     */
+    private String resolveRateLimitIdentity() {
+        try {
+            if (StpUtil.isLogin()) {
+                return "u:" + StpUtil.getLoginIdAsString();
+            }
+        } catch (Exception ignore) {
+            // 非请求上下文或 Sa-Token 未就绪，退化到 IP
+        }
+        ServletRequestAttributes attrs =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attrs != null) {
+            return "ip:" + attrs.getRequest().getRemoteAddr();
+        }
+        return "unknown";
     }
 
     @PreDestroy
@@ -159,6 +196,28 @@ public class DevOpsChatController {
             log.warn("⚠️ [ChatController] 空查询 | traceId={} | method={}", traceId, method);
             recordAudit(traceId, query, "输入为空", "REJECTED_SECURITY");
             sendErrorEvent(emitter, traceId, 40001, "输入不能为空");
+            emitter.complete();
+            return emitter;
+        }
+
+        // ========== C4 限流 ==========
+        // 本端点是全项目最贵的一个：一次请求 = 一次真实 LLM 调用，
+        // 耗时数十秒、按 token 计费、并占用一个异步线程直到结束。
+        // 无限流时，一段循环脚本就能同时打爆额度、连接池与 Tomcat 异步容量。
+        //
+        // 限流主体优先用 userId：按 IP 会让同一办公网出口的所有同事共享额度，
+        // 一个人刷爆全组都用不了。取不到登录态（理论上不会——本端点需鉴权）
+        // 才退化到 IP。
+        String rateLimitId = resolveRateLimitIdentity();
+        if (!rateLimiter.tryAcquire("chat", rateLimitId, chatRateLimit, chatRateWindowMs)) {
+            log.warn("🚫 [ChatController] 触发对话限流 | traceId={} | id={} | limit={}/{}ms",
+                    traceId, rateLimitId, chatRateLimit, chatRateWindowMs);
+            recordAudit(traceId, query, "触发限流", "REJECTED_RATE_LIMIT");
+            // 用 SSE error 事件而非 HTTP 429：响应此刻已是 text/event-stream，
+            // 前端走的是 SSE 解析器，改用状态码它收不到可读提示，只会看到连接异常。
+            sendErrorEvent(emitter, traceId, 42901,
+                    "提问过于频繁，请稍后再试（每 " + (chatRateWindowMs / 1000) + " 秒最多 "
+                            + chatRateLimit + " 次）");
             emitter.complete();
             return emitter;
         }

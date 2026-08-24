@@ -48,8 +48,19 @@ import java.util.Arrays;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    private final com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor;
+
+    public WebConfig(com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor) {
+        this.auditInterceptor = auditInterceptor;
+    }
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // C5：通用写操作审计。放在鉴权拦截器**之前**注册，
+        // 使「未登录尝试写操作」这类事件同样留痕——这恰恰是安全排查最想看的记录。
+        // 它只在 afterCompletion 做事，不影响请求放行。
+        registry.addInterceptor(auditInterceptor).addPathPatterns("/api/**");
+
         // Sa-Token 登录校验拦截器：未登录访问受保护端点抛 NotLoginException，
         // 由 GlobalExceptionHandler 统一映射为 401 + 业务码 40101。
         //
