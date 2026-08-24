@@ -30,6 +30,13 @@ import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
+import {
+  useUrlFilters,
+  defineUrlFilter,
+  enumParser,
+  positiveIntParser,
+  textParser,
+} from '@/composables/useUrlFilters'
 
 // ==================== 状态 ====================
 
@@ -49,6 +56,34 @@ const levelFilter = ref<string | ''>('')
  */
 const pageRef = ref(1)
 const sizeRef = ref(10)
+
+/**
+ * 筛选与页码同步到 URL。
+ *
+ * 告警页此前完全没有 URL 状态：值班同事筛出「FIRING + P0」后
+ * 没法把结果甩给同事，刷新也会丢——而「把这个告警列表发给你看」
+ * 恰恰是值班交接时最高频的动作。
+ */
+useUrlFilters([
+  defineUrlFilter({
+    ref: statusFilter,
+    key: 'status',
+    defaultValue: '' as AlertStatus | '',
+    parse: enumParser(['FIRING', 'ACKNOWLEDGED', 'RESOLVED'] as const),
+  }),
+  defineUrlFilter({
+    ref: levelFilter,
+    key: 'level',
+    defaultValue: '' as string,
+    parse: textParser(32),
+  }),
+  defineUrlFilter({
+    ref: pageRef, key: 'page', defaultValue: 1, parse: positiveIntParser(10000),
+  }),
+  defineUrlFilter({
+    ref: sizeRef, key: 'size', defaultValue: 10, parse: positiveIntParser(200),
+  }),
+])
 
 const listQuery = useAlertListQuery({
   page: pageRef,
