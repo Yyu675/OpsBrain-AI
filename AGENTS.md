@@ -136,6 +136,17 @@ npm run knip                       # 死代码/死依赖检测
   冲突时抛 `OptimisticLockException` → 业务码 `40009`，由前端提示用户刷新后重试。
   **禁止用「先查后改」的方式规避乐观锁。**
 - 分页查询一律走服务端分页，**禁止 `findAll()` 后在内存里 filter/slice**。
+- **凡是在一个方法内写入两张及以上表，必须加 `@Transactional(rollbackFor = Exception.class)`。**
+  漏加不会报错，只会在失败时留下孤儿数据（如「工单已删但回复/标签仍在」），
+  且用户看到的是「操作成功」。
+  - 注意 Spring AOP **自调用失效**：同类内部方法调用不走代理，
+    被调方法上的 `@Transactional` 不生效。内部辅助方法不要单独标注，让它继承调用方事务。
+  - **对象存储（MinIO）不在事务内**，无法回滚。涉及「删库 + 删对象」时必须
+    **先删库后删对象**：删库失败可回滚（只多占存储），反序会留下
+    「记录在但文件没了」的死链。
+- **状态字段的变更必须走状态机校验**，只校验「值是否合法枚举」是不够的。
+  参考 `TicketEnums.Status.canTransition`：终态不可逆、同态幂等放行。
+  前端需用 `nextStatuses` 置灰非法选项——防呆优于事后报错。
 
 ### 3.6 安全
 
@@ -245,6 +256,8 @@ npm run knip                       # 死代码/死依赖检测
 | P1 | 写操作无统一审计（L3/L4 合规前置） | v25 `sys_operation_audit` + 拦截器 |
 | P2 | 错误码是散落的魔法数字，前后端各自硬编码 | `BizError` 枚举 + 前端 `bizCode.ts` + **契约测试交叉校验** |
 | P2 | 前端无暗色/无主题能力，639 处硬编码色值 | 四轴令牌 + 桥接层（存量零改动获得暗色） |
+| P0 | **工单域 6 张表写操作零事务**，deleteTicket 中途失败留孤儿数据 | 14 个多表写方法加 `@Transactional` |
+| P1 | 工单状态机缺失，CLOSED 可回 PENDING、VOID 可复活 | `TicketEnums.Status.canTransition` + 前端置灰 + 契约测试 |
 | — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
 
 ### 待修复
@@ -253,6 +266,10 @@ npm run knip                       # 死代码/死依赖检测
 | :-- | :-- | :-- | :-- |
 | P2 | 6 处自建线程池散落各层，无界队列、无监控、无统一优雅停机 | 审查报告 §2 P2-2 | 阶段 C |
 | P2 | 后端无 Controller 层测试，93 个端点无契约保护 | `src/test/` | 阶段 C |
+| P2 | Controller 层 **78 处** `catch(Exception)` 样板，错误码映射不一致且直接下发 `e.getMessage()` | 全部 Controller | 见审查报告 §4.1 |
+| P2 | **Bean Validation 零使用**（`@Valid` 0 处），校验全在 Service 手写（TicketService 20 处） | 全部 DTO | §4.2 |
+| P2 | 前端 121 处裸 `ElMessage` 绕过 `notify` 冷却去重，批量操作会刷屏 | 前端 | §4.3 |
+| P2 | `TicketFormDialog.vue`(1073行) 表单无分组、校验规则内联 | 前端 | §4.4 |
 | P2 | AI 对话链路的知识检索恒为「仅 PUBLIC」：工具跑在模型回调线程，取不到 `AgentKnowledgeScopeHolder`。这是<b>刻意的保守失败</b>（宁可少给不可越权），但也意味着 ADMIN 在对话里同样查不到受限文档。需改为每请求构建 AiService 或用 LangChain4j 工具上下文透传 | `AgentKnowledgeScopeHolder` | 阶段 D |
 | P2 | 文档权限变更后必须重建其切片，否则切片上的冗余 `visibility` 会滞后造成越权 | `KnowledgeDocService` | 阶段 C 收尾 |
 | P2 | 前端 knip 存量：23 未用导出 + 53 未用类型 | 前端 | 阶段 D |
