@@ -31,6 +31,7 @@ import {
   type TicketActionRecord,
   type TicketAttachmentMeta
 } from '@/api/tickets'
+import { useTicketClosure, initialOf } from '@/composables/useTicketClosure'
 import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
 import { getTrends, type TrendData } from '@/api/dashboard'
 import { mapServiceToModule } from '@/api/utils/dto-converter'
@@ -94,19 +95,6 @@ const visibleReplies = computed(() =>
 )
 
 /**
- * 头像首字母。
- *
- * `reply.author` 在后端 DTO 里是 `string | null`（系统生成的记录可能无作者），
- * 而模板此前直接写 `reply.author.charAt(0)` —— 一条 author 为 null 的回复
- * 会让**整条时间线渲染崩溃**，用户看到的是空白页而不是少一个头像。
- * Vue 的渲染错误不会被 try/catch 兜住，影响面远超这一个字符。
- */
-const initialOf = (name?: string | null): string => {
-  const trimmed = (name ?? '').trim()
-  return trimmed ? trimmed.charAt(0) : '?'
-}
-
-/**
  * 载入分析：优先用存档，没有才调付费 LLM
  *
  * 此前是无条件 runAnalysis()——每次打开/刷新工单详情都调一次 DeepSeek，
@@ -153,89 +141,13 @@ watch(ticketId, (newId, oldId) => {
 })
 
 /**
- * B5 闭环进度条：6 阶段横向步骤条
+ * 闭环进度、SLA 展示与属性栏的派生计算已抽到 useTicketClosure。
  *
- * 阶段：建单 → 首响 → 止损 → 修复 → 验证 → 归档
- * 状态：done 已完成 / current 当前 / skipped 跳过(标灰) / pending 待处理
+ * 抽出的判定口径（止损按 mitigatedAt 而非状态、首响超时标 skipped、
+ * 已解决未验证时验证标 skipped、已超时优先于进度着色）连同注释一并搬走，
+ * 由 useTicketClosure.test.ts 单独覆盖。
  */
-const closureStages = computed(() => {
-  const t = ticket.value
-  if (!t) return []
-  const stages: { key: string; label: string; state: 'done'|'current'|'skipped'|'pending'; meta?: string }[] = [
-    { key: 'created', label: '建单', state: 'done' },
-    {
-      key: 'responded',
-      label: '首响',
-      state: t.firstResponseState === 'RESPONDED' ? 'done'
-           : t.firstResponseState === 'BREACHED' ? 'skipped'
-           : t.firstResponseState === 'AT_RISK' ? 'current' : 'current',
-      meta: t.firstResponseMinutes != null ? `${t.firstResponseMinutes} 分钟` : undefined
-    },
-    {
-      key: 'mitigated',
-      label: '止损',
-      state: t.mitigatedAt ? 'done' : 'pending'
-    },
-    {
-      key: 'fixed',
-      label: '修复',
-      // 有根因确认说明修复已完成（根因分析紧接修复之后）
-      state: t.rootCauseAt ? 'done' : 'pending'
-    },
-    {
-      key: 'verified',
-      label: '验证',
-      state: t.verifiedAt
-        ? (t.verifySkipped ? 'skipped' : 'done')
-        : (t.status === 'resolved' || t.status === 'closed' ? 'skipped' : 'pending'),
-      meta: t.verifySkipped ? (t.verifySkipReason || '已跳过') : undefined
-    },
-    {
-      key: 'archived',
-      label: '归档',
-      state: t.status === 'closed' ? 'done' : 'pending'
-    }
-  ]
-  // 找到第一个非 done 的阶段标为 current（如果尚未标记）
-  const firstPending = stages.findIndex(s => s.state === 'pending')
-  if (firstPending >= 0 && !stages.some(s => s.state === 'current')) {
-    stages[firstPending].state = 'current'
-  }
-  return stages
-})
-
-const properties = computed(() => {
-  const t = ticket.value
-  if (!t) return []
-  return [
-    { label: '工单编号', value: t.id, mono: true },
-    { label: '优先级', value: getPriorityLabel(t.priority), type: `priority-${t.priority}` },
-    { label: '状态', value: getStatusLabel(t.status), type: 'status' },
-    { label: '分类', value: t.category },
-    { label: '服务', value: t.service },
-    { label: 'SLA', value: t.sla }
-  ]
-})
-
-/**
- * 是否展示 SLA 提醒
- * <p>终态工单 SLA 计时已停，不再提醒。</p>
- */
-const showSlaAlert = computed(() => {
-  const t = ticket.value
-  if (!t) return false
-  if (t.status === 'resolved' || t.status === 'closed' || t.status === 'void') return false
-  return t.slaBreached || t.slaProgress >= 70
-})
-
-/** SLA 进度条配色：超时红、临界橙、正常主色 */
-const slaBarClass = computed(() => {
-  const t = ticket.value
-  if (!t) return ''
-  if (t.slaBreached) return 'progress-fill-error'
-  if (t.slaProgress >= 70) return 'progress-fill-warning'
-  return 'progress-fill-normal'
-})
+const { closureStages, properties, showSlaAlert, slaBarClass } = useTicketClosure(ticket)
 
 const replyContent = ref('')
 const submitting = ref(false)
