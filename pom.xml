@@ -177,26 +177,23 @@
                     </excludes>
                 </configuration>
             </plugin>
-            <!-- Maven Toolchains 插件：根据 toolchains.xml 自动选择 JDK 21 -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-toolchains-plugin</artifactId>
-                <version>3.2.0</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>toolchain</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <toolchains>
-                        <jdk>
-                            <version>21</version>
-                        </jdk>
-                    </toolchains>
-                </configuration>
-            </plugin>
+            <!--
+              已移除 maven-toolchains-plugin。
+
+              它在 validate 阶段就要求存在 ~/.m2/toolchains.xml 并从中匹配
+              JDK 21，否则直接失败：
+                  Cannot find matching toolchain definitions for: {version=21}
+
+              而 CI 用 actions/setup-java 装 JDK 并不会生成 toolchains.xml，
+              新克隆仓库的开发机同样没有——于是「装好 JDK 21 却仍然构建失败」，
+              且报错指向 toolchain 而非真实原因，极难定位。
+
+              这个插件本身也是多余的：上面 <java.version>21</java.version>
+              已通过 spring-boot-starter-parent 传给 maven.compiler.release，
+              编译目标版本由它单点决定。真正要防的是「用 JDK 17 去构建」，
+              那应当由 CI 的 setup-java 与 enforcer 保证，而不是 toolchains
+              ——后者只是换了个地方再声明一遍同一件事（同一事实两处定义）。
+            -->
         </plugins>
     </build>
 
