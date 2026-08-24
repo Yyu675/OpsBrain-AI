@@ -107,8 +107,15 @@ const router = createRouter({
       }
     },
     {
-      path: '/trends', name: 'trends', component: lazy(() => import('../views/FutureCapability.vue'), 'Trends', 'dashboard'),
-      meta: { title: '趋势分析', stage: 'L2', hiddenFromNavigation: true, description: '基于历史指标与事件数据识别趋势、异常模式和容量风险。', capabilities: ['趋势对比', '异常检测', '容量预测', '影响分析'] }
+      // 占位页已替换为真实实现（L2 阶段 B）。
+      // 与实时监控的分工：那页回答「现在怎么样」，本页回答「怎么变成这样的」。
+      path: '/trends', name: 'trends',
+      component: lazy(() => import('../views/Trends.vue'), 'Trends', 'dashboard'),
+      meta: {
+        title: '趋势分析', stage: 'L2',
+        description: '指标在时间轴上的变化，用于容量评估与故障回溯。',
+        capabilities: ['多时间范围', '多实例对比', '区间极值与均值', '可分享链接']
+      }
     },
     {
       path: '/alerts', name: 'alerts', component: lazy(() => import('../views/AlertList.vue'), 'AlertList', 'list'),
