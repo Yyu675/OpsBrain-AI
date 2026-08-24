@@ -7,7 +7,15 @@ import 'element-plus/theme-chalk/el-message-box.css'
 import 'element-plus/theme-chalk/el-overlay.css'
 import 'element-plus/theme-chalk/el-button.css'
 import 'element-plus/theme-chalk/el-icon.css'
+// 设计令牌层必须在 variables.css **之前**引入：
+// theme.css 定义语义令牌（--surface-1 / --text-1 ...），
+// variables.css 里的旧变量随后可以引用它们做桥接，
+// 顺序反了会让桥接变量取到未定义值。
+import './assets/styles/theme.css'
 import './assets/styles/variables.css'
+// 桥接层必须在 variables.css **之后**：它把旧变量名重新指向新令牌，
+// 顺序反了会被 variables.css 里的静态值覆盖，暗色就不生效了。
+import './assets/styles/theme-bridge.css'
 import App from './App.vue'
 import router from './router'
 import { permission } from './directives/permission'

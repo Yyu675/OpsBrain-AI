@@ -163,6 +163,13 @@ const router = createRouter({
       meta: { title: '人工介入中心', stage: 'L4', hiddenFromNavigation: true, description: '集中处理自动化无法安全闭环的异常任务与升级请求。', capabilities: ['介入队列', '上下文快照', '接管操作', '恢复自动化'] }
     },
     { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
+    {
+      // 设计系统展示页：四个主题轴的可视化验收入口。
+      // public 是刻意的——它不含任何业务数据，且需要能在未登录时演示。
+      path: '/design-system', name: 'design-system',
+      component: lazy(() => import('../views/DesignSystem.vue'), 'DesignSystem', 'detail'),
+      meta: { title: '设计系统', public: true, hiddenFromNavigation: true }
+    },
     { path: '/403', name: 'forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权访问', public: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFound, meta: { title: '页面未找到', public: true } }
   ],

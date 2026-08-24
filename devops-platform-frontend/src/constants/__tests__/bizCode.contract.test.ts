@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 
 import { BIZ_ERRORS, getBizError, isAutoRetryable } from '../bizCode'
 
@@ -14,8 +15,11 @@ import { BIZ_ERRORS, getBizError, isAutoRetryable } from '../bizCode'
  * 所以直接读后端源码做交叉校验，让 CI 兜住。
  */
 
+// 用 import.meta.url 而非 __dirname：本项目是 ESM（package.json type=module），
+// 且 tsconfig.app.json 的 types 只含 vite/client，没有 node 全局类型。
+const HERE = dirname(fileURLToPath(import.meta.url))
 const BACKEND_ENUM = resolve(
-  __dirname,
+  HERE,
   '../../../../src/main/java/com/devops/agent/common/error/BizError.java'
 )
 

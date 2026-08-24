@@ -59,6 +59,7 @@ declare module 'vue' {
     SettingsDialog: typeof import('./src/components/common/SettingsDialog.vue')['default']
     SlaRiskPanel: typeof import('./src/components/dashboard/SlaRiskPanel.vue')['default']
     SuggestionMode: typeof import('./src/components/ai/SuggestionMode.vue')['default']
+    ThemeSwitcher: typeof import('./src/components/common/ThemeSwitcher.vue')['default']
     TicketFormDialog: typeof import('./src/components/ticket/TicketFormDialog.vue')['default']
     TicketInsights: typeof import('./src/components/ticket/TicketInsights.vue')['default']
     TrendChart: typeof import('./src/components/common/TrendChart.vue')['default']

@@ -26,6 +26,11 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // 允许云端 IDE / 预览代理的域名访问。
+    // Vite 5.x 起默认校验 Host 头防 DNS rebinding，
+    // 反向代理域名不在白名单会被 403 拒绝，表现为「预览页打不开」。
+    // 仅影响开发服务器，不影响生产构建。
+    allowedHosts: ['.e2b.app', '.gitpod.io', '.github.dev', 'localhost'],
     proxy: {
       '/ai': {
         target: 'http://localhost:8088',
