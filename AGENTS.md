@@ -259,18 +259,19 @@ npm run knip                       # 死代码/死依赖检测
 | P0 | **工单域 6 张表写操作零事务**，deleteTicket 中途失败留孤儿数据 | 14 个多表写方法加 `@Transactional` |
 | P1 | 工单状态机缺失，CLOSED 可回 PENDING、VOID 可复活 | `TicketEnums.Status.canTransition` + 前端置灰 + 契约测试 |
 | P1 | 迁移漏执行会静默损坏功能（缺 visibility 列→检索全挂，却表现为「知识库暂不可用」） | `SchemaGuard` 启动期自检，生产可设 `SCHEMA_FAIL_FAST=true` |
+| P2 | Controller 78 处 `catch` 样板、错误码映射靠 27 份拷贝维持一致 | 收敛到 `GlobalExceptionHandler` + `BizError`，删 58 处 |
+| P2 | Bean Validation 零使用 | 三个关键端点加 `@Valid`（含免鉴权的 login，防 BCrypt DoS）|
+| P2 | 145 处裸 `ElMessage` 绕过冷却去重 | 全量迁移 `notify` + lint 规则防回潮 |
+| P2 | 6 处线程池无界队列、无优雅停机 | `ManagedExecutors` 统一工厂，按失败代价选拒绝策略 |
+| P2 | 639 处硬编码色值，暗色下露白 | 465 处替换为语义令牌（-76%）|
+| P2 | 工单表单无分组 | 按填写心智分三组 |
 | — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
 
 ### 待修复
 
 | 级别 | 缺陷 | 位置 | 计划 |
 | :-- | :-- | :-- | :-- |
-| P2 | 6 处自建线程池散落各层，无界队列、无监控、无统一优雅停机 | 审查报告 §2 P2-2 | 阶段 C |
-| P2 | 后端无 Controller 层测试，93 个端点无契约保护 | `src/test/` | 阶段 C |
-| P2 | Controller 层 **78 处** `catch(Exception)` 样板，错误码映射不一致且直接下发 `e.getMessage()` | 全部 Controller | 见审查报告 §4.1 |
-| P2 | **Bean Validation 零使用**（`@Valid` 0 处），校验全在 Service 手写（TicketService 20 处） | 全部 DTO | §4.2 |
-| P2 | 前端 121 处裸 `ElMessage` 绕过 `notify` 冷却去重，批量操作会刷屏 | 前端 | §4.3 |
-| P2 | `TicketFormDialog.vue`(1073行) 表单无分组、校验规则内联 | 前端 | §4.4 |
+| P2 | Controller 测试仅覆盖 TicketController（12 用例），其余 15 个 Controller 无契约保护 | `src/test/` | 按需扩展 |
 | P2 | AI 对话链路的知识检索恒为「仅 PUBLIC」：工具跑在模型回调线程，取不到 `AgentKnowledgeScopeHolder`。这是<b>刻意的保守失败</b>（宁可少给不可越权），但也意味着 ADMIN 在对话里同样查不到受限文档。需改为每请求构建 AiService 或用 LangChain4j 工具上下文透传 | `AgentKnowledgeScopeHolder` | 阶段 D |
 | P2 | 文档权限变更后必须重建其切片，否则切片上的冗余 `visibility` 会滞后造成越权 | `KnowledgeDocService` | 阶段 C 收尾 |
 | P2 | 前端 knip 存量：23 未用导出 + 53 未用类型 | 前端 | 阶段 D |
