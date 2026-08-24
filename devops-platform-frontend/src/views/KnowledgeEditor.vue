@@ -750,8 +750,39 @@ const handleSave = async (publishAfterSave = false) => {
         // 用户选择留在本页，继续编辑
       }
     } else if (e instanceof VersionConflictError) {
-      // 禁止自动覆盖：提示刷新让用户看到最新内容后再提交（6.11）
-      notify.error('该文档已被他人修改，请刷新查看最新内容后重新提交')
+      /*
+       * 版本冲突：禁止自动覆盖（6.11），但**不能只甩一句「请刷新」就完事**。
+       *
+       * 原实现弹的是纯文本 toast，用户面临的处境是：
+       *   - 页面上没有任何「刷新」入口，只能按 F5
+       *   - 而按 F5 会把自己刚写的内容全部丢掉（编辑器里的是未落库的）
+       *   - 草稿虽然在 sessionStorage 里，但它的 baseVersion 已过期，
+       *     恢复时又会触发一次「草稿版本冲突」弹窗
+       * 结果就是用户被困住：既不敢刷新，也提交不上去。
+       *
+       * 改为给出明确的两条出路，并**在刷新前先把当前内容存进草稿**——
+       * 这样无论选哪条，用户写的字都不会凭空消失。
+       */
+      saveCurrentDraft()
+      try {
+        await ElMessageBox.confirm(
+          '该文档已被他人修改，你的编辑基于旧版本。\n\n' +
+          '你的内容已暂存到本机草稿。是否载入最新版本？' +
+          '载入后可对照草稿手动合并，避免覆盖他人的改动。',
+          '版本冲突',
+          {
+            type: 'warning',
+            confirmButtonText: '载入最新版本',
+            cancelButtonText: '留在本页继续编辑',
+            distinguishCancelAndClose: true,
+          }
+        )
+        // 重新拉取详情：currentVersion 与表单都会被刷新为服务器最新值
+        await loadDoc()
+        notify.info('已载入最新版本，你的原内容保留在本机草稿中')
+      } catch {
+        // 留在本页：保持现状，用户可自行复制内容后再决定
+      }
     } else {
       handleServerError(e, { action: '保存文档' })
     }
