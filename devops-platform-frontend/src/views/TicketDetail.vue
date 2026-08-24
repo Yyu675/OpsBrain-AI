@@ -8,6 +8,7 @@ import {
   Sparkles, BookPlus, Paperclip, Trash2, Download, TrendingUp
 } from 'lucide-vue-next'
 import { useTicketsStore, getStatusLabel, getPriorityLabel, UNASSIGNED } from '@/stores/tickets'
+import { canTransitionStatus, isTerminalStatus } from '@/constants/ticket'
 import { useAppStore } from '@/stores/app'
 import {
   fetchTicketById,
@@ -494,6 +495,23 @@ const closeTicket = () => {
     .catch(() => {})
 }
 
+/**
+ * 「标记处理中」按钮的文案。
+ *
+ * 从 resolved / closed 转回 processing 在状态机里是合法的，语义是
+ * **故障复发、重新打开**——这是运维最关键的场景之一（验证不通过、
+ * 同一问题几天后又出现）。原实现把这两个状态一并禁用，
+ * 用户唯一的出路是新建一张工单，于是同一个故障的历史被拆成两张单，
+ * MTTR 统计与复盘的连续性都断了。
+ *
+ * 文案必须跟着变：对已解决/已关闭的工单还显示「标记处理中」会让人
+ * 以为是误操作入口，显示「重新打开」才说得清这次点击的后果。
+ */
+const reopenLabel = computed(() => {
+  const s = ticket.value?.status
+  return s === 'resolved' || s === 'closed' ? '重新打开' : '标记处理中'
+})
+
 const processingAction = useAsyncAction(
   async (id: string) => {
     await store.updateStatus(id, 'processing')
@@ -504,6 +522,31 @@ const processingAction = useAsyncAction(
 const startProcessing = async () => {
   const cur = ticket.value
   if (!cur) return
+
+  /*
+   * 重开（resolved / closed → processing）需要二次确认。
+   *
+   * 它与「把待处理的单标记为处理中」是完全不同的两件事：
+   * 重开会让已经计完的 MTTR 重新开始走、把工单从已完成统计里拉回来，
+   * 影响的是团队的考核数据。而两者共用同一个按钮位置，
+   * 不确认的话手滑点到的代价太大。
+   *
+   * 反过来，普通的「开始处理」是高频动作，加确认只会让人烦——
+   * 所以只在重开路径上拦。
+   */
+  if (cur.status === 'resolved' || cur.status === 'closed') {
+    try {
+      await ElMessageBox.confirm(
+        `确定重新打开这张${getStatusLabel(cur.status)}的工单吗？\n` +
+        '重开后 SLA 计时将继续，该工单会重新回到处理中队列。',
+        '重新打开工单',
+        { type: 'warning', confirmButtonText: '重新打开', cancelButtonText: '取消' }
+      )
+    } catch {
+      return   // 用户取消
+    }
+  }
+
   await processingAction.run(cur.id)
 }
 
@@ -1007,16 +1050,23 @@ watch(ticketId, () => {
                   <TrendingUp :size="16" />
                   {{ escalateAction.pending.value ? '提交中…' : '升级上报' }}
                 </button>
+                <!--
+                  状态流转类按钮一律由 canTransitionStatus 驱动，
+                  不再手写 `status === 'x' || status === 'y'` 的枚举列表。
+                  手写列表与状态机已经漂移出 8 处不一致（见 reopenLabel 注释）。
+                -->
                 <button
                   class="btn-outline"
                   @click="startProcessing"
-                  :disabled="processingAction.pending.value || ticket.status === 'processing' || ticket.status === 'resolved' || ticket.status === 'closed' || ticket.status === 'void'"
+                  :disabled="processingAction.pending.value || !canTransitionStatus(ticket.status, 'processing')"
+                  :title="canTransitionStatus(ticket.status, 'processing') ? '' : `不能从「${getStatusLabel(ticket.status)}」变更为「处理中」`"
                 >
                   <Clock :size="16" />
-                  {{ processingAction.pending.value ? '处理中…' : '标记处理中' }}
+                  {{ processingAction.pending.value ? '处理中…' : reopenLabel }}
                 </button>
                 <button class="btn-outline" @click="closeTicket"
-                  :disabled="ticket.status === 'closed' || ticket.status === 'void'"
+                  :disabled="!canTransitionStatus(ticket.status, 'closed')"
+                  :title="canTransitionStatus(ticket.status, 'closed') ? '' : '工单需先「标记解决」才能关闭'"
                 >
                   <X :size="16" />
                   关闭
@@ -1024,7 +1074,7 @@ watch(ticketId, () => {
                 <button
                   class="btn-outline"
                   @click="openSink"
-                  :disabled="ticket.status === 'void'"
+                  :disabled="isTerminalStatus(ticket.status)"
                 >
                   <BookPlus :size="16" />
                   沉淀为知识
@@ -1033,18 +1083,19 @@ watch(ticketId, () => {
                 <button
                   class="btn-primary"
                   @click="resolveTicket"
-                  :disabled="ticket.status === 'resolved' || ticket.status === 'closed'"
+                  :disabled="!canTransitionStatus(ticket.status, 'resolved')"
+                  :title="canTransitionStatus(ticket.status, 'resolved') ? '' : '已作废的工单不可再变更状态'"
                 >
                   <Check :size="16" />
                   标记解决
                 </button>
                 <!-- B2 现场处置 -->
-                <button class="btn-outline" @click="openActionDialog" :disabled="ticket.status === 'closed' || ticket.status === 'void'">
+                <button class="btn-outline" @click="openActionDialog" :disabled="isTerminalStatus(ticket.status) || ticket.status === 'closed'">
                   <Plus :size="14" />
                   记录处置
                 </button>
                 <!-- B3 根因 -->
-                <button class="btn-outline" @click="openRootCauseDialog" :disabled="ticket.status === 'closed' || ticket.status === 'void'">
+                <button class="btn-outline" @click="openRootCauseDialog" :disabled="isTerminalStatus(ticket.status) || ticket.status === 'closed'">
                   <AlertTriangle :size="14" />
                   确认根因
                 </button>

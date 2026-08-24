@@ -32,7 +32,7 @@ import {
   type TicketStatus,
   type TicketPriority
 } from '@/stores/tickets'
-import { TICKET_STATUS_OPTIONS, TICKET_PRIORITY_OPTIONS } from '@/constants/ticket'
+import { TICKET_STATUS_OPTIONS, TICKET_PRIORITY_OPTIONS, canTransitionStatus } from '@/constants/ticket'
 import { exportTicketsCsv } from '@/api/tickets'
 import {
   firstResponseText,
@@ -855,10 +855,58 @@ const bulkDelete = () => {
 }
 
 const bulkStatusOpen = ref(false)
+
+/** 当前选中的工单实体（批量操作需要读它们的状态做流转校验） */
+const selectedTickets = computed(() =>
+  store.tickets.filter(t => selectedIds.value.includes(t.id))
+)
+
+/**
+ * 批量状态选项 —— 按选中工单的**实际状态**计算可达性。
+ *
+ * 原实现直接铺 TICKET_STATUS_OPTIONS 全量五项，完全绕过状态机：
+ * 用户勾了 20 张单点「已关闭」，其中处于 pending / processing 的
+ * 根本不允许直接关闭（必须先 resolved），后端逐条拒绝，
+ * 前端只报一句「12/20 条更新成功，其余失败」——
+ * 用户既不知道是哪 8 条，也不知道为什么失败，只能一张张点开看。
+ *
+ * 改为：只要选中项里**没有任何一张**能走到目标状态，就整项置灰；
+ * 部分可达时保留可点但在标签上标出「N/M 可执行」，让用户点之前
+ * 就知道这次会影响多少张。
+ */
+const bulkStatusOptions = computed(() =>
+  TICKET_STATUS_OPTIONS.map(opt => {
+    const applicable = selectedTickets.value.filter(t =>
+      t.status !== opt.value && canTransitionStatus(t.status, opt.value)
+    ).length
+    const total = selectedTickets.value.length
+    return {
+      ...opt,
+      applicable,
+      disabled: applicable === 0,
+      hint: applicable === 0
+        ? `选中的工单都不能变更为「${opt.label}」`
+        : applicable < total
+          ? `${applicable}/${total} 条可执行，其余状态不允许`
+          : ''
+    }
+  })
+)
+
 const applyBulkStatus = async (s: TicketStatus) => {
-  const count = selectedIds.value.length
-  if (count === 0) return
-  const ids = [...selectedIds.value]
+  // 只对状态机允许的那些执行，不把注定失败的请求打给后端
+  const targets = selectedTickets.value.filter(t =>
+    t.status !== s && canTransitionStatus(t.status, s)
+  )
+  const skipped = selectedIds.value.length - targets.length
+  if (targets.length === 0) {
+    notify.warning(`选中的工单都不能变更为「${getStatusLabel(s)}」`)
+    bulkStatusOpen.value = false
+    return
+  }
+
+  const count = targets.length
+  const ids = targets.map(t => t.id)
   selectedIds.value = []
   bulkStatusOpen.value = false
 
@@ -868,10 +916,12 @@ const applyBulkStatus = async (s: TicketStatus) => {
   // 且这些工单的 version 已在后端自增，不刷新会导致后续编辑误报冲突
   await fetchList()
 
+  // 跳过的条数要如实说明原因，否则用户以为自己勾的没生效
+  const skipNote = skipped > 0 ? `（${skipped} 条因状态不允许已跳过）` : ''
   if (ok === count) {
-    notify.success(`已将 ${count} 条工单状态更新为「${getStatusLabel(s)}」`)
+    notify.success(`已将 ${count} 条工单状态更新为「${getStatusLabel(s)}」${skipNote}`)
   } else {
-    notify.warning(`${ok}/${count} 条更新成功，其余失败`)
+    notify.warning(`${ok}/${count} 条更新成功，其余失败${skipNote}`)
   }
 }
 
@@ -1121,7 +1171,18 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
               <ChevronDown :size="12" />
             </button>
             <div v-if="bulkStatusOpen" class="bulk-menu" @click.stop>
-              <button v-for="opt in TICKET_STATUS_OPTIONS" :key="opt.value" @click="applyBulkStatus(opt.value)">{{ opt.label }}</button>
+              <button
+                v-for="opt in bulkStatusOptions"
+                :key="opt.value"
+                :disabled="opt.disabled"
+                :title="opt.hint"
+                @click="applyBulkStatus(opt.value)"
+              >
+                {{ opt.label }}
+                <span v-if="opt.applicable && opt.applicable < selectedIds.length" class="bulk-opt-count">
+                  {{ opt.applicable }}/{{ selectedIds.length }}
+                </span>
+              </button>
             </div>
           </div>
           <div class="bulk-dropdown">
@@ -2205,8 +2266,28 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
     border-radius: var(--radius-sm);
     cursor: pointer;
 
-    &:hover { background: var(--color-primary-lighter); color: var(--color-primary); }
+    &:hover:not(:disabled) { background: var(--color-primary-lighter); color: var(--color-primary); }
+
+    /* 状态机不允许的目标状态：置灰且不可点，hover 无反馈 */
+    &:disabled {
+      color: var(--color-text-tertiary);
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    /* 部分可执行时把「N/M」标在行尾，用户点之前就知道会影响多少张 */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
+}
+
+.bulk-opt-count {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Table */
