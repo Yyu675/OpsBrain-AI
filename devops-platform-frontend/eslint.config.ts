@@ -120,6 +120,21 @@ export default tseslint.config(
         message: '请改用 @/utils/time 的 parseDate()。后端 LocalDateTime 不带时区，new Date(str) 会按浏览器时区解析，跨时区下时间可差 12 小时。'
       }, {
         /**
+         * `chatStream` 的回调对象必须包含 `onClose`。
+         *
+         * fetchEventSource 在服务端关流时**正常 resolve**——不抛错、不进 catch、
+         * 不触发 onError。只在 complete/error 里复位「生成中」状态的话，
+         * 后端超时 / 网关 502 / Nginx proxy_read_timeout 到期时状态永远不复位，
+         * 界面卡死（输入框禁用、停止按钮点了没反应）。
+         *
+         * 这个缺陷在项目里出现过**三次**（ChatMode、useTicketAnalysis 的两处、
+         * KnowledgeSinkDrawer），每次都是新增调用点时照着旧写法抄。
+         * 靠 review 记住不现实，用规则挡住。
+         */
+        selector: "CallExpression[callee.name='chatStream'] > ObjectExpression:not(:has(Property[key.name='onClose']))",
+        message: 'chatStream 必须提供 onClose 回调：服务端关流时不触发 onError，缺了它会让「生成中」状态永不复位、界面卡死。'
+      }, {
+        /**
          * 禁止 `toISOString()` —— 它返回 UTC。
          *
          * 后端所有时间字段的约定是「服务器本地时间（+08:00）且不带时区后缀」，

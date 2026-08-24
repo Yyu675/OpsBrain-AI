@@ -325,7 +325,19 @@ const aiSuggest = async () => {
         }
       },
       onComplete: () => {},
-      onError: (data: SSEErrorEvent) => { streamError = data.message || '分析失败' }
+      onError: (data: SSEErrorEvent) => { streamError = data.message || '分析失败' },
+
+      /**
+       * 本处的 aiLoading 已在 finally 里复位，不存在其它三处那种「卡死」问题。
+       * 但仍显式提供 onClose：记下断流事实，让下面的「未能给出建议」提示
+       * 能区分「模型没给出可用 JSON」与「压根没收到完整响应」——
+       * 两者用户的下一步不同（改描述重试 vs 直接重试）。
+       */
+      onClose: () => {
+        if (!raw.trim() && !streamError) {
+          streamError = '连接意外中断，未收到分析结果'
+        }
+      }
     }, aiAbort)
 
     if (streamError && !raw.trim()) {

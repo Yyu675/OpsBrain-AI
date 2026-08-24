@@ -190,6 +190,29 @@ const generateDraft = async () => {
           loadState.value = 'error'
           streaming.value = false
         },
+
+        /**
+         * 服务端未发 complete 就关流时的兜底。
+         *
+         * fetchEventSource 此时**正常 resolve**——不抛错、不进 catch、
+         * 不触发 onError。只在 complete/error 里复位 streaming 的话，
+         * 抽屉会卡在「生成中」：停止按钮一直转、「发布并入库」永远禁用
+         * （canPublish 判 !streaming），用户既发布不了也重新生成不了。
+         *
+         * 与 ChatMode / useTicketAnalysis 是同一缺陷，本轮横向排查全部
+         * chatStream 调用点时发现的第三处。
+         */
+        onClose: () => {
+          if (!streaming.value) return   // 已由 complete/error 正常收尾
+          if (formContent.value.trim()) {
+            formContent.value += '\n\n_（连接已中断，以上为已生成内容，可手动补充后发布）_'
+            loadState.value = 'done'
+          } else {
+            formContent.value = '❌ 连接意外中断，未生成内容，请重试或手动编写'
+            loadState.value = 'error'
+          }
+          streaming.value = false
+        },
       },
       abortController
       // 整理模式不传 sessionId — 单次整理，不关联多轮记忆
@@ -388,6 +411,13 @@ watch(
 onBeforeUnmount(() => {
   if (abortController) {
     abortController.abort()
+    abortController = null
+  }
+  // 只 abort 不够：abort 走 catch 分支，而组件已卸载、那段 catch 未必执行完。
+  // 显式收尾，与 onClose 兜底同一目的（三个 chatStream 调用点统一处理）
+  if (streaming.value) {
+    streaming.value = false
+    loadState.value = formContent.value.trim() ? 'done' : 'idle'
   }
 })
 </script>
