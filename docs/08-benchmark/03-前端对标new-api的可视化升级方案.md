@@ -114,7 +114,25 @@
 
 ---
 
-### 阶段 3 · DataTable 抽象（约 3 天）★★★★★
+### ⚠️ 阶段 3 · DataTable 抽象 —— **经核查后撤销此建议**
+
+> **2026-08-24 更正**：实施前逐页核查，发现原判断不成立。
+>
+> 原文说「4 个列表页各写一套表格，同一逻辑复制 4 遍」。实际情况：
+> - `KnowledgeBase` 是**卡片/网格**视图，`ActionItemBoard` 是**看板**，都不用表格
+> - 真正用 `el-table` 的只有 `TicketList`(266 行列定义) 与 `AlertList`(116 行)，
+>   两者列差异极大，属页面特有展示逻辑而非重复
+> - 分页/错误态/空态**早已抽出**（`ServerPagination`、`useServerPaginationFrom`、
+>   `ApiErrorState`）并被两页共用——`AlertList` 里甚至有注释写明「与 TicketList 共用」
+>
+> 把两份差异很大的列定义硬塞进一个组件，只会为了抽象而抽象、更难维护。
+> **真正的重复在 URL 状态**（三处实现不一致），已改为实现 `useUrlFilters`。
+>
+> 教训：抽象前先量化重复量。「看起来像重复」和「真的重复」是两回事。
+
+<details><summary>原建议内容（保留供参考）</summary>
+
+#### 原：DataTable 抽象（约 3 天）
 
 **现状**：`TicketList`(2552) / `AlertList`(687) / `KnowledgeBase`(1357) / `ActionItemBoard`(451) 各自手写表格 + 分页 + 筛选 + 空态 + 骨架 + 批量选择。同一套逻辑复制了 4 遍。
 
@@ -134,6 +152,8 @@ src/components/data-table/
 **可直接复用的现成资产**：`ServerPagination.vue`、`useServerPagination.ts`、`AppSkeleton.vue`、`EmptyState.vue`、`ApiErrorState.vue`。你缺的只是**把它们组装成统一契约**。
 
 **验证路径**：先用最小的 `AlertList`(687 行) 改造验证，再推广。
+
+</details>
 
 ---
 
@@ -203,7 +223,8 @@ new-api 用了 Vercel/Cloudflare 的 **drill-in 侧边栏**：点「系统设置
 | :-- | :-- | :-- |
 | ✅ 1 令牌系统 | 已完成 | 暗色可用、三套配色、密度可调、圆角可调 |
 | 2 去硬编码 | 2d | 暗色**完整**无破绽（当前部分区域仍会露白） |
-| 3 DataTable | 3d | 四个列表页体验一致；新列表页成本从 2 天降到 2 小时 |
+| ~~3 DataTable~~ | — | **已撤销**：核查后发现重复量不足以支撑抽象（详见正文） |
+| 3' URL 状态 | ✅ 0.5d | 筛选结果可分享/可刷新保留 —— 值班交接高频动作 |
 | 4 拆分 SFC | 5d | 用户无感，但后续所有前端工作提速 |
 | 5 动效 | 2d | 「顺滑、有品质感」的主观提升主要来自这里 |
 | 6 布局壳 | 3d | 深层导航效率、⌘K 快速跳转 |

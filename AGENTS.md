@@ -265,6 +265,7 @@ npm run knip                       # 死代码/死依赖检测
 | P2 | 6 处线程池无界队列、无优雅停机 | `ManagedExecutors` 统一工厂，按失败代价选拒绝策略 |
 | P2 | 639 处硬编码色值，暗色下露白 | 465 处替换为语义令牌（-76%）|
 | P2 | 工单表单无分组 | 按填写心智分三组 |
+| P2 | URL 筛选状态三处实现不一致（TicketList 只读不写、AlertList 完全没有） | `useUrlFilters` 统一实现，已接入 AlertList |
 | — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
 
 ### 待修复
@@ -274,6 +275,7 @@ npm run knip                       # 死代码/死依赖检测
 | P2 | Controller 测试仅覆盖 TicketController（12 用例），其余 15 个 Controller 无契约保护 | `src/test/` | 按需扩展 |
 | P2 | AI 对话链路的知识检索恒为「仅 PUBLIC」：工具跑在模型回调线程，取不到 `AgentKnowledgeScopeHolder`。这是<b>刻意的保守失败</b>（宁可少给不可越权），但也意味着 ADMIN 在对话里同样查不到受限文档。需改为每请求构建 AiService 或用 LangChain4j 工具上下文透传 | `AgentKnowledgeScopeHolder` | 阶段 D |
 | P2 | 文档权限变更后必须重建其切片，否则切片上的冗余 `visibility` 会滞后造成越权 | `KnowledgeDocService` | 阶段 C 收尾 |
+| P2 | `TicketList` / `KnowledgeBase` 的 URL 状态仍是各自实现，待统一到 `useUrlFilters` | 前端 | 按需 |
 | P2 | 前端 knip 存量：23 未用导出 + 53 未用类型 | 前端 | 阶段 D |
 | P2 | 构建产物 `vendor` chunk 达 2.9MB，`manualChunks` 兜底分块未生效 | `vite.config.ts` | 阶段 D |
 | P2 | 两套富文本编辑器并存（wangEditor + md-editor-v3） | `package.json` | 阶段 D |
