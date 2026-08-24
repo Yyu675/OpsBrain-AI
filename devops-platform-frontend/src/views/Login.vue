@@ -129,7 +129,7 @@ onMounted(() => {
   height: 56px;
   margin: 0 auto 12px;
   border-radius: 14px;
-  background: var(--color-primary, #409eff);
+  background: var(--color-primary, var(--brand));
   color: #fff;
   display: flex;
   align-items: center;
@@ -140,13 +140,13 @@ onMounted(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--text-1);
 }
 
 .brand-sub {
   margin: 4px 0 0;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--text-3);
 }
 
 .login-form {
@@ -160,17 +160,17 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-1);
   border-radius: 10px;
   transition: border-color 0.15s;
 
   &:focus-within {
-    border-color: var(--color-primary, #409eff);
+    border-color: var(--color-primary, var(--brand));
   }
 }
 
 .field-icon {
-  color: #9ca3af;
+  color: var(--text-3);
   flex-shrink: 0;
 }
 
@@ -181,7 +181,7 @@ onMounted(() => {
   padding: 12px 0;
   font-size: 14px;
   background: transparent;
-  color: #1f2937;
+  color: var(--text-1);
 
   &::placeholder {
     color: #b0b7c3;
@@ -193,7 +193,7 @@ onMounted(() => {
   height: 44px;
   border: none;
   border-radius: 10px;
-  background: var(--color-primary, #409eff);
+  background: var(--color-primary, var(--brand));
   color: #fff;
   font-size: 15px;
   font-weight: 600;
@@ -219,7 +219,7 @@ onMounted(() => {
   margin: 18px 0 0;
   text-align: center;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-3);
 }
 
 .spin {

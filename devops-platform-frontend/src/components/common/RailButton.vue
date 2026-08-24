@@ -52,23 +52,23 @@ withDefaults(defineProps<{
   border: none;
   border-radius: var(--radius-sm, 6px);
   background: transparent;
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
 .rail-btn:hover {
-  background: var(--color-surface-hover, #F8F9FB);
-  color: var(--color-text-primary, #1F2937);
+  background: var(--color-surface-hover, var(--surface-2));
+  color: var(--color-text-primary, var(--text-1));
 }
 
 .rail-btn.active {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #409eff);
+  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--color-primary, var(--brand));
 }
 
 .rail-btn:focus-visible {
-  outline: 2px solid var(--color-primary, #409eff);
+  outline: 2px solid var(--color-primary, var(--brand));
   outline-offset: 1px;
 }
 
@@ -101,8 +101,8 @@ withDefaults(defineProps<{
   height: 15px;
   padding: 0 3px;
   border-radius: 8px;
-  background: var(--color-bg-sunken, #F1F5F9);
-  color: var(--color-text-tertiary, #9CA3AF);
+  background: var(--color-bg-sunken, var(--surface-2));
+  color: var(--color-text-tertiary, var(--text-3));
   font-size: 10px;
   line-height: 15px;
   font-weight: var(--weight-medium, 500);
@@ -111,7 +111,7 @@ withDefaults(defineProps<{
 }
 
 .rail-btn.active .rail-count {
-  background: var(--color-primary, #409eff);
+  background: var(--color-primary, var(--brand));
   color: #fff;
 }
 </style>

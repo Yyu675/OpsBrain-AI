@@ -482,7 +482,7 @@ const resolve = async (row: Alert) => {
   border-radius: 50%;
   flex-shrink: 0;
 
-  &--firing { background: var(--state-error, #f56c6c); }
+  &--firing { background: var(--state-error, var(--danger)); }
 }
 
 .summary-icon { color: var(--color-text-tertiary); }
@@ -540,7 +540,7 @@ const resolve = async (row: Alert) => {
 .skeleton-bar {
   height: 20px;
   border-radius: 6px;
-  background: linear-gradient(90deg, var(--color-bg-sunken, #f1f5f9) 25%, #e2e8f0 37%, var(--color-bg-sunken, #f1f5f9) 63%);
+  background: linear-gradient(90deg, var(--color-bg-sunken, var(--surface-2)) 25%, var(--border-1) 37%, var(--color-bg-sunken, var(--surface-2)) 63%);
   background-size: 400% 100%;
   animation: shimmer 1.4s ease infinite;
 }
@@ -597,7 +597,7 @@ const resolve = async (row: Alert) => {
 .timestamp { color: var(--color-text-secondary); font-size: var(--text-xs); }
 
 .occurrence-cell {
-  color: var(--color-warning, #e6a23c);
+  color: var(--color-warning, var(--warning));
   font-weight: var(--weight-semibold);
 }
 
@@ -638,8 +638,8 @@ const resolve = async (row: Alert) => {
   }
 
   &-success:hover:not(:disabled) {
-    border-color: var(--state-success, #67c23a);
-    color: var(--state-success, #67c23a);
+    border-color: var(--state-success, var(--success));
+    color: var(--state-success, var(--success));
     background: rgba(103, 194, 58, 0.08);
   }
 }

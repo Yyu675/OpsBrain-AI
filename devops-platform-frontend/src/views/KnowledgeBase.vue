@@ -764,7 +764,7 @@ onMounted(() => {
   width: 18px;
   height: 1px;
   margin: 4px 0;
-  background: var(--color-border-light, #E5E7EB);
+  background: var(--color-border-light, var(--border-1));
   flex-shrink: 0;
 }
 
@@ -1064,7 +1064,7 @@ onMounted(() => {
 }
 
 .load-error {
-  color: var(--color-danger, #f56c6c);
+  color: var(--color-danger, var(--danger));
 }
 
 /* ===== Articles List ===== */
@@ -1129,7 +1129,7 @@ onMounted(() => {
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   color: #92400e;
-  background: #fef3c7;
+  background: var(--warning-subtle);
   font-size: 11px;
   font-weight: var(--weight-medium);
 }
@@ -1188,7 +1188,7 @@ onMounted(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--brand);
   color: #fff;
   font-size: 10px;
   font-weight: var(--weight-semibold);
@@ -1206,7 +1206,7 @@ onMounted(() => {
   border-radius: var(--radius-full);
 
   &.index-failed {
-    color: var(--color-danger, #f56c6c);
+    color: var(--color-danger, var(--danger));
     background: var(--state-error-bg);
   }
 }

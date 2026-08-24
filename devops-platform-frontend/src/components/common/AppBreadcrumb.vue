@@ -93,7 +93,7 @@ const chain = computed<BreadcrumbItem[]>(() => [
   gap: 4px;
   min-width: 0;
   font-size: var(--text-sm, 13px);
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
   /* 窄屏时允许横向滚动，而非换行撑高页头或截断层级 */
   overflow-x: auto;
   scrollbar-width: none;
@@ -116,12 +116,12 @@ const chain = computed<BreadcrumbItem[]>(() => [
 }
 
 .bc-link:hover {
-  color: var(--color-primary, #409eff);
-  background: var(--color-primary-lighter, #E8F0FC);
+  color: var(--color-primary, var(--brand));
+  background: var(--color-primary-lighter, var(--brand-subtle));
 }
 
 .bc-link:focus-visible {
-  outline: 2px solid var(--color-primary, #409eff);
+  outline: 2px solid var(--color-primary, var(--brand));
   outline-offset: 1px;
 }
 
@@ -135,7 +135,7 @@ const chain = computed<BreadcrumbItem[]>(() => [
 
 /* 末级是当前页：加重字色以示"你在这里"，过长则省略 */
 .bc-item.current {
-  color: var(--color-text-primary, #1F2937);
+  color: var(--color-text-primary, var(--text-1));
   font-weight: var(--weight-medium, 500);
   overflow: hidden;
   text-overflow: ellipsis;

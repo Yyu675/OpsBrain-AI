@@ -67,8 +67,8 @@ onBeforeUnmount(() => {
 }
 
 .network-banner-offline {
-  background: #FEF2F2;
-  color: #B91C1C;
+  background: var(--danger-subtle);
+  color: var(--danger);
   border-bottom: 1px solid #FCA5A5;
 }
 

@@ -81,18 +81,18 @@ withDefaults(defineProps<{
   border: none;
   border-radius: var(--radius-sm, 5px);
   background: transparent;
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
 .collapse-toggle:hover {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #409eff);
+  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--color-primary, var(--brand));
 }
 
 .collapse-toggle:focus-visible {
-  outline: 2px solid var(--color-primary, #409eff);
+  outline: 2px solid var(--color-primary, var(--brand));
   outline-offset: 1px;
 }
 </style>

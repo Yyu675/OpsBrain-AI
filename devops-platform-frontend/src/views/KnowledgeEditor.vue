@@ -1331,7 +1331,7 @@ const primaryLabel = computed(() =>
   box-shadow: 0 0 0 3px var(--state-success-bg);
 }
 .ce-save-dot--dirty {
-  background: var(--state-warning, #e6a23c);
+  background: var(--state-warning, var(--warning));
   box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.15);
 }
 

@@ -392,7 +392,7 @@ const goList = () => router.push('/alerts')
   padding: 32px;
 }
 
-.state-icon-warn { color: var(--color-warning, #e6a23c); }
+.state-icon-warn { color: var(--color-warning, var(--warning)); }
 
 .state-title {
   margin: 0;
@@ -594,8 +594,8 @@ const goList = () => router.push('/alerts')
   z-index: 1;
 
   .tl-node.done & {
-    border-color: var(--state-success, #67c23a);
-    background: var(--state-success, #67c23a);
+    border-color: var(--state-success, var(--success));
+    background: var(--state-success, var(--success));
     color: #fff;
   }
 }
@@ -673,13 +673,13 @@ const goList = () => router.push('/alerts')
 .dedup {
   margin-top: 4px !important;
   padding: 6px 8px;
-  background: var(--color-bg-sunken, #f1f5f9);
+  background: var(--color-bg-sunken, var(--surface-2));
   border-radius: var(--radius-sm);
   word-break: break-all;
 }
 
 .val-warn {
-  color: var(--color-warning, #e6a23c);
+  color: var(--color-warning, var(--warning));
   font-weight: var(--weight-semibold);
 }
 

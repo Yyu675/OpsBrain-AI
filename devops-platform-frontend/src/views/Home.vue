@@ -358,7 +358,7 @@ const features = [
   margin: 0 auto;
   border: 1px dashed var(--color-border, #d9dee7);
   border-radius: var(--radius-md, 8px);
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
   font-size: var(--text-sm);
   text-decoration: none;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
@@ -366,7 +366,7 @@ const features = [
   &:hover {
     color: var(--color-primary);
     border-color: var(--color-primary);
-    background: var(--color-primary-lighter, #E8F0FC);
+    background: var(--color-primary-lighter, var(--brand-subtle));
   }
 }
 
@@ -388,7 +388,7 @@ const features = [
   width: 80px;
   height: 36px;
   margin: 0 auto 4px;
-  background: linear-gradient(90deg, var(--color-bg-sunken, #f1f5f9) 25%, var(--color-border-light, #e2e8f0) 50%, var(--color-bg-sunken, #f1f5f9) 75%);
+  background: linear-gradient(90deg, var(--color-bg-sunken, var(--surface-2)) 25%, var(--color-border-light, var(--border-1)) 50%, var(--color-bg-sunken, var(--surface-2)) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
   border-radius: 6px;

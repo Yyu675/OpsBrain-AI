@@ -247,13 +247,13 @@ onMounted(() => {
   h2 {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--text-1);
     margin: 0;
   }
 
   .sub-tip {
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--text-3);
   }
 }
 
@@ -262,13 +262,13 @@ onMounted(() => {
   gap: 16px;
   margin-bottom: 12px;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--text-2);
 }
 
 .stat-item { display: inline-flex; align-items: center; gap: 4px; }
 
 .stat-overdue.has-overdue {
-  color: #dc2626;
+  color: var(--danger);
   font-weight: 600;
 }
 
@@ -285,14 +285,14 @@ onMounted(() => {
 }
 
 .filter-icon {
-  color: #9ca3af;
+  color: var(--text-3);
   flex-shrink: 0;
 }
 
 .filter-input {
   height: 32px;
   padding: 0 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   font-size: 0.85rem;
   color: #374151;
@@ -302,7 +302,7 @@ onMounted(() => {
 }
 
 .filter-input:focus {
-  border-color: var(--el-color-primary, #409eff);
+  border-color: var(--el-color-primary, var(--brand));
 }
 
 .owner-input { width: 150px; }
@@ -312,7 +312,7 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 0.85rem;
-  color: #4b5563;
+  color: var(--text-2);
   cursor: pointer;
   user-select: none;
 }
@@ -324,11 +324,11 @@ onMounted(() => {
   justify-content: center;
   gap: 12px;
   min-height: 260px;
-  color: #6b7280;
+  color: var(--text-2);
   font-size: 0.9rem;
 
   .spin { animation: spin 1s linear infinite; }
-  .err-icon { color: #dc2626; }
+  .err-icon { color: var(--danger); }
   .empty-icon { color: #10b981; }
 }
 
@@ -360,8 +360,8 @@ onMounted(() => {
 }
 
 .item-card.is-overdue {
-  border-left-color: #dc2626;
-  background: #fef2f2;
+  border-left-color: var(--danger);
+  background: var(--danger-subtle);
 }
 
 .item-main {
@@ -381,15 +381,15 @@ onMounted(() => {
   color: white;
 }
 
-.st-open { background: #6b7280; }      /* 待开始 灰 */
+.st-open { background: var(--text-2); }      /* 待开始 灰 */
 .st-doing { background: #f59e0b; }     /* 进行中 橙 */
 .st-done { background: #10b981; }      /* 已完成 绿 */
-.st-dropped { background: #9ca3af; }   /* 已放弃 浅灰 */
+.st-dropped { background: var(--text-3); }   /* 已放弃 浅灰 */
 
 .item-content {
   margin: 0;
   font-size: 0.9rem;
-  color: #1f2937;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -410,16 +410,16 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   font-size: 0.75rem;
-  color: #4b5563;
-  background: #f3f4f6;
+  color: var(--text-2);
+  background: var(--surface-2);
   padding: 2px 8px;
   border-radius: 999px;
   white-space: nowrap;
 }
 
 .due-overdue {
-  color: #dc2626;
-  background: #fee2e2;
+  color: var(--danger);
+  background: var(--danger-subtle);
 }
 
 .due-flag {
@@ -428,7 +428,7 @@ onMounted(() => {
 
 .ticket-chip {
   cursor: pointer;
-  color: var(--el-color-primary, #409eff);
+  color: var(--el-color-primary, var(--brand));
   background: #eff6ff;
 
   &:hover { text-decoration: underline; }
@@ -441,7 +441,7 @@ onMounted(() => {
 .status-select {
   height: 30px;
   padding: 0 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   font-size: 0.8rem;
   color: #374151;

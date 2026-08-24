@@ -441,6 +441,6 @@ watch(() => props.active, (on) => {
 /* 恒定口径用中性灰，与可变的下钻口径视觉区分 */
 .chart-scope--fixed {
   color: var(--color-text-tertiary);
-  background: var(--color-bg-sunken, #f1f5f9);
+  background: var(--color-bg-sunken, var(--surface-2));
 }
 </style>

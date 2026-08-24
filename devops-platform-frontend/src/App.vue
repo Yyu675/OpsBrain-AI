@@ -151,7 +151,7 @@ useHotkeys([
   height: 52px;
   border-radius: 50%;
   border: none;
-  background: var(--el-color-primary, #409eff);
+  background: var(--el-color-primary, var(--brand));
   color: #fff;
   cursor: pointer;
   display: flex;

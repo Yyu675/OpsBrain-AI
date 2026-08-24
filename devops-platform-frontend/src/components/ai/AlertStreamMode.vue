@@ -368,7 +368,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-primary, #409eff);
+  color: var(--color-primary, var(--brand));
 }
 
 .spinner {
@@ -376,7 +376,7 @@ onBeforeUnmount(() => {
   bottom: -4px;
   right: -4px;
   animation: spin 1s linear infinite;
-  color: var(--color-primary, #409eff);
+  color: var(--color-primary, var(--brand));
 }
 
 @keyframes spin {
@@ -393,7 +393,7 @@ onBeforeUnmount(() => {
 
 .connecting-hint {
   font-size: var(--text-xs, 12px);
-  color: var(--color-text-tertiary, #909399);
+  color: var(--color-text-tertiary, var(--text-3));
   margin: 0;
 }
 
@@ -413,7 +413,7 @@ onBeforeUnmount(() => {
 
 .reconnect-text {
   font-size: 0.8125rem;
-  color: #e6a23c;
+  color: var(--warning);
 }
 
 /* ============ 连接错误 / 断开 ============ */
@@ -429,7 +429,7 @@ onBeforeUnmount(() => {
 }
 
 .error-icon {
-  color: var(--state-error, #f56c6c);
+  color: var(--state-error, var(--danger));
 }
 
 .error-title {
@@ -441,7 +441,7 @@ onBeforeUnmount(() => {
 
 .error-hint {
   font-size: var(--text-xs, 12px);
-  color: var(--color-text-tertiary, #909399);
+  color: var(--color-text-tertiary, var(--text-3));
   margin: 0 0 8px 0;
   text-align: center;
   max-width: 280px;
@@ -483,15 +483,15 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   font-size: var(--text-xs, 12px);
-  color: var(--color-text-tertiary, #909399);
+  color: var(--color-text-tertiary, var(--text-3));
 
   &.connected .status-dot {
-    background: var(--state-success, #67c23a);
+    background: var(--state-success, var(--success));
   }
 
   &.disconnected .status-dot,
   &.error .status-dot {
-    background: var(--state-error, #f56c6c);
+    background: var(--state-error, var(--danger));
   }
 }
 
@@ -528,13 +528,13 @@ onBeforeUnmount(() => {
 
   /* 级别左边框 */
   &.alert-level--high {
-    border-left: 3px solid var(--state-error, #f56c6c);
+    border-left: 3px solid var(--state-error, var(--danger));
   }
   &.alert-level--medium {
-    border-left: 3px solid var(--color-warning, #e6a23c);
+    border-left: 3px solid var(--color-warning, var(--warning));
   }
   &.alert-level--low {
-    border-left: 3px solid var(--color-primary, #409eff);
+    border-left: 3px solid var(--color-primary, var(--brand));
   }
 }
 
@@ -551,13 +551,13 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 
   &.type-icon--new {
-    color: var(--state-error, #f56c6c);
+    color: var(--state-error, var(--danger));
   }
   &.type-icon--update {
-    color: var(--color-warning, #e6a23c);
+    color: var(--color-warning, var(--warning));
   }
   &.type-icon--resolved {
-    color: var(--state-success, #67c23a);
+    color: var(--state-success, var(--success));
   }
 }
 
@@ -578,7 +578,7 @@ onBeforeUnmount(() => {
 .alert-card__time {
   flex-shrink: 0;
   font-size: 11px;
-  color: var(--color-text-tertiary, #909399);
+  color: var(--color-text-tertiary, var(--text-3));
   white-space: nowrap;
 }
 
@@ -608,14 +608,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 3px;
   font-size: 11px;
-  color: var(--color-text-tertiary, #909399);
+  color: var(--color-text-tertiary, var(--text-3));
 
   &--occurrence {
-    color: var(--color-warning, #e6a23c);
+    color: var(--color-warning, var(--warning));
   }
 
   &--ticket {
-    color: var(--color-primary, #409eff);
+    color: var(--color-primary, var(--brand));
   }
 }
 </style>

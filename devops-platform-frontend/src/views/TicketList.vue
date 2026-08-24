@@ -1584,23 +1584,23 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 4px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-md, 8px);
   background: var(--color-surface, #fff);
-  color: var(--color-text-secondary, #4B5563);
+  color: var(--color-text-secondary, var(--text-2));
   font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
 }
 .filter-toggle-btn:hover {
-  border-color: var(--color-primary, #409eff);
-  color: var(--color-primary, #409eff);
+  border-color: var(--color-primary, var(--brand));
+  color: var(--color-primary, var(--brand));
 }
 .filter-toggle-btn.active {
-  border-color: var(--color-primary, #409eff);
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #409eff);
+  border-color: var(--color-primary, var(--brand));
+  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--color-primary, var(--brand));
 }
 
 .filter-search { flex: 1; position: relative; min-width: 0; }
@@ -1723,7 +1723,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 12px 16px;
   margin-bottom: 12px;
   background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-md, 8px);
 }
 
@@ -1735,13 +1735,13 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 6px;
   padding: 8px 12px;
   margin-bottom: 12px;
-  background: var(--color-bg-sunken, #F8F9FB);
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  background: var(--color-bg-sunken, var(--surface-2));
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-md, 8px);
 }
 .active-filter-label {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   margin-right: 2px;
 }
 .active-filter-chip {
@@ -1752,7 +1752,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 3px 8px;
   border: 1px solid var(--color-primary-light, #7EA6E0);
   border-radius: 999px;
-  background: var(--color-primary-lighter, #E8F0FC);
+  background: var(--color-primary-lighter, var(--brand-subtle));
   color: var(--color-primary, #2C5AA0);
   font-size: 0.75rem;
   font-family: var(--font-body);
@@ -1777,7 +1777,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 0 4px;
   font-size: 0.75rem;
   font-family: var(--font-body);
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   cursor: pointer;
 
   &:hover { color: var(--color-primary); text-decoration: underline; }
@@ -1791,12 +1791,12 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 4px;
   height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-md, 8px);
   background: var(--color-surface, #fff);
   font-size: 0.8125rem;
   font-family: var(--font-body);
-  color: var(--color-text-secondary, #4B5563);
+  color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
 
   &:hover { border-color: var(--color-primary); color: var(--color-primary); }
@@ -1809,7 +1809,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   min-width: 168px;
   padding: 8px;
   background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-md, 8px);
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.1));
 }
@@ -1819,10 +1819,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   justify-content: space-between;
   gap: 8px;
   padding: 2px 6px 6px;
-  border-bottom: 1px solid var(--color-border-light, #E5E7EB);
+  border-bottom: 1px solid var(--color-border-light, var(--border-1));
   margin-bottom: 4px;
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 .col-setting-item {
   display: flex;
@@ -1834,13 +1834,13 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   color: var(--color-text-primary);
   cursor: pointer;
 
-  &:hover { background: var(--color-surface-hover, #F8F9FB); }
+  &:hover { background: var(--color-surface-hover, var(--surface-2)); }
   input { cursor: pointer; }
 }
 .col-setting-hint {
   margin: 4px 6px 0;
   font-size: 0.6875rem;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 
 /* ===== 悬浮「工单速览卡」 ===== */
@@ -1854,10 +1854,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .peek-title {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--color-text-primary, #1F2937);
+  color: var(--color-text-primary, var(--text-1));
   margin-bottom: 6px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--color-border-light, #E5E7EB);
+  border-bottom: 1px solid var(--color-border-light, var(--border-1));
   white-space: normal;
   word-break: break-word;
 }
@@ -1868,21 +1868,21 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 }
 .peek-label {
   flex: 0 0 68px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 .peek-value {
   flex: 1;
-  color: var(--color-text-primary, #1F2937);
+  color: var(--color-text-primary, var(--text-1));
   white-space: normal;
   word-break: break-word;
 
-  &.sla-warning { color: #B45309; font-weight: 500; }
-  &.sla-breached { color: #B91C1C; font-weight: 500; }
+  &.sla-warning { color: var(--warning); font-weight: 500; }
+  &.sla-breached { color: var(--danger); font-weight: 500; }
 }
 
 /* 服务/分类列的次要文本 */
 .cell-muted {
-  color: var(--color-text-secondary, #4B5563);
+  color: var(--color-text-secondary, var(--text-2));
   font-size: 0.8125rem;
 }
 
@@ -1897,21 +1897,21 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
   &.fr-ok {
     background: rgba(22, 163, 74, 0.1);
-    color: #15803D;
+    color: var(--success);
   }
   &.fr-breached {
     background: rgba(239, 68, 68, 0.12);
-    color: #B91C1C;
+    color: var(--danger);
     font-weight: var(--weight-medium);
   }
   &.fr-risk {
     background: rgba(245, 158, 11, 0.14);
-    color: #B45309;
+    color: var(--warning);
     font-weight: var(--weight-medium);
   }
   &.fr-waiting {
-    background: var(--color-bg-sunken, #F3F4F6);
-    color: var(--color-text-tertiary, #9ca3af);
+    background: var(--color-bg-sunken, var(--surface-2));
+    color: var(--color-text-tertiary, var(--text-3));
   }
 }
 
@@ -1938,7 +1938,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   width: 100%;
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: 6px;
   font-size: 0.8125rem;
   background: var(--color-surface, #fff);
@@ -1958,11 +1958,11 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 }
 .date-range-label {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   white-space: nowrap;
 }
 .date-range-sep {
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   font-size: 0.75rem;
   flex-shrink: 0;
 }
@@ -1971,7 +1971,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   flex: 1;
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: 6px;
   font-size: 0.8125rem;
 }
@@ -1986,12 +1986,12 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 6px 14px;
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   cursor: pointer;
   font-size: 0.8125rem;
   flex-shrink: 0;
 }
-.btn-clear-advanced:hover { color: var(--color-primary, #409eff); }
+.btn-clear-advanced:hover { color: var(--color-primary, var(--brand)); }
 
 .btn-clear-filters {
   display: inline-flex;
@@ -2242,7 +2242,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
     padding: 10px 0;
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
-    color: #9CA3AF;
+    color: var(--text-3);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     border-bottom: 1px solid var(--color-border-light);
@@ -2317,8 +2317,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   white-space: nowrap;
 
   &.sla-normal { color: var(--color-text-tertiary); }
-  &.sla-warning { color: #B45309; font-weight: var(--weight-medium); }
-  &.sla-breached { color: #B91C1C; font-weight: var(--weight-medium); }
+  &.sla-warning { color: var(--warning); font-weight: var(--weight-medium); }
+  &.sla-breached { color: var(--danger); font-weight: var(--weight-medium); }
 }
 
 /* 列宽已调整的提示与重置入口 */
@@ -2408,8 +2408,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   &.status-pending { background: var(--state-warning-bg); color: var(--state-warning); }
   &.status-processing { background: var(--color-primary-light); color: white; }
   &.status-resolved { background: var(--state-success); color: white; }
-  &.status-closed { background: #F3F4F6; color: #6B7280; }
-  &.status-void { background: #F3F4F6; color: #9CA3AF; text-decoration: line-through; }
+  &.status-closed { background: var(--surface-2); color: var(--text-2); }
+  &.status-void { background: var(--surface-2); color: var(--text-3); text-decoration: line-through; }
 }
 
 .priority-badge {
@@ -2423,7 +2423,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   &.priority-urgent { background: var(--state-error); color: white; }
   &.priority-high { background: #EA580C; color: white; }
   &.priority-medium { background: var(--color-primary-lighter); color: var(--color-primary); }
-  &.priority-low { background: #F3F4F6; color: #6B7280; }
+  &.priority-low { background: var(--surface-2); color: var(--text-2); }
 }
 
 .assignee { color: var(--color-text-primary); font-weight: var(--weight-medium); }

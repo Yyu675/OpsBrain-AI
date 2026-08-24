@@ -1000,12 +1000,12 @@ const compareAction = async (version: number) => {
   background: var(--color-bg-sunken);
 
   &.index-ok {
-    color: #0369a1;
-    background: #e0f2fe;
+    color: var(--info);
+    background: var(--info-subtle);
   }
 
   &.index-failed {
-    color: var(--state-error, #f56c6c);
+    color: var(--state-error, var(--danger));
     background: var(--state-error-bg, #fef0f0);
   }
 }
@@ -1021,12 +1021,12 @@ const compareAction = async (version: number) => {
   font-size: 0.8125rem;
 }
 .index-error-icon {
-  color: var(--state-error, #f56c6c);
+  color: var(--state-error, var(--danger));
   flex-shrink: 0;
   margin-top: 1px;
 }
 .index-error-text {
-  color: var(--state-error, #f56c6c);
+  color: var(--state-error, var(--danger));
   word-break: break-word;
 }
 
@@ -1655,15 +1655,15 @@ const compareAction = async (version: number) => {
 }
 
 .diff-line-delete {
-  background: #fef2f2;
-  color: #dc2626;
-  border-left: 3px solid #dc2626;
+  background: var(--danger-subtle);
+  color: var(--danger);
+  border-left: 3px solid var(--danger);
 }
 
 .diff-line-insert {
-  background: #f0fdf4;
-  color: #16a34a;
-  border-left: 3px solid #16a34a;
+  background: var(--success-subtle);
+  color: var(--success);
+  border-left: 3px solid var(--success);
 }
 
 .diff-marker {

@@ -829,7 +829,7 @@ onBeforeUnmount(() => {
       display: block;
       padding: 0;
       background: transparent;
-      color: #E2E8F0;
+      color: var(--border-1);
       font-size: 11px;
       line-height: 1.5;
     }
