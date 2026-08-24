@@ -1,6 +1,7 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.application.DevOpsAgentService;
+import com.devops.agent.common.web.ClientIpResolver;
 import com.devops.agent.domain.biz.service.AgentLogService;
 import com.devops.agent.infrastructure.cache.SlidingWindowRateLimiter;
 import cn.dev33.satoken.stp.StpUtil;
@@ -97,13 +98,17 @@ public class DevOpsChatController {
 
     private final SlidingWindowRateLimiter rateLimiter;
 
+    private final ClientIpResolver clientIpResolver;
+
     public DevOpsChatController(DevOpsAgentService agentService, ObjectMapper objectMapper,
                                 AgentLogService agentLogService,
-                                SlidingWindowRateLimiter rateLimiter) {
+                                SlidingWindowRateLimiter rateLimiter,
+                                ClientIpResolver clientIpResolver) {
         this.agentService = agentService;
         this.objectMapper = objectMapper;
         this.agentLogService = agentLogService;
         this.rateLimiter = rateLimiter;
+        this.clientIpResolver = clientIpResolver;
     }
 
     /**
@@ -122,7 +127,11 @@ public class DevOpsChatController {
         ServletRequestAttributes attrs =
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attrs != null) {
-            return "ip:" + attrs.getRequest().getRemoteAddr();
+            // 走统一解析器而非直接 getRemoteAddr()：后者在反向代理后
+            // 会把所有用户识别成代理的地址，导致整站共用一份额度。
+            // 解析器只在 remoteAddr 属于受信任代理时才采信 XFF，
+            // 直连场景下行为与 getRemoteAddr() 完全一致，不引入伪造风险。
+            return "ip:" + clientIpResolver.resolve(attrs.getRequest());
         }
         return "unknown";
     }

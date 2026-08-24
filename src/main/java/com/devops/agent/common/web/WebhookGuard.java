@@ -60,8 +60,11 @@ public class WebhookGuard {
 
     private final SlidingWindowRateLimiter rateLimiter;
 
-    public WebhookGuard(SlidingWindowRateLimiter rateLimiter) {
+    private final ClientIpResolver clientIpResolver;
+
+    public WebhookGuard(SlidingWindowRateLimiter rateLimiter, ClientIpResolver clientIpResolver) {
         this.rateLimiter = rateLimiter;
+        this.clientIpResolver = clientIpResolver;
     }
 
     /**
@@ -112,22 +115,18 @@ public class WebhookGuard {
     }
 
     /**
-     * 解析真实客户端 IP。
-     * <p><b>只取 X-Forwarded-For 的第一段</b>——该头可被客户端伪造，
-     * 但在反向代理后部署时是唯一的真实来源。若未部署代理，
-     * 应当以 {@code getRemoteAddr()} 为准；这里的取舍是限流粒度问题，
-     * 不构成鉴权绕过（鉴权靠密钥，不靠 IP）。</p>
+     * 解析真实客户端 IP，委托给 {@link ClientIpResolver}。
+     *
+     * <p>原实现无条件取 X-Forwarded-For 的第一段，并把它当作限流主体。
+     * 那一段恰恰是<b>客户端可以随意伪造</b>的：每次请求换一个值，
+     * 限流键就换一个，ZSET 计数永远到不了阈值——<b>限流被完全绕过</b>。
+     * 而本端点免鉴权且直接写库、可触发建单，限流是它唯一的防线。
+     *
+     * <p>原注释说「不构成鉴权绕过（鉴权靠密钥）」——这点没错，
+     * 但它低估了后果：密钥泄露或内部误用时，限流本该是第二道闸门，
+     * 而当时那道闸门形同虚设。</p>
      */
     private String resolveClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            int comma = xff.indexOf(',');
-            String first = (comma > 0 ? xff.substring(0, comma) : xff).trim();
-            if (!first.isEmpty() && first.length() <= 45) {   // IPv6 最长 45 字符
-                return first;
-            }
-        }
-        String remote = request.getRemoteAddr();
-        return remote != null ? remote : "unknown";
+        return clientIpResolver.resolve(request);
     }
 }

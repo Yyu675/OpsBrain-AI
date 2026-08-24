@@ -2,6 +2,7 @@ package com.devops.agent.common.audit;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.devops.agent.common.context.TraceContext;
+import com.devops.agent.common.web.ClientIpResolver;
 import com.devops.agent.infrastructure.persistence.repo.OperationAuditRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -62,6 +63,8 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
 
     private final OperationAuditRepository repository;
 
+    private final ClientIpResolver clientIpResolver;
+
     /**
      * 审计写入线程池：2 线程 + 有界队列 500 + CallerRuns。
      * <p>队列满时由调用线程直接执行（同步写），形成天然背压，
@@ -77,8 +80,10 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
             },
             new ThreadPoolExecutor.CallerRunsPolicy());
 
-    public OperationAuditInterceptor(OperationAuditRepository repository) {
+    public OperationAuditInterceptor(OperationAuditRepository repository,
+                                     ClientIpResolver clientIpResolver) {
         this.repository = repository;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Override
@@ -186,16 +191,16 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
         return null;
     }
 
+    /**
+     * 来源 IP，委托给 {@link ClientIpResolver}。
+     *
+     * <p>原实现无条件取 X-Forwarded-For 的第一段——那是客户端可伪造的部分，
+     * 意味着<b>审计表里的来源 IP 可被写成任意值</b>。
+     * 审计恰恰是最不能被污染的数据：它存在的意义就是事后能查，
+     * 记录一个伪造的内网地址会把追溯直接引向无辜的机器。</p>
+     */
     private String clientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            int comma = xff.indexOf(',');
-            String first = (comma > 0 ? xff.substring(0, comma) : xff).trim();
-            if (!first.isEmpty() && first.length() <= 45) {
-                return first;
-            }
-        }
-        return truncate(request.getRemoteAddr(), 45);
+        return truncate(clientIpResolver.resolve(request), 45);
     }
 
     private static String truncate(String s, int max) {

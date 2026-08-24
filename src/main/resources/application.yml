@@ -98,6 +98,19 @@ devops:
       # 因为本项目 allowCredentials=true，* 等价于「任意站点可携带用户凭证调用本站 API」。
       allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
+    # 受信任的反向代理地址前缀，逗号分隔。**默认空 = 不信任任何 X-Forwarded-For**。
+    #
+    # 为什么默认空：XFF 是客户端可任意伪造的请求头。无条件信任它会导致
+    #   ① 限流被绕过（每次换一个伪造 IP，限流键就换一个，计数永远不到阈值）；
+    #   ② 审计表里的来源 IP 可被写成任意值，事后追溯指向无辜机器。
+    # 直连部署时留空即可，行为等同于只用 TCP 层 remoteAddr（无法伪造）。
+    #
+    # 部署在 Nginx / K8s Ingress 之后时，配置为**代理的出口地址前缀**，例如：
+    #   TRUSTED_PROXIES=10.,127.0.0.1
+    # 只有当 remoteAddr 匹配这些前缀时，才会采信 XFF（并取最后一段——
+    # 左侧是客户端可伪造的部分，右侧由每一跳代理追加）。
+    trusted-proxies: ${TRUSTED_PROXIES:}
+
   ai:
     # 双模开关：MOCK（开发期不调 API）/ REAL（生产模式）
     mode: ${AI_MODE:MOCK}
