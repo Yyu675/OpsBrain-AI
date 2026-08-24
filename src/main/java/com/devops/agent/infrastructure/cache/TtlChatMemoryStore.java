@@ -147,7 +147,11 @@ public class TtlChatMemoryStore implements ChatMemoryStore {
 
             // 1) TTL 回收
             lastAccess.entrySet().removeIf(e -> {
-                if (now - e.getValue() > expireAfterAccessMs) {
+                // 用 >= 而非 >：TTL 配成 0（"立即过期"，测试与某些压测场景会这么配）时，
+                // 若清扫恰好发生在写入的同一毫秒，now - lastAccess == 0，
+                // 用 > 会判定为未过期而永远回收不掉——TTL=0 反而变成了永不过期。
+                // >= 让边界含义明确：已达到存活时长即可回收。
+                if (now - e.getValue() >= expireAfterAccessMs) {
                     delegate.deleteMessages(e.getKey());
                     evictedCount.incrementAndGet();
                     return true;

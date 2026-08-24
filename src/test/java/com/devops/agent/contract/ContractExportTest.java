@@ -125,6 +125,22 @@ class ContractExportTest {
 
         for (RecordComponent rc : TicketController.CreateTicketRequest.class.getRecordComponents()) {
             Size size = rc.getAnnotation(Size.class);
+
+            // record 组件上的注解会按其 @Target 分发到「字段/构造器参数/访问器」，
+            // 只有显式声明了 RECORD_COMPONENT 的注解才留在组件本身。
+            // jakarta 的 @Size 没有声明它，因此 rc.getAnnotation(Size.class) 恒为 null——
+            // 导出结果里没有任何字段，assertTrue(json.contains("title")) 随之失败。
+            // 回退到读同名私有字段上的注解（record 必然为每个组件生成一个）。
+            if (size == null) {
+                try {
+                    size = TicketController.CreateTicketRequest.class
+                            .getDeclaredField(rc.getName())
+                            .getAnnotation(Size.class);
+                } catch (NoSuchFieldException ignored) {
+                    // record 组件必有同名字段，正常不会到这里；真到了就当作未标注
+                }
+            }
+
             if (size != null && size.max() != Integer.MAX_VALUE) {
                 limits.put(rc.getName(), size.max());
             }

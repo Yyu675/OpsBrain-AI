@@ -64,7 +64,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         // 鉴权行为应由独立的鉴权测试覆盖，不该混进契约测试。
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,
-                classes = com.devops.agent.controller.config.WebConfig.class),
+                classes = {
+                        com.devops.agent.controller.config.WebConfig.class,
+                        // OperationAuditInterceptor / TraceIdFilter 都是 @Component，
+                        // 会被 @WebMvcTest 的组件扫描拉进切片，但它们依赖
+                        // OperationAuditRepository（@Repository，切片不实例化 JDBC 层），
+                        // 于是整个 ApplicationContext 启动失败——表现为本类 12 个用例
+                        // 全部 ERROR，且报错信息指向 NoSuchBeanDefinition 而非契约本身。
+                        // 审计与 traceId 的行为由各自的单元测试覆盖，不该混进契约测试。
+                        com.devops.agent.common.audit.OperationAuditInterceptor.class,
+                        com.devops.agent.common.web.TraceIdFilter.class
+                }),
         excludeAutoConfiguration = {
                 org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class
         })
