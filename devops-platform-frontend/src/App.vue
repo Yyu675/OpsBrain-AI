@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bot } from 'lucide-vue-next'
@@ -6,7 +7,7 @@ import AppErrorBoundary from '@/components/common/AppErrorBoundary.vue'
 import NetworkBanner from '@/components/common/NetworkBanner.vue'
 import AppNavbar from '@/components/common/AppNavbar.vue'
 import HotkeysDialog from '@/components/common/HotkeysDialog.vue'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { useIdleTimer } from '@/composables/useIdleTimer'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { useAlertNotifications } from '@/composables/useAlertNotifications'
@@ -54,7 +55,7 @@ useIdleTimer({
       .then(() => {
         warnCloseFn = null
         if (closed) return
-        ElMessage.success('已延长会话')
+        notify.success('已延长会话')
       })
       .catch(() => {
         warnCloseFn = null
@@ -66,7 +67,7 @@ useIdleTimer({
     warnCloseFn?.()
     warnCloseFn = null
     if (!app.isAuthenticated) return
-    ElMessage.warning('长时间未操作，已自动退出登录')
+    notify.warning('长时间未操作，已自动退出登录')
     app.signOut().finally(() => router.push('/login'))
   },
   onActive() {

@@ -12,8 +12,9 @@
  * 排序（最新告警在前），REST 列表接口不暴露 sortBy 参数——故本页不做
  * 「可点击排序」列（客户端排序只会排当前页，是 6.37 已明确的静默错误）。
  */
+import { notify } from '@/utils/notify'
 import { ref, computed, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { Bell, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-vue-next'
 import type { Alert, AlertStatus } from '@/api/types'
 import { useAlertListQuery, useAlertMutations } from '@/api/queries/alerts.query'
@@ -134,7 +135,7 @@ const acknowledge = async (row: Alert) => {
   actionLoadingId.value = row.id
   try {
     await ackMutation.mutateAsync(row.id)
-    ElMessage.success('已确认告警')
+    notify.success('已确认告警')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   } finally {
@@ -161,7 +162,7 @@ const resolve = async (row: Alert) => {
   actionLoadingId.value = row.id
   try {
     await resolveMutation.mutateAsync(row.id)
-    ElMessage.success('已标记恢复')
+    notify.success('已标记恢复')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   } finally {

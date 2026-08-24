@@ -11,8 +11,9 @@
  * - 相似工单 / 相关文档加载
  */
 
+import { notify } from '@/utils/notify'
 import { ref, computed, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { chatStream } from '@/api/chat'
 import { fetchTickets } from '@/api/tickets'
 // 策略 B：AI 分析存独立表（结构化 + 多版本 + 反馈），替换策略 A 的 role='ai' 回复
@@ -365,7 +366,7 @@ export function useTicketAnalysis(
   const submitFeedback = async (helpful: boolean) => {
     const aid = analysisId.value
     if (aid == null) {
-      ElMessage.warning('分析尚未存档，暂时无法评价')
+      notify.warning('分析尚未存档，暂时无法评价')
       return
     }
     // 乐观更新：先反映到 UI，失败回滚
@@ -373,11 +374,11 @@ export function useTicketAnalysis(
     analysisFeedback.value = helpful ? 'HELPFUL' : 'UNHELPFUL'
     try {
       await submitAiAnalysisFeedback(aid, helpful)
-      ElMessage.success(helpful ? '感谢反馈，已记录「有用」' : '已记录「没用」，我们会持续改进')
+      notify.success(helpful ? '感谢反馈，已记录「有用」' : '已记录「没用」，我们会持续改进')
     } catch (e) {
       analysisFeedback.value = prev
       console.error('[useTicketAnalysis] 反馈提交失败', e)
-      ElMessage.error('反馈提交失败，请稍后重试')
+      notify.error('反馈提交失败，请稍后重试')
     }
   }
 
@@ -446,7 +447,7 @@ export function useTicketAnalysis(
 
   const generateReply = async (): Promise<string | null> => {
     if (analysisStreaming.value) {
-      ElMessage.warning('AI 正在分析中，请稍候')
+      notify.warning('AI 正在分析中，请稍候')
       return null
     }
 
@@ -500,14 +501,14 @@ export function useTicketAnalysis(
 
   const copyCommand = async (cmd: string) => {
     const ok = await copyText(cmd)
-    if (ok) ElMessage.success('命令已复制')
-    else ElMessage.warning('复制失败，请手动选择')
+    if (ok) notify.success('命令已复制')
+    else notify.warning('复制失败，请手动选择')
   }
 
   const copyAnalysis = async () => {
     const ok = await copyText(analysisContent.value)
-    if (ok) ElMessage.success('已复制到剪贴板')
-    else ElMessage.warning('复制失败，请手动选择文本')
+    if (ok) notify.success('已复制到剪贴板')
+    else notify.warning('复制失败，请手动选择文本')
   }
 
   // ==================== 生命周期 ====================

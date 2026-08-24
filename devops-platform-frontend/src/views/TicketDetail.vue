@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   Clock, AlertTriangle,
   Send, ArrowUp, ArrowRightLeft, X, Check, Info, Plus,
@@ -33,7 +33,7 @@ import {
 import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
 import { getTrends, type TrendData } from '@/api/dashboard'
 import { mapServiceToModule } from '@/api/utils/dto-converter'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 import { useExternalResourceState } from '@/composables/useResourceState'
 import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
 import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
@@ -294,7 +294,7 @@ const submitReply = async () => {
   if (!cur) return
   const text = replyContent.value.trim()
   if (!text) {
-    ElMessage.warning('请输入回复内容')
+    notify.warning('请输入回复内容')
     return
   }
   if (submitting.value) return
@@ -310,7 +310,7 @@ const submitReply = async () => {
       time: '',
       content: text
     })
-    ElMessage.success('回复已发送')
+    notify.success('回复已发送')
   } catch {
     replyContent.value = draft
   } finally {
@@ -350,7 +350,7 @@ const doTransfer = async () => {
   }
   try {
     await store.transferTicket(cur.id, transferTarget.value)
-    ElMessage.success(`已转派给 ${transferTarget.value}`)
+    notify.success(`已转派给 ${transferTarget.value}`)
     transferDialogVisible.value = false
   } catch {
     // store 已提示错误
@@ -372,7 +372,7 @@ const raisePriority = async () => {
   const priorities: Array<'low' | 'medium' | 'high' | 'urgent'> = ['low', 'medium', 'high', 'urgent']
   const idx = priorities.indexOf(cur.priority)
   if (idx >= priorities.length - 1) {
-    ElMessage.warning('已经是最高优先级')
+    notify.warning('已经是最高优先级')
     return
   }
   const next = priorities[idx + 1]
@@ -388,7 +388,7 @@ const raisePriority = async () => {
   }
   try {
     await store.updateTicket(cur.id, { priority: next })
-    ElMessage.success(`已提升为「${getPriorityLabel(next)}」，SLA 时限已重算`)
+    notify.success(`已提升为「${getPriorityLabel(next)}」，SLA 时限已重算`)
   } catch {
     // store 已提示错误
   }
@@ -417,7 +417,7 @@ const doAcknowledge = async () => {
       t.updatedAt = updated.updatedAt
     }
     await store.loadActivities(cur.id)
-    ElMessage.success('已确认接单')
+    notify.success('已确认接单')
   } catch (e) {
     console.error('确认接单失败', e)
     handleServerError(e, { action: '确认接单' })
@@ -454,7 +454,7 @@ const doEscalate = async () => {
   try {
     await escalateTicket(cur.id, reason, app.currentUser.name || '当前用户')
     await store.loadActivities(cur.id)
-    ElMessage.success('已提交升级，已记入活动流')
+    notify.success('已提交升级，已记入活动流')
   } catch (e) {
     console.error('升级失败', e)
     handleServerError(e, { action: '升级上报' })
@@ -472,7 +472,7 @@ const closeTicket = () => {
     .then(async () => {
       try {
         await store.updateStatus(cur.id, 'closed')
-        ElMessage.success('工单已关闭')
+        notify.success('工单已关闭')
       } catch {
         // store 已提示错误
       }
@@ -485,7 +485,7 @@ const startProcessing = async () => {
   if (!cur) return
   try {
     await store.updateStatus(cur.id, 'processing')
-    ElMessage.success('工单已标记为处理中')
+    notify.success('工单已标记为处理中')
   } catch {
     // store 已提示错误
   }
@@ -516,7 +516,7 @@ const doSubmitVerification = async () => {
   if (!cur || verifySubmitting.value) return
   const f = verifyForm.value
   if (f.skip && !f.skipReason.trim()) {
-    ElMessage.warning('跳过验证须填写理由')
+    notify.warning('跳过验证须填写理由')
     return
   }
   verifySubmitting.value = true
@@ -537,7 +537,7 @@ const doSubmitVerification = async () => {
     }
     await store.loadActivities(cur.id)
     verifyDialogVisible.value = false
-    ElMessage.success(f.skip ? '已跳过验证，工单标记为已解决' : '验证通过，工单已解决')
+    notify.success(f.skip ? '已跳过验证，工单标记为已解决' : '验证通过，工单已解决')
   } catch (e) {
     handleServerError(e, { action: '提交验证' })
   } finally {
@@ -590,7 +590,7 @@ const doAddAction = async () => {
   const cur = ticket.value
   if (!cur || actionSubmitting.value) return
   if (!actionForm.value.summary.trim()) {
-    ElMessage.warning('处置摘要不能为空')
+    notify.warning('处置摘要不能为空')
     return
   }
   actionSubmitting.value = true
@@ -605,7 +605,7 @@ const doAddAction = async () => {
     await loadActions()
     await store.loadActivities(cur.id)
     actionDialogVisible.value = false
-    ElMessage.success('处置动作已记录')
+    notify.success('处置动作已记录')
   } catch (e) {
     handleServerError(e, { action: '记录处置动作' })
   } finally {
@@ -626,7 +626,7 @@ const doUpdateStage = async (stage: string) => {
       t.updatedAt = updated.updatedAt
     }
     await store.loadActivities(cur.id)
-    ElMessage.success(`已切换到「${STAGES.find(s => s.value === stage)?.label || stage}」`)
+    notify.success(`已切换到「${STAGES.find(s => s.value === stage)?.label || stage}」`)
   } catch (e) {
     handleServerError(e, { action: '切换处置阶段' })
   }
@@ -647,7 +647,7 @@ const doMarkMitigated = async () => {
       t.updatedAt = updated.updatedAt
     }
     await store.loadActivities(cur.id)
-    ElMessage.success('已标记止损（业务已恢复，根因可能未定位）')
+    notify.success('已标记止损（业务已恢复，根因可能未定位）')
   } catch (e) {
     handleServerError(e, { action: '标记止损' })
   }
@@ -685,7 +685,7 @@ const doConfirmRootCause = async () => {
   const cur = ticket.value
   if (!cur || rootCauseSubmitting.value) return
   if (!rootCauseForm.value.rootCause.trim()) {
-    ElMessage.warning('根因不能为空')
+    notify.warning('根因不能为空')
     return
   }
   rootCauseSubmitting.value = true
@@ -704,7 +704,7 @@ const doConfirmRootCause = async () => {
     }
     await store.loadActivities(cur.id)
     rootCauseDialogVisible.value = false
-    ElMessage.success('根因已确认')
+    notify.success('根因已确认')
   } catch (e) {
     handleServerError(e, { action: '确认根因' })
   } finally {
@@ -746,7 +746,7 @@ const handleGenerateReply = async () => {
   const result = await generateReply()
   if (result) {
     replyContent.value = result
-    ElMessage.success('AI 已生成回复草稿，请审核后发送')
+    notify.success('AI 已生成回复草稿，请审核后发送')
   }
 }
 
@@ -759,14 +759,14 @@ const addTag = async () => {
   if (!cur || !newTagInput.value.trim()) return
   const tag = newTagInput.value.trim()
   if ((cur.tags || []).includes(tag)) {
-    ElMessage.warning('标签已存在')
+    notify.warning('标签已存在')
     return
   }
   tagRemoving.value = true
   try {
     const newTags = [...(cur.tags || []), tag]
     await store.updateTags(cur.id, newTags)
-    ElMessage.success('标签已添加')
+    notify.success('标签已添加')
     newTagInput.value = ''
   } catch {
     // store 已提示错误
@@ -782,7 +782,7 @@ const addTagFromSuggestion = async (tag: string) => {
   try {
     const newTags = [...(cur.tags || []), tag]
     await store.updateTags(cur.id, newTags)
-    ElMessage.success('标签已添加')
+    notify.success('标签已添加')
   } catch {
     // store 已提示错误
   } finally {
@@ -797,7 +797,7 @@ const removeTag = async (tag: string) => {
   try {
     const newTags = (cur.tags || []).filter(t => t !== tag)
     await store.updateTags(cur.id, newTags)
-    ElMessage.success('标签已移除')
+    notify.success('标签已移除')
   } catch {
     // store 已提示错误
   } finally {
@@ -837,7 +837,7 @@ const onAttachmentSelected = async (e: Event) => {
   try {
     const saved = await uploadTicketAttachment(cur.id, file, app.currentUser.name)
     attachments.value = [...attachments.value, saved]
-    ElMessage.success(`已上传 ${saved.originalName}`)
+    notify.success(`已上传 ${saved.originalName}`)
   } catch (err) {
     handleServerError(err, { action: '上传附件' })
   } finally {
@@ -867,7 +867,7 @@ const removeAttachment = async (item: TicketAttachmentMeta) => {
   try {
     await deleteTicketAttachment(item.id)
     attachments.value = attachments.value.filter(a => a.id !== item.id)
-    ElMessage.success('附件已删除')
+    notify.success('附件已删除')
   } catch (err) {
     handleServerError(err, { action: '删除附件' })
   }
@@ -882,7 +882,7 @@ const openSink = () => {
 }
 
 const onSinkPublished = (_docId: number, title: string) => {
-  ElMessage.success(`已沉淀为知识「${title}」`)
+  notify.success(`已沉淀为知识「${title}」`)
 }
 
 const onSinkGotoDoc = (docId: number) => {

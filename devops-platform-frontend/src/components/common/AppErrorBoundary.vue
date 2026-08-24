@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, onErrorCaptured, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { AlertTriangle, RefreshCw, Home, Copy } from 'lucide-vue-next'
 import { copyText } from '@/utils/clipboard'
 
@@ -45,8 +46,8 @@ const copySummary = async () => {
     err.value.stack || '(无堆栈)'
   ]
   const ok = await copyText(lines.join('\n'))
-  if (ok) ElMessage.success('错误摘要已复制到剪贴板')
-  else ElMessage.warning('复制失败，请手动选择技术详情复制')
+  if (ok) notify.success('错误摘要已复制到剪贴板')
+  else notify.warning('复制失败，请手动选择技术详情复制')
 }
 </script>
 

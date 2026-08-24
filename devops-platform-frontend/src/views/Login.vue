@@ -7,10 +7,10 @@
  */
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Bot, User, Lock, Loader2 } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,13 +33,13 @@ const redirectTarget = (): string => {
 const doLogin = async () => {
   if (submitting.value) return
   if (!username.value.trim() || !password.value) {
-    ElMessage.warning('请输入用户名和密码')
+    notify.warning('请输入用户名和密码')
     return
   }
   submitting.value = true
   try {
     await app.login(username.value.trim(), password.value)
-    ElMessage.success('登录成功')
+    notify.success('登录成功')
     router.replace(redirectTarget())
   } catch (e) {
     handleServerError(e, { action: '登录' })

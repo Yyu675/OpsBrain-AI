@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
 
 import {
   addActionItem,
@@ -11,7 +10,7 @@ import {
   type ActionItemData,
   type PostmortemData,
 } from '@/api/tickets'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 /**
  * B4 复盘归档逻辑。
@@ -94,10 +93,10 @@ export function useTicketPostmortem(options: {
     if (!ticketId) return
     try {
       form.value.timeline = await generateTimelineDraft(ticketId)
-      ElMessage.success('时间线草稿已生成')
+      notify.success('时间线草稿已生成')
     } catch (e) {
       console.warn('[Postmortem] 时间线草稿生成失败', e)
-      ElMessage.error('草稿生成失败')
+      notify.error('草稿生成失败')
     }
   }
 
@@ -118,7 +117,7 @@ export function useTicketPostmortem(options: {
         options.getOperator()
       )
       await options.onSaved?.(ticketId)
-      ElMessage.success('复盘已保存')
+      notify.success('复盘已保存')
     } catch (e) {
       handleServerError(e, { action: '保存复盘' })
     } finally {
@@ -132,7 +131,7 @@ export function useTicketPostmortem(options: {
     // 改进项挂在复盘记录下，复盘未保存时没有可挂载的 postmortemId
     if (!ticketId || !postmortemId) return
     if (!newActionItem.value.content.trim()) {
-      ElMessage.warning('改进项内容不能为空')
+      notify.warning('改进项内容不能为空')
       return
     }
     try {
@@ -144,7 +143,7 @@ export function useTicketPostmortem(options: {
       })
       actionItems.value = [...actionItems.value, item]
       newActionItem.value = { content: '', owner: '', dueDate: '' }
-      ElMessage.success('改进项已添加')
+      notify.success('改进项已添加')
     } catch (e) {
       handleServerError(e, { action: '添加改进项' })
     }
@@ -156,7 +155,7 @@ export function useTicketPostmortem(options: {
       actionItems.value = actionItems.value.map(i =>
         i.id === itemId ? { ...i, status } : i
       )
-      ElMessage.success('状态已更新')
+      notify.success('状态已更新')
     } catch (e) {
       handleServerError(e, { action: '更新改进项状态' })
     }

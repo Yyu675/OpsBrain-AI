@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, watch, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { X, Settings, RotateCcw } from 'lucide-vue-next'
 import { useAppStore, type AppSettings } from '@/stores/app'
 import { useFocusTrap } from '@/utils/focusTrap'
@@ -29,7 +30,7 @@ const close = () => emit('update:visible', false)
 
 const submit = () => {
   app.updateSettings(form.value)
-  ElMessage.success('设置已保存')
+  notify.success('设置已保存')
   close()
 }
 
@@ -42,7 +43,7 @@ const doReset = async () => {
     })
     app.resetSettings()
     form.value = { ...app.settings }
-    ElMessage.success('已恢复默认设置')
+    notify.success('已恢复默认设置')
   } catch { /* cancel */ }
 }
 

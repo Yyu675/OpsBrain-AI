@@ -35,7 +35,11 @@ const api = vi.hoisted(() => ({
   fetchHotTags: vi.fn(),
 }))
 
-const notify = vi.hoisted(() => ({ handleServerError: vi.fn() }))
+const notify = vi.hoisted(() => ({
+  handleServerError: vi.fn(),
+  // 业务代码已统一走 notify（含冷却去重），不再直连 ElMessage
+  notify: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
+}))
 
 vi.mock('@/api/tickets', () => api)
 vi.mock('@/api/users', () => ({ fetchTeamMembers: vi.fn().mockResolvedValue([]) }))
@@ -122,6 +126,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   Object.values(api).forEach(m => m.mockReset())
   notify.handleServerError.mockReset()
+  Object.values(notify.notify).forEach((f) => f.mockReset())
 
   // 这些辅助拉取在多数写路径末尾被调用，给出默认返回避免用例反复声明
   api.fetchTicketStats.mockResolvedValue({
@@ -427,22 +432,19 @@ describe('updateTags — 乐观更新与静默失败检测', () => {
   it('提交了标签但一个都没存上时告警 —— 后端不抛异常，只能由前端比对才能发现（6.19）', async () => {
     const store = storeWith(ticket())
     api.replaceTicketTags.mockResolvedValue([])
-    const { ElMessage } = await import('element-plus')
 
     await store.updateTags('TKT-A', ['主从延迟', '紧急排查'])
 
-    expect(vi.mocked(ElMessage.warning)).toHaveBeenCalled()
+    expect(notify.notify.warning).toHaveBeenCalled()
   })
 
   it('提交空数组（清空标签）时不误报失败 —— 返回空是预期结果', async () => {
     const store = storeWith(ticket({ tags: ['旧标签'] }))
     api.replaceTicketTags.mockResolvedValue([])
-    const { ElMessage } = await import('element-plus')
-    vi.mocked(ElMessage.warning).mockClear()
 
     await store.updateTags('TKT-A', [])
 
-    expect(vi.mocked(ElMessage.warning)).not.toHaveBeenCalled()
+    expect(notify.notify.warning).not.toHaveBeenCalled()
     expect(store.getById('TKT-A')!.tags).toEqual([])
   })
 

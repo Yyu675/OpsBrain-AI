@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   BookOpen,
   ChevronDown,
@@ -29,7 +29,7 @@ import type {
   KnowledgeCategoryTreeNode,
   KnowledgeTreeDocument,
 } from '@/api/types'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 const props = withDefaults(defineProps<{
   currentDocId?: number | null
@@ -169,7 +169,7 @@ async function addCategory(parent?: KnowledgeCategoryTreeNode) {
     if (parent) expanded.value = new Set([...expanded.value, parent.id])
     await loadTree()
     emit('changed')
-    ElMessage.success('分类已创建')
+    notify.success('分类已创建')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '创建分类' })
@@ -190,7 +190,7 @@ async function renameCategory(category: KnowledgeCategoryTreeNode) {
     })
     await loadTree()
     emit('changed')
-    ElMessage.success('分类已重命名')
+    notify.success('分类已重命名')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '重命名分类' })
@@ -207,7 +207,7 @@ async function removeCategory(category: KnowledgeCategoryTreeNode) {
     await deleteKnowledgeCategory(category.id)
     await loadTree()
     emit('changed')
-    ElMessage.success('分类已删除')
+    notify.success('分类已删除')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '删除分类' })
@@ -226,12 +226,12 @@ async function handleMoveCommand(command: string, doc: KnowledgeTreeDocument) {
     await moveKnowledgeDocument(doc.id, categoryId, doc.version)
     await loadTree()
     emit('changed')
-    ElMessage.success('文档已移动')
+    notify.success('文档已移动')
   } catch (error) {
     if (error instanceof VersionConflictError) {
       await loadTree()
       emit('changed')
-      ElMessage.warning('文档已被其他人修改，目录已刷新，请确认后重试移动')
+      notify.warning('文档已被其他人修改，目录已刷新，请确认后重试移动')
       return
     }
     handleServerError(error, { action: '移动文档' })

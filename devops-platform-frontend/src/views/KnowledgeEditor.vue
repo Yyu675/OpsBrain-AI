@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 import DOMPurify from 'dompurify'
@@ -37,7 +37,7 @@ import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import KnowledgeRichEditor from '@/components/knowledge/KnowledgeRichEditor.vue'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -379,7 +379,7 @@ const loadDoc = async () => {
       publishOnCreate.value = draft.publishOnCreate
       changeReason.value = draft.changeReason
       editorMode.value = draft.editorMode
-      ElMessage.info('已恢复草稿')
+      notify.info('已恢复草稿')
       isDirty.value = true
     }
     if (editorMode.value === 'visual') {
@@ -389,7 +389,7 @@ const loadDoc = async () => {
   }
 
   if (Number.isNaN(id.value)) {
-    ElMessage.error('无效的文档 ID')
+    notify.error('无效的文档 ID')
     router.replace('/knowledge')
     return
   }
@@ -404,13 +404,13 @@ const loadDoc = async () => {
     // notFound 跳回列表，error 由页面的三态区渲染重试入口
     if (!d) {
       if (store.detailStatus === 'notFound') {
-        ElMessage.error('文档不存在或已被删除')
+        notify.error('文档不存在或已被删除')
         router.replace('/knowledge')
       }
       return
     }
     if (d.status === 'DEPRECATED' || d.status === 'ARCHIVED') {
-      ElMessage.warning('已废弃或已归档文档需要先恢复才能编辑')
+      notify.warning('已废弃或已归档文档需要先恢复才能编辑')
       router.replace(`/knowledge/${docId}`)
       return
     }
@@ -540,11 +540,11 @@ const addTag = (tag: string) => {
   const t = tag.trim()
   if (!t) return
   if (formData.value.tags.some(item => item.trim().toLocaleLowerCase() === t.toLocaleLowerCase())) {
-    ElMessage.warning('标签已存在')
+    notify.warning('标签已存在')
     return
   }
   if (formData.value.tags.length >= MAX_TAGS) {
-    ElMessage.warning(`最多添加 ${MAX_TAGS} 个标签`)
+    notify.warning(`最多添加 ${MAX_TAGS} 个标签`)
     return
   }
   formData.value.tags.push(t)
@@ -571,7 +571,7 @@ const createCategoryFromSettings = async () => {
     const created = await createKnowledgeCategory({ name: value.trim(), parentId: null })
     await loadCategoriesAndTags()
     formData.value.category = created.name
-    ElMessage.success('分类已创建')
+    notify.success('分类已创建')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '创建分类' })
@@ -581,7 +581,7 @@ const createCategoryFromSettings = async () => {
 /** 自动生成摘要（去除 Markdown 标记，取前 150 字） */
 const generateSummary = () => {
   if (!hasMeaningfulContent(formData.value.content)) {
-    ElMessage.warning('请先输入文档内容')
+    notify.warning('请先输入文档内容')
     return
   }
   const source = isHtmlContent(formData.value.content)
@@ -593,11 +593,11 @@ const generateSummary = () => {
     .trim()
     .slice(0, 150)
   if (!text) {
-    ElMessage.warning('内容格式不正确，无法生成摘要')
+    notify.warning('内容格式不正确，无法生成摘要')
     return
   }
   formData.value.summary = text
-  ElMessage.success('已生成摘要')
+  notify.success('已生成摘要')
 }
 
 // ==================== 导入 .md ====================
@@ -612,13 +612,13 @@ const handleImportMd = () => {
     const file = (e.target as HTMLInputElement).files?.[0]
     if (!file) return
     if (file.size > MAX_IMPORT_SIZE) {
-      ElMessage.error(`文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），最大支持 5MB`)
+      notify.error(`文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），最大支持 5MB`)
       return
     }
     const text = await file.text()
     formData.value.content = editorMode.value === 'visual' ? await toVisualContent(text) : text
     if (!formData.value.title.trim()) formData.value.title = file.name.replace(/\.(md|markdown)$/i, '')
-    ElMessage.success(`已导入 ${file.name}`)
+    notify.success(`已导入 ${file.name}`)
   }
   input.click()
 }
@@ -627,19 +627,19 @@ const handleImportMd = () => {
 
 const handleSaveDraft = () => {
   if (!saveCurrentDraft()) {
-    ElMessage.error('本机暂存失败，请检查浏览器存储空间')
+    notify.error('本机暂存失败，请检查浏览器存储空间')
     return
   }
   draftSavedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  ElMessage.success('已暂存到本机浏览器')
+  notify.success('已暂存到本机浏览器')
 }
 
 const showSaveOutcome = async (saved: KnowledgeDocSaveResult, successMessage: string) => {
   const indexFailed = saved.indexStatus === 'FAILED' || saved.indexOutcome?.status === 'FAILED'
   if (indexFailed) {
-    ElMessage.warning('文档已保存，但向量化失败，可在详情页重试')
+    notify.warning('文档已保存，但向量化失败，可在详情页重试')
   } else {
-    ElMessage.success(successMessage)
+    notify.success(successMessage)
   }
   if (saved.nearDuplicates?.length) {
     const titles = saved.nearDuplicates.slice(0, 5).map(item => `《${item.title}》`).join('、')
@@ -664,11 +664,11 @@ const handleEditorMenu = async (command: 'mode' | 'import' | 'draft') => {
 
 const handleSave = async (publishAfterSave = false) => {
   if (!formData.value.title.trim()) {
-    ElMessage.warning('请输入标题')
+    notify.warning('请输入标题')
     return
   }
   if (!hasMeaningfulContent(formData.value.content)) {
-    ElMessage.warning('请输入内容')
+    notify.warning('请输入内容')
     return
   }
   if (formData.value.tags.length > MAX_TAGS) {
@@ -708,9 +708,9 @@ const handleSave = async (publishAfterSave = false) => {
       if (publishAfterSave) {
         const published = await store.publishDoc(docId)
         if (published.indexStatus === 'FAILED') {
-          ElMessage.warning('草稿已发布，但向量化失败，可在详情页重试')
+          notify.warning('草稿已发布，但向量化失败，可在详情页重试')
         } else {
-          ElMessage.success('文档已保存并发布')
+          notify.success('文档已保存并发布')
         }
       } else {
         await showSaveOutcome(saved, '文档已更新')
@@ -739,7 +739,7 @@ const handleSave = async (publishAfterSave = false) => {
       }
     } else if (e instanceof VersionConflictError) {
       // 禁止自动覆盖：提示刷新让用户看到最新内容后再提交（6.11）
-      ElMessage.error('该文档已被他人修改，请刷新查看最新内容后重新提交')
+      notify.error('该文档已被他人修改，请刷新查看最新内容后重新提交')
     } else {
       handleServerError(e, { action: '保存文档' })
     }
@@ -769,7 +769,7 @@ const scrollEditorToHeading = async (item: { text: string }) => {
       return
     }
   }
-  ElMessage.info('当前目录标题尚未渲染')
+  notify.info('当前目录标题尚未渲染')
 }
 
 const insertHeading = async () => {

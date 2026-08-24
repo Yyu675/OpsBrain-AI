@@ -1,6 +1,7 @@
+import { notify } from '@/utils/notify'
 import { createRouter, createWebHistory, type RouteComponent } from 'vue-router'
 import { defineAsyncComponent, h, defineComponent, type Component } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import AppSkeleton from '@/components/common/AppSkeleton.vue'
 import NotFound from '@/views/NotFound.vue'
 import { useAppStore, type Role } from '@/stores/app'
@@ -294,7 +295,7 @@ router.onError((err, to) => {
   ) {
     if (reloadInFlight) return
     reloadInFlight = true
-    ElMessage.warning('资源加载失败，正在重新加载...')
+    notify.warning('资源加载失败，正在重新加载...')
     setTimeout(() => window.location.assign(to.fullPath), 400)
   }
 })

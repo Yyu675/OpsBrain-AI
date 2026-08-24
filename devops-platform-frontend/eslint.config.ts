@@ -86,6 +86,23 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       // 空 catch 会静默吞掉错误 —— 项目多次因此排查困难
       'no-empty': ['error', { allowEmptyCatch: false }],
+
+      /**
+       * 禁止直接用 ElMessage —— 必须走 @/utils/notify。
+       *
+       * notify 在 ElMessage 之上加了 1 秒冷却去重：批量操作（如批量删除
+       * 10 条）若直连 ElMessage 会连弹 10 个提示条刷屏，用户根本读不完，
+       * 真正重要的那条也被淹没。
+       *
+       * ElMessageBox（确认框）不在限制内 —— 它是模态交互，语义不同。
+       */
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'element-plus',
+          importNames: ['ElMessage'],
+          message: '请改用 @/utils/notify 的 notify.success/error/warning/info（含冷却去重，避免批量操作刷屏）'
+        }]
+      }],
       // == 在 null/undefined 判断外一律不允许
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       // 未使用变量：下划线前缀视为有意忽略
@@ -121,6 +138,17 @@ export default tseslint.config(
     files: ['**/*.{test,spec}.ts', 'src/test-setup.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+
+  {
+    /**
+     * notify.ts 是 ElMessage 的封装层本身，其测试也需直接引用它做断言。
+     * 这两处是规则的合法例外，而非违规。
+     */
+    files: ['src/utils/notify.ts', 'src/utils/__tests__/notify.test.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
 

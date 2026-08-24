@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 // el-table 的排序与列上下文类型（组件本身已全局注册，无需按值引入）
 import type { Sort, TableColumnCtx } from 'element-plus'
 import TicketFormDialog from '@/components/ticket/TicketFormDialog.vue'
@@ -343,7 +344,7 @@ const resetColumnWidths = () => {
   userResized.value = {}
   clearPersisted(COL_WIDTH_KEY)
   clearPersisted(COL_VISIBLE_KEY)
-  ElMessage.success('已恢复默认列布局')
+  notify.success('已恢复默认列布局')
 }
 
 /**
@@ -519,10 +520,10 @@ const handleExportCsv = async () => {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    ElMessage.success('导出成功')
+    notify.success('导出成功')
   } catch (e) {
     console.error('导出 CSV 失败:', e)
-    ElMessage.error('导出失败，请稍后重试')
+    notify.error('导出失败，请稍后重试')
   } finally {
     exporting.value = false
   }
@@ -753,7 +754,7 @@ const bulkDelete = () => {
       selectedIds.value = []
       const snaps = await store.bulkDelete(ids)
       if (snaps.length === 0) {
-        ElMessage.warning('没有可删除的工单')
+        notify.warning('没有可删除的工单')
         return
       }
 
@@ -776,7 +777,7 @@ const bulkDelete = () => {
           // 后端不支持指定 ID 插入，恢复会得到新工单号
           const ok = await store.bulkRestore(snaps)
           await fetchList()   // 恢复的是新工单号，须重新拉取才能看到
-          ElMessage.success(`已恢复 ${ok} 条工单（工单号已重新生成）`)
+          notify.success(`已恢复 ${ok} 条工单（工单号已重新生成）`)
         }
       })
     })
@@ -798,9 +799,9 @@ const applyBulkStatus = async (s: TicketStatus) => {
   await fetchList()
 
   if (ok === count) {
-    ElMessage.success(`已将 ${count} 条工单状态更新为「${getStatusLabel(s)}」`)
+    notify.success(`已将 ${count} 条工单状态更新为「${getStatusLabel(s)}」`)
   } else {
-    ElMessage.warning(`${ok}/${count} 条更新成功，其余失败`)
+    notify.warning(`${ok}/${count} 条更新成功，其余失败`)
   }
 }
 
@@ -837,9 +838,9 @@ const applyBulkAssign = async (name: string) => {
   await fetchList()
 
   if (ok === count) {
-    ElMessage.success(`已将 ${count} 条工单分配给「${name}」`)
+    notify.success(`已将 ${count} 条工单分配给「${name}」`)
   } else {
-    ElMessage.warning(`${ok}/${count} 条分配成功，其余失败`)
+    notify.warning(`${ok}/${count} 条分配成功，其余失败`)
   }
 }
 

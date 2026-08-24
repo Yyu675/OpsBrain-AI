@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { X, Plus, Sparkles, Loader2 } from 'lucide-vue-next'
 import {
   useTicketsStore,
@@ -130,7 +131,7 @@ const applyDraft = async () => {
       cancelButtonText: '忽略'
     })
     form.value = { ...draft, tagInput: '' }
-    ElMessage.success('已恢复草稿')
+    notify.success('已恢复草稿')
   } catch {
     clearDraft(draftKey.value)
   }
@@ -301,7 +302,7 @@ const aiSuggest = async () => {
   const title = form.value.title.trim()
   const desc = form.value.description.trim()
   if (!title && !desc) {
-    ElMessage.warning('请先填写标题或问题描述，AI 才能分析')
+    notify.warning('请先填写标题或问题描述，AI 才能分析')
     return
   }
 
@@ -328,25 +329,25 @@ const aiSuggest = async () => {
     }, aiAbort)
 
     if (streamError && !raw.trim()) {
-      ElMessage.error(`AI 分析失败：${streamError}`)
+      notify.error(`AI 分析失败：${streamError}`)
       return
     }
     const parsed = extractSuggestionJson(raw)
     if (!parsed) {
-      ElMessage.warning('AI 未能给出可用的分类建议，请手动选择')
+      notify.warning('AI 未能给出可用的分类建议，请手动选择')
       return
     }
     if (applySuggestion(parsed)) {
-      ElMessage.success('AI 已根据描述推荐分类、优先级和标签，请确认后提交')
+      notify.success('AI 已根据描述推荐分类、优先级和标签，请确认后提交')
     } else {
-      ElMessage.info('AI 分析完成，但未产生可采纳的建议')
+      notify.info('AI 分析完成，但未产生可采纳的建议')
     }
   } catch (error: unknown) {
     if (isAbortLike(error) || aiAbort?.signal.aborted) {
       // 用户关闭弹窗或主动中断，静默处理
     } else {
       console.error('[TicketFormDialog] AI 分类失败', error)
-      ElMessage.error('AI 分析失败，请稍后重试或手动选择分类')
+      notify.error('AI 分析失败，请稍后重试或手动选择分类')
     }
   } finally {
     aiLoading.value = false
@@ -372,7 +373,7 @@ const submit = async () => {
   if (submitting.value) return
   const err = validate()
   if (err) {
-    ElMessage.warning(err)
+    notify.warning(err)
     return
   }
 
@@ -395,7 +396,7 @@ const submit = async () => {
         // 附件由详情页的专用接口管理
       })
       const updated = store.getById(props.ticket.id)!
-      ElMessage.success(`工单 ${updated.id} 已更新`)
+      notify.success(`工单 ${updated.id} 已更新`)
       emit('submit', updated)
     } else {
       // 创建走后端，工单号由后端生成（Redis INCR 保证并发安全）
@@ -423,16 +424,15 @@ const submit = async () => {
       const submittedTags = form.value.tags.length
       const savedTags = (local?.tags ?? created.tags ?? []).length
       if (submittedTags > 0 && savedTags === 0) {
-        ElMessage.warning({
-          message: `工单 ${created.id} 已创建，但 ${submittedTags} 个标签保存失败，请在详情页重新添加`,
-          duration: 6000,
-          showClose: true
-        })
+        notify.warning(
+          `工单 ${created.id} 已创建，但 ${submittedTags} 个标签保存失败，请在详情页重新添加`,
+          { duration: 6000, showClose: true }
+        )
       } else if (savedTags < submittedTags) {
         // 后端会归一化（去空/去重/截断/限量 20），少于提交数属正常
-        ElMessage.success(`工单 ${created.id} 已创建（标签去重后保留 ${savedTags} 个）`)
+        notify.success(`工单 ${created.id} 已创建（标签去重后保留 ${savedTags} 个）`)
       } else {
-        ElMessage.success(`工单 ${created.id} 已创建`)
+        notify.success(`工单 ${created.id} 已创建`)
       }
       emit('submit', local ?? created)
     }

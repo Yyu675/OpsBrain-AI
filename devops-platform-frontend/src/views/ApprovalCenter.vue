@@ -7,8 +7,9 @@
  *
  * 对齐蓝图 §二：P0/P1 高危动作必须人工审查确认后才执行。
  */
+import { notify } from '@/utils/notify'
 import { ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { ShieldCheck, RefreshCw, Check, X, Clock, AlertTriangle } from 'lucide-vue-next'
 import {
   useApprovalListQuery,
@@ -96,9 +97,9 @@ const doApprove = async (row: ApprovalRequest) => {
     // 批准成功但执行失败必须如实区分（6.57 契约：人的决策已成事实，
     // 执行失败标 EXECUTE_FAILED 供人工介入，不能笼统报「已批准」）
     if (updated.status === 'EXECUTE_FAILED') {
-      ElMessage.warning(`已批准，但执行失败：${updated.executeResult || '未知原因'}`)
+      notify.warning(`已批准，但执行失败：${updated.executeResult || '未知原因'}`)
     } else {
-      ElMessage.success(`已批准并执行：${updated.executeResult || '成功'}`)
+      notify.success(`已批准并执行：${updated.executeResult || '成功'}`)
     }
     // 列表与导航栏待审角标由 mutation 的 invalidateQueries 一并刷新，
     // 不再需要手动 fetchList + emit('approval-decided')
@@ -127,7 +128,7 @@ const doReject = async (row: ApprovalRequest) => {
   actingId.value = row.id
   try {
     await rejectMutation.mutateAsync({ id: row.id, reason })
-    ElMessage.success('已驳回')
+    notify.success('已驳回')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   } finally {

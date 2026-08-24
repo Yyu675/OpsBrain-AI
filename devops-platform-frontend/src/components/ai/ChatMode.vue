@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
 import {
   Send, Bot, User, Loader, CheckCircle, AlertCircle, Wrench,
   Copy, RefreshCw, Square, Trash2, FileText, ChevronRight
@@ -68,12 +68,12 @@ const scrollToBottom = async () => {
 
 const clearChat = () => {
   if (chat.isStreaming) {
-    ElMessage.warning('AI 正在生成中，无法清空')
+    notify.warning('AI 正在生成中，无法清空')
     return
   }
   chat.clear()
   inputText.value = ''
-  ElMessage.success('已清空对话历史')
+  notify.success('已清空对话历史')
 }
 
 // ==================== 发送 / 停止 / 重新生成 ====================
@@ -125,7 +125,7 @@ const runStream = async (query: string) => {
                 if (ticketId) {
                   chat.mergeMetadata({ ticketId })
                   emit('ticket-created', ticketId)
-                  ElMessage.success({ message: `工单 ${ticketId} 创建成功！`, duration: 5000 })
+                  notify.success(`工单 ${ticketId} 创建成功！`, { duration: 5000 })
                 }
               } catch (e) {
                 console.error('解析工单结果失败:', e)
@@ -145,7 +145,7 @@ const runStream = async (query: string) => {
 
         onError: (data: SSEErrorEvent) => {
           chat.finishStreaming(`❌ ${data.message || '请求失败，请稍后重试'}`)
-          ElMessage.error(data.message || '请求失败，请稍后重试')
+          notify.error(data.message || '请求失败，请稍后重试')
         }
       },
       abortController,
@@ -160,7 +160,7 @@ const runStream = async (query: string) => {
       return
     }
     chat.finishStreaming(`❌ 连接失败：${errorMessage(error)}`)
-    ElMessage.error('连接失败，请检查网络或稍后重试')
+    notify.error('连接失败，请检查网络或稍后重试')
   } finally {
     abortController = null
   }
@@ -179,18 +179,18 @@ const sendMessage = async () => {
 const stopGeneration = () => {
   if (!chat.isStreaming || !abortController) return
   abortController.abort()
-  ElMessage.info('已停止生成')
+  notify.info('已停止生成')
 }
 
 /** 重新生成：删掉该条回答，用其原始提问重跑 */
 const regenerate = async (msg: ChatMessage) => {
   if (chat.isStreaming) {
-    ElMessage.warning('AI 正在生成中，请稍候')
+    notify.warning('AI 正在生成中，请稍候')
     return
   }
   const query = msg.metadata?.sourceQuery || chat.lastUserQuery
   if (!query) {
-    ElMessage.warning('找不到原始提问，无法重新生成')
+    notify.warning('找不到原始提问，无法重新生成')
     return
   }
   chat.removeMessage(msg.id)
@@ -200,8 +200,8 @@ const regenerate = async (msg: ChatMessage) => {
 /** 复制消息内容 */
 const copyMessage = async (content: string) => {
   const ok = await copyText(content)
-  if (ok) ElMessage.success('已复制到剪贴板')
-  else ElMessage.warning('复制失败，请手动选择文本')
+  if (ok) notify.success('已复制到剪贴板')
+  else notify.warning('复制失败，请手动选择文本')
 }
 
 // ==================== 输入交互 ====================

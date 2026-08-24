@@ -1,6 +1,7 @@
+import { notify } from '@/utils/notify'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { ElMessage } from 'element-plus'
+
 import 'element-plus/theme-chalk/base.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-message-box.css'
@@ -60,12 +61,7 @@ app.config.errorHandler = (err, _instance, info) => {
   const key = `errorHandler:${friendly.title}`
   if (!shouldShowError(key)) return
   try {
-    ElMessage.error({
-      message: `${friendly.title}：${friendly.detail}`,
-      duration: 5000,
-      grouping: true,
-      showClose: true
-    })
+    notify.error(`${friendly.title}：${friendly.detail}`, { duration: 5000, grouping: true, showClose: true })
   } catch { /* toast unavailable during boot */ }
 }
 
@@ -90,12 +86,7 @@ window.addEventListener('unhandledrejection', (e) => {
     const friendly = toFriendlyError(e.reason)
     const key = `unhandled:${friendly.title}`
     if (shouldShowError(key)) {
-      ElMessage.error({
-        message: `${friendly.title}：${friendly.detail}${friendly.hint ? `（${friendly.hint}）` : ''}`,
-        duration: 6000,
-        grouping: true,
-        showClose: true
-      })
+      notify.error(`${friendly.title}：${friendly.detail}${friendly.hint ? `（${friendly.hint}）` : ''}`, { duration: 6000, grouping: true, showClose: true })
     }
     e.preventDefault()
     return
@@ -105,12 +96,7 @@ window.addEventListener('unhandledrejection', (e) => {
   const msg = reasonStr || '未知错误'
   const key = `unhandled:${msg}`
   if (shouldShowError(key)) {
-    ElMessage.error({
-      message: `发生意外错误：${msg}`,
-      duration: 5000,
-      grouping: true,
-      showClose: true
-    })
+    notify.error(`发生意外错误：${msg}`, { duration: 5000, grouping: true, showClose: true })
   }
 })
 

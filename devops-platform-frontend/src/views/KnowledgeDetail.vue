@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   Share2,
   History,
@@ -31,7 +31,7 @@ import CollapseToggle from '@/components/common/CollapseToggle.vue'
 import RailButton from '@/components/common/RailButton.vue'
 import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -200,14 +200,14 @@ const fmtDateTime = (s?: string | null) => (s ? s.replace('T', ' ').slice(0, 16)
 const shareArticle = async () => {
   const url = window.location.href
   const ok = await copyText(url)
-  if (ok) ElMessage.success('文档链接已复制')
-  else ElMessage.warning('复制失败，请手动复制链接')
+  if (ok) notify.success('文档链接已复制')
+  else notify.warning('复制失败，请手动复制链接')
 }
 
 const openEdit = () => {
   if (!doc.value) return
   if (doc.value.status === 'DEPRECATED' || doc.value.status === 'ARCHIVED') {
-    ElMessage.warning('请先恢复文档再编辑')
+    notify.warning('请先恢复文档再编辑')
     return
   }
   router.push(`/knowledge/editor/${doc.value.id}`)
@@ -230,9 +230,9 @@ const publishDoc = async () => {
     actionLoading.value = 'publish'
     const result = await store.publishDoc(d.id)
     if (result.indexStatus === 'FAILED') {
-      ElMessage.warning('文档已发布，但向量化失败，请重试')
+      notify.warning('文档已发布，但向量化失败，请重试')
     } else {
-      ElMessage.success('已发布并完成向量化')
+      notify.success('已发布并完成向量化')
     }
     await load()
   } catch (e) {
@@ -250,9 +250,9 @@ const retryIndex = async () => {
     actionLoading.value = 'reindex'
     const result = await store.publishDoc(d.id)
     if (result.indexStatus === 'FAILED') {
-      ElMessage.error(`向量化仍失败：${result.indexError || '请查看服务日志'}`)
+      notify.error(`向量化仍失败：${result.indexError || '请查看服务日志'}`)
     } else {
-      ElMessage.success('向量化已恢复')
+      notify.success('向量化已恢复')
     }
     await load()
   } catch (e) {
@@ -346,7 +346,7 @@ const purgeDoc = async () => {
   try {
     actionLoading.value = 'purge'
     await store.purgeDoc(d.id, reason)
-    ElMessage.success('文档已彻底删除')
+    notify.success('文档已彻底删除')
     router.push('/knowledge')
   } catch (e) {
     handleServerError(e, { action: '物理删除' })
@@ -387,7 +387,7 @@ const rollbackVersion = async (version: number) => {
   restoringVersion.value = version
   try {
     await store.restoreVersion(d.id, version)
-    ElMessage.success(`已回滚到 v${version}`)
+    notify.success(`已回滚到 v${version}`)
     await Promise.all([load(), store.loadVersions(d.id)])
   } catch (e) {
     handleServerError(e, { action: '回滚版本' })

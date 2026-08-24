@@ -13,9 +13,10 @@
  * 处置时间线由已有字段派生（createTime/firstOccurredAt/lastOccurredAt/
  * acknowledgedAt/resolvedAt），不新增表——告警本就是单实体，无子表。
  */
+import { notify } from '@/utils/notify'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   Bell, CheckCircle, AlertTriangle, Clock, Loader2,
   RefreshCw, Hash, Server, Boxes, Radio, Ticket
@@ -72,7 +73,7 @@ const doAcknowledge = async () => {
   if (!cur || acting.value) return
   try {
     await ackMutation.mutateAsync(cur.id)
-    ElMessage.success('已确认告警')
+    notify.success('已确认告警')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   }
@@ -92,7 +93,7 @@ const doResolve = async () => {
   }
   try {
     await resolveMutation.mutateAsync(cur.id)
-    ElMessage.success('已标记恢复')
+    notify.success('已标记恢复')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   }

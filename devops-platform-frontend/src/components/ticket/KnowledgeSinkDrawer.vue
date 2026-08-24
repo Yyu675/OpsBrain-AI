@@ -16,8 +16,9 @@
  *   - 加载 / 失败 / 空三态严格区分（6.18 契约）
  *   - 发布成功后只发事件，刷新策略由父组件决定（6.17 契约）
  */
+import { notify } from '@/utils/notify'
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   BookPlus, RefreshCw, Square, Send, AlertCircle,
   CheckCircle, Loader, Sparkles
@@ -255,7 +256,7 @@ const loadSuggestions = async () => {
 /** 标签输入上限 20（对齐后端 MAX_TAGS_PER_DOC） */
 const onTagChange = (val: string[]) => {
   if (val.length > 20) {
-    ElMessage.warning('最多 20 个标签')
+    notify.warning('最多 20 个标签')
     formTags.value = val.slice(0, 20)
   }
 }
@@ -271,11 +272,11 @@ const canPublish = computed(() => {
 
 const handlePublish = async () => {
   if (!formTitle.value.trim()) {
-    ElMessage.warning('请填写文档标题')
+    notify.warning('请填写文档标题')
     return
   }
   if (!formContent.value.trim()) {
-    ElMessage.warning('文档正文不能为空')
+    notify.warning('文档正文不能为空')
     return
   }
 
@@ -297,7 +298,7 @@ const handlePublish = async () => {
 
     // 近似重复告警（不阻断）
     if (result.nearDuplicates?.length) {
-      ElMessage.warning(
+      notify.warning(
         `检测到 ${result.nearDuplicates.length} 篇近似文档，已发布但仍建议复核去重`
       )
     }
@@ -314,7 +315,7 @@ const handlePublish = async () => {
     } else if (indexStatus === 'SKIPPED') {
       msg += '，未建立索引'
     }
-    ElMessage.success({ message: msg, duration: 6000 })
+    notify.success(msg, { duration: 6000 })
 
     emit('published', result.id, formTitle.value.trim())
     closeDrawer()
@@ -344,7 +345,7 @@ const handlePublish = async () => {
       }
     } else {
       const err = error as Error
-      ElMessage.error(err?.message || '发布失败，请稍后重试')
+      notify.error(err?.message || '发布失败，请稍后重试')
     }
   } finally {
     publishing.value = false

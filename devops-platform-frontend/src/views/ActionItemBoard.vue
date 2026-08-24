@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import {
   ClipboardList, Filter, AlertCircle, CheckCircle2,
   ArrowRight, Loader2, CalendarClock
 } from 'lucide-vue-next'
 import { listActionItems, updateActionItem, type ActionItemData } from '@/api/tickets'
 import { useTicketsStore } from '@/stores/tickets'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 defineOptions({ name: 'ActionItemBoard' })
 
@@ -102,7 +102,7 @@ const doUpdateStatus = async (item: ActionItemData, status: string) => {
   try {
     const updated = await updateActionItem(item.id!, status)
     items.value = items.value.map(i => (i.id === item.id ? updated : i))
-    ElMessage.success(`已更新为「${STATUS_LABELS[status] || status}」`)
+    notify.success(`已更新为「${STATUS_LABELS[status] || status}」`)
   } catch (e) {
     handleServerError(e, { action: '更新改进项' })
   }

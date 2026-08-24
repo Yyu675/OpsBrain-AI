@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   Search, Plus, Layers, Server, Network, Database, Boxes, ShieldCheck,
   GitBranch, Folder, Clock, RefreshCw, List, LayoutGrid,
@@ -27,7 +27,7 @@ import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 import CollapseToggle from '@/components/common/CollapseToggle.vue'
 import RailButton from '@/components/common/RailButton.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 const router = useRouter()
 const route = useRoute()
@@ -115,7 +115,7 @@ const createTag = async () => {
     await createKnowledgeTag({ name })
     newTagName.value = ''
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已创建')
+    notify.success('标签已创建')
   } catch (error) {
     handleServerError(error, { action: '创建标签' })
   }
@@ -130,7 +130,7 @@ const renameTag = async (tag: KnowledgeTag) => {
     })
     await updateKnowledgeTag(tag.id, { name: value.trim(), description: tag.description || undefined, color: tag.color || undefined })
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已重命名')
+    notify.success('标签已重命名')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '重命名标签' })
@@ -145,12 +145,12 @@ const mergeTag = async (tag: KnowledgeTag) => {
     })
     const target = managedTags.value.find(item => item.name.toLocaleLowerCase() === value.trim().toLocaleLowerCase())
     if (!target || target.id === tag.id) {
-      ElMessage.warning('未找到可合并的目标标签')
+      notify.warning('未找到可合并的目标标签')
       return
     }
     await mergeKnowledgeTag(tag.id, target.id)
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已合并')
+    notify.success('标签已合并')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '合并标签' })
@@ -166,7 +166,7 @@ const removeTag = async (tag: KnowledgeTag) => {
       })
       const replacement = managedTags.value.find(item => item.name.toLocaleLowerCase() === value.trim().toLocaleLowerCase())
       if (!replacement || replacement.id === tag.id) {
-        ElMessage.warning('未找到可替换的标签')
+        notify.warning('未找到可替换的标签')
         return
       }
       await deleteKnowledgeTag(tag.id, replacement.id)
@@ -177,7 +177,7 @@ const removeTag = async (tag: KnowledgeTag) => {
       await deleteKnowledgeTag(tag.id)
     }
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已删除')
+    notify.success('标签已删除')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '删除标签' })
@@ -238,7 +238,7 @@ const clearFilters = () => {
   appliedQuery.value = ''
   if (activeSort.value === 'RELEVANCE') activeSort.value = 'UPDATED_DESC'
   reload()
-  ElMessage.success('已清除筛选')
+  notify.success('已清除筛选')
 }
 
 const retrySidebarData = () => Promise.all([store.loadCategories(), store.loadHotTags()])
