@@ -94,6 +94,19 @@ const visibleReplies = computed(() =>
 )
 
 /**
+ * 头像首字母。
+ *
+ * `reply.author` 在后端 DTO 里是 `string | null`（系统生成的记录可能无作者），
+ * 而模板此前直接写 `reply.author.charAt(0)` —— 一条 author 为 null 的回复
+ * 会让**整条时间线渲染崩溃**，用户看到的是空白页而不是少一个头像。
+ * Vue 的渲染错误不会被 try/catch 兜住，影响面远超这一个字符。
+ */
+const initialOf = (name?: string | null): string => {
+  const trimmed = (name ?? '').trim()
+  return trimmed ? trimmed.charAt(0) : '?'
+}
+
+/**
  * 载入分析：优先用存档，没有才调付费 LLM
  *
  * 此前是无条件 runAnalysis()——每次打开/刷新工单详情都调一次 DeepSeek，
@@ -1189,7 +1202,7 @@ watch(ticketId, () => {
                     </div>
                   </div>
                   <div class="timeline-track">
-                    <div class="track-avatar" :style="{ background: reply.authorColor || '#6366F1' }">{{ reply.author.charAt(0) }}</div>
+                    <div class="track-avatar" :style="{ background: reply.authorColor || '#6366F1' }">{{ initialOf(reply.author) }}</div>
                     <div class="track-line"></div>
                   </div>
                 </template>
@@ -1197,7 +1210,7 @@ watch(ticketId, () => {
                 <!-- Agent message (left-aligned) -->
                 <template v-else>
                   <div class="timeline-track">
-                    <div class="track-avatar track-avatar-primary">{{ reply.author.charAt(0) }}</div>
+                    <div class="track-avatar track-avatar-primary">{{ initialOf(reply.author) }}</div>
                     <div class="track-line"></div>
                   </div>
                   <div class="timeline-body">
