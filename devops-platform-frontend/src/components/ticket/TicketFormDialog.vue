@@ -355,11 +355,28 @@ const aiSuggest = async () => {
   }
 }
 
+/**
+ * 字段长度上限，与**后端 @Size 及数据库列定义**对齐。
+ *
+ * 此前前端写死 title=120 / description=1000，比后端（255 / 20000）严得多，
+ * 且用的是 maxlength 静默截断。两侧不一致的代价：
+ * 用户明明可以写的内容被前端偷偷砍掉，且完全没有提示。
+ *
+ * 改这两个值时必须同步 TicketController.CreateTicketRequest 的 @Size。
+ */
+const TITLE_MAX = 255
+const DESC_MAX = 20000
+
 const validate = (): string | null => {
   if (!form.value.title.trim()) return '请填写工单标题'
   if (form.value.title.trim().length < 5) return '标题至少 5 个字符'
+  if (form.value.title.length > TITLE_MAX) return `标题不能超过 ${TITLE_MAX} 字`
   if (!form.value.description.trim()) return '请填写问题描述'
   if (form.value.description.trim().length < 10) return '描述至少 10 个字符，便于处理'
+  // 超长在提交前拦下并说明，而不是让后端返回一个用户看不懂的 40001
+  if (form.value.description.length > DESC_MAX) {
+    return `问题描述超出 ${DESC_MAX} 字上限（当前 ${form.value.description.length} 字），请精简或改用附件`
+  }
   if (!form.value.service) return '请选择关联服务'
   if (!form.value.category) return '请选择工单分类'
   return null
@@ -487,8 +504,11 @@ const submit = async () => {
                 type="text"
                 class="form-input"
                 placeholder="请简要描述问题，例如：生产环境 Redis 主从复制延迟"
-                maxlength="120"
+                :maxlength="TITLE_MAX"
               />
+              <div class="char-hint" :class="{ 'is-warn': form.title.length > TITLE_MAX * 0.9 }">
+                {{ form.title.length }} / {{ TITLE_MAX }}
+              </div>
             </div>
 
             <!-- 问题描述 + AI 建议 -->
@@ -501,14 +521,28 @@ const submit = async () => {
                   {{ aiLoading ? 'AI 分析中…' : 'AI 自动分类' }}
                 </button>
               </div>
+              <!--
+                描述框刻意**不设 maxlength**。
+
+                maxlength 是静默截断：运维粘贴一段 3000 字的堆栈或日志时，
+                浏览器只保留前 1000 字且不给任何提示，用户以为贴全了。
+                编辑态更糟——打开一张描述超长的老工单再保存，
+                超出部分会被永久截掉，属于静默数据丢失。
+
+                改为软上限：超出时显示红色计数 + 提交前拦截并说明，
+                让用户自己决定是精简还是改用附件。
+                上限 20000 对齐后端 @Size(max = 20000) 与 DB 的 TEXT 类型。
+              -->
               <textarea
                 v-model="form.description"
                 class="form-textarea"
                 rows="4"
                 placeholder="请详细描述：现象、影响范围、发生时间、已排查步骤等"
-                maxlength="1000"
               ></textarea>
-              <div class="char-hint">{{ form.description.length }} / 1000</div>
+              <div class="char-hint" :class="{ 'is-over': form.description.length > DESC_MAX }">
+                {{ form.description.length }} / {{ DESC_MAX }}
+                <span v-if="form.description.length > DESC_MAX">（已超出，请精简或改用附件）</span>
+              </div>
             </div>
 
             <!-- 优先级 -->
@@ -851,6 +885,17 @@ const submit = async () => {
   align-self: flex-end;
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
+
+  /* 接近上限：预警但不阻断 */
+  &.is-warn {
+    color: var(--state-warning, var(--warning));
+  }
+
+  /* 已超出：必须显眼——这是提交会被拦下的原因 */
+  &.is-over {
+    color: var(--state-error, var(--danger));
+    font-weight: var(--weight-medium, 500);
+  }
 }
 
 .priority-list {
