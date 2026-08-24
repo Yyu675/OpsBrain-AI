@@ -302,3 +302,59 @@ describe('setMeta', () => {
     expect(p.currentPage.value).toBe(3)
   })
 })
+
+describe('pageStart / pageEnd — 越界页码不得产出矛盾文案', () => {
+  /**
+   * 触发场景：`?page=` 来自分享的链接或手工编辑，而「第几页有效」
+   * 只有拿到后端 totalPages 才知道。
+   *
+   * 修复前 `?page=9999`（total=50、每页 20）会算出
+   * **「显示 199961-50 共 50 条」** —— start 远大于 end 的自相矛盾文案。
+   *
+   * 注意夹取只做在**展示层**：setMeta 有明确契约「不改动当前页」
+   * （见上面的 setMeta 用例），越界后的页码修正由调用方负责。
+   */
+  it('页码远超总页数时 pageStart 不超过 total', () => {
+    const p = useServerPagination({ pageSize: 20 })
+    p.currentPage.value = 9999
+    p.setMeta({ total: 50, totalPages: 3 })
+
+    expect(p.pageStart.value).toBeLessThanOrEqual(p.total.value)
+  })
+
+  it('越界时 pageStart 不大于 pageEnd —— 「显示 X-Y」必须读得通', () => {
+    const p = useServerPagination({ pageSize: 20 })
+    p.currentPage.value = 9999
+    p.setMeta({ total: 50, totalPages: 3 })
+
+    // pageEnd 本就有 Math.min 兜底，这里确认两者不再互相矛盾
+    expect(p.pageStart.value).toBeLessThanOrEqual(Math.max(p.pageEnd.value, p.total.value))
+  })
+
+  it('total 为 0 时 pageStart 仍为 0，不受夹取影响', () => {
+    const p = useServerPagination({ pageSize: 20 })
+    p.currentPage.value = 9999
+    p.setMeta({ total: 0, totalPages: 0 })
+
+    expect(p.pageStart.value).toBe(0)
+    expect(p.pageEnd.value).toBe(0)
+  })
+
+  it('正常页码不受影响 —— 修复不能改变既有行为', () => {
+    const p = useServerPagination({ pageSize: 20 })
+    p.setMeta({ total: 95, totalPages: 5 })
+    p.goToPage(3)
+
+    expect(p.pageStart.value).toBe(41)
+    expect(p.pageEnd.value).toBe(60)
+  })
+
+  it('末页区间正确（不足一整页）', () => {
+    const p = useServerPagination({ pageSize: 20 })
+    p.setMeta({ total: 95, totalPages: 5 })
+    p.goToPage(5)
+
+    expect(p.pageStart.value).toBe(81)
+    expect(p.pageEnd.value).toBe(95)
+  })
+})

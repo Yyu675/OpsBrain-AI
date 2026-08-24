@@ -221,6 +221,28 @@ const demoMode = import.meta.env.DEV
 /** 请求序号防竞态：快速切 Tab 时先发的慢响应不得覆盖后发的 */
 let requestSeq = 0
 
+/**
+ * URL 里的页码越界时，夹回末页并重拉一次。
+ *
+ * 为什么放在页面而不是 useServerPagination：那里有明确契约
+ * 「setMeta 不改动当前页 —— 翻页与元信息更新是两件事」，
+ * 并有测试守着。在 setMeta 里偷偷改页码会破坏这条契约
+ * （我第一版就是这么写的，直接挂了两条既有用例）。
+ *
+ * 越界从哪来：`?page=` 出自分享的链接或手工编辑，而「第几页有效」
+ * 只有拿到后端 totalPages 才知道。不处理的话 `?page=9999` 会停在
+ * 一个空白页，页码按钮还全部失效（当前页不在窗口内），用户被困住。
+ *
+ * @returns true 表示已触发重拉，调用方应立即返回避免重复处理
+ */
+const retryIfPageOutOfRange = async (totalPagesFromServer: number, rowCountNow: number) => {
+  const maxPage = Math.max(1, totalPagesFromServer)
+  if (currentPage.value <= maxPage || rowCountNow > 0) return false
+  currentPage.value = maxPage
+  await load()
+  return true
+}
+
 const load = async () => {
   const seq = ++requestSeq
   loading.value = true
@@ -257,6 +279,7 @@ const load = async () => {
       aiCalls.value = res.items
       stats.value = res.stats
       pagination.setMeta({ total: res.total, totalPages: res.totalPages })
+      if (await retryIfPageOutOfRange(res.totalPages, res.items.length)) return
     } else {
       const res = await fetchOperationAudit({
         actorId: actorId.value || undefined,
@@ -271,6 +294,7 @@ const load = async () => {
       if (seq !== requestSeq) return
       operations.value = res.items
       pagination.setMeta({ total: res.total, totalPages: res.totalPages })
+      if (await retryIfPageOutOfRange(res.totalPages, res.items.length)) return
     }
   } catch (e) {
     if (seq !== requestSeq) return
@@ -303,8 +327,33 @@ const goToPage = async (p: number) => {
   if (pagination.goToPage(p)) await load()
 }
 
-// 切 Tab 时重置分页并重新拉取——两个 Tab 的数据源与筛选维度完全不同
-watch(activeTab, async () => {
+/**
+ * 切 Tab：清掉**上一个 Tab 专属**的筛选，再重置分页重新拉取。
+ *
+ * 为什么必须清：两个 Tab 的筛选维度完全不同，而它们共用同一批 ref。
+ * 原实现只 resetPage：在 AI 调用页筛了 `model=qwen-max` 后切到操作审计，
+ * modelName 仍是 'qwen-max' 且会被 load() 拼进请求——
+ * 但操作审计的筛选栏根本没有「模型」这个控件，hasFilters 也算不上它，
+ * 于是「清除筛选」按钮不显示。
+ *
+ * 结果是用户看到一份被悄悄过滤过的列表，界面上却没有任何筛选生效的迹象，
+ * 而且无从清除。这类「隐形筛选」比报错更难排查——数据少了但没人知道为什么。
+ *
+ * 时间范围（dateFrom/dateTo）是两个 Tab 共有的语义，刻意保留：
+ * 用户查「今天」的 AI 调用后切去看「今天」的操作审计，是合理预期。
+ */
+watch(activeTab, async (tab) => {
+  if (tab === 'operations') {
+    modelName.value = ''
+    operationType.value = ''
+    cachedFilter.value = ''
+    minLatency.value = ''
+  } else {
+    actorId.value = ''
+    actionPrefix.value = ''
+    targetType.value = ''
+    successFilter.value = ''
+  }
   pagination.resetPage()
   await load()
 })

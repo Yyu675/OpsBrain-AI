@@ -156,9 +156,16 @@ function buildPagination(ctx: {
     return pages
   })
 
-  const pageStart = computed(() =>
-    total.value === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1
-  )
+  /*
+   * 区间文案的兜底：即便页码因某种路径仍然越界，也不产出
+   * 「显示 199961-50」这种 start > end 的矛盾文案。
+   * 与 setMeta 的夹取是两道独立防线——文案是用户直接看到的东西，
+   * 值得多一层保护。
+   */
+  const pageStart = computed(() => {
+    if (total.value === 0) return 0
+    return Math.min((currentPage.value - 1) * pageSize.value + 1, total.value)
+  })
   const pageEnd = computed(() =>
     Math.min(currentPage.value * pageSize.value, total.value)
   )
