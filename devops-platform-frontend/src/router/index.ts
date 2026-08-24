@@ -113,8 +113,16 @@ const router = createRouter({
       meta: { title: '告警事件详情', stage: 'L2', hiddenFromNavigation: true, description: '呈现单个告警的时间线、影响范围、证据与处置上下文。', capabilities: ['事件时间线', '指标与日志证据', '影响范围', '处置记录'] }
     },
     {
-      path: '/integrations', name: 'integrations', component: lazy(() => import('../views/FutureCapability.vue'), 'Integrations', 'dashboard'),
-      meta: { title: '接入管理', stage: 'L2', hiddenFromNavigation: true, description: '集中管理监控、容器与云平台数据源的连接和健康状态。', capabilities: ['Prometheus 接入', 'Kubernetes 集群', '云平台账号', '连接健康检查'] }
+      // 占位页已替换为真实实现（L2 阶段 B）。
+      // 它是「实时监控 / 趋势分析」两页的出口：那两页依赖 Prometheus，
+      // 数据源没配好时用户需要一个地方看「到底哪没通」，故先于那两页落地。
+      path: '/integrations', name: 'integrations',
+      component: lazy(() => import('../views/Integrations.vue'), 'Integrations', 'list'),
+      meta: {
+        title: '接入管理', stage: 'L2',
+        description: '查看监控数据源的连接与健康状态，不通时给出排查路径。',
+        capabilities: ['Prometheus 连接', '健康探测', '延迟观测', '可查询指标目录']
+      }
     },
     {
       path: '/approvals', name: 'approvals', component: lazy(() => import('../views/ApprovalCenter.vue'), 'ApprovalCenter', 'dashboard'),
