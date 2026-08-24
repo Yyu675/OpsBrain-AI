@@ -82,12 +82,11 @@ public class KnowledgeCategoryController {
     @PutMapping("/documents/{docId}")
     public ApiResponse<Object> moveDocument(
             @PathVariable Long docId, @RequestBody MoveDocumentRequest request) {
+        // 不再自己 catch：异常统一由 GlobalExceptionHandler 映射
+        // （OptimisticLockException -> 40009、IllegalArgument/State -> 40001/40004）。
+        // 这正是 F2 重构的目的；此前那次改动删了 try 却漏删 catch 链，
+        // 留下了无法编译的孤儿 catch。
         service.moveDocument(docId, request.categoryId(), request.version());
-        return ApiResponse.success(Map.of("id", docId, "moved", true)); catch (IllegalArgumentException | IllegalStateException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("移动知识文档失败 | docId={}", docId, e);
-            return ApiResponse.error(50001, "移动文档失败: " + e.getMessage());
-        }
+        return ApiResponse.success(Map.of("id", docId, "moved", true));
     }
 }

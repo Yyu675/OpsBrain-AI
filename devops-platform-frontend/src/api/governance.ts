@@ -229,10 +229,11 @@ export async function fetchActionFilterOptions(): Promise<ActionFilterOptions> {
   return unwrapBiz<ActionFilterOptions>(payload, '获取筛选选项失败')
 }
 
-export async function fetchActionDetail(id: number): Promise<ActionAllowlistEntry> {
-  const payload = await http.get<unknown>(`${API_BASE}/governance/actions/${id}`)
-  return unwrapBiz<ActionAllowlistEntry>(payload, '获取动作详情失败')
-}
+// 说明：不提供 fetchActionDetail。
+// 列表接口已下发条目全部字段（含服务端算好的 effective* 生效值），
+// 编辑时直接用列表里的行即可，再查一次详情既多一次往返，
+// 也会引入「列表数据与详情数据不一致」的窗口。
+// 后端 GET /governance/actions/{id} 仍保留——供排障与将来的深链使用。
 
 export async function createAction(payload: ActionPayload): Promise<ActionAllowlistEntry> {
   const res = await http.post<unknown>(`${API_BASE}/governance/actions`, payload)

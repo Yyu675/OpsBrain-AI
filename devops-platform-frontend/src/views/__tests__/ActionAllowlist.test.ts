@@ -21,7 +21,6 @@ const api = vi.hoisted(() => ({
   fetchActions: vi.fn(),
   fetchActionStats: vi.fn(),
   fetchActionFilterOptions: vi.fn(),
-  fetchActionDetail: vi.fn(),
   createAction: vi.fn(),
   updateAction: vi.fn(),
   toggleAction: vi.fn(),
