@@ -221,18 +221,42 @@ npm run knip                       # 死代码/死依赖检测
 
 ---
 
-## 附录：待修缺陷登记（2026-08-24 审查）
+## 附录：缺陷登记与修复进度（2026-08-24）
 
-改到相关文件时请一并处理，详情见 `docs/08-benchmark/02-技术债审查与推进路线规划.md`。
+详情见 `docs/08-benchmark/02-技术债审查与推进路线规划.md`。
 
-| 级别 | 缺陷 | 位置 |
+### 已修复（阶段 A/B）
+
+| 级别 | 缺陷 | 修复方式 |
 | :-- | :-- | :-- |
-| P0 | `InMemoryChatMemoryStore` 无驱逐路径，会持续泄漏内存 | `AgentEngineConfig.java:96` |
-| P0 | SSE 超时 60s < reasoner 模型 120s，复杂推理必然超时 | `DevOpsChatController.java:109` / `AiModelConfig.java:100` |
-| P0 | `CostQuotaManager` 配额为单机内存态，重启清零且多实例失效 | `CostQuotaManager.java` |
-| P1 | 知识库无可见性字段，检索层无权限过滤 | `KnowledgeDoc.java` / `HybridRetrieverService.java` |
-| P1 | 语义缓存 key 不含权限维度，存在跨用户泄漏路径 | `SemanticCacheService.java:391` |
-| P1 | `@Transactional` 写在 Controller 层（分层破窗） | `KnowledgeTagController.java:45,58,68` |
-| P1 | `mvnw` / `mvnw.cmd` 未提交，仓库无法开箱构建 | 仓库根 |
-| P2 | 两套 traceId 生成逻辑并存（8 位 vs 32 位），且均未接 MDC | `ApiResponse.java` / `DevOpsChatController.java` |
-| P2 | 6 处自建线程池散落各层，无统一管理与监控 | 见审查报告 §2 P2-2 |
+| P0 | `InMemoryChatMemoryStore` 无驱逐路径，持续泄漏至 OOM | 新增 `TtlChatMemoryStore`（TTL + LRU 兜底） |
+| P0 | SSE 60s 超时 < reasoner 模型 120s，复杂推理必然超时 | 超时配置化并对齐层级，加 15s 心跳帧 |
+| P0 | `CostQuotaManager` 单机内存态，重启清零、多实例失效 | 迁至 Redis（日期分区 key + TTL 自然日重置） |
+| P0 | traceId 每次现算、未接 MDC，日志无法关联 | `TraceContext` 改 MDC 承载 + `TraceIdFilter` |
+| P1 | `mvnw`/`mvnw.cmd` 未提交，仓库无法开箱构建 | 补齐 3.3.4 wrapper + `.gitattributes` |
+| P1 | 告警 webhook 免鉴权且无限流 | `WebhookGuard`（共享密钥 + 滑动窗口限流） |
+| P1 | 生产 CORS `*` + allowCredentials | 改 `CORS_ALLOWED_ORIGINS` 白名单 |
+| P2 | 元→分用 `(long)(x*100)` 截断，成本系统性低估 | 改 `Math.round` |
+| P2 | 5 处日志用 `{:.1%}` 格式符，SLF4J 不支持，告警从未生效 | 改标准 `{}` 占位（`CostQuotaManager` 已改） |
+| — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
+
+### 待修复
+
+| 级别 | 缺陷 | 位置 | 计划 |
+| :-- | :-- | :-- | :-- |
+| P1 | 知识库无可见性字段，检索层无权限过滤（任意登录用户可检索全部内容，且能经 AI 对话间接套出） | `KnowledgeDoc.java` / `HybridRetrieverService.java` | 阶段 C |
+| P1 | 语义缓存 key 不含权限维度，加权限后会成为绕过通道 | `SemanticCacheService.java:391` | 阶段 C |
+| P1 | `@Transactional` 写在 Controller 层（分层破窗） | `KnowledgeTagController.java:45,58,68` | 阶段 C |
+| P2 | 6 处自建线程池散落各层，无界队列、无监控、无统一优雅停机 | 审查报告 §2 P2-2 | 阶段 C |
+| P2 | 4 处日志仍用 `{:.1%}` 格式符 | `ToolRuntimeManager:481`、`KnowledgeContentCleaner:125`、`KnowledgeDocService:164,602` | 顺手修 |
+| P2 | 后端无 Controller 层测试，93 个端点无契约保护 | `src/test/` | 阶段 C |
+| P2 | 前端 knip 存量：23 未用导出 + 53 未用类型 | 前端 | 阶段 D |
+| P2 | 构建产物 `vendor` chunk 达 2.9MB，`manualChunks` 兜底分块未生效 | `vite.config.ts` | 阶段 D |
+| P2 | 两套富文本编辑器并存（wangEditor + md-editor-v3） | `package.json` | 阶段 D |
+
+### ⚠️ 本轮后端改动尚未编译验证
+
+开发沙箱内无 JDK 且 Maven Central 不可达，后端改动仅经过静态校验
+（结构、导入、依赖签名对照上游源码）与算法等价验证。
+**首次 CI 运行是它们的第一次真实编译**，需留意编译错误。
+前端改动已在本地实跑验证（typecheck / lint / 563 tests / build 全通过）。

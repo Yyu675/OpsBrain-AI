@@ -161,7 +161,8 @@ public class KnowledgeDocService {
                 log.debug("🧹 [KnowledgeDoc] 更新内容已清洗 | docId={} | 清洗后长度={}", docId, cr.content().length());
             }
             if (cr.dupeWarning() != null) {
-                log.warn("⚠️ [KnowledgeDoc] 更新内容含重复段落（仅告警）| docId={} | 占比={:.1%}", docId, cr.dupeWarning().ratio());
+                log.warn("⚠️ [KnowledgeDoc] 更新内容含重复段落（仅告警）| docId={} | 占比={}%",
+                        docId, String.format("%.1f", cr.dupeWarning().ratio() * 100));
             }
             newContent = cr.content();
         }
@@ -599,8 +600,9 @@ public class KnowledgeDocService {
                     doc.getId(), doc.getTitle(), cr.content().length());
         }
         if (cr.dupeWarning() != null) {
-            log.warn("⚠️ [KnowledgeDoc] 内容含重复段落（仅告警）| id={} | title={} | 占比={:.1%}",
-                    doc.getId(), doc.getTitle(), cr.dupeWarning().ratio());
+            log.warn("⚠️ [KnowledgeDoc] 内容含重复段落（仅告警）| id={} | title={} | 占比={}%",
+                    doc.getId(), doc.getTitle(),
+                    String.format("%.1f", cr.dupeWarning().ratio() * 100));
         }
     }
 

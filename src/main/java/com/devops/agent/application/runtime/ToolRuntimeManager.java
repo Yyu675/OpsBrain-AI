@@ -478,8 +478,11 @@ public class ToolRuntimeManager {
             // 失败率 > 50% 且至少 5 次调用，开启熔断
             if (totalCalls >= 5 && (double) failedCalls / totalCalls > 0.5) {
                 open = true;
-                log.warn("🔴 [CircuitBreaker] 熔断器开启 | total={} | failed={} | rate={:.2f}%",
-                        totalCalls, failedCalls, (double) failedCalls / totalCalls * 100);
+                // SLF4J 只认 {}，不支持 {:.2f} 之类格式说明符——原写法会原样打印占位符
+                // 且参数错位，等于熔断告警从未生效。数值格式化必须在参数侧完成。
+                log.warn("🔴 [CircuitBreaker] 熔断器开启 | total={} | failed={} | rate={}%",
+                        totalCalls, failedCalls,
+                        String.format("%.2f", (double) failedCalls / totalCalls * 100));
             }
         }
 
