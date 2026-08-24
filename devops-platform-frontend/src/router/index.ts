@@ -125,12 +125,26 @@ const router = createRouter({
       meta: { title: '自动化策略', stage: 'L3', hiddenFromNavigation: true, description: '配置告警到动作的匹配条件、审批要求与执行边界。', capabilities: ['触发条件', '动作编排', '审批规则', '生效范围'] }
     },
     {
-      path: '/automation/action-allowlist', name: 'action-allowlist', component: lazy(() => import('../views/FutureCapability.vue'), 'ActionAllowlist', 'dashboard'),
-      meta: { title: '动作白名单', stage: 'L3', hiddenFromNavigation: true, description: '维护自动化引擎允许调用的动作及参数约束。', capabilities: ['动作注册', '参数约束', '环境范围', '版本管理'] }
+      // 占位页已替换为真实实现（L3 配置层，migration_v26）。
+      // roles: admin —— 这里配置的是「AI 能不能自动动生产系统」的边界，
+      // 后端 AutomationGovernanceController 有 @SaCheckRole("ADMIN") 兜底，
+      // 此处只是提前拦截改善体验。
+      path: '/automation/action-allowlist', name: 'action-allowlist',
+      component: lazy(() => import('../views/ActionAllowlist.vue'), 'ActionAllowlist', 'list'),
+      meta: {
+        title: '动作白名单', stage: 'L3', roles: ['admin'],
+        description: '自动化引擎允许调用的动作清单。未登记的动作一律不允许自动执行。',
+        capabilities: ['动作注册', '参数约束', '环境范围', '模拟校验']
+      }
     },
     {
-      path: '/automation/risk-levels', name: 'risk-levels', component: lazy(() => import('../views/FutureCapability.vue'), 'RiskLevels', 'dashboard'),
-      meta: { title: '风险等级配置', stage: 'L3', hiddenFromNavigation: true, description: '统一定义风险分级、审批门槛、执行限制和升级路径。', capabilities: ['风险矩阵', '审批门槛', '执行限制', '升级策略'] }
+      path: '/automation/risk-levels', name: 'risk-levels',
+      component: lazy(() => import('../views/RiskLevels.vue'), 'RiskLevels', 'dashboard'),
+      meta: {
+        title: '风险等级配置', stage: 'L3', roles: ['admin'],
+        description: '定义每个风险等级的审批门槛、执行限制与升级路径。',
+        capabilities: ['审批门槛', '爆炸半径控制', '升级策略', '生效环境']
+      }
     },
     {
       path: '/self-healing/tasks', name: 'healing-tasks', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingTasks', 'dashboard'),

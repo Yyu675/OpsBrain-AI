@@ -60,8 +60,20 @@ public class SchemaGuard {
         REQUIRED_COLUMNS.put("sys_user", List.of("dept"));
     }
 
-    /** v25：审计表。缺失只影响审计，不影响业务，故单列 */
-    private static final List<String> REQUIRED_TABLES = List.of("sys_operation_audit");
+    /**
+     * 需要整表存在的迁移产物。
+     *
+     * <ul>
+     *   <li>v25 {@code sys_operation_audit}：缺失只影响审计，不影响业务；</li>
+     *   <li>v26 {@code sys_risk_policy} / {@code sys_action_allowlist}：
+     *       缺失会让 L3 治理配置页整页报错。更要紧的是<b>缺表时不能默认放行</b>——
+     *       {@code AutomationGovernanceService.evaluate} 在读不到策略时返回拒绝，
+     *       所以漏迁移的表现是「所有自动化动作都被拒」，
+     *       这个方向是安全的，但用户会完全摸不着头脑，故必须在启动期就报出来。</li>
+     * </ul>
+     */
+    private static final List<String> REQUIRED_TABLES = List.of(
+            "sys_operation_audit", "sys_risk_policy", "sys_action_allowlist");
 
     @Value("${devops.schema.fail-fast:false}")
     private boolean failFast;

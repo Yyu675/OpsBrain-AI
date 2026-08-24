@@ -647,6 +647,173 @@ CREATE INDEX IF NOT EXISTS idx_approval_trace ON sys_approval_request (trace_id)
 CREATE INDEX IF NOT EXISTS idx_approval_pending_expire
     ON sys_approval_request (expires_at) WHERE status = 'PENDING';
 
+-- ---------------------------------------------------------------------
+-- Table 23: sys_operation_audit - 通用写操作审计（v25）
+-- ---------------------------------------------------------------------
+-- 补齐漂移：v25 迁移脚本已提交，但当时漏了同步到 init.sql，
+-- 导致「全新环境按 init.sql 建库」会缺这张表。
+-- 后果不显眼但要紧：审计写入失败已被 catch，业务照常，只是**悄悄没有审计记录**——
+-- 到 L3/L4 阶段这是合规问题，而且发现时往往已经需要查历史了。
+--
+-- action 用语言无关标识符（knowledge.doc.delete）而非中文描述：
+-- 中文会随文案调整而变，无法用于统计与告警规则。
+-- request_digest 只存摘要不存全文：审计表权限较宽，是最不该存敏感信息的地方。
+-- 不设外键到 sys_user：审计必须比用户活得久，否则删号即销毁证据。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_operation_audit (
+    id              BIGSERIAL PRIMARY KEY,
+    trace_id        VARCHAR(64),
+    actor_id        VARCHAR(64),                  -- SYSTEM 表示定时任务/AI 自动执行
+    actor_name      VARCHAR(64),
+    action          VARCHAR(64)  NOT NULL,        -- 语言无关标识，如 ticket.approve
+    target_type     VARCHAR(32),
+    target_id       VARCHAR(64),
+    http_method     VARCHAR(8),
+    http_path       VARCHAR(255),
+    status_code     INT,
+    success         BOOLEAN      NOT NULL DEFAULT TRUE,  -- HTTP 200 但 code!=0 仍算失败
+    biz_code        INT,
+    request_digest  VARCHAR(512),                 -- 脱敏 + 截断，禁止存全文
+    error_message   VARCHAR(512),
+    client_ip       VARCHAR(45),                  -- IPv6 最长 45 字符
+    user_agent      VARCHAR(255),
+    duration_ms     INT,
+    create_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_create_time ON sys_operation_audit (create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_actor_time  ON sys_operation_audit (actor_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_target      ON sys_operation_audit (target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_trace       ON sys_operation_audit (trace_id);
+-- 部分索引：失败是少数，索引体积远小于全表索引
+CREATE INDEX IF NOT EXISTS idx_audit_failures
+    ON sys_operation_audit (create_time DESC) WHERE success = FALSE;
+
+-- ---------------------------------------------------------------------
+-- Table 24: sys_risk_policy - 风险等级策略（v26，L3）
+-- ---------------------------------------------------------------------
+-- 四行固定记录，主键对应 ToolRiskLevel 枚举名。**不可增删只可改**：
+-- 等级由 Java 枚举定义，引擎只会产出这四个值之一；允许新建第五级，
+-- 它永远不会被命中——页面上看着有、实际是死配置，比没有更糟。
+--
+-- 存在的理由：这些约束此前散落在 @ToolMeta 注解与若干 if 里，
+-- 调整必须改代码 + 重新构建 + 重启。但安全边界的调整往往发生在故障当下
+-- （「先把自动重启关掉」），那时没人能等一次发布。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_risk_policy (
+    risk_level          VARCHAR(32)  PRIMARY KEY,  -- 对应 ToolRiskLevel 枚举名
+    display_name        VARCHAR(64)  NOT NULL,
+    description         VARCHAR(255),
+    approval_mode       VARCHAR(16)  NOT NULL DEFAULT 'SINGLE',  -- NONE/SINGLE/DUAL（四眼原则）
+    approval_timeout_minutes INT     NOT NULL DEFAULT 30,
+    auto_execute_allowed BOOLEAN     NOT NULL DEFAULT FALSE,
+    -- 爆炸半径双上限，取较小值：只配百分比会让大集群一次挂太多，
+    -- 只配绝对值又会让小集群过于保守
+    max_blast_radius_percent INT     NOT NULL DEFAULT 5,
+    max_blast_radius_count   INT     NOT NULL DEFAULT 1,
+    cooldown_seconds    INT          NOT NULL DEFAULT 60,   -- 蓝图 §三 的「等 60 秒校验心跳」
+    max_retries         INT          NOT NULL DEFAULT 0,
+    escalate_after_minutes   INT     NOT NULL DEFAULT 15,
+    escalate_target     VARCHAR(16)  NOT NULL DEFAULT 'TICKET',  -- NONE/TICKET/ONCALL
+    allowed_environments VARCHAR(128) NOT NULL DEFAULT 'dev',    -- 逗号分隔；空串=不允许任何环境
+    version             INT          NOT NULL DEFAULT 0,   -- 乐观锁，防安全策略被静默覆盖
+    updated_by          VARCHAR(64),
+    create_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 种子数据：默认刻意保守——新部署的系统应当「几乎什么都不自动做」，
+-- 由运维团队按自己的风险偏好逐步放开，而不是反过来。
+INSERT INTO sys_risk_policy (
+    risk_level, display_name, description,
+    approval_mode, approval_timeout_minutes,
+    auto_execute_allowed, max_blast_radius_percent, max_blast_radius_count,
+    cooldown_seconds, max_retries,
+    escalate_after_minutes, escalate_target, allowed_environments
+) VALUES
+    ('READ_ONLY', '只读查询', '无副作用，可安全重试降级',
+     'NONE', 30, TRUE, 100, 9999, 0, 3, 0, 'NONE', 'prod,staging,dev'),
+    ('DRAFT', '草稿生成', '不直接改状态，输出供人工审核',
+     'NONE', 30, TRUE, 100, 9999, 0, 2, 0, 'NONE', 'prod,staging,dev'),
+    ('CONTROLLED_WRITE', '受控写操作', '有副作用但可控，需幂等补偿',
+     'SINGLE', 30, FALSE, 20, 5, 60, 1, 15, 'TICKET', 'staging,dev'),
+    ('HIGH_RISK_EXECUTION', '高风险执行', '不可逆或难逆，必须审批人工确认',
+     'DUAL', 15, FALSE, 5, 1, 300, 0, 10, 'ONCALL', 'dev')
+ON CONFLICT (risk_level) DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- Table 25: sys_action_allowlist - 动作白名单（v26，L3）
+-- ---------------------------------------------------------------------
+-- **允许清单，不是禁止清单**：表里没有记录 = 不允许自动执行。
+-- 默认拒绝是安全配置的唯一正确默认值——漏配一条动作的后果应当是
+-- 「这个动作没自动跑」，而不是「它不受任何约束地跑了」。
+--
+-- 不建外键到 sys_risk_policy：引用完整性由 Service 层对着 Java 枚举校验，
+-- 比 DB 外键更严（DB 只能保证「策略表里有这行」，Service 能保证「枚举里有这个值」）。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_action_allowlist (
+    id                  BIGSERIAL    PRIMARY KEY,
+    action_key          VARCHAR(64)  NOT NULL,     -- 如 k8s.pod.restart，全局唯一
+    display_name        VARCHAR(64)  NOT NULL,
+    description         VARCHAR(255),
+    category            VARCHAR(32)  NOT NULL DEFAULT 'k8s',  -- k8s/host/cloud/database/script/notify
+    risk_level          VARCHAR(32)  NOT NULL,     -- 逻辑关联 sys_risk_policy.risk_level
+    target_pattern      VARCHAR(255),              -- 如 ns:prod/deploy:*；写操作必填
+    environments        VARCHAR(128) NOT NULL DEFAULT 'dev',   -- 与风险策略取交集
+    param_schema        JSONB,                     -- 执行前校验模型给出的参数
+    requires_approval   BOOLEAN,                   -- NULL=跟随策略；只能收紧不能放宽
+    max_blast_radius_count INT,                    -- NULL=跟随策略
+    enabled             BOOLEAN      NOT NULL DEFAULT FALSE,   -- 停用而非删除（审计引用 action_key）
+    version             INT          NOT NULL DEFAULT 0,
+    created_by          VARCHAR(64),
+    updated_by          VARCHAR(64),
+    create_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-- 唯一：同一动作两条配置时引擎该信哪条？让 DB 直接拒绝，
+-- 而不是靠应用层「取第一条」这种隐式规则
+CREATE UNIQUE INDEX IF NOT EXISTS uk_action_allowlist_key
+    ON sys_action_allowlist (action_key);
+CREATE INDEX IF NOT EXISTS idx_action_allowlist_category
+    ON sys_action_allowlist (category, risk_level);
+-- 引擎热路径的部分索引：从不查停用条目，索引体积可小一半
+CREATE INDEX IF NOT EXISTS idx_action_allowlist_enabled
+    ON sys_action_allowlist (action_key) WHERE enabled = TRUE;
+
+-- 种子数据：蓝图 §二/§三 点名的典型动作。
+-- 写操作一律 enabled=FALSE——装好就能自动重启生产 Pod 是不可接受的默认值。
+INSERT INTO sys_action_allowlist (
+    action_key, display_name, description, category, risk_level,
+    target_pattern, environments, param_schema, enabled
+) VALUES
+    ('k8s.pod.describe', '查看 Pod 详情', '读取 Pod 配置、事件与状态，用于诊断上下文补充',
+     'k8s', 'READ_ONLY', '*', 'prod,staging,dev',
+     '{"namespace":{"type":"string","required":true}}'::jsonb, TRUE),
+    ('k8s.logs.tail', '拉取容器日志', '读取最近 N 行容器日志，用于 RCA 归因',
+     'k8s', 'READ_ONLY', '*', 'prod,staging,dev',
+     '{"lines":{"type":"int","max":1000,"default":200}}'::jsonb, TRUE),
+    ('k8s.pod.restart', '优雅重启 Pod', '对应蓝图 P2/P3 场景的 rollout restart，需受爆炸半径约束',
+     'k8s', 'CONTROLLED_WRITE', 'ns:staging/*', 'staging,dev',
+     '{"gracePeriodSeconds":{"type":"int","max":120,"default":30}}'::jsonb, FALSE),
+    ('k8s.deploy.scale', '调整副本数', '扩缩容。缩容可能引发容量不足，受 max 参数约束',
+     'k8s', 'CONTROLLED_WRITE', 'ns:staging/*', 'staging,dev',
+     '{"replicas":{"type":"int","min":1,"max":10}}'::jsonb, FALSE),
+    ('host.log.rotate', '日志空间回收', '蓝图 P4 场景：logrotate 释放磁盘，无业务影响',
+     'host', 'CONTROLLED_WRITE', '*', 'staging,dev',
+     '{"olderThanDays":{"type":"int","min":1,"default":7}}'::jsonb, FALSE),
+    ('host.docker.prune', '清理废弃镜像', '蓝图 P4 场景：docker system prune 回收宿主机磁盘',
+     'host', 'CONTROLLED_WRITE', '*', 'dev',
+     '{"includeVolumes":{"type":"bool","default":false}}'::jsonb, FALSE),
+    ('k8s.rollout.undo', '回滚发布', '蓝图 §三 的自愈回滚触发器，影响面覆盖整个 Deployment',
+     'k8s', 'HIGH_RISK_EXECUTION', 'ns:staging/*', 'dev',
+     '{"toRevision":{"type":"int"}}'::jsonb, FALSE),
+    ('db.connection.kill', '终止数据库连接', '主库连接池打满时终止长事务，误杀会导致业务报错',
+     'database', 'HIGH_RISK_EXECUTION', '*', 'dev',
+     '{"minDurationSeconds":{"type":"int","min":60}}'::jsonb, FALSE),
+    ('cloud.securitygroup.block', '封禁攻击源 IP', 'SecOps 场景：写入安全组黑名单，误封会切断正常访问',
+     'cloud', 'HIGH_RISK_EXECUTION', '*', 'dev',
+     '{"durationHours":{"type":"int","max":24,"default":24}}'::jsonb, FALSE)
+ON CONFLICT (action_key) DO NOTHING;
+
 -- =====================================================================
 -- Data Migration: v10 孤儿切片清理
 -- =====================================================================

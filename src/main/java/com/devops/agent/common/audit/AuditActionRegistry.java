@@ -64,6 +64,28 @@ public final class AuditActionRegistry {
         // ── 账号 ──────────────────────────────────────────────────
         put("POST",   "/api/v1/auth/login",                  "auth.login");
         put("POST",   "/api/v1/auth/logout",                 "auth.logout");
+
+        // ── L3 自动化治理配置 ─────────────────────────────────────
+        // 这几条的审计价值高于其他任何写操作：它们改的是「AI 能不能自动
+        // 动生产系统」的边界。事故复盘时第一个要回答的问题往往是
+        // 「出事前有没有人把某个开关打开了」，没有留痕就无从查起。
+        //
+        // risk-policies 的路径参数是 ToolRiskLevel 的枚举名（HIGH_RISK_EXECUTION），
+        // 而 normalize() 只把「纯数字 / UUID / 业务编号」判定为可变段——
+        // 枚举名会原样保留，配 `/risk-policies/*` 永远匹配不上。
+        // 这里逐个登记四级；比放宽 normalize 的可变段判定安全得多，
+        // 后者会误伤其他路由（任何非数字路径段都变 *，映射表将大面积错配）。
+        put("PUT",    "/api/v1/governance/risk-policies/READ_ONLY",
+                "governance.risk-policy.update");
+        put("PUT",    "/api/v1/governance/risk-policies/DRAFT",
+                "governance.risk-policy.update");
+        put("PUT",    "/api/v1/governance/risk-policies/CONTROLLED_WRITE",
+                "governance.risk-policy.update");
+        put("PUT",    "/api/v1/governance/risk-policies/HIGH_RISK_EXECUTION",
+                "governance.risk-policy.update");
+        put("POST",   "/api/v1/governance/actions",          "governance.action.create");
+        put("PUT",    "/api/v1/governance/actions/*",        "governance.action.update");
+        put("POST",   "/api/v1/governance/actions/*/toggle", "governance.action.toggle");
     }
 
     private AuditActionRegistry() {

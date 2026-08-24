@@ -132,6 +132,16 @@ npm run knip                       # 死代码/死依赖检测
   （`tsvector`、`JSONB`、`ON CONFLICT`、数组类型）。
 - Schema 变更：在 `sql/` 下新增 `migration_vNN_描述.sql`，**编号严格递增，禁止修改已提交的迁移文件**。
   同时必须更新 `sql/init.sql`（全新环境的一次性建库脚本），两者不同步会导致新环境与老环境表结构漂移。
+  - **这条已经被违反过一次**：v25 的 `sys_operation_audit` 漏同步到 `init.sql`，
+    全新环境按 init 建库会缺这张表。而审计写入失败是被 catch 的——业务照常跑，
+    只是**悄悄没有审计记录**，等到需要查历史时才发现，那时已经晚了。
+    v26 已一并补回。新增迁移后请用「列定义 + 种子数据逐字节对比」自检，不要只靠人眼。
+- **安全类配置表（`sys_risk_policy` / `sys_action_allowlist`）的额外约束**：
+  - 校验一律只允许「收紧」方向。条目可以比全局策略更严，**绝不能更松**——
+    否则「调整全局策略」就失去了可预期的语义，得逐条去查有没有漏网的例外。
+  - 枚举解析失败必须回退到**最严格**的一档（见 `ApprovalMode.parseOrStrictest`）。
+    回退成宽松档时，一次数据脏值就能让高危动作变成免审批直接执行。
+  - 读不到策略时**拒绝而非放行**：读不到约束等于没有约束。
 - 涉及并发更新的实体（工单状态、知识文档）必须用**乐观锁 `@Version`**，
   冲突时抛 `OptimisticLockException` → 业务码 `40009`，由前端提示用户刷新后重试。
   **禁止用「先查后改」的方式规避乐观锁。**
@@ -279,6 +289,13 @@ npm run knip                       # 死代码/死依赖检测
 
 ## 更新日志
 
+- **2026-08-25**（九）：**L3 配置层全栈落地**（`docs/08-benchmark/16`）。
+  两个占位路由替换为真实实现：**风险等级配置** + **动作白名单**。
+  新增 `migration_v26`（`sys_risk_policy` 四行固定记录 + `sys_action_allowlist` 允许清单）、
+  `AutomationGovernanceService`（跨表校验：条目只能收紧不能放宽）、
+  `AutomationGovernanceController`（10 个端点，限 ADMIN）。
+  顺手补齐 `init.sql` 漏同步的 v25 `sys_operation_audit`（全新环境会缺表，
+  表现是「审计悄悄没记录」）。测试 790 → **847**。
 - **2026-08-24**（八）：前后端联合排查（`docs/08-benchmark/13`）。
   后端修 X-Forwarded-For 无条件信任致**限流被绕过 + 审计 IP 可伪造**
   （新增 `ClientIpResolver` 统一入口 + `trusted-proxies` 配置）；
