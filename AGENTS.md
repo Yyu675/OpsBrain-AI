@@ -319,6 +319,12 @@ CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得�
 
 ## 更新日志
 
+- **2026-08-25**（十三）：**L2 阶段 B 收官 + TicketDetail 补测试**（`docs/08-benchmark/20`）。
+  实时监控 / 趋势分析 / 接入管理三页全部落地，占位路由 14 → 8 条；
+  TicketDetail 从零测试到 26 例，**测试当场抓出 `reply.author.charAt(0)`
+  在 author 为 null 时导致整条时间线渲染崩溃**（后端 DTO 该字段可为 null）。
+  贯穿三页的不变式：**null 不能伪装成 0**——「CPU 0%」与「取不到 CPU」
+  是完全不同的两件事，趋势图用 0 会画出假的「跌到底」。前端测试 882 → 980。
 - **2026-08-25**（十二）：**阶段 B 启动 + 冗余清理**（`docs/08-benchmark/19`）。
   Prometheus 集成 B1+B2（`PrometheusClient` / `MetricsCatalog` / 5 个端点），
   **关键取舍：代理查询不自建 TSDB**；补 `AutomationGovernanceController`
