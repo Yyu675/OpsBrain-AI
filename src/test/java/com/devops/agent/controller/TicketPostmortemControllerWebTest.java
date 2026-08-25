@@ -343,10 +343,36 @@ class TicketPostmortemControllerWebTest {
         }
 
         @Test
-        @DisplayName("overdue 传非布尔值 → 400，不静默当成 false")
-        void invalidOverdueIsRejected() throws Exception {
+        @DisplayName("Spring 接受 yes/on/1 作为 true —— 这不是 bug，别误当非法值")
+        void springAcceptsBooleanSynonyms() throws Exception {
+            // 本来想断言 overdue=yes 返回 400，CI 告诉我是 200。
+            // 查证后确认是**我的测试假设错了**：Spring 的 StringToBooleanConverter
+            // 接受 true/false、on/off、yes/no、1/0 共四组同义词。
+            // 「yes」是合法的 true，不是非法输入。
+            //
+            // 记在这里是为了防止后来者看到 yes 能通过就以为绑定校验失效，
+            // 反过来去「修」一个并不存在的问题。
+            when(pmService.findActionItems(any(), any(), anyBoolean())).thenReturn(List.of());
+
             mockMvc.perform(get("/api/v1/tickets/postmortem/action-items")
                             .param("overdue", "yes"))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/v1/tickets/postmortem/action-items")
+                            .param("overdue", "1"))
+                    .andExpect(status().isOk());
+
+            verify(pmService, org.mockito.Mockito.times(2))
+                    .findActionItems(isNull(), isNull(), eq(true));
+        }
+
+        @Test
+        @DisplayName("真正非法的布尔值 → 400，不静默当成 false")
+        void invalidOverdueIsRejected() throws Exception {
+            // 「maybe」不在 Spring 的同义词表里，属于真正的非法输入。
+            // 静默当成 false 会让「只看逾期」的筛选悄悄失效，
+            // 用户以为自己在看逾期项，实际看到的是全部
+            mockMvc.perform(get("/api/v1/tickets/postmortem/action-items")
+                            .param("overdue", "maybe"))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value(40001));
         }
