@@ -35,6 +35,8 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline.json')
 
@@ -239,11 +241,16 @@ def scan_unread_config():
     return found
 
 
+# 前端导出覆盖扫描独立成文件（逻辑较长，且可单独运行看完整清单）
+from scan_export_coverage import scan as scan_export_coverage  # noqa: E402
+
+
 SCANS = [
     ('self_invocation', '非事务方法自调用 @Transactional 方法', scan_self_invocation),
     ('conditional_on_mapping', '条件注解标在请求映射方法上', scan_conditional_on_mapping),
     ('transactional_visibility', '@Transactional 标在非 public 方法上', scan_transactional_visibility),
     ('unread_config', '配置项无代码读取', scan_unread_config),
+    ('export_coverage', '前端逻辑层导出从未被测试引用', scan_export_coverage),
 ]
 
 
@@ -253,6 +260,8 @@ def fingerprint(scan_id, item):
         return f"{scan_id}|{item['file']}|{item['caller']}|{item['callee']}"
     if scan_id == 'unread_config':
         return f"{scan_id}|{item['key']}"
+    if scan_id == 'export_coverage':
+        return f"{scan_id}|{item['file']}|{item['symbol']}"
     return f"{scan_id}|{item['file']}|{item.get('method') or item['detail'][:40]}"
 
 

@@ -88,17 +88,20 @@ export const CATEGORY_OPTIONS = [
  */
 export { UNASSIGNED }
 
-/**
- * 负责人候选名单（兜底）
+/*
+ * 此处原有 `export const ASSIGNEE_FALLBACK = [UNASSIGNED]`，已删除。
  *
- * 仅在 GET /api/v1/users 不可用时使用——此时至少要让用户能选「待分配」，
- * 而不是面对一个空白下拉框无法提交表单。
+ * 它记录的兜底意图（后端名录拿不到时至少保留「待分配」，避免空白下拉框
+ * 导致表单无法提交）**已经由下方 `assignees` computed 实现**：
+ * 它无条件在名单末尾补上 UNASSIGNED，名录为空时自然只剩这一项。
  *
- * 注意：此前这里是 ['张明','李四','王五','赵六','孙七','周八','待分配'] 硬编码七人名单，
- * 而库里只有「张明」一个真实负责人，工单会被指派给不存在的人。
- * 真实名单现由 useTicketsStore().assignees 从后端加载。
+ * 那次改造之后这个常量就没有任何引用了（全仓 grep 仅剩定义本身），
+ * 是一个被遗留下来的空壳。留着的坏处不是占地方，而是
+ * 下一个人会以为「兜底逻辑在这个常量里」，改它却毫无效果。
+ *
+ * 由 tools/audit/scan_export_coverage.py 报出（未被任何测试引用），
+ * 顺藤摸瓜发现它连生产代码也没人用。
  */
-export const ASSIGNEE_FALLBACK = [UNASSIGNED]
 
 export const TAG_OPTIONS = [
   '生产环境', '测试环境', '预发环境',
