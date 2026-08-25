@@ -204,7 +204,7 @@ defineProps<{
 .commands-list { display: flex; flex-direction: column; gap: 4px; }
 .command-item {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: #fff; border-radius: 4px; padding: 6px 10px;
+  background: var(--color-surface, var(--surface-1)); border-radius: 4px; padding: 6px 10px;
   border: 1px solid var(--color-border-light, var(--border-1));
 }
 .command-code { font-family: monospace; font-size: 0.75rem; color: var(--color-primary, var(--brand)); flex: 1; overflow-x: auto; white-space: nowrap; }
@@ -254,7 +254,7 @@ defineProps<{
 .feedback-label { font-size: 0.625rem; color: var(--color-text-tertiary, var(--text-3)); }
 .feedback-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--color-border-light, var(--border-1)); background: #fff; cursor: pointer;
+  border: 1px solid var(--color-border-light, var(--border-1)); background: var(--color-surface, var(--surface-1)); cursor: pointer;
   color: var(--color-text-tertiary, var(--text-3));
   padding: 3px 6px; border-radius: 4px;
   transition: all 0.15s ease;

@@ -108,7 +108,7 @@ const hotTags = computed(() => props.hotTags)
 .tag-suggestions { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; margin-top: 6px; }
 .tag-suggest-label { font-size: 0.75rem; color: var(--text-3); line-height: 1.6; }
 .tag-suggest {
-  border: 1px solid var(--border-1); background: #fff; color: var(--text-2);
+  border: 1px solid var(--border-1); background: var(--color-surface, var(--surface-1)); color: var(--text-2);
   font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .tag-suggest:hover { border-color: var(--brand); color: var(--brand); }

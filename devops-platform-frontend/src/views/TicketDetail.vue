@@ -1102,7 +1102,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 /* ========== Ticket Header Card ========== */
 .ticket-header-card {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 24px;
@@ -1111,7 +1111,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 /* ========== Ticket Description Card ========== */
 .ticket-description-card {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 20px 24px;
@@ -1241,7 +1241,7 @@ const onSinkGotoDoc = (docId: number) => {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
   transition: all 0.15s ease;
@@ -1287,7 +1287,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 /* ========== Reply Box ========== */
 .reply-box {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 16px;
@@ -1404,7 +1404,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 .cp-step.current .cp-dot {
   border-color: var(--brand);
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
 }
 
 .cp-dot-inner {
@@ -1509,7 +1509,7 @@ const onSinkGotoDoc = (docId: number) => {
   padding: 6px 14px;
   border: 1px solid var(--color-border, var(--border-1));
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   font-size: 13px;
   color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;

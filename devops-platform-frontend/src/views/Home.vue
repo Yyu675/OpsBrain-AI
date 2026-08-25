@@ -277,7 +277,7 @@ const features = [
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   font-family: var(--font-body);
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   color: var(--color-primary-dark);
   cursor: pointer;
   text-decoration: none;
@@ -325,7 +325,7 @@ const features = [
 
 /* Stats Section - No cards, plain layout */
 .stats-section {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-top: 1px solid var(--color-border-light);
   border-bottom: 1px solid var(--color-border-light);
 }
@@ -441,7 +441,7 @@ const features = [
 }
 
 .feature-card {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
   padding: 24px;
@@ -484,7 +484,7 @@ const features = [
 /* CTA Section */
 .cta-section {
   padding: 80px 24px;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   text-align: center;
 }
 

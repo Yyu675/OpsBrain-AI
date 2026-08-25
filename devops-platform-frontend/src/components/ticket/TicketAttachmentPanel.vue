@@ -180,7 +180,7 @@ const pick = () => fileInput.value?.click()
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
   transition: all 0.15s ease;

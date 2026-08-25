@@ -285,7 +285,7 @@ onMounted(() => {
   flex-wrap: wrap;
   margin-bottom: 16px;
   padding: 12px 16px;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
@@ -302,7 +302,7 @@ onMounted(() => {
   border-radius: 8px;
   font-size: 0.85rem;
   color: #374151;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   outline: none;
   width: 140px;
 }
@@ -353,7 +353,7 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   padding: 14px 18px;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   border-left: 3px solid transparent;
@@ -451,7 +451,7 @@ onMounted(() => {
   border-radius: 8px;
   font-size: 0.8rem;
   color: #374151;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   outline: none;
   cursor: pointer;
 }

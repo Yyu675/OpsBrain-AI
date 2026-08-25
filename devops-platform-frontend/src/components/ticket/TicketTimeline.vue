@@ -398,7 +398,7 @@ defineProps<{
   padding: 12px 16px;
   border-radius: var(--radius-lg, 12px);
   border-top-left-radius: var(--radius-sm, 4px);
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border: 1px solid var(--color-border-light, var(--border-1));
   color: var(--color-text-primary, var(--text-1));
   font-size: var(--text-sm, 0.875rem);

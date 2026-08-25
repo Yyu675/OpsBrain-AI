@@ -265,7 +265,7 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
   border: 1px solid var(--color-border, var(--border-1));
   border-radius: 4px;
   font-size: 12px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
 }
 
 .pm-empty {
@@ -300,7 +300,7 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
   white-space: nowrap;

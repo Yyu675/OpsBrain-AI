@@ -71,7 +71,7 @@ const toggle = () => { collapsed.value = !collapsed.value }
 
 <style scoped>
 .collapsible-card {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));

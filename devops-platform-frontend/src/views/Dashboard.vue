@@ -353,7 +353,7 @@ const rootCauseTop = computed(() =>
   padding: 6px 14px;
   border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: 8px;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   cursor: pointer;
   font-size: 0.875rem;
   color: var(--color-text-secondary, var(--text-2));
@@ -406,7 +406,7 @@ const rootCauseTop = computed(() =>
 }
 
 .kpi-card {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -448,7 +448,7 @@ const rootCauseTop = computed(() =>
 }
 
 .data-panel {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -523,7 +523,7 @@ const rootCauseTop = computed(() =>
 }
 
 .stats-footer {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 16px 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -538,7 +538,7 @@ const rootCauseTop = computed(() =>
 
 /* ===== B5 闭环度量 ===== */
 .closure-section {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 20px 24px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
