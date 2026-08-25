@@ -79,8 +79,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>不用 {@code WebTestClient} 是因为它来自 {@code spring-webflux}，
  * 而本项目只依赖 {@code spring-boot-starter-web}。为一个测试引入整个响应式栈
  * 不划算，且当前沙箱 Maven 镜像不可达、无法验证新依赖能否解析。
- * JDK 内置 {@code HttpClient} 零新增依赖，且 {@code BodyHandlers.ofString()}
- * 会一直读到服务端关闭连接（即 emitter complete），天然就是我们要的等待语义。</p>
+ * JDK 内置 {@code HttpClient} 零新增依赖，读到服务端关闭连接（即 emitter
+ * complete）为止，天然就是我们要的等待语义。</p>
+ *
+ * <p><b>但不能用 {@code BodyHandlers.ofString()}</b>：它对 chunked 编码的收尾
+ * 要求严格，而 SSE 常常写完即断、不发那个长度为 0 的结束块，
+ * 于是抛 {@code IOException: chunked transfer encoding, state: READING_LENGTH}
+ * 并把已收到的事件全部丢弃。改用 {@link #sendTolerantOfAbruptClose} 读，
+ * 详见该方法注释。</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
@@ -203,7 +209,7 @@ class ChatStreamSseIntegrationTest {
      * 发起一次流式对话，读完整条流，返回解析后的事件序列。
      *
      * <p><b>为什么不需要手写等待</b>：SSE 是「服务端写完就关连接」的模型，
-     * {@code BodyHandlers.ofString()} 会一直读到 EOF，
+     * {@link #sendTolerantOfAbruptClose} 会一直读到 EOF，
      * 即 emitter {@code complete()} 之后才返回。这正是我们要的语义，
      * 比此前在 MockMvc 下轮询 {@code isAsyncStarted} 可靠得多——
      * 那个标志在模拟环境里根本不反映真实的异步分发状态。</p>
@@ -446,8 +452,9 @@ class ChatStreamSseIntegrationTest {
                         Map.of("query", "磁盘打满了怎么办", "sessionId", "it-post")),
                         StandardCharsets.UTF_8)))
                 .build();
-        HttpResponse<String> res =
-                http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        // 与 GET 走同一个容忍式读取：POST 的响应同样是 chunked SSE，
+        // 用严格的 ofString() 会在缺少结束块时抛 IOException 并丢掉整条流
+        HttpResponse<String> res = sendTolerantOfAbruptClose(req);
         assertThat(res.statusCode()).isEqualTo(200);
 
         List<String> seq = names(parseOrExplain(res));
