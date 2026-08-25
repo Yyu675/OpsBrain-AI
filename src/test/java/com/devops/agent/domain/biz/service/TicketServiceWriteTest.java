@@ -301,16 +301,30 @@ class TicketServiceWriteTest {
         }
 
         @Test
-        @DisplayName("已终结的工单不能确认接单")
-        void terminalTicketCannotBeAcknowledged() {
+        @DisplayName("已作废工单不能确认接单（只有 VOID 才真正不可操作）")
+        void voidTicketCannotBeAcknowledged() {
             when(ticketRepository.findById("T1"))
                     .thenReturn(ticket("T1", TicketEnums.Status.VOID, "张明"));
 
             assertThatThrownBy(() -> service.acknowledgeTicket("T1", "张明", null))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("已终结");
+                    .hasMessageContaining("已作废");
 
             verify(ticketRepository, never()).markFirstResponse(anyString(), anyString(), any());
+        }
+
+        @Test
+        @DisplayName("RESOLVED 工单可被重新接手 —— 问题重现时不必新建单")
+        void resolvedTicketCanBeReacknowledged() {
+            when(ticketRepository.findById("T1"))
+                    .thenReturn(ticket("T1", TicketEnums.Status.RESOLVED, "张明"));
+            when(ticketRepository.markFirstResponse(anyString(), anyString(), any()))
+                    .thenReturn(0);
+
+            // 新建一张单会丢掉全部处置上下文（根因、验证、时间线）
+            service.acknowledgeTicket("T1", "李四", null);
+
+            verify(ticketRepository).markFirstResponse(eq("T1"), eq("李四"), any());
         }
 
         @Test

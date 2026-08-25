@@ -662,8 +662,10 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法确认接单: " + ticketId);
+        // 只有 VOID（作废）才禁止操作。RESOLVED 工单仍可被重新接手——
+        // 问题重现时直接在原单上继续，比新建一张丢掉全部上下文更合理
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法确认接单: " + ticketId);
         }
 
         boolean isFirst = markFirstResponse(ticketId, responder);
@@ -790,8 +792,9 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法记录处置动作: " + ticketId);
+        // 同上：RESOLVED 后补记处置动作是常见的（当时忙着救火，事后补录）
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法记录处置动作: " + ticketId);
         }
         if (summary == null || summary.isBlank()) {
             throw new IllegalArgumentException("处置摘要不能为空");
@@ -851,8 +854,9 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法切换处置阶段: " + ticketId);
+        // RESOLVED 工单验证失败需要退回 FIXING，这条路径必须放行
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法切换处置阶段: " + ticketId);
         }
 
         // 若仍是 PENDING，同时推进为 PROCESSING
@@ -1002,8 +1006,11 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法验证: " + ticketId);
+        // 这里原本用 isTerminalStatus()，把 RESOLVED 也挡在门外，
+        // 导致「先标已解决、后补做验证」这条真实流程根本走不通，
+        // 也让下面「已是 RESOLVED 就不重复改状态」那段判断变成死代码
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法验证: " + ticketId);
         }
 
         String who = (verifier == null || verifier.isBlank()) ? "未知" : verifier.trim();
@@ -1054,8 +1061,9 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结: " + ticketId);
+        // 同 submitVerification：RESOLVED 工单仍可补记「跳过验证」及其理由
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废: " + ticketId);
         }
 
         String who = (operator == null || operator.isBlank()) ? "未知" : operator.trim();

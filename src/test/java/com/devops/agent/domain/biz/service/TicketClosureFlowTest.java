@@ -129,17 +129,31 @@ class TicketClosureFlowTest {
         }
 
         @Test
-        @DisplayName("终态工单不能切换处置阶段")
-        void terminalTicketRejectsStageChange() {
+        @DisplayName("已作废工单不能切换处置阶段")
+        void voidTicketRejectsStageChange() {
             when(ticketRepository.findById("T1"))
                     .thenReturn(ticket("T1", TicketEnums.Status.VOID));
 
             assertThatThrownBy(() ->
                     service.updateStage("T1", TicketService.STAGE_FIXING, "张明"))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("已终结");
+                    .hasMessageContaining("已作废");
 
             verify(ticketRepository, never()).update(any());
+        }
+
+        @Test
+        @DisplayName("RESOLVED 工单可退回 FIXING —— 验证失败必须能回到修复中")
+        void resolvedCanGoBackToFixing() {
+            when(ticketRepository.findById("T1"))
+                    .thenReturn(ticket("T1", TicketEnums.Status.RESOLVED));
+
+            service.updateStage("T1", TicketService.STAGE_FIXING, "张明");
+
+            // 挡住这条路径会让「验证没过」的工单无处可去，
+            // 用户只能新建一张单，从而丢掉全部处置上下文
+            assertThat(capturedUpdate().getHandlingStage())
+                    .isEqualTo(TicketService.STAGE_FIXING);
         }
 
         @Test
@@ -332,13 +346,22 @@ class TicketClosureFlowTest {
         }
 
         @Test
-        @DisplayName("已是 RESOLVED 时不重复改状态")
-        void alreadyResolvedDoesNotRewriteStatus() {
+        @DisplayName("RESOLVED 工单可以补做验证，且不重复改状态")
+        void resolvedTicketCanStillBeVerified() {
+            // 这条用例最初写成断言「不重复改状态」，CI 却报
+            // 「工单已终结，无法验证」——由此查出 isTerminalStatus() 被误用作
+            // 操作门禁，把 RESOLVED 也挡在了门外。
+            //
+            // 「先标已解决、后补做验证」是真实流程（当时忙着救火，事后补录），
+            // 挡住它等于逼用户重开工单，而重开会污染状态流转历史。
+            // 修复后这条路径放行，同时下面那句「已是 RESOLVED 就不改状态」
+            // 才真正可达——修复前它是永远为真的死代码
             when(ticketRepository.findById("T1"))
                     .thenReturn(ticket("T1", TicketEnums.Status.RESOLVED));
 
             service.submitVerification("T1", "MONITOR", "ok", "李四");
 
+            verify(ticketRepository).update(any());
             verify(ticketRepository, never()).updateStatus(anyString(), anyString());
         }
 
@@ -377,15 +400,15 @@ class TicketClosureFlowTest {
         }
 
         @Test
-        @DisplayName("终态工单不能验证")
-        void terminalTicketCannotBeVerified() {
+        @DisplayName("已作废工单不能验证（只有 VOID 才真正不可操作）")
+        void voidTicketCannotBeVerified() {
             when(ticketRepository.findById("T1"))
                     .thenReturn(ticket("T1", TicketEnums.Status.VOID));
 
             assertThatThrownBy(() ->
                     service.submitVerification("T1", "MONITOR", "ok", "李四"))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("已终结");
+                    .hasMessageContaining("已作废");
         }
     }
 
@@ -444,13 +467,14 @@ class TicketClosureFlowTest {
         }
 
         @Test
-        @DisplayName("终态工单不能跳过验证")
-        void terminalTicketCannotSkip() {
+        @DisplayName("已作废工单不能跳过验证")
+        void voidTicketCannotSkip() {
             when(ticketRepository.findById("T1"))
                     .thenReturn(ticket("T1", TicketEnums.Status.VOID));
 
             assertThatThrownBy(() -> service.skipVerification("T1", "理由", "张明"))
-                    .isInstanceOf(IllegalStateException.class);
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("已作废");
         }
 
         @Test
