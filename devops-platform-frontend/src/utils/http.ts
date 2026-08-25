@@ -1,3 +1,5 @@
+import { getBizError, isAutoRetryable } from '../constants/bizCode'
+
 // ==================== Sa-Token 鉴权 token 管理（方向三）====================
 // token 存 localStorage，每个请求由 httpRequest 自动附带 satoken 头。
 // 读写含 try-catch：隐私模式/禁用 localStorage 时降级为内存不崩（同 persist.ts 契约）。
@@ -116,6 +118,33 @@ export function toFriendlyError(e: unknown): FriendlyError {
   }
 
   const path = shortenUrl(e.url)
+
+  // ── 优先查业务码词表 ────────────────────────────────────────────
+  // BIZ_ERRORS 与后端 BizError 枚举一一对应（有契约测试守着），
+  // 且带 hint 与 retry 语义。此前这张表虽然存在、虽然测试绿，
+  // 却**没有任何生产代码在查它**——下面的 switch 各自硬编码了
+  // 40001/40004/40009/40021 四个码，其余 18 个（含 50020 监控数据源不可用、
+  // 40103 权限不足、42901 限流）统统落到通用兜底文案。
+  //
+  // 最典型的后果：Prometheus 没起时后端返回 50020 + HTTP 503，
+  // 用户看到的却是「服务暂时不可用，可能正在重启或过载，请稍后重试」——
+  // 一句把他引向「等一等再刷新」的话，而这个错误的 retry 语义是 NEVER，
+  // 正确的下一步是去「接入管理」检查数据源连接。
+  //
+  // 放在 switch 之前：词表是前后端共同维护的单一真相，
+  // 它有的就以它为准；它没有的才退回按传输层特征分类。
+  const meta = getBizError(e.bizCode)
+  if (meta) {
+    return {
+      title: meta.title,
+      // 后端消息通常比词表标题更具体（含具体字段名、状态名），优先用它做详情。
+      // 后端没给 message 时带上码值而不是复述标题——
+      // 标题已经显示在上方，详情再说一遍等于没有信息；
+      // 而码值能让用户在反馈问题时说清是哪个错误，也便于对照后端日志
+      detail: e.message || `${meta.title}（错误码 ${e.bizCode}）`,
+      hint: meta.hint
+    }
+  }
 
   switch (e.code) {
     case 'TIMEOUT':
@@ -343,13 +372,33 @@ export const httpRequest = async <T = unknown>(
       })
 
       if (!res.ok) {
-        if (retryOn.includes(res.status) && attempt < effectiveRetries) {
-          lastErr = new HttpError(`HTTP ${res.status}`, res.status, 'HTTP_STATUS')
+        // 先读 body 再决定是否重试。
+        //
+        // 此前顺序是反的：只看 HTTP 状态就重试，body 还没读。
+        // 后果是**业务码携带的 retry 语义完全失效**——后端在
+        // BizError 里为每个码标了 NEVER / SAFE / BACKOFF / CLIENT，
+        // 但前端在拿到这个码之前就已经重试完了。
+        //
+        // 最典型的是 50020（监控数据源不可用，retry=NEVER，HTTP 503）：
+        // 503 在 RETRYABLE_STATUS 白名单里，于是 Prometheus 没起时
+        // 每次打开监控页都会静默发 3 次请求、退避等待约 3 秒，
+        // 最后仍然失败。用户白等，后端白扛——而这个错误重试一万次也不会好。
+        let payload: unknown = null
+        try { payload = await res.json() } catch { /* body not json */ }
+        const bizCode = (payload as { code?: number })?.code
+
+        // 有业务码时以它的 retry 语义为准（词表与后端枚举一一对应）；
+        // 没有业务码（如网关返回的裸 502）才退回按 HTTP 状态判断
+        const retryable = bizCode !== undefined
+          ? isAutoRetryable(bizCode)
+          : retryOn.includes(res.status)
+
+        if (retryable && attempt < effectiveRetries) {
+          lastErr = new HttpError(`HTTP ${res.status}`, res.status, 'HTTP_STATUS',
+            payload, bizCode, url)
           await sleep(retryDelay * Math.pow(2, attempt))
           continue
         }
-        let payload: unknown = null
-        try { payload = await res.json() } catch { /* body not json */ }
         // 401：未登录或登录失效，清 token 并通知 App 跳登录页
         if (res.status === 401) {
           handleUnauthorized()
@@ -387,7 +436,19 @@ export const httpRequest = async <T = unknown>(
           0, 'TIMEOUT', undefined, undefined, url
         )
       }
-      if (e instanceof HttpError && !retryOn.includes(e.status)) throw e
+      // 这里是**第二条**重试路径：上面 !res.ok 分支抛出的 HttpError 会落到这个
+      // catch 里再判一次。此前它只看 retryOn.includes(e.status)，
+      // 于是上面刚按业务码判定「不该重试」而抛出的错误，
+      // 又会因为状态码在白名单里被重试一遍——两条路径的判据不一致，
+      // 修了上面一处并不生效（50020 实测仍发 3 次请求）。
+      //
+      // 统一判据：有业务码就以词表的 retry 语义为准，没有才看 HTTP 状态。
+      if (e instanceof HttpError) {
+        const retryable = e.bizCode !== undefined
+          ? isAutoRetryable(e.bizCode)
+          : retryOn.includes(e.status)
+        if (!retryable) throw e
+      }
       if (attempt < effectiveRetries) {
         await sleep(retryDelay * Math.pow(2, attempt))
         continue
