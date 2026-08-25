@@ -327,14 +327,21 @@ class KnowledgeCategoryControllerWebTest {
         @Test
         @DisplayName("版本冲突 → 40009 / HTTP 409，绝不静默覆盖他人修改")
         void optimisticLockMapsTo40009() throws Exception {
-            doThrow(new OptimisticLockException("文档已被他人修改，请刷新后重试"))
+            // 三参构造：资源标识 + 客户端持有版本 + 数据库当前版本。
+            // 消息由异常自己拼装，刻意不暴露 "version" 字样，
+            // 而是给出可执行的下一步（刷新后重新提交）
+            doThrow(new OptimisticLockException("doc:11", 1, 3))
                     .when(service).moveDocument(anyLong(), any(), any());
 
             mockMvc.perform(put("/api/v1/knowledge/categories/documents/11")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(Map.of("categoryId", 2, "version", 1))))
                     .andExpect(status().isConflict())
-                    .andExpect(jsonPath("$.code").value(40009));
+                    .andExpect(jsonPath("$.code").value(40009))
+                    // 提示必须告诉用户「刷新后重新提交」，
+                    // 只说「版本冲突」用户不知道该做什么
+                    .andExpect(jsonPath("$.message").value(
+                            org.hamcrest.Matchers.containsString("请刷新")));
         }
 
         @Test
