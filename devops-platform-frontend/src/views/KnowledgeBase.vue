@@ -218,6 +218,25 @@ const syncUrl = debounce(() => {
 
 watch([appliedQuery, activeCategory, activeTag, activeStatus, activeSort, viewMode, () => store.currentPage], syncUrl)
 
+/**
+ * 卸载时**取消**尚未落定的 URL 同步。
+ *
+ * 上面的 `applySearch` 用的是 `flush()`（补执行），这里必须是 `cancel()`（丢弃）——
+ * 两者不能照抄，因为回调的性质完全不同：
+ *   - `applySearch` 的回调是 `reload()`，只动本组件的数据，卸载后执行最多白跑一次；
+ *   - `syncUrl` 的回调是 `router.replace({ query })`，它**以当前路由为基准**。
+ *
+ * 漏掉这行的实际后果：用户点了分类筛选，200ms 防抖还没到就点侧栏跳去工单列表，
+ * 定时器随后触发，把知识库的筛选参数写到了工单页的地址栏上——
+ * 地址栏变成 `/tickets?cat=K8S`，工单列表按一个它根本不认识的参数刷新，
+ * 或者干脆丢掉用户自己的筛选。
+ *
+ * 这个缺陷是靠「同一文件里两个防抖，一个有清理一个没有」的不一致发现的，
+ * 并由 `KnowledgeBase.urlsync.test.ts` 的卸载用例确认（修复前该用例报
+ * `router.replace` 在卸载后仍被调用）。
+ */
+onBeforeUnmount(() => syncUrl.cancel())
+
 const selectCategory = (name: string) => {
   activeCategory.value = activeCategory.value === name ? null : name
   reload()
