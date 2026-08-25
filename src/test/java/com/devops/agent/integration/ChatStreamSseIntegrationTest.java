@@ -78,12 +78,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * JDK 内置 {@code HttpClient} 零新增依赖，且 {@code BodyHandlers.ofString()}
  * 会一直读到服务端关闭连接（即 emitter complete），天然就是我们要的等待语义。</p>
  */
-// 暂缓一轮：改真实 HTTP 后失败形态已从 FAILURE（断言不符）变为 ERROR（抛异常），
-// 说明问题不再是「流为空」而是初始化阶段就炸了（9 例均 ~0.2s，符合 @BeforeEach 失败）。
-// 本次同时增强了 mvnw 的 surefire 重放（改为 grep -A 6 取失败标记后续行，
-// 之前只 grep 关键词，恰好漏掉了紧跟在标记下一行的异常类型与消息）。
-// 下一轮拿到真实异常即可定型，届时移除本注解。不让分支红着，理由见类注释末段。
-@org.junit.jupiter.api.Disabled("改真实 HTTP 后转为 ERROR（初始化阶段异常）；已增强 mvnw surefire 重放，下一轮据真实堆栈定型")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "devops.ai.mode=MOCK",
