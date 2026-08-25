@@ -87,6 +87,11 @@ class KnowledgeDocServiceWriteTest {
                 "hash-" + String.valueOf(i.getArgument(0)).hashCode());
         when(fingerprint.simhash(anyString())).thenReturn(1L);
         when(docRepo.findSimhashCandidates(any(), any(), anyInt())).thenReturn(List.of());
+        // update 返回受影响行数，未打桩时 Mockito 默认返回 0，
+        // 而 service 把「0 行」解读为 CAS 失败并抛 OptimisticLockException——
+        // 于是所有走到 update 的用例都会以一个与被测行为无关的异常告终。
+        // 默认打成 1（成功），需要测 CAS 失败的用例再单独覆盖。
+        when(docRepo.update(any(), any())).thenReturn(1);
     }
 
     private KnowledgeDoc doc(Long id, String status, String content) {

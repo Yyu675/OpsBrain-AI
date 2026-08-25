@@ -211,7 +211,10 @@ exec_maven() {
           | xargs grep -lE "FAILURE!|ERROR!" 2>/dev/null \
           | head -10 \
           | while IFS= read -r _rpt; do
-              echo "::error::===== $(basename "$_rpt") ====="
+              # 文件名走普通输出：注解配额只有 10 条，必须全留给异常内容。
+              # 本轮排查 KnowledgeDocServiceWriteTest 时，8 个「xxx <<< ERROR!」
+              # 摘要行就把配额吃光了，真正的异常类型一条都没露出来。
+              printf '===== %s =====\n' "$(basename "$_rpt")"
               # 取失败标记后紧跟的若干行：异常类型与消息在标记的**下一行**，
               # 只 grep 关键词会漏掉它（上一轮因此只看到「9 个 ERROR」而无原因）。
               # 只把「异常类型/消息」这类真正有信息量的行升级为注解，
@@ -227,7 +230,7 @@ exec_maven() {
                     # 且没有任何报错（上一轮 CI 详情凭空消失即此原因）。
                     if [ -n "$_c" ]; then
                     case "$_c" in
-                      *"<<< ERROR!"*|*"<<< FAILURE!"*|"--"|*"	at "*)
+                      *"<<< ERROR!"*|*"<<< FAILURE!"*|"--"|*"	at "*|"Tests run:"*)
                         printf '%s\n' "$_c" ;;
                       *)
                         echo "::error::$_c" ;;
