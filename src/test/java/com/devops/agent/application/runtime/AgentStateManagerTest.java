@@ -189,6 +189,44 @@ class AgentStateManagerTest {
         }
 
         @Test
+        @DisplayName("缓存命中：CONTEXT_PREPARED 可直达 SUCCESS")
+        void cacheHitGoesStraightToSuccess() {
+            manager.getOrCreateSession("t", "s");
+            driveTo("t", AgentState.CONTEXT_PREPARED);
+
+            // 语义缓存命中时不经检索/工具/草稿，直接出结果。
+            // 这是全站最高频路径，缺这条边会让每次缓存命中的「成功」都被静默丢弃，
+            // 会话永远停在「上下文就绪」
+            assertThat(manager.transition("t", AgentState.SUCCESS,
+                    AgentStateTransition.TriggerType.CACHE_HIT, "语义缓存命中", "SYSTEM", null))
+                    .isNotNull();
+            assertThat(manager.getCurrentState("t")).isEqualTo(AgentState.SUCCESS);
+        }
+
+        @Test
+        @DisplayName("EVIDENCE_READY 可直达 TOOLS_RUNNING——不存在「工具规划」回调")
+        void evidenceReadyGoesStraightToToolsRunning() {
+            manager.getOrCreateSession("t", "s");
+            driveTo("t", AgentState.CONTEXT_PREPARED, AgentState.EVIDENCE_READY);
+
+            // LangChain4j 1.1.0 只有 onToolExecuted（执行后）回调，
+            // 没有任何「模型正在规划工具」的钩子，TOOLS_PLANNING 在生产代码里零引用。
+            // 编排层实际就是从 EVIDENCE_READY 直接跳 TOOLS_RUNNING
+            assertThat(manager.transition("t", AgentState.TOOLS_RUNNING,
+                    AgentStateTransition.TriggerType.TOOL_STARTED, "工具调用", "SYSTEM", null))
+                    .isNotNull();
+        }
+
+        @Test
+        @DisplayName("写操作发生在工具阶段，故 TOOLS_COMPLETED/DRAFT_READY 可进入补偿")
+        void writePhasesCanEnterCompensation() {
+            // Saga 回滚的触发点是流式失败，此时会话正处于这两个状态之一。
+            // 没有这两条边，「正在回滚」根本无法进入状态机
+            assertThat(AgentState.canTransition(AgentState.TOOLS_COMPLETED, AgentState.COMPENSATING)).isTrue();
+            assertThat(AgentState.canTransition(AgentState.DRAFT_READY, AgentState.COMPENSATING)).isTrue();
+        }
+
+        @Test
         @DisplayName("多工具场景：TOOLS_COMPLETED 可回到 TOOLS_RUNNING")
         void multiToolLoopIsLegal() {
             manager.getOrCreateSession("t", "s");

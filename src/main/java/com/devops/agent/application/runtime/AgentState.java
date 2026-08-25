@@ -182,14 +182,26 @@ public enum AgentState {
         // 定义合法迁移路径
         return switch (from) {
             case NEW -> to == CONTEXT_PREPARED || to == FAILED;
-            case CONTEXT_PREPARED -> to == EVIDENCE_READY || to == FAILED;
-            case EVIDENCE_READY -> to == TOOLS_PLANNING || to == DRAFT_READY || to == FAILED;
+            // CONTEXT_PREPARED → SUCCESS：语义缓存命中直接出结果，不经检索/工具/草稿。
+            // 这是全站最高频的一条路径，缺这条边会让每一次缓存命中的「成功」都被静默丢弃，
+            // 会话永远停在「上下文就绪」（P1-2）。
+            case CONTEXT_PREPARED -> to == EVIDENCE_READY || to == SUCCESS || to == FAILED;
+            // EVIDENCE_READY → TOOLS_RUNNING：LangChain4j 1.1.0 只提供 onToolExecuted
+            // 这一个「执行后」回调，没有任何「模型正在规划工具」的钩子，
+            // TOOLS_PLANNING 因此在生产代码里从未被触发过（全项目零引用）。
+            // 编排层实际是从 EVIDENCE_READY 直接跳到 TOOLS_RUNNING 的，
+            // 缺这条边会让所有带工具调用的会话丢掉整个工具执行段（P1-2）。
+            case EVIDENCE_READY -> to == TOOLS_PLANNING || to == TOOLS_RUNNING || to == DRAFT_READY || to == FAILED;
             case TOOLS_PLANNING -> to == TOOLS_RUNNING || to == DRAFT_READY || to == FAILED;
             case TOOLS_RUNNING -> to == TOOLS_COMPLETED || to == FAILED;
             // TOOLS_COMPLETED → TOOLS_RUNNING：多工具场景第二步工具开始执行需此合法边，
             // 否则双工具调用时第二次迁移被 StateManager 判为非法静默丢弃（P1-1）。
-            case TOOLS_COMPLETED -> to == TOOLS_RUNNING || to == DRAFT_READY || to == WAITING_APPROVAL || to == FAILED;
-            case DRAFT_READY -> to == SUCCESS || to == WAITING_APPROVAL || to == FAILED;
+            // TOOLS_COMPLETED / DRAFT_READY → COMPENSATING：写操作发生在工具阶段，
+            // 流式失败触发 Saga 回滚时会话正处于这两个状态之一。没有这两条边，
+            // 「正在回滚」这一事实根本无法进入状态机（P1-2）。
+            case TOOLS_COMPLETED -> to == TOOLS_RUNNING || to == DRAFT_READY || to == WAITING_APPROVAL
+                    || to == COMPENSATING || to == FAILED;
+            case DRAFT_READY -> to == SUCCESS || to == WAITING_APPROVAL || to == COMPENSATING || to == FAILED;
             case WAITING_APPROVAL -> to == EXECUTING || to == MANUAL_ESCALATED || to == FAILED;
             case EXECUTING -> to == OBSERVING || to == COMPENSATING || to == FAILED;
             case OBSERVING -> to == SUCCESS || to == COMPENSATING || to == FAILED;

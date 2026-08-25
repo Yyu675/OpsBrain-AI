@@ -251,8 +251,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 var budgetCheck = budgetManager.allocate(query, history, List.of(), List.of());
                 if (!budgetCheck.isWithinBudget()) {
                     log.warn("⚠️ [Budget] 查询超出预算 | traceId={} | reason={}", traceId, budgetCheck.getDegradationReason());
-                    stateManager.transition(traceId, AgentState.FAILED,
-                            AgentStateTransition.TriggerType.FAILED, "预算超限: " + budgetCheck.getDegradationReason(), "SYSTEM", null);
+                    transitionOrWarn(traceId, AgentState.FAILED,
+                            AgentStateTransition.TriggerType.FAILED, "预算超限: " + budgetCheck.getDegradationReason());
                     recordLogAsync(traceId, query, "预算超限: " + budgetCheck.getDegradationReason(),
                             "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                             "REJECTED_BUDGET", "[]", "SYSTEM");
@@ -266,8 +266,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 // ========== 步骤 1: 安全门卫拦截 ==========
                 log.debug("🔍 [Step 1/7] 安全门卫检查 | traceId={}", traceId);
                 securityGuard.check(query);
-                stateManager.transition(traceId, AgentState.CONTEXT_PREPARED,
-                        AgentStateTransition.TriggerType.SECURITY_PASSED, "安全检查通过", "SYSTEM", null);
+                transitionOrWarn(traceId, AgentState.CONTEXT_PREPARED,
+                        AgentStateTransition.TriggerType.SECURITY_PASSED, "安全检查通过");
 
                 // ========== 步骤 2: 语义缓存检查 ==========
                 log.debug("🔍 [Step 2/7] 语义缓存检查 | traceId={}", traceId);
@@ -277,8 +277,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                 if (cachedAnswer != null) {
                     log.info("⚡ [CacheHit] 命中缓存 | traceId={}", traceId);
-                    stateManager.transition(traceId, AgentState.SUCCESS,
-                            AgentStateTransition.TriggerType.CACHE_HIT, "语义缓存命中", "SYSTEM", null);
+                    transitionOrWarn(traceId, AgentState.SUCCESS,
+                            AgentStateTransition.TriggerType.CACHE_HIT, "语义缓存命中");
                     // 记账（缓存命中）
                     recordLogAsync(traceId, query, cachedAnswer, "cache", true,
                             (int)(System.currentTimeMillis() - startTime), 0.0, "[]",
@@ -326,8 +326,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 var quotaCheck = quotaManager.preCheck(quotaKey, estimatedTokens, modelType);
                 if (!quotaCheck.isAllowed()) {
                     log.warn("⚠️ [Quota] 配额超限 | traceId={} | reason={} | detail={}", traceId, quotaCheck.getReason(), quotaCheck.getDetail());
-                    stateManager.transition(traceId, AgentState.FAILED,
-                            AgentStateTransition.TriggerType.FAILED, "配额超限: " + quotaCheck.getReason(), "SYSTEM", null);
+                    transitionOrWarn(traceId, AgentState.FAILED,
+                            AgentStateTransition.TriggerType.FAILED, "配额超限: " + quotaCheck.getReason());
                     recordLogAsync(traceId, query, quotaCheck.getReason() + " | " + quotaCheck.getDetail(),
                             routedModel, false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                             "REJECTED_QUOTA", "[]", "SYSTEM");
@@ -351,8 +351,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
             } catch (SecurityGuardException e) {
                 log.warn("🚫 [SecurityGuard] 拦截 | traceId={} | reason={}", traceId, e.getMessage());
-                stateManager.transition(traceId, AgentState.FAILED,
-                        AgentStateTransition.TriggerType.FAILED, "安全拦截: " + e.getMessage(), "SYSTEM", null);
+                transitionOrWarn(traceId, AgentState.FAILED,
+                        AgentStateTransition.TriggerType.FAILED, "安全拦截: " + e.getMessage());
                 // 安全拦截必须留痕：记录攻击特征供红队复盘与规则调优
                 recordLogAsync(traceId, query, "[" + e.getCode() + "] " + e.getMessage(),
                         "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
@@ -362,8 +362,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
             } catch (Exception e) {
                 log.error("❌ [AgentService] 异常 | traceId={}", traceId, e);
-                stateManager.transition(traceId, AgentState.FAILED,
-                        AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + e.getMessage(), "SYSTEM", null);
+                transitionOrWarn(traceId, AgentState.FAILED,
+                        AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + e.getMessage());
                 recordLogAsync(traceId, query, "系统异常: " + e.getMessage(),
                         "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                         "FAILED_SYSTEM", "[]", "SYSTEM");
@@ -434,8 +434,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         // 状态：证据就绪（进入引擎，检索将在工具内完成）
         // P1-1：此处仍在 sessionExecutor 线程（streamAgent 由 handleStreamChat 同步调用），
         // TraceContext 可用，但为统一显式传 traceId 避免依赖线程上下文。
-        stateManager.transition(traceId, AgentState.EVIDENCE_READY,
-                AgentStateTransition.TriggerType.RETRIEVAL_COMPLETED, "进入 Agent 引擎", "SYSTEM", null);
+        transitionOrWarn(traceId, AgentState.EVIDENCE_READY,
+                AgentStateTransition.TriggerType.RETRIEVAL_COMPLETED, "进入 Agent 引擎");
 
         tokenStream
                 .onPartialResponse(partial -> {
@@ -454,6 +454,23 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         log.warn("🛑 [Tool] 工具已取消，跳过写库 | tool={} | traceId={}", toolName, traceId);
                         return;
                     }
+
+                    // 状态：工具执行中。
+                    //
+                    // ⚠️ 必须在 writeTicketFromDraft 之前迁移。
+                    // 这两次迁移原本写在整个回调的末尾，排在写库之后——
+                    // 而 writeTicketFromDraft 内部遇到高风险工单会迁往 WAITING_APPROVAL。
+                    // 于是真实顺序变成「先 WAITING_APPROVAL、后 TOOLS_RUNNING」，
+                    // 后者从 WAITING_APPROVAL 出发不合法，被静默丢弃；
+                    // 更糟的是 WAITING_APPROVAL 本身也是从 EVIDENCE_READY 发起的（同样非法），
+                    // 结果「需要审批」这件事根本没能进入状态机（P1-2）。
+                    //
+                    // 按真实发生顺序记录，才是状态机存在的意义：
+                    // 工具开始执行 → 工具返回 → （写库，可能转审批）。
+                    transitionOrWarn(traceId, AgentState.TOOLS_RUNNING,
+                            AgentStateTransition.TriggerType.TOOL_STARTED, "工具调用：" + toolName);
+                    transitionOrWarn(traceId, AgentState.TOOLS_COMPLETED,
+                            AgentStateTransition.TriggerType.TOOL_COMPLETED, "工具返回：" + toolName);
 
                     // P1-3 Single Writer：从工具结果解析草稿，编排层统一落库
                     String displayResult;
@@ -486,16 +503,6 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         }
                     }
 
-                    // 状态：工具执行中 -> 工具完成
-                    // P1-1：onToolExecuted 在模型 HTTP 回调线程执行，TraceContext ThreadLocal
-                    // 不跨线程（getTraceId 返回 null），3 参 transition 会静默丢失迁移。
-                    // 故显式传闭包捕获的 traceId。双工具场景下第二次调用同样合法
-                    // (TOOLS_COMPLETED → TOOLS_RUNNING 已在 AgentState.canTransition 补边)。
-                    stateManager.transition(traceId, AgentState.TOOLS_RUNNING,
-                            AgentStateTransition.TriggerType.TOOL_STARTED, "工具调用：" + toolName, "SYSTEM", null);
-                    stateManager.transition(traceId, AgentState.TOOLS_COMPLETED,
-                            AgentStateTransition.TriggerType.TOOL_COMPLETED, "工具返回：" + toolName, "SYSTEM", null);
-
                     // 发送 tool_status 事件（1.1.0 仅支持执行后回调，status=success）
                     // P2-35：tool_status 放在写操作之后，状态反映真实落库结果。
                     // 非草稿工具（只读）无写操作，直接标记 success。
@@ -512,8 +519,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 .onCompleteResponse(response -> {
                     try {
                         // 状态：草稿就绪
-                        stateManager.transition(traceId, AgentState.DRAFT_READY,
-                                AgentStateTransition.TriggerType.DRAFT_GENERATED, "模型生成回答草稿", "SYSTEM", null);
+                        transitionOrWarn(traceId, AgentState.DRAFT_READY,
+                                AgentStateTransition.TriggerType.DRAFT_GENERATED, "模型生成回答草稿");
 
                         String finalAnswer = answerBuilder.toString();
 
@@ -557,8 +564,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                                 "CHAT", affectedResources, "SYSTEM");
 
                         // 状态：成功终态
-                        stateManager.transition(traceId, AgentState.SUCCESS,
-                                AgentStateTransition.TriggerType.SUCCESS, "流程正常结束", "SYSTEM", null);
+                        transitionOrWarn(traceId, AgentState.SUCCESS,
+                                AgentStateTransition.TriggerType.SUCCESS, "流程正常结束");
 
                         // P1-1 记忆：AI 回答入热记忆 + 关键事实蒸馏入温记忆
                         memoryManager.recordCompletedTurn(sessionId, traceId, query, finalAnswer,
@@ -575,9 +582,18 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 .onError(error -> {
                     try {
                         log.error("❌ [AgentStream] 流式执行异常 | traceId={}", traceId, error);
-                        // 状态：失败终态
-                        stateManager.transition(traceId, AgentState.FAILED,
-                                AgentStateTransition.TriggerType.SYSTEM_ERROR, "异常：" + error.getMessage(), "SYSTEM", null);
+
+                        // ⚠️ 此处刻意不立即迁往 FAILED。
+                        //
+                        // 原实现在这里就把状态打成 FAILED，而 FAILED 是终态、拒绝一切迁出。
+                        // 紧接着下面的 triggerSagaCompensation 在补偿失败时要迁往
+                        // MANUAL_ESCALATED，那次迁移必然被拒并静默丢弃——
+                        // 于是「Saga 回滚失败、有脏数据残留、需要人工清理」这个
+                        // 最需要被看见的信号，在状态机里完全不存在，只剩一行 error 日志（P1-2）。
+                        //
+                        // 正确的时序是：先走完补偿流程（补偿本身可能改写状态为
+                        // COMPENSATING / MANUAL_ESCALATED），再由补偿结果决定终态。
+                        // 见下方 triggerSagaCompensation 调用处。
 
                         // 记账：保留已生成的部分回答，便于定位截断位置
                         String partial = answerBuilder.toString();
@@ -606,7 +622,20 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                         // P1-2 Saga：流式失败时逆序回滚已成功的写操作，避免半残状态。
                         // 典型场景：工单已建但模型后续生成失败，此时工单应作废。
+                        // 补偿内部会把状态推进到 COMPENSATING，失败时再推进到 MANUAL_ESCALATED。
                         triggerSagaCompensation(traceId, "流式执行失败: " + errMsg);
+
+                        // 状态：失败终态。
+                        // 放在补偿之后，让补偿有机会先落下自己的状态轨迹。
+                        // 若补偿已把会话升级为 MANUAL_ESCALATED（需人工清理脏数据），
+                        // 就不再覆盖成 FAILED——「有残留待人工处理」比「失败了」信息量大得多，
+                        // 且 MANUAL_ESCALATED 后续还要能走到 CLOSED 归档。
+                        AgentState afterCompensation = stateManager.getCurrentState(traceId);
+                        if (afterCompensation != AgentState.MANUAL_ESCALATED) {
+                            transitionOrWarn(traceId, AgentState.FAILED,
+                                    AgentStateTransition.TriggerType.SYSTEM_ERROR,
+                                    "异常：" + error.getMessage());
+                        }
 
                         sendErrorEvent(emitter, traceId, 50001, "Agent 执行失败，请稍后重试");
                         emitter.complete();
@@ -682,9 +711,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         if (draft.needsApproval() && approvalRequired) {
             log.warn("🛑 [SingleWriter] 高风险工单需审批，转入审批队列 | title={} | traceId={}",
                     draft.title(), traceId);
-            stateManager.transition(traceId, AgentState.WAITING_APPROVAL,
-                    AgentStateTransition.TriggerType.APPROVAL_REQUIRED,
-                    "HIGH 优先级工单待审批: " + draft.title(), "SYSTEM", null);
+            transitionOrWarn(traceId, AgentState.WAITING_APPROVAL,
+                    AgentStateTransition.TriggerType.APPROVAL_REQUIRED, "HIGH 优先级工单待审批: " + draft.title());
 
             // 登记为 SKIPPED：未写库，无需补偿
             recordSagaStepWithState(traceId, sessionId, toolName,
@@ -839,6 +867,41 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
     }
 
     /**
+     * 迁移状态，失败时告警而非静默吞掉
+     * <p>
+     * {@code AgentStateManager.transition} 在迁移非法或会话不存在时返回 {@code null}。
+     * 编排层此前 <b>14 处调用无一检查返回值</b>，导致状态机里任何一条边写错，
+     * 表现形式都不是报错，而是「会话轨迹悄悄少了一段」——
+     * 而这恰恰是状态机唯一的存在意义。
+     * </p>
+     * <p>
+     * 本方法把这条静默路径变成显式告警。<b>刻意不抛异常</b>：
+     * 状态记录是可观测性设施，不是业务前置条件，
+     * 为了记一条轨迹而让用户的对话请求失败是本末倒置。
+     * 但它必须<b>吵</b>——日志里带上当前状态与目标状态，
+     * 让「哪条边缺了」在第一次发生时就能被定位，而不是靠事后逐行重放代码去推。
+     * </p>
+     *
+     * @return true 表示迁移成功落地
+     */
+    private boolean transitionOrWarn(String traceId, AgentState toState,
+                                     AgentStateTransition.TriggerType trigger, String detail) {
+        AgentStateTransition t = stateManager.transition(
+                traceId, toState, trigger, detail, "SYSTEM", null);
+        if (t == null) {
+            AgentState current = stateManager.getCurrentState(traceId);
+            log.error("🚨 [StateMachine] 状态迁移未落地，会话轨迹将缺失一段 | traceId={} | "
+                            + "current={} | target={} | trigger={} | detail={} | "
+                            + "原因：{}",
+                    traceId, current, toState, trigger, detail,
+                    current == null ? "会话不存在（可能已被空闲清理，或 traceId 传错）"
+                            : "该迁移在状态机中非法，请检查 AgentState.canTransition");
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * 触发 Saga 补偿（流式失败时逆序回滚已成功的写操作）
      *
      * @param traceId 追踪 ID（= sagaId）
@@ -846,6 +909,13 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      */
     private void triggerSagaCompensation(String traceId, String reason) {
         try {
+            // 「正在回滚」此前从未进入过状态机：唯一一次迁移是补偿失败时的
+            // MANUAL_ESCALATED，而那条边要求 from 是 WAITING_APPROVAL/COMPENSATING，
+            // 编排层却从没把状态设成过 COMPENSATING，于是必然被拒。
+            // 先如实记录进入补偿，后续的成功/失败才有合法起点。
+            transitionOrWarn(traceId, AgentState.COMPENSATING,
+                    AgentStateTransition.TriggerType.COMPENSATION_STARTED, "开始 Saga 补偿: " + reason);
+
             var result = sagaManager.compensateSaga(traceId, reason);
 
             if (result.compensatedCount() > 0 || result.failedCount() > 0) {
@@ -862,9 +932,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 // 补偿失败：脏数据残留，自动化无法收敛
                 log.error("🚨🚨 [Saga] 补偿未完全成功，需人工介入 | traceId={} | 失败步骤={}",
                         traceId, result.failed());
-                stateManager.transition(traceId, AgentState.MANUAL_ESCALATED,
-                        AgentStateTransition.TriggerType.MANUAL_TAKEOVER,
-                        "Saga 补偿失败，需人工清理: " + result.failed(), "SYSTEM", null);
+                transitionOrWarn(traceId, AgentState.MANUAL_ESCALATED,
+                        AgentStateTransition.TriggerType.MANUAL_TAKEOVER, "Saga 补偿失败，需人工清理: " + result.failed());
             }
         } catch (Exception e) {
             log.error("🚨 [Saga] 触发补偿时异常 | traceId={} | {}", traceId, e.getMessage(), e);
