@@ -189,8 +189,10 @@ exec_maven() {
           | head -10 \
           | while IFS= read -r _rpt; do
               echo "::error::===== $(basename "$_rpt") ====="
-              grep -E "<<< (FAILURE|ERROR)!|expected|actual|AssertionError|Caused by|at com\.devops" "$_rpt" \
-                | head -40 \
+              # 取失败标记后紧跟的若干行：异常类型与消息在标记的**下一行**，
+              # 只 grep 关键词会漏掉它（上一轮因此只看到「9 个 ERROR」而无原因）。
+              grep -A 6 -E "<<< (FAILURE|ERROR)!" "$_rpt" \
+                | head -60 \
                 | while IFS= read -r _l; do
                     _c=$(printf '%s' "$_l" | sed 's/%/%25/g; s/\r/ /g' | cut -c1-300)
                     [ -n "$_c" ] && echo "::error::$_c"
