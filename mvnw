@@ -191,7 +191,13 @@ exec_maven() {
       if [ -d target/surefire-reports ]; then
         echo "::group::测试失败详情（surefire）"
         # 只取失败/错误的报告，每个类最多 40 行，避免刷屏
-        grep -lE "FAILURE!|ERROR!" target/surefire-reports/*.txt 2>/dev/null \
+        # ⚠️ 必须用 find 而非 target/surefire-reports/*.txt。
+        # 本脚本开头是 `set -euf`，其中 -f 即 noglob——通配符**不会被展开**，
+        # grep 收到的是字面量 "*.txt"，匹配不到任何文件，整个循环空转。
+        # 这就是上一轮「详情凭空消失、且毫无报错」的真正原因：
+        # 不是网络、不是注解配额，是自己脚本里的 -f 把 glob 关掉了。
+        find target/surefire-reports -name '*.txt' -type f 2>/dev/null \
+          | xargs grep -lE "FAILURE!|ERROR!" 2>/dev/null \
           | head -10 \
           | while IFS= read -r _rpt; do
               echo "::error::===== $(basename "$_rpt") ====="
@@ -204,13 +210,18 @@ exec_maven() {
                 | head -60 \
                 | while IFS= read -r _l; do
                     _c=$(printf '%s' "$_l" | sed 's/%/%25/g; s/\r/ /g' | cut -c1-300)
-                    [ -z "$_c" ] && continue
+                    # 不能写 `[ -z "$_c" ] && continue`：脚本开头是 set -euf，
+                    # 该表达式在「行非空」时整体返回 1，会被 -e 判定为失败而中断
+                    # 整个 while 子 shell——表现为一条注解都发不出来，
+                    # 且没有任何报错（上一轮 CI 详情凭空消失即此原因）。
+                    if [ -n "$_c" ]; then
                     case "$_c" in
                       *"<<< ERROR!"*|*"<<< FAILURE!"*|"--"|*"	at "*)
                         printf '%s\n' "$_c" ;;
                       *)
                         echo "::error::$_c" ;;
                     esac
+                    fi
                   done
             done
         echo "::endgroup::"
