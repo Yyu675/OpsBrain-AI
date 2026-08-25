@@ -5,11 +5,12 @@ import { ElMessageBox } from 'element-plus'
 import TurndownService from 'turndown'
 import {
   Save, Send, Upload, Settings2, FileText, Plus,
-  Pencil, Trash2, BookOpen, Eye, Code2, ChevronDown, Lightbulb,
+  BookOpen, Eye, Code2, ChevronDown, Lightbulb,
   Table2, Minus, Heading2, Heading3, SquareTerminal, Wrench,
   ListChecks, TriangleAlert, BookTemplate, MoreHorizontal,
   ListTree,
 } from 'lucide-vue-next'
+import DocOutlinePanel from '@/components/knowledge/DocOutlinePanel.vue'
 import DocPropertiesPanel from '@/components/knowledge/DocPropertiesPanel.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { useDirtyGuard } from '@/composables/useDirtyGuard'
@@ -1051,34 +1052,15 @@ const primaryLabel = computed(() =>
           />
         </template>
 
-        <!-- 目录 Tab -->
+        <!-- 目录 Tab（大纲面板已抽成子组件） -->
         <template v-if="activeSideTab === 'toc'">
-          <div class="ce-side-head">
-            <FileText :size="15" />
-            <span>文章大纲</span>
-            <button class="ce-side-head-action" type="button" title="新增二级标题" @click="insertHeading">
-              <Plus :size="15" />
-            </button>
-          </div>
-          <div v-if="tocItems.length" class="ce-toc-list">
-            <div
-              v-for="item in tocItems"
-              :key="item.id"
-              class="ce-toc-row"
-            >
-              <button
-                class="ce-toc-item"
-                :class="{ 'level-three': item.level === 3 }"
-                type="button"
-                @click="scrollEditorToHeading(item)"
-              >{{ item.text }}</button>
-              <button type="button" title="重命名标题" @click="renameHeading(item)"><Pencil :size="13" /></button>
-              <button type="button" title="删除标题" @click="removeHeading(item)"><Trash2 :size="13" /></button>
-            </div>
-          </div>
-          <button v-else class="ce-toc-empty ce-toc-empty-action" type="button" @click="insertHeading">
-            <Plus :size="14" /> 添加第一个二级标题
-          </button>
+          <DocOutlinePanel
+            :items="tocItems"
+            @insert="insertHeading"
+            @rename="renameHeading"
+            @remove="removeHeading"
+            @scroll-to="scrollEditorToHeading"
+          />
         </template>
       </aside>
       </template>
@@ -1505,67 +1487,15 @@ const primaryLabel = computed(() =>
   }
 }
 
-.ce-toc-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 
-.ce-toc-item {
-  flex: 1;
-  min-width: 0;
-  display: block;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  text-decoration: none;
-  padding: 6px 8px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
 
-  &:hover {
-    color: var(--color-primary);
-    background: var(--color-bg);
-  }
-}
 
-.ce-toc-item.level-three {
-  padding-left: 22px;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-}
 
-.ce-toc-row { display: flex; align-items: center; gap: 2px; border-radius: 4px; }
-.ce-toc-row > button:not(.ce-toc-item) { width: 25px; height: 25px; display: none; align-items: center; justify-content: center; color: var(--color-text-tertiary); border-radius: 4px; }
-.ce-toc-row:hover { background: var(--color-bg); }
-.ce-toc-row:hover > button { display: inline-flex; }
-.ce-toc-row > button:not(.ce-toc-item):hover { color: var(--color-primary); background: var(--color-primary-lighter); }
-
-.ce-toc-empty {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  padding: 4px 10px;
-}
 
 .ce-toc-empty-action { display: flex; align-items: center; gap: 6px; border: 1px dashed var(--color-border); border-radius: 5px; padding: 9px 10px; }
 .ce-toc-empty-action:hover { border-color: var(--color-primary-light); color: var(--color-primary); }
 
-.ce-side-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--color-border-light);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
-}
 
-.ce-side-head-action { width: 26px; height: 26px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--color-text-tertiary); }
-.ce-side-head-action:hover { color: var(--color-primary); background: var(--color-primary-lighter); }
 
 
 
