@@ -218,6 +218,34 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 日期/时间字符串解析失败 → 40001 / HTTP 400。
+     *
+     * <p>{@link java.time.format.DateTimeParseException} 继承自
+     * {@code RuntimeException}，不显式接管就会落到本类底部的
+     * {@code handleRuntimeException}，返回 <b>HTTP 500「服务内部异常」</b>。
+     *
+     * <p>典型触发点是 Controller 里手工 {@code LocalDate.parse(req.dueDate())}
+     * 这类调用——请求体里的日期字段没走 Spring 的类型绑定，
+     * 而是在业务代码里解析，因此绕过了
+     * {@code MethodArgumentTypeMismatchException} 那条已有的 400 通道。</p>
+     *
+     * <p>用户填了个 {@code 2026/08/25}（斜杠而非连字符）或
+     * {@code 2026-8-5}（月份没补零），本该被告知「格式不对」，
+     * 却看到「服务内部异常，请联系管理员」——他会去找管理员，
+     * 而管理员在日志里看到的是一条 5xx，同样会往服务端故障的方向查。</p>
+     *
+     * <p>消息里给出期望格式而不是回显用户输入：
+     * 告诉他「应为 yyyy-MM-dd」才是可执行的下一步。</p>
+     */
+    @ExceptionHandler(java.time.format.DateTimeParseException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleDateTimeParse(java.time.format.DateTimeParseException ex) {
+        log.warn("⚠️ [GlobalException] 日期解析失败: {}", ex.getMessage());
+        return ApiResponse.error(BizError.INVALID_PARAM.code(),
+                "日期格式不正确，应为 yyyy-MM-dd（如 2026-08-25）");
+    }
+
+    /**
      * HTTP 方法不支持 → 405。
      *
      * <p>路由写错（把 PUT 发成 POST）时应明确告知，而不是报 500 让人以为服务挂了。
