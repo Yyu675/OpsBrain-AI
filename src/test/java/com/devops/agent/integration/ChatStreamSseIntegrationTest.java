@@ -502,7 +502,12 @@ class ChatStreamSseIntegrationTest {
     // 也没有真实连接可断，切片测试里它们全是假的。
 
     /**
-     * ⚠️ 暂缓：本用例查出的是 <b>LangChain4j 1.1.0 框架自身的并发缺陷</b>，应用侧改不掉。
+     * 并发多路流互不串号。
+     *
+     * <h3>本用例的价值：它查出了一个框架级并发缺陷</h3>
+     * 启用之初 4 路并发必有一路失败，最终定位为
+     * <b>LangChain4j 1.1.0 的 {@code AbstractGuardrailService} 并发缺陷</b>
+     * （已通过升级到 1.2.0 修复，详见 pom.xml 中的版本说明）。
      *
      * <h3>完整堆栈（本轮通过审计表反查拿到）</h3>
      * <pre>
@@ -520,7 +525,7 @@ class ChatStreamSseIntegrationTest {
      * JDK 9+ 的 HashMap 会做 modCount 校验并抛 CME。
      * 这是教科书式的「HashMap 当并发缓存用」缺陷，只是它在框架里。</p>
      *
-     * <h3>为什么应用侧修不了</h3>
+     * <h3>当时为什么应用侧修不了</h3>
      * 那个 HashMap 是 {@code AbstractGuardrailService} 的私有字段，
      * 由 {@code AiServices.builder()} 内部构造，没有任何扩展点可以替换成
      * ConcurrentHashMap。可选的绕法都不划算：
@@ -529,8 +534,8 @@ class ChatStreamSseIntegrationTest {
      *       等于为了绕过框架 bug 牺牲整个系统的吞吐；</li>
      *   <li>每个请求新建一个 AI Service 实例 —— 每次都要重建代理与工具元数据，
      *       开销远大于收益，且会绕开 chatMemoryProvider 的会话隔离设计；</li>
-     *   <li>升级 langchain4j —— 是正解，但需要验证 1.x 后续版本的 API 兼容性，
-     *       且当前沙箱 Maven 镜像不可达，无法验证依赖能否解析。</li>
+     *   <li>升级 langchain4j —— <b>最终采用的正解</b>。上游 issue #3335
+     *       已把那四个 Map 全部改成 ConcurrentHashMap，1.2.0 起包含该修复。</li>
      * </ul>
      *
      * <h3>本轮的实际产出</h3>
@@ -541,12 +546,12 @@ class ChatStreamSseIntegrationTest {
      * 它们各自都会在并发下抛 CME，只是被框架这一处更早触发的缺陷盖住了——
      * 证据是每修一处，堆栈里的行号就往前推进一次（681 → 467 → 框架内部）。
      *
-     * <h3>恢复条件</h3>
-     * 升级 langchain4j 到修复该问题的版本后，移除本注解直接跑。
-     * 用例本身无需改动——它测的是正确行为，现在也确实指出了真问题。
+     * <h3>留存这段记录的原因</h3>
+     * 用例本身<b>一行未改</b>就从红转绿——它测的始终是正确行为。
+     * 记下这段是为了说明：并发用例的价值不在「跑通」，
+     * 而在于它能逼出顺序执行永远碰不到的问题，
+     * 包括依赖库里的。往后若再出现同类 CME，先看这条路径。
      */
-    @org.junit.jupiter.api.Disabled("LangChain4j 1.1.0 框架缺陷：AbstractGuardrailService 用 HashMap.computeIfAbsent "
-            + "做并发缓存，多线程调用同一 AI Service 方法时抛 CME。应用侧无扩展点可改，需升级框架。详见方法注释")
     @Test
     @DisplayName("并发多路流互不串号 —— 串号会让 A 用户看到 B 用户的回答")
     void concurrentStreamsDoNotInterleave() throws Exception {

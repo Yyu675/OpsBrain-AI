@@ -19,7 +19,26 @@
     <properties>
         <java.version>21</java.version>
         <!-- LangChain4j 统一版本；升级只需改这一处 -->
-        <langchain4j.version>1.1.0</langchain4j.version>
+        <!--
+          1.1.0 → 1.2.0：修 AbstractGuardrailService 的并发缺陷。
+
+          1.1.0 里那四个缓存用的是普通 HashMap，而 DefaultAiServices 的动态代理
+          是所有请求共用的单例。并发调用同一 AI Service 方法时多线程同时进入
+          computeIfAbsent，JDK 9+ 的 modCount 校验会抛 ConcurrentModificationException，
+          被应用层兜底 catch 吞成一句「50001 服务内部异常」。
+
+          上游 issue #3335「Guardrails implementation not thread-safe」已修复
+          （四个 Map 全部改为 ConcurrentHashMap），本项目核对过 1.2.0 的源码确认包含该修复。
+          另有 issue #3558 报告的正是本项目遇到的同一条堆栈，至今仍 open——
+          说明它就是 #3335 未升级版本的重现。
+
+          选 1.2.0 而非最新的 1.19.x：这是**包含修复的最小跨度**。
+          langchain4j 1.x 期间 API 仍在演进，而本项目重度依赖
+          TokenStream / AiServices / ChatMemoryProvider 等接口，
+          跨十几个小版本的收益（新特性）远不及回归风险。
+          修完这个具体缺陷即止，后续升级应单独评估。
+        -->
+        <langchain4j.version>1.2.0</langchain4j.version>
 
         <!--
           让 javac 把每条诊断打成 GitHub Actions 的 workflow command，
