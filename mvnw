@@ -200,6 +200,9 @@ exec_maven() {
       # 本项目已因此多耗了两轮 CI（先是 SSE 定位，后是 KnowledgeDocService）。
       #
       # 有报告时这里退化为普通输出，配额整个让给下方的 surefire 详情。
+      # 探针：确认这段到底有没有跑、报告目录状态如何。
+      # 连自诊断断言消息都没出现，说明整个 surefire 重放块可能压根没执行。
+      echo "::error::[诊断] rc=$_mvnw_rc dir=$([ -d target/surefire-reports ] && echo yes || echo no) txt=$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null | wc -l)"
       _has_reports=0
       if [ -d target/surefire-reports ] \
          && [ -n "$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null | head -1)" ]; then
