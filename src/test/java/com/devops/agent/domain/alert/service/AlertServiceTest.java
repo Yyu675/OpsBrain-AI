@@ -90,8 +90,11 @@ class AlertServiceTest {
             a.setId(1L);
             return a;
         });
+        // 注意 assignee 用 any()：产品代码传的是 null（告警建单不预设负责人），
+        // 而 Mockito 的 anyString() **不匹配 null**，写成 anyString() 桩不会生效，
+        // createTicket 返回 null，回填工单号与通知那段就被静默跳过了
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
-                anyString(), anyString(), anyString(), anyString()))
+                any(), anyString(), anyString(), anyString()))
                 .thenAnswer(inv -> {
                     DevOpsTicket t = new DevOpsTicket();
                     t.setId("TK-2026-0001");
@@ -146,7 +149,7 @@ class AlertServiceTest {
 
             verify(alertRepository, never()).save(any());
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString());
         }
 
         @Test
@@ -208,7 +211,7 @@ class AlertServiceTest {
             verify(alertRepository, never()).save(any());
             // 重复告警不该再建一张工单——否则一次持续故障会刷屏
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString());
             verify(notifier).broadcastUpdate(existing);
         }
 
@@ -299,7 +302,7 @@ class AlertServiceTest {
                     labels("alertname", "X", "service", "api", "severity", severity))));
             ArgumentCaptor<String> pr = ArgumentCaptor.forClass(String.class);
             verify(ticketService).createTicket(anyString(), pr.capture(), anyString(),
-                    anyString(), anyString(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString());
             return pr.getValue();
         }
 
@@ -355,7 +358,7 @@ class AlertServiceTest {
 
             ArgumentCaptor<String> creator = ArgumentCaptor.forClass(String.class);
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), creator.capture());
+                    any(), anyString(), anyString(), creator.capture());
             assertEquals("alert-bot", creator.getValue());
 
             verify(notifier).broadcastNew(saved);
@@ -378,7 +381,7 @@ class AlertServiceTest {
         @DisplayName("建单失败不影响告警入库 —— 告警本体有效，工单是附属增值")
         void ticketFailureDoesNotBlockAlertPersistence() {
             when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), anyString()))
+                    any(), anyString(), anyString(), anyString()))
                     .thenThrow(new RuntimeException("ticket service down"));
 
             assertDoesNotThrow(() -> service.processWebhook(webhook(incoming("firing",
@@ -399,7 +402,7 @@ class AlertServiceTest {
 
             verify(alertRepository).save(any(Alert.class));
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString());
         }
 
         @Test
@@ -417,7 +420,7 @@ class AlertServiceTest {
             // 一次节点宕机会引发十几条不同告警，各建一张工单会把值班人淹没
             verify(alertRepository).updateTicketId(1L, "TK-2026-0001");
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString());
             // 但被抑制的告警本身仍然入库、仍然可见
             verify(alertRepository).save(any(Alert.class));
         }
@@ -453,7 +456,7 @@ class AlertServiceTest {
 
             verify(alertRepository, never()).updateTicketId(anyLong(), anyString());
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), anyString());
+                    any(), anyString(), anyString(), anyString());
         }
 
         @Test
@@ -470,7 +473,7 @@ class AlertServiceTest {
 
             verify(alertRepository, never()).updateTicketId(anyLong(), any());
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                    anyString(), anyString(), anyString(), anyString());
+                    any(), anyString(), anyString(), anyString());
         }
     }
 }
