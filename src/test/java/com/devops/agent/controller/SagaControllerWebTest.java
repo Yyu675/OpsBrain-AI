@@ -56,6 +56,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 少了它，运维得自己去翻代码里的枚举定义才知道 TIMEOUT 能不能重试。
  * 所以这几个字段是契约的一部分，有用例逐个钉住。</p>
  *
+ * <h3>测试边界声明：这里<b>不</b>验证 ADMIN 权限</h3>
+ * 本控制器标了 {@code @SaCheckRole("ADMIN")}，但该注解由 Sa-Token 的注解拦截器执行，
+ * 而拦截器注册在 {@code WebConfig} 里——本切片刻意排除了它
+ * （切片中缺少 Sa-Token 运行时上下文，不排除会让所有请求变成 401，
+ * 把「契约是否正确」的断言变成「鉴权是否配好」的噪音）。
+ *
+ * <p><b>因此本类里的请求都是「已放行」状态，不构成对权限的任何保证。</b>
+ * 与 {@code AuditLogControllerWebTest} / {@code AgentTraceControllerWebTest} 同样的处理。
+ * Saga 端点会执行逆向补偿（回滚已落库的写操作），其权限须由专门的鉴权集成测试覆盖。</p>
+ *
  * <h3>另一条：needsAttention 必须来自枚举而不是前端硬编码</h3>
  * 哪些状态算「需要关注」是领域知识（PARTIAL_SUCCESS / COMPENSATION_FAILED /
  * MANUAL_INTERVENTION_REQUIRED 三个）。前端若自己维护一份清单，
