@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Clock, AlertTriangle,
   Send, ArrowUp, ArrowRightLeft, X, Check, Info, Plus,
-  Sparkles, BookPlus, Paperclip, Trash2, Download, TrendingUp
+  Sparkles, BookPlus, Paperclip, TrendingUp
 } from 'lucide-vue-next'
 import { useTicketsStore, getStatusLabel, getPriorityLabel, UNASSIGNED } from '@/stores/tickets'
 import { canTransitionStatus, isTerminalStatus } from '@/constants/ticket'
@@ -35,6 +35,14 @@ import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
 import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
 import TicketTimeline from '@/components/ticket/TicketTimeline.vue'
 import TicketInsights from '@/components/ticket/TicketInsights.vue'
+// 右侧栏四块已拆为独立组件。业务逻辑仍留在本文件（addTag/removeTag、
+// useTicketAttachments 的回调），子组件只负责画 DOM 并把交互抛回来——
+// 这样 TicketDetail.actions.test.ts 里打在 vm.addTag() 上的 6 例
+// 一行不用改，拆分对错才有一把没被挪动过的标尺。
+import TicketPropsPanel from '@/components/ticket/TicketPropsPanel.vue'
+import TicketTagEditor from '@/components/ticket/TicketTagEditor.vue'
+import TicketAttachmentPanel from '@/components/ticket/TicketAttachmentPanel.vue'
+import TicketActivityLog from '@/components/ticket/TicketActivityLog.vue'
 import KnowledgeSinkDrawer from '@/components/ticket/KnowledgeSinkDrawer.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
@@ -549,9 +557,13 @@ const removeTag = async (tag: string) => {
 // 与其余逻辑耦合最少的一块（不参与状态机、不写活动流、不影响闭环进度）。
 // 「切换工单先清空再重载」「加载失败只降级不弹错、上传失败必须提示」
 // 等取舍连同注释一并搬走。
+//
+// 拆分后不再解构 fileInputRef / pickAttachment：隐藏 input 与「点按钮触发选择」
+// 是纯 DOM 细节，已封进 TicketAttachmentPanel 内部。composable 里那两个成员
+// 未删——它们有独立单测，且接口收窄属于本页的选择，不该反向裁剪公共 composable。
 const {
-  attachments, attachmentsLoading, uploading, fileInputRef,
-  loadAttachments, pickAttachment, onAttachmentSelected,
+  attachments, attachmentsLoading, uploading,
+  loadAttachments, onAttachmentSelected,
   downloadAttachment, removeAttachment,
 } = useTicketAttachments({
   ticketId,
@@ -841,69 +853,25 @@ const onSinkGotoDoc = (docId: number) => {
 
             <!-- 工单属性 -->
             <CollapsibleCard title="工单属性" :icon="Info" storage-key="td-props">
-              <div class="props-list">
-                <div v-for="prop in properties" :key="prop.label" class="prop-row">
-                  <span class="prop-label">{{ prop.label }}</span>
-                  <span
-                    class="prop-value"
-                    :class="{
-                      'prop-mono': prop.mono,
-                      'prop-priority-urgent': prop.type === 'priority-urgent',
-                      'prop-priority-high': prop.type === 'priority-high',
-                      'prop-status': prop.type === 'status'
-                    }"
-                  >
-                    <span v-if="prop.type?.startsWith('priority-') && prop.type !== 'priority-medium' && prop.type !== 'priority-low'" class="prop-dot"></span>
-                    {{ prop.value }}
-                  </span>
-                </div>
-              </div>
-              <!-- SLA Progress -->
-              <div class="sla-progress">
-                <div class="sla-header">
-                  <span class="sla-label">SLA 进度</span>
-                  <span class="sla-value" :class="{ 'sla-value-breached': ticket.slaBreached }">
-                    {{ ticket.slaBreached ? '已超时' : ticket.slaProgress + '% 已消耗' }}
-                  </span>
-                </div>
-                <div class="progress-bar">
-                  <div
-                    class="progress-fill"
-                    :class="slaBarClass"
-                    :style="{ width: ticket.slaProgress + '%' }"
-                  ></div>
-                </div>
-              </div>
+              <TicketPropsPanel
+                :properties="properties"
+                :sla-progress="ticket.slaProgress"
+                :sla-breached="ticket.slaBreached"
+                :sla-bar-class="slaBarClass"
+              />
             </CollapsibleCard>
 
             <!-- 标签管理 -->
             <CollapsibleCard title="标签" :icon="Info" storage-key="td-tags" :badge="(ticket.tags || []).length || undefined">
-              <div class="tag-edit-area">
-                <span v-for="tag in (ticket.tags || [])" :key="tag" class="tag-chip">
-                  {{ tag }}
-                  <button class="tag-remove" @click="removeTag(tag)" :disabled="tagRemoving">×</button>
-                </span>
-                <div class="tag-add-row">
-                  <input
-                    v-model="newTagInput"
-                    class="tag-input"
-                    placeholder="添加标签..."
-                    @keydown.enter="addTag"
-                    :disabled="tagRemoving"
-                  />
-                  <button class="tag-add-btn" @click="addTag" :disabled="!newTagInput.trim() || tagRemoving">添加</button>
-                </div>
-                <div v-if="store.hotTags.length" class="tag-suggestions">
-                  <span class="tag-suggest-label">热门：</span>
-                  <button
-                    v-for="tag in store.hotTags.slice(0, 5)"
-                    :key="tag"
-                    class="tag-suggest"
-                    @click="addTagFromSuggestion(tag)"
-                    :disabled="tagRemoving || (ticket.tags || []).includes(tag)"
-                  >{{ tag }}</button>
-                </div>
-              </div>
+              <TicketTagEditor
+                v-model:draft="newTagInput"
+                :tags="ticket.tags || []"
+                :hot-tags="store.hotTags"
+                :busy="tagRemoving"
+                @add="addTag"
+                @remove="removeTag"
+                @add-suggested="addTagFromSuggestion"
+              />
             </CollapsibleCard>
 
             <!-- AI 智能分析（只读 Insights） -->
@@ -922,58 +890,19 @@ const onSinkGotoDoc = (docId: number) => {
 
             <!-- 附件 -->
             <CollapsibleCard title="附件" :icon="Paperclip" storage-key="td-attachments" :badge="attachments.length || undefined">
-              <div v-if="attachmentsLoading" class="attach-empty">加载中…</div>
-              <div v-else-if="attachments.length === 0" class="attach-empty">暂无附件</div>
-              <ul v-else class="attach-list">
-                <li v-for="item in attachments" :key="item.id" class="attach-item">
-                  <div class="attach-meta">
-                    <span class="attach-name" :title="item.originalName">{{ item.originalName }}</span>
-                    <span class="attach-size">{{ item.sizeText }}</span>
-                  </div>
-                  <div class="attach-ops">
-                    <button class="attach-op" title="下载" @click="downloadAttachment(item)">
-                      <Download :size="14" />
-                    </button>
-                    <button class="attach-op attach-op-danger" title="删除" @click="removeAttachment(item)">
-                      <Trash2 :size="14" />
-                    </button>
-                  </div>
-                </li>
-              </ul>
-              <!--
-                用 :ref 动态绑定而非字符串 ref="fileInputRef"：
-                后者与 script setup 变量的关联 vue-tsc 识别不到，
-                会误报 "declared but its value is never read"。
-                动态绑定是显式引用，类型检查能看见。
-              -->
-              <input
-                :ref="(el) => (fileInputRef = el as HTMLInputElement | null)"
-                type="file"
-                class="attach-file-input"
-                @change="onAttachmentSelected"
+              <TicketAttachmentPanel
+                :attachments="attachments"
+                :loading="attachmentsLoading"
+                :uploading="uploading"
+                @download="downloadAttachment"
+                @remove="removeAttachment"
+                @select="onAttachmentSelected"
               />
-              <button class="btn-outline attach-upload" :disabled="uploading" @click="pickAttachment">
-                <Paperclip :size="14" />
-                {{ uploading ? '上传中…' : '上传附件' }}
-              </button>
             </CollapsibleCard>
 
             <!-- 操作记录 -->
             <CollapsibleCard title="操作记录" :icon="Clock" storage-key="td-activity">
-              <div class="activity-list">
-                <div v-if="!ticket.activities || ticket.activities.length === 0" class="activity-empty">
-                  暂无操作记录
-                </div>
-                <div v-for="(a, i) in ticket.activities" :key="a.time + '-' + a.user + '-' + i" class="activity-row">
-                  <div class="activity-dot" :class="`activity-dot-${a.color}`"></div>
-                  <div class="activity-body">
-                    <p class="activity-text">
-                      {{ a.text }}<template v-if="a.detail">: <span class="activity-detail" :class="{ 'activity-detail-highlight': a.highlight }">{{ a.detail }}</span></template>
-                    </p>
-                    <p class="activity-meta">{{ a.user }} &middot; {{ a.time }}</p>
-                  </div>
-                </div>
-              </div>
+              <TicketActivityLog :activities="ticket.activities || []" />
             </CollapsibleCard>
           </aside>
 
@@ -1399,414 +1328,21 @@ const onSinkGotoDoc = (docId: number) => {
   border: 2px solid var(--color-primary-lighter, var(--brand-subtle));
 }
 
-/* 预览占位标签（无真实数据源时标「预览」，不伪造数字 — 09设计规范 §四.1） */
-.preview-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  margin-left: auto;
-  border-radius: var(--radius-full, 9999px);
-  background: var(--color-bg-sunken, var(--surface-2));
-  color: var(--color-text-tertiary, var(--text-3));
-  font-size: 10px;
-  font-weight: var(--weight-medium, 500);
-  line-height: 1.5;
-  flex-shrink: 0;
-}
+/* ── 右侧栏样式已随模板一并搬出 ──────────────────────────────
+   属性/SLA → TicketPropsPanel.vue
+   标签编辑 → TicketTagEditor.vue
+   附件     → TicketAttachmentPanel.vue（含 .btn-outline 副本，scoped 不穿透）
+   操作记录 → TicketActivityLog.vue
 
-/* ========== Properties ========== */
-.props-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
+   同时删掉了 39 个**已无对应 DOM** 的类：
+   `.ai-insights` / `.insight-*` 十条是 TicketInsights 抽出去时的遗留，
+   `.empty-card` / `.empty-icon` / `.loading-spinner` 等九条在改用
+   AppEmpty / ApiErrorState / PageLoading 后就没人引用了，
+   `.preview-tag` 则是占位标签删除后剩下的。
 
-.prop-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.prop-label {
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, var(--text-3));
-}
-
-.prop-value {
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-primary, var(--text-1));
-  font-weight: var(--weight-medium, 500);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-
-  &.prop-mono {
-    font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  }
-
-  &.prop-priority-urgent {
-    color: var(--state-error, var(--danger));
-  }
-
-  &.prop-priority-high {
-    color: #EA580C;
-  }
-
-  &.prop-status {
-    color: var(--color-primary-light, var(--brand-hover));
-  }
-}
-
-.prop-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  display: inline-block;
-}
-
-/* ========== Tag Edit ========== */
-.tag-edit-area { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.tag-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 8px; font-size: 0.75rem;
-  background: rgba(64, 158, 255, 0.1); color: var(--brand);
-  border-radius: 4px;
-}
-.tag-remove {
-  border: none; background: none; cursor: pointer;
-  color: var(--brand); font-size: 0.875rem; line-height: 1;
-  padding: 0; opacity: 0.6;
-}
-.tag-remove:hover { opacity: 1; }
-.tag-remove:disabled { opacity: 0.3; cursor: not-allowed; }
-.tag-add-row { display: flex; gap: 6px; width: 100%; margin-top: 4px; }
-.tag-input {
-  flex: 1; padding: 4px 8px; font-size: 0.8125rem;
-  border: 1px solid var(--border-1); border-radius: 4px;
-}
-.tag-add-btn {
-  padding: 4px 12px; font-size: 0.8125rem;
-  border: 1px solid var(--brand); background: var(--brand); color: #fff;
-  border-radius: 4px; cursor: pointer;
-}
-.tag-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.tag-suggestions { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; margin-top: 6px; }
-.tag-suggest-label { font-size: 0.75rem; color: var(--text-3); line-height: 1.6; }
-.tag-suggest {
-  border: 1px solid var(--border-1); background: #fff; color: var(--text-2);
-  font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; cursor: pointer;
-}
-.tag-suggest:hover { border-color: var(--brand); color: var(--brand); }
-.tag-suggest:disabled { opacity: 0.3; cursor: not-allowed; }
-
-/* ========== SLA Progress ========== */
-.sla-progress {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border-light, var(--border-1));
-}
-
-.sla-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.sla-label {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
-}
-
-.sla-value {
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--state-warning, var(--warning));
-}
-
-.sla-value-breached {
-  color: var(--state-error, var(--danger)) !important;
-  font-weight: var(--weight-semibold, 600);
-}
-
-.progress-bar {
-  width: 100%;
-  height: 8px;
-  background: var(--color-bg-sunken, var(--surface-2));
-  border-radius: var(--radius-full, 9999px);
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full, 9999px);
-  transition: width 0.3s ease, background 0.2s ease;
-
-  &.progress-fill-normal { background: var(--color-primary-light, var(--brand-hover)); }
-  &.progress-fill-warning { background: var(--state-warning, var(--warning)); }
-  &.progress-fill-error { background: var(--state-error, var(--danger)); }
-}
-
-/* ========== AI Insights ========== */
-.ai-insights {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.insight-item {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.insight-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md, 8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.insight-icon-blue {
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  color: var(--color-primary-light, var(--brand-hover));
-}
-
-.insight-icon-warning {
-  background: var(--state-warning-bg, var(--warning-subtle));
-  color: var(--state-warning, var(--warning));
-}
-
-.insight-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.insight-label {
-  font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, var(--text-1));
-  margin: 0;
-}
-
-.insight-hint {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
-  margin: 2px 0 0 0;
-}
-
-.insight-hint-warning {
-  color: var(--state-warning, var(--warning));
-}
-
-/* ========== Activity Log ========== */
-.activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.activity-empty {
-  text-align: center;
-  color: var(--color-text-tertiary, var(--text-3));
-  padding: 20px;
-  font-size: 0.8125rem;
-}
-
-.activity-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.activity-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  margin-top: 6px;
-  flex-shrink: 0;
-
-  &.activity-dot-success { background: var(--state-success, var(--success)); }
-  &.activity-dot-primary { background: var(--color-primary-light, var(--brand-hover)); }
-  &.activity-dot-gray { background: var(--color-text-tertiary, var(--text-3)); }
-  &.activity-dot-warning { background: var(--state-warning, var(--warning)); }
-}
-
-.activity-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.activity-text {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-secondary, var(--text-2));
-  margin: 0;
-}
-
-.activity-detail {
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, var(--text-1));
-
-  &.activity-detail-highlight {
-    color: var(--color-primary, var(--brand));
-  }
-}
-
-.activity-meta {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
-  margin: 2px 0 0 0;
-}
-
-/* ========== Empty / Error States ========== */
-.empty-card {
-  max-width: 520px;
-  margin: 40px auto;
-  padding: 40px 32px;
-  background: var(--color-surface, var(--surface-1));
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
-  text-align: center;
-}
-
-.empty-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  color: var(--color-primary, var(--brand));
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.empty-icon-error {
-  background: var(--state-error-bg, var(--danger-subtle));
-  color: var(--state-error, var(--danger));
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  margin: 0 auto 16px;
-  border: 3px solid var(--color-primary-lighter, var(--brand-subtle));
-  border-top-color: var(--color-primary, var(--brand));
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.empty-title {
-  font-size: var(--text-xl, 1.25rem);
-  font-weight: var(--weight-semibold, 600);
-  color: var(--color-text-primary, var(--text-1));
-  margin: 0 0 8px 0;
-}
-
-.empty-hint {
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, var(--text-3));
-  margin: 0 0 20px 0;
-}
-
-.empty-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.attach-empty {
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-  padding: 8px 0 12px;
-}
-
-.attach-list {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.attach-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--color-bg);
-  border-radius: var(--radius-sm);
-}
-
-.attach-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.attach-name {
-  font-size: var(--text-sm);
-  color: var(--color-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.attach-size {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-}
-
-.attach-ops {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.attach-op {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  &:hover {
-    background: var(--color-primary-lighter);
-    color: var(--color-primary);
-  }
-}
-
-.attach-op-danger:hover {
-  background: var(--state-error-bg);
-  color: var(--state-error);
-}
-
-.attach-file-input {
-  display: none;
-}
-
-.attach-upload {
-  width: 100%;
-  justify-content: center;
-}
+   死样式不报错也不影响渲染，但它们会让下一个人以为
+   「页面上还有这块 UI」，照着改半天发现毫无效果——
+   这正是本次拆分前排查右侧栏花掉的时间。 */
 
 /* ===== B5 闭环进度条 ===== */
 .closure-progress-bar {
