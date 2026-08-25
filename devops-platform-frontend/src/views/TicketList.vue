@@ -6,6 +6,7 @@ import { ElMessageBox } from 'element-plus'
 // el-table 的排序与列上下文类型（组件本身已全局注册，无需按值引入）
 import type { Sort, TableColumnCtx } from 'element-plus'
 import TicketFormDialog from '@/components/ticket/TicketFormDialog.vue'
+import TicketCardGrid from '@/components/ticket/TicketCardGrid.vue'
 import { showUndoToast } from '@/utils/undoToast'
 // 搜索防抖（列宽持久化已移入 useTicketColumns）
 import { debounce } from '@/utils/persist'
@@ -1111,51 +1112,19 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
       </div>
 
       <!-- 卡片视图 -->
-      <div v-else class="card-grid">
-        <div
-          v-for="ticket in pagedTickets"
-          :key="ticket.id"
-          class="ticket-card"
-          :class="{ selected: selectedIds.includes(ticket.id) }"
-          @click="router?.push(`/tickets/${ticket.id}`)"
-        >
-          <div class="card-top">
-            <label class="card-check" @click.stop>
-              <input
-                type="checkbox"
-                :checked="selectedIds.includes(ticket.id)"
-                @change="toggleSelect(ticket.id)"
-              />
-            </label>
-            <RouterLink :to="`/tickets/${ticket.id}`" class="card-id" @click.stop>{{ ticket.id }}</RouterLink>
-            <span class="priority-badge" :class="getPriorityClass(ticket.priority)">{{ getPriorityLabel(ticket.priority) }}</span>
-          </div>
-          <RouterLink :to="`/tickets/${ticket.id}`" class="card-title" @click.stop>{{ ticket.title }}</RouterLink>
-          <p class="card-desc">{{ ticket.service }} / {{ ticket.description }}</p>
-          <div v-if="ticket.tags && ticket.tags.length" class="card-tags">
-            <span v-for="tag in ticket.tags.slice(0, 3)" :key="tag" class="ticket-tag">{{ tag }}</span>
-            <span v-if="ticket.tags.length > 3" class="ticket-tag-more">+{{ ticket.tags.length - 3 }}</span>
-          </div>
-          <div class="card-foot">
-            <span class="status-badge" :class="getStatusClass(ticket.status)">{{ getStatusLabel(ticket.status) }}</span>
-            <div class="assignee-cell">
-              <span class="assignee-avatar">{{ (ticket.assignee || '?')[0] }}</span>
-              <span class="assignee-name">{{ ticket.assignee }}</span>
-            </div>
-          </div>
-          <div class="card-meta">
-            <span class="timestamp"><RelativeTime :value="ticket.createdAt" /></span>
-            <div class="actions" @click.stop>
-              <button class="action-icon-btn" title="编辑" @click="openEditDialog(ticket)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
-              <button class="action-icon-btn action-icon-btn-danger" title="删除" @click="deleteTicket(ticket)">
-                <Trash2 :size="14" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <TicketCardGrid
+        v-else
+        :tickets="pagedTickets"
+        :selected-ids="selectedIds"
+        :get-status-class="getStatusClass"
+        :get-status-label="getStatusLabel"
+        :get-priority-class="getPriorityClass"
+        :get-priority-label="getPriorityLabel"
+        @toggle-select="toggleSelect"
+        @open-detail="(id: string) => router?.push(`/tickets/${id}`)"
+        @edit="openEditDialog"
+        @delete="deleteTicket"
+      />
       </DataStateBoundary>
 
       <!-- Pagination (对齐设计稿) -->
@@ -1907,90 +1876,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 }
 
 /* ========== 卡片视图 ========== */
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.ticket-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 16px;
-  cursor: pointer;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-.ticket-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--color-primary-light);
-  transform: translateY(-2px);
-}
-.ticket-card.selected {
-  border-color: var(--color-primary);
-  background: var(--color-primary-lighter);
-}
-.card-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.card-check { display: inline-flex; cursor: pointer; }
-.card-check input { cursor: pointer; }
-.card-id {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--color-primary-light);
-  text-decoration: none;
-  font-weight: var(--weight-medium);
-}
-.card-id:hover { text-decoration: underline; }
-.card-top .priority-badge { margin-left: auto; }
-.card-title {
-  font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
-  text-decoration: none;
-  font-size: var(--text-sm);
-  line-height: var(--leading-snug);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.card-title:hover { color: var(--color-primary); }
-.card-desc {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  line-height: var(--leading-normal);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.card-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--color-border-light);
-}
+/* 卡片视图样式已随模板迁入 components/ticket/TicketCardGrid.vue */
 
 /* el-table 主题对齐
    注意：el-table 渲染的是自己的内部 DOM，原先针对裸 thead/th/td 的选择器

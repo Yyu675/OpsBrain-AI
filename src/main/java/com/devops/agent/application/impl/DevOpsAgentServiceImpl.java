@@ -368,6 +368,16 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 // 而客户端拿到的又是兜底的 50001，两头都看不出原因。
                 String detail = e.getClass().getSimpleName()
                         + (e.getMessage() != null ? ": " + e.getMessage() : "");
+                // 带上首个业务栈帧：异常类型本身往往不足以定位
+                // （ConcurrentModificationException 可能来自任何一处共享集合遍历）。
+                // 只取 com.devops 包内的第一帧，避免把框架栈全塞进审计字段。
+                for (StackTraceElement f : e.getStackTrace()) {
+                    if (f.getClassName().startsWith("com.devops")) {
+                        detail += " @" + f.getClassName().substring(f.getClassName().lastIndexOf('.') + 1)
+                                + "." + f.getMethodName() + ":" + f.getLineNumber();
+                        break;
+                    }
+                }
                 transitionOrWarn(traceId, AgentState.FAILED,
                         AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + detail);
                 recordLogAsync(traceId, query, "系统异常: " + detail,
