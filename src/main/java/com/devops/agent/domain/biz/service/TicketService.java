@@ -642,6 +642,21 @@ public class TicketService {
      * @param assignee 可选：确认的同时接单给自己
      * @return 更新后的工单
      */
+    // 事务：本方法内部串联 markFirstResponse + transferTicket + updateStatus，
+    // 最多写 4 张表（工单、活动流 ×3）。
+    //
+    // 这里的 @Transactional 是**必须**的，原因不只是「多表要原子」：
+    // transferTicket 与 updateStatus 各自都标了 @Transactional，但它们是被
+    // this.xxx() 直接调用的——Spring 的事务由 AOP 代理织入，
+    // 自调用不经过代理，那两个注解在这条路径上**完全不生效**。
+    //
+    // 也就是说，修复前这里是「三次独立的自动提交写入」：
+    // 转派成功但状态变更失败时，工单会停在
+    // 「负责人已改、状态仍是待处理、活动流只留了转派记录」的半截状态，
+    // 而调用方收到异常会以为整个操作都没发生。
+    //
+    // 加在最外层方法上之后，内层自调用共用同一个事务，任一步失败整体回滚。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket acknowledgeTicket(String ticketId, String responder, String assignee) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
