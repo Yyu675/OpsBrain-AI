@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -192,6 +193,111 @@ class GovernanceRoleGuardIntegrationTest {
         // 拿到合法的 tokenName，但塞一个伪造值。
         // 若角色判定读的是客户端传来的内容而非服务端会话，这里会被放行
         mockMvc.perform(get(SAGA_READ).header(t.get("tokenName"), "forged-" + UUID.randomUUID()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ==================================================================
+    // 写端点边界
+    //
+    // 上面六例全部打在**只读**端点上。那是刻意的第一步：
+    // 先证明鉴权链本身通了，不引入「测试把数据改坏」的风险。
+    //
+    // 但只测只读端点留下了一个真实缺口：
+    // <b>`@SaCheckRole` 标在类上，覆盖范围是否真的包含写方法？</b>
+    // 若哪天有人给某个写方法单独加了 `@SaIgnore`（这是 Sa-Token 提供的
+    // 方法级豁免注解，一行就能加、review 时极不显眼），
+    // 只读端点的六例照样全绿，而逆向补偿对所有登录用户敞开。
+    //
+    // 这批用例把边界推到写端点上。做法是**挑选对不存在的 ID 天然无副作用
+    // 的写操作**，不需要预先造可回滚的测试数据：
+    //   - `POST /saga/{id}/compensate` —— sagaId 查不到待补偿步骤时
+    //     直接返回 noop（SagaCompensationManager 第 58-62 行）；
+    //   - `DELETE /governance/policies/{id}` —— 服务层先 findById，
+    //     不存在则抛 IllegalArgumentException，不会走到 delete；
+    //   - `POST /approvals/{id}/reject` —— 审批单不存在时返回 40004。
+    //
+    // 三者都在「权限判定之后、真正写库之前」失败，
+    // 因此能验证权限，又保证测试跑完数据库状态不变。
+    // ==================================================================
+
+    /** 写端点：逆向补偿。用随机 sagaId——查不到待补偿步骤，天然 noop */
+    private static final String SAGA_COMPENSATE = "/api/v1/saga/{id}/compensate";
+
+    /** 写端点：删除自动化策略。用不存在的 id——服务层 findById 先抛错，不会真删 */
+    private static final String POLICY_DELETE = "/api/v1/governance/policies/{id}";
+
+    @Test
+    @DisplayName("普通用户触发 Saga 逆向补偿 → 403，挡在执行之前")
+    void nonAdminCannotTriggerCompensation() throws Exception {
+        seedUser("OPS");
+        Map<String, String> t = login();
+
+        // 这是本项目权限敏感度最高的一个写端点：它会回滚**已经落库**的写操作
+        // （如作废已创建的工单）。补偿动作本身幂等，但「谁都能触发一次回滚」
+        // 本身就是问题——普通用户对着一个 sagaId 反复调用，
+        // 就能把别人刚建好的单据撤掉
+        mockMvc.perform(post(SAGA_COMPENSATE, "saga-" + UUID.randomUUID())
+                        .header(t.get("tokenName"), t.get("token")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40103));
+    }
+
+    @Test
+    @DisplayName("管理员触发 Saga 逆向补偿 → 放行（无待补偿步骤时 noop）")
+    void adminCanTriggerCompensation() throws Exception {
+        seedUser("ADMIN");
+        Map<String, String> t = login();
+
+        // 反向验证：证明 403 来自角色判定，而不是「这个写端点整个不通」。
+        // 随机 sagaId 查不到任何待补偿步骤，compensateSaga 走 noop 分支返回，
+        // 数据库状态不变——所以这一例可以放心跑在真实库上
+        mockMvc.perform(post(SAGA_COMPENSATE, "saga-" + UUID.randomUUID())
+                        .header(t.get("tokenName"), t.get("token")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.compensatedCount").value(0))
+                .andExpect(jsonPath("$.data.failedCount").value(0));
+    }
+
+    @Test
+    @DisplayName("普通用户删除自动化策略 → 403，挡在 findById 之前")
+    void nonAdminCannotDeletePolicy() throws Exception {
+        seedUser("OPS");
+        Map<String, String> t = login();
+
+        // DELETE 也必须被类级注解覆盖。用不存在的 id：
+        // 若权限没生效，请求会走到服务层并因「策略不存在」返回业务错误码，
+        // 那时状态码是 200 而非 403——两者区分得很干净，不会误判
+        mockMvc.perform(delete(POLICY_DELETE, 99_999_999L)
+                        .param("version", "0")
+                        .header(t.get("tokenName"), t.get("token")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40103));
+    }
+
+    @Test
+    @DisplayName("普通用户驳回审批 → 403，审批权不因登录而获得")
+    void nonAdminCannotRejectApproval() throws Exception {
+        seedUser("OPS");
+        Map<String, String> t = login();
+
+        // 审批是高危动作放行的最后一道闸。若普通用户能驳回，
+        // 也就意味着他能批准——那道闸等于不存在
+        mockMvc.perform(post("/api/v1/approvals/{id}/reject", 99_999_999L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"角色边界测试\"}")
+                        .header(t.get("tokenName"), t.get("token")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40103));
+    }
+
+    @Test
+    @DisplayName("不带 token 触发逆向补偿 → 401，未登录与角色不足仍区分")
+    void anonymousCannotTriggerCompensation() throws Exception {
+        // 只读端点已验过这条边界，写端点单独再验一次：
+        // 登录拦截器与角色拦截器是两个不同的组件，
+        // 前者若漏配了写路径的匹配规则，未登录请求会直接落到角色判定上
+        mockMvc.perform(post(SAGA_COMPENSATE, "saga-" + UUID.randomUUID()))
                 .andExpect(status().isUnauthorized());
     }
 }
