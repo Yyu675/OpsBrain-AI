@@ -4,12 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import TurndownService from 'turndown'
 import {
-  Save, Send, Upload, Sparkles, Settings2, FileText, Plus,
+  Save, Send, Upload, Settings2, FileText, Plus,
   Pencil, Trash2, BookOpen, Eye, Code2, ChevronDown, Lightbulb,
   Table2, Minus, Heading2, Heading3, SquareTerminal, Wrench,
   ListChecks, TriangleAlert, BookTemplate, MoreHorizontal,
   ListTree,
 } from 'lucide-vue-next'
+import DocPropertiesPanel from '@/components/knowledge/DocPropertiesPanel.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { useDirtyGuard } from '@/composables/useDirtyGuard'
 import { saveDraft, loadDraft, clearDraft } from '@/utils/draftStorage'
@@ -18,7 +19,6 @@ import { saveDraft, loadDraft, clearDraft } from '@/utils/draftStorage'
 import {
   appendHeading,
   appendMarkdownBlock,
-  buildCategoryPath,
   findCategoryIdByName,
   extractToc,
   hasMeaningfulContent,
@@ -184,9 +184,6 @@ const starterTemplates = [
   },
 ] satisfies Array<{ key: StarterTemplateKey; label: string; icon: typeof FileText; content: string }>
 
-
-const categoryLabel = (category: KnowledgeCategoryEntity) =>
-  buildCategoryPath(category, directoryCategories.value)
 
 const selectedCategoryId = computed<number | null>(() =>
   findCategoryIdByName(formData.value.category, directoryCategories.value))
@@ -1032,109 +1029,26 @@ const primaryLabel = computed(() =>
           >属性</button>
         </div>
 
-        <!-- 设置 Tab -->
+        <!-- 设置 Tab（文档属性面板已抽成子组件） -->
         <template v-if="activeSideTab === 'settings'">
-          <div class="ce-side-head">
-            <Settings2 :size="15" />
-            <span>文档属性</span>
-          </div>
-
-          <div class="ce-side-group">
-            <label class="ce-side-label">文档分类</label>
-            <div class="ce-category-control">
-              <el-select v-model="formData.category" filterable clearable placeholder="选择目录分类">
-                <el-option v-for="cat in directoryCategories" :key="cat.id" :label="categoryLabel(cat)" :value="cat.name" />
-              </el-select>
-              <button type="button" title="新建分类" @click="createCategoryFromSettings"><Plus :size="15" /></button>
-            </div>
-          </div>
-
-          <div class="ce-side-group">
-            <label class="ce-side-label">标签（最多 {{ MAX_TAGS }} 个）</label>
-            <el-select
-              v-model="formData.tags"
-              multiple
-              filterable
-              allow-create
-              default-first-option
-              :multiple-limit="MAX_TAGS"
-              @change="normalizeTags"
-              placeholder="输入标签后回车"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="tag in managedTags"
-                :key="tag.id"
-                :label="tag.name"
-                :value="tag.name"
-              />
-            </el-select>
-            <div v-if="store.hotTags.length" class="ce-hot-tags">
-              <span class="ce-hot-title">热门：</span>
-              <button
-                v-for="ht in store.hotTags.slice(0, 8)"
-                :key="ht.tag"
-                type="button"
-                class="ce-hot-tag"
-                :disabled="formData.tags.includes(ht.tag) || formData.tags.length >= MAX_TAGS"
-                @click="addTag(ht.tag)"
-              >
-                {{ ht.tag }}
-              </button>
-            </div>
-          </div>
-
-          <div class="ce-side-group">
-            <label class="ce-side-label">摘要（可选）</label>
-            <textarea
-              v-model="formData.summary"
-              class="ce-excerpt-input"
-              placeholder="简要描述文档内容"
-              rows="4"
-              maxlength="200"
-            ></textarea>
-            <div class="ce-excerpt-footer">
-              <span class="ce-excerpt-count">
-                {{ formData.summary.length }}/200 · 留空将自动提取前 150 字
-              </span>
-              <button
-                v-if="formData.content.trim()"
-                class="ce-auto-excerpt"
-                type="button"
-                @click="generateSummary"
-              >
-                <Sparkles :size="13" />
-                <span>自动生成</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="ce-side-group">
-            <!-- 新建：发布开关 -->
-            <div v-if="isNew" class="ce-publish-block">
-              <div class="ce-publish-head">
-                <span class="ce-publish-title">保存后立即发布</span>
-                <el-switch v-model="publishOnChange" />
-              </div>
-              <p class="ce-publish-desc">发布后触发向量化，可被 AI 检索；关闭则仅存草稿</p>
-            </div>
-            <!-- 编辑：版本信息 + 变更说明 -->
-            <div v-else class="ce-publish-block">
-              <div class="ce-publish-head">
-                <span class="ce-publish-title">
-                  当前版本 v{{ currentVersion }}
-                  <span v-if="store.detail?.status === 'DRAFT'" class="ce-draft-tag">草稿</span>
-                </span>
-              </div>
-              <p class="ce-publish-desc">保存后版本号 +1；状态为草稿时可在详情页发布</p>
-              <el-input
-                v-model="changeReason"
-                maxlength="100"
-                placeholder="变更说明（可选，将记入版本历史）"
-                style="width: 100%"
-              />
-            </div>
-          </div>
+          <DocPropertiesPanel
+            v-model:category="formData.category"
+            v-model:tags="formData.tags"
+            v-model:summary="formData.summary"
+            v-model:publish-on-create="publishOnChange"
+            v-model:change-reason="changeReason"
+            :categories="directoryCategories"
+            :managed-tags="managedTags"
+            :hot-tags="store.hotTags"
+            :is-new="isNew"
+            :current-version="currentVersion"
+            :is-draft="store.detail?.status === 'DRAFT'"
+            :has-content="!!formData.content.trim()"
+            @create-category="createCategoryFromSettings"
+            @generate-summary="generateSummary"
+            @add-tag="addTag"
+            @normalize-tags="normalizeTags"
+          />
         </template>
 
         <!-- 目录 Tab -->
@@ -1532,23 +1446,8 @@ const primaryLabel = computed(() =>
   color: var(--color-primary);
 }
 
-.ce-category-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 6px;
-}
 
-.ce-category-control > button {
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
-  color: var(--color-text-secondary);
-}
 
-.ce-category-control > button:hover { border-color: var(--color-primary-light); color: var(--color-primary); }
 
 /* 右侧设置面板 */
 /* 宽度由 CollapsiblePanel 的 width prop 控制，此处只管内部呈现 */
@@ -1668,138 +1567,19 @@ const primaryLabel = computed(() =>
 .ce-side-head-action { width: 26px; height: 26px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--color-text-tertiary); }
 .ce-side-head-action:hover { color: var(--color-primary); background: var(--color-primary-lighter); }
 
-.ce-side-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
 
-.ce-side-label {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-tertiary);
-}
 
-.ce-hot-tags {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-}
 
-.ce-hot-title {
-  color: var(--color-text-tertiary);
-}
 
-.ce-hot-tag {
-  padding: 3px 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-full);
-  background: var(--color-surface-hover);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  transition: all 0.15s ease;
 
-  &:hover:not(:disabled) {
-    border-color: var(--color-primary-light);
-    color: var(--color-primary);
-  }
 
-  &:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-}
 
-.ce-excerpt-input {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  font-family: inherit;
-  line-height: 1.5;
-  resize: none;
-  box-sizing: border-box;
-  transition: border-color 0.15s ease;
 
-  &:focus {
-    border-color: var(--color-primary-light);
-  }
-}
 
-.ce-excerpt-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
 
-.ce-excerpt-count {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  line-height: 1.4;
-}
 
-.ce-auto-excerpt {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-bg-elevated);
-  color: var(--color-primary);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  transition: all 0.15s ease;
 
-  &:hover {
-    border-color: var(--color-primary-light);
-    background: var(--color-primary-lighter);
-  }
-}
 
-.ce-publish-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ce-publish-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.ce-publish-title {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
-}
-
-.ce-publish-desc {
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  color: var(--color-text-tertiary);
-}
-
-.ce-draft-tag {
-  margin-left: 6px;
-  padding: 1px 8px;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-normal);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
-  border-radius: var(--radius-full);
-}
 
 /* ==================== md-editor 纸面化 ==================== */
 
