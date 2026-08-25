@@ -372,13 +372,18 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 // 带上首个业务栈帧：异常类型本身往往不足以定位
                 // （ConcurrentModificationException 可能来自任何一处共享集合遍历）。
                 // 只取 com.devops 包内的第一帧，避免把框架栈全塞进审计字段。
-                for (StackTraceElement f : e.getStackTrace()) {
-                    if (f.getClassName().startsWith("com.devops")) {
-                        detail += " @" + f.getClassName().substring(f.getClassName().lastIndexOf('.') + 1)
-                                + "." + f.getMethodName() + ":" + f.getLineNumber();
-                        break;
-                    }
+                // 取前 4 帧（不限包名）：只取业务帧时，异常发生在第三方库内部
+                // 就只能看到「调用它的那一行」，看不出库里到底哪一步炸的。
+                StringBuilder frames = new StringBuilder();
+                StackTraceElement[] st = e.getStackTrace();
+                for (int i = 0; i < Math.min(4, st.length); i++) {
+                    StackTraceElement f = st[i];
+                    String cls = f.getClassName();
+                    frames.append(" @").append(cls.substring(cls.lastIndexOf('.') + 1))
+                            .append('.').append(f.getMethodName())
+                            .append(':').append(f.getLineNumber());
                 }
+                detail += frames;
                 transitionOrWarn(traceId, AgentState.FAILED,
                         AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + detail);
                 recordLogAsync(traceId, query, "系统异常: " + detail,
