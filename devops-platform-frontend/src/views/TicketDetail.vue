@@ -23,7 +23,7 @@ import {
   skipVerification,
   type TicketActionRecord
 } from '@/api/tickets'
-import { useTicketClosure, initialOf } from '@/composables/useTicketClosure'
+import { useTicketClosure } from '@/composables/useTicketClosure'
 import { useTicketAttachments } from '@/composables/useTicketAttachments'
 import { useTicketActions } from '@/composables/useTicketActions'
 import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
@@ -33,7 +33,7 @@ import { notify, handleServerError } from '@/utils/notify'
 import { useExternalResourceState } from '@/composables/useResourceState'
 import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
 import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
-import AnalysisCard from '@/components/ticket/AnalysisCard.vue'
+import TicketTimeline from '@/components/ticket/TicketTimeline.vue'
 import TicketInsights from '@/components/ticket/TicketInsights.vue'
 import KnowledgeSinkDrawer from '@/components/ticket/KnowledgeSinkDrawer.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
@@ -782,122 +782,36 @@ const onSinkGotoDoc = (docId: number) => {
               <div class="description-body">{{ ticket.description }}</div>
             </div>
 
-            <!-- ========== Timeline ========== -->
-            <div class="timeline">
-
-              <!-- Dynamic Replies
-                   排除 role='ai'：AI 分析已由下方 AnalysisCard 以结构化卡片渲染
-                   （原因列表/可复制命令/置信度）。若不排除，同一份内容会在时间线
-                   出现两次，且这里的纯文本气泡会丢掉全部结构。
-                   历史分析仍保留在库中可审计，界面只呈现最新结论。 -->
-              <div
-                v-for="(reply, i) in visibleReplies"
-                :key="reply.time + '-' + reply.author + '-' + i"
-                class="timeline-row"
-                :class="{ 'timeline-row-right': reply.role === 'creator' }"
-              >
-                <!-- Creator message (right-aligned) -->
-                <template v-if="reply.role === 'creator'">
-                  <div class="timeline-body timeline-body-right">
-                    <div class="user-bubble-wrap">
-                      <div class="user-bubble">
-                        <p>{{ reply.content }}</p>
-                      </div>
-                      <div class="user-bubble-meta">
-                        <span class="user-name">{{ reply.author }}</span>
-                        <span class="user-time">{{ reply.time }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="timeline-track">
-                    <div class="track-avatar" :style="{ background: reply.authorColor || '#6366F1' }">{{ initialOf(reply.author) }}</div>
-                    <div class="track-line"></div>
-                  </div>
-                </template>
-
-                <!-- Agent message (left-aligned) -->
-                <template v-else>
-                  <div class="timeline-track">
-                    <div class="track-avatar track-avatar-primary">{{ initialOf(reply.author) }}</div>
-                    <div class="track-line"></div>
-                  </div>
-                  <div class="timeline-body">
-                    <div class="agent-bubble-wrap">
-                      <div class="agent-bubble">
-                        <p style="white-space: pre-line;">{{ reply.content }}</p>
-                      </div>
-                      <div class="agent-bubble-meta">
-                        <span class="agent-name">{{ reply.author }}</span>
-                        <span class="agent-time">{{ reply.time }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </div>
-
-              <!-- AI 分析建议（时间线节点） -->
-              <div v-if="analysisContent || analysisStreaming" class="timeline-row">
-                <div class="timeline-track">
-                  <div class="track-icon track-icon-primary">
-                    <Sparkles :size="16" />
-                  </div>
-                  <div class="track-line"></div>
-                </div>
-                <div class="timeline-body">
-                  <AnalysisCard
-                    :content="analysisContent"
-                    :streaming="analysisStreaming"
-                    :done="analysisDone"
-                    :structured="structured"
-                    :use-structured-render="useStructuredRender"
-                    :confidence-class="confidenceClass"
-                    :citations="citations"
-                    :cost="analysisCost"
-                    :from-archive="analysisFromArchive"
-                    :archived-at="analysisArchivedAt"
-                    :feedback="analysisFeedback"
-                    :can-feedback="analysisId != null"
-                    :on-feedback="submitFeedback"
-                    :render-markdown="renderMarkdown"
-                    :on-copy-command="copyCommand"
-                    :on-copy-analysis="copyAnalysis"
-                    :on-regenerate="regenerateAnalysis"
-                    :on-stop="stopAnalysis"
-                  />
-                </div>
-              </div>
-
-              <!-- SLA Warning / Breach -->
-              <div
-                v-if="showSlaAlert"
-                class="timeline-row"
-              >
-                <div class="timeline-track">
-                  <div class="track-icon" :class="ticket.slaBreached ? 'track-icon-error' : 'track-icon-warning'">
-                    <AlertTriangle :size="16" />
-                  </div>
-                  <div class="track-line"></div>
-                </div>
-                <div class="timeline-body">
-                  <div class="event-bubble" :class="ticket.slaBreached ? 'event-bubble-error' : 'event-bubble-warning'">
-                    <div class="event-header">
-                      <Clock :size="14" :class="ticket.slaBreached ? 'error-icon' : 'warning-icon'" />
-                      <span :class="ticket.slaBreached ? 'event-title-error' : 'event-title-warning'">
-                        {{ ticket.slaBreached ? 'SLA 已超时' : 'SLA 预警' }}
-                      </span>
-                      <span class="event-time">现在</span>
-                    </div>
-                    <p v-if="ticket.slaBreached" class="event-text">
-                      已超出 SLA 承诺时限（{{ ticket.sla }}），请立即处理或升级
-                    </p>
-                    <p v-else class="event-text">
-                      SLA 已消耗 <strong class="warning-strong">{{ ticket.slaProgress }}%</strong>，请尽快处理
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-            </div>
+            <!-- ========== Timeline ==========
+                 已抽到 TicketTimeline.vue：那是本文件视觉最独立的一块
+                 （自成体系的模板 + 236 行专属样式），与页面其余部分
+                 只通过数据往来，没有共享的交互状态。
+                 AI 分析的 18 个字段收成一个对象传入，避免调用处占满一屏。 -->
+            <TicketTimeline
+              :ticket="ticket"
+              :visible-replies="visibleReplies"
+              :show-sla-alert="showSlaAlert"
+              :analysis="{
+                content: analysisContent,
+                streaming: analysisStreaming,
+                done: analysisDone,
+                structured,
+                useStructuredRender,
+                confidenceClass,
+                citations,
+                cost: analysisCost,
+                fromArchive: analysisFromArchive,
+                archivedAt: analysisArchivedAt,
+                feedback: analysisFeedback,
+                id: analysisId,
+                onFeedback: submitFeedback,
+                renderMarkdown,
+                onCopyCommand: copyCommand,
+                onCopyAnalysis: copyAnalysis,
+                onRegenerate: regenerateAnalysis,
+                onStop: stopAnalysis,
+              }"
+            />
 
             <!-- Reply Box -->
             <div class="reply-box" v-if="!['closed', 'resolved', 'void'].includes(ticket.status)">
@@ -1440,243 +1354,6 @@ const onSinkGotoDoc = (docId: number) => {
 
 .primary-icon {
   color: var(--color-primary-light, var(--brand-hover));
-}
-
-/* ========== Timeline ========== */
-.timeline {
-  margin-top: 24px;
-}
-
-.timeline-row {
-  display: flex;
-  gap: 16px;
-
-  &.timeline-row-right {
-    justify-content: flex-end;
-  }
-}
-
-.timeline-track {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.track-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-
-  &.track-icon-primary {
-    background: var(--color-primary-lighter, var(--brand-subtle));
-    color: var(--color-primary-light, var(--brand-hover));
-  }
-
-  &.track-icon-warning {
-    background: var(--state-warning-bg, var(--warning-subtle));
-    color: var(--state-warning, var(--warning));
-  }
-
-  &.track-icon-error {
-    background: var(--state-error-bg, var(--danger-subtle));
-    color: var(--state-error, var(--danger));
-  }
-}
-
-.track-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-semibold, 600);
-  flex-shrink: 0;
-
-  &.track-avatar-primary {
-    background: var(--color-primary, var(--brand));
-  }
-}
-
-.track-line {
-  width: 1px;
-  flex: 1;
-  margin-top: 8px;
-  background: var(--color-border-light, var(--border-1));
-}
-
-.timeline-body {
-  flex: 1;
-  padding-bottom: 24px;
-  min-width: 0;
-
-  &.timeline-body-right {
-    display: flex;
-    justify-content: flex-end;
-  }
-}
-
-/* Event Bubbles */
-.event-bubble {
-  padding: 12px 16px;
-  border-radius: var(--radius-md, 8px);
-  font-size: var(--text-sm, 0.875rem);
-
-  &.event-bubble-primary {
-    background: var(--color-primary-lighter, var(--brand-subtle));
-  }
-
-  &.event-bubble-warning {
-    background: var(--state-warning-bg, var(--warning-subtle));
-  }
-
-  &.event-bubble-error {
-    background: var(--state-error-bg, var(--danger-subtle));
-  }
-}
-
-.event-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.event-title-primary {
-  color: var(--color-primary-light, var(--brand-hover));
-  font-weight: var(--weight-medium, 500);
-}
-
-.event-title-warning {
-  color: var(--state-warning, var(--warning));
-  font-weight: var(--weight-medium, 500);
-}
-
-.event-title-error {
-  color: var(--state-error, var(--danger));
-  font-weight: var(--weight-semibold, 600);
-}
-
-.event-time {
-  color: var(--color-text-tertiary, var(--text-3));
-  font-size: var(--text-xs, 0.75rem);
-}
-
-.event-text {
-  color: var(--color-text-secondary, var(--text-2));
-  margin: 0;
-
-  strong {
-    color: var(--color-primary, var(--brand));
-  }
-}
-
-.warning-strong {
-  color: var(--state-warning, var(--warning));
-}
-
-.warning-icon {
-  color: var(--state-warning, var(--warning));
-}
-
-.error-icon {
-  color: var(--state-error, var(--danger));
-}
-
-/* AI 分析建议 inline card */
-.ai-suggestion-card {
-  padding: 12px 16px;
-  border-radius: var(--radius-md, 8px);
-  font-size: var(--text-sm, 0.875rem);
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  border-left: 4px solid var(--color-primary, var(--brand));
-}
-
-.ai-suggestion-title {
-  color: var(--color-primary, var(--brand));
-  font-weight: var(--weight-semibold, 600);
-  font-size: var(--text-sm, 0.875rem);
-}
-
-/* User Bubble (creator, right-aligned) */
-.user-bubble-wrap {
-  max-width: 28rem;
-}
-
-.user-bubble {
-  padding: 12px 16px;
-  border-radius: var(--radius-lg, 12px);
-  border-top-right-radius: var(--radius-sm, 4px);
-  background: var(--color-primary, var(--brand));
-  color: white;
-  font-size: var(--text-sm, 0.875rem);
-
-  p {
-    margin: 0;
-    line-height: var(--leading-relaxed, 1.625);
-  }
-}
-
-.user-bubble-meta {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.user-name {
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, var(--text-1));
-}
-
-.user-time {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
-}
-
-/* Agent Bubble (left-aligned) */
-.agent-bubble-wrap {
-  max-width: 32rem;
-}
-
-.agent-bubble {
-  padding: 12px 16px;
-  border-radius: var(--radius-lg, 12px);
-  border-top-left-radius: var(--radius-sm, 4px);
-  background: white;
-  border: 1px solid var(--color-border-light, var(--border-1));
-  color: var(--color-text-primary, var(--text-1));
-  font-size: var(--text-sm, 0.875rem);
-
-  p {
-    margin: 0;
-    line-height: var(--leading-relaxed, 1.625);
-  }
-}
-
-.agent-bubble-meta {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.agent-name {
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-primary, var(--brand));
-}
-
-.agent-time {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
 }
 
 /* ========== Reply Box ========== */

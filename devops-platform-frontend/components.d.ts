@@ -63,6 +63,7 @@ declare module 'vue' {
     ThemeSwitcher: typeof import('./src/components/common/ThemeSwitcher.vue')['default']
     TicketFormDialog: typeof import('./src/components/ticket/TicketFormDialog.vue')['default']
     TicketInsights: typeof import('./src/components/ticket/TicketInsights.vue')['default']
+    TicketTimeline: typeof import('./src/components/ticket/TicketTimeline.vue')['default']
     TrendChart: typeof import('./src/components/common/TrendChart.vue')['default']
   }
 }

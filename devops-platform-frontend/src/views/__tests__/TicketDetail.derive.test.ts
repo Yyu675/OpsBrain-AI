@@ -233,7 +233,6 @@ type Vm = {
   slaBarClass: string
   visibleReplies: Array<Record<string, unknown>>
   startProcessing: () => Promise<void>
-  initialOf: (n?: string | null) => string
   processingAction: { pending: { value: boolean } }
 }
 
@@ -468,24 +467,19 @@ describe('TicketDetail — 时间线过滤 visibleReplies', () => {
 })
 
 describe('TicketDetail — 头像首字母 initialOf（回归）', () => {
-  it('author 为 null 时不崩溃，给出占位符', async () => {
-    // 本轮由测试暴露的真实缺陷：模板此前写 reply.author.charAt(0)，
-    // 而后端 DTO 里 author 是 string | null（系统生成的记录可能无作者）。
-    // 一条 null author 会让**整条时间线渲染崩溃**——用户看到空白页，
-    // 而不是少一个头像。Vue 渲染错误不会被 try/catch 兜住。
-    const vm = vmOf(await mountDetail(baseTicket()))
-    expect(vm.initialOf(null)).toBe('?')
-    expect(vm.initialOf(undefined)).toBe('?')
-    expect(vm.initialOf('')).toBe('?')
-    expect(vm.initialOf('   ')).toBe('?')
-  })
-
-  it('正常姓名取首字并去掉首尾空格', async () => {
-    const vm = vmOf(await mountDetail(baseTicket()))
-    expect(vm.initialOf('张明')).toBe('张')
-    expect(vm.initialOf('  李强 ')).toBe('李')
-  })
-
+  /*
+   * initialOf 已随时间线一起搬到 TicketTimeline.vue（实现在
+   * useTicketClosure.ts）。它的纯函数行为由
+   * useTicketClosure.test.ts 直接覆盖，这里不再重复断言函数本身——
+   * 拆分后仍在原处断言会变成「测一个已经不在这里的东西」。
+   *
+   * 但下面这条集成回归**必须留在这里**：它验证的是
+   * 「一条 null author 的回复不会让整个详情页崩溃」，
+   * 而这正是当初那个缺陷的真实表现形式（Vue 渲染错误不被 try/catch 兜住，
+   * 用户看到的是空白页而不是少一个头像）。
+   * 组件拆分后这条链路变长了（TicketDetail -> TicketTimeline），
+   * 更需要一条端到端的断言守着。
+   */
   it('含 null author 的回复能正常渲染整条时间线', async () => {
     const w = await mountDetail(baseTicket({
       replies: [
