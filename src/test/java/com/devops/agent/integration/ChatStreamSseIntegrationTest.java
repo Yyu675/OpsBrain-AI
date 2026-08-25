@@ -31,6 +31,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -490,5 +494,119 @@ class ChatStreamSseIntegrationTest {
         // 若某处手工拼 JSON 而非用 ObjectMapper，这里就会炸
         assertThat(events).isNotEmpty();
         assertThat(names(events)).contains("start", "token", "complete");
+    }
+
+    // ==================== 并发与异常路径 ====================
+    //
+    // 以下几例只有在**真实 HTTP** 下才有意义：MockMvc 既不真跑异步分发、
+    // 也没有真实连接可断，切片测试里它们全是假的。
+
+    @Test
+    @DisplayName("并发多路流互不串号 —— 串号会让 A 用户看到 B 用户的回答")
+    void concurrentStreamsDoNotInterleave() throws Exception {
+        int n = 4;
+        ExecutorService pool = Executors.newFixedThreadPool(n);
+        try {
+            List<Future<List<SseEvent>>> futures = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                final int idx = i;
+                futures.add(pool.submit(() -> streamAndParse("并发提问 " + idx)));
+            }
+
+            List<String> traceIds = new ArrayList<>();
+            for (Future<List<SseEvent>> f : futures) {
+                List<SseEvent> events = f.get(60, TimeUnit.SECONDS);
+                // 每一路都必须自成完整序列，不能被别人的事件截断
+                assertThat(names(events)).as("每一路都应有完整的 start/complete").
+                        contains("start", "complete");
+
+                // 同一路内 traceId 必须自洽——串号最典型的形态就是
+                // 一条流里混进了另一条流的 traceId
+                List<String> idsInThisStream = events.stream()
+                        .map(e -> String.valueOf(e.data().get("traceId")))
+                        .filter(v -> !"null".equals(v))
+                        .distinct()
+                        .toList();
+                assertThat(idsInThisStream).as("单条流内 traceId 必须唯一").hasSize(1);
+                traceIds.add(idsInThisStream.get(0));
+            }
+
+            // 4 路之间两两不同。相同意味着 traceId 生成或传递依赖了共享可变状态
+            // （典型是 ThreadLocal 未清理或字段被复用），
+            // 那样审计日志会把几个用户的操作记到同一条链路上
+            assertThat(traceIds).doesNotHaveDuplicates().hasSize(n);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("客户端中途断开：服务端不应因此崩溃，后续请求照常")
+    void clientAbortDoesNotBreakServer() throws Exception {
+        // 只读响应头就立刻关闭连接，模拟用户刷新页面 / 关标签页。
+        // 服务端此时仍在往一个已死的连接里写，onError 回调应当接住它并取消流。
+        String uri = url("/api/v1/chat/stream")
+                + "?query=" + URLEncoder.encode("这次我会中途断开", StandardCharsets.UTF_8)
+                + "&sessionId=" + URLEncoder.encode("it-abort-" + UUID.randomUUID(), StandardCharsets.UTF_8);
+        HttpRequest req = authed(HttpRequest.newBuilder(URI.create(uri))
+                .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                .timeout(STREAM_TIMEOUT)
+                .GET())
+                .build();
+
+        HttpResponse<InputStream> raw =
+                http.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        assertThat(raw.statusCode()).isEqualTo(200);
+        // 读一点点就撒手，不读完
+        try (InputStream in = raw.body()) {
+            in.read(new byte[64]);
+        } catch (IOException ignored) {
+            // 断开过程中的异常不是本例关心的对象
+        }
+
+        // 关键断言：服务端还活着。若断连处理有缺陷（未取消流、
+        // 心跳任务泄漏、异常冒泡到容器线程），下一次请求会失败或超时
+        List<SseEvent> events = streamAndParse("断开之后的正常提问");
+        assertThat(names(events)).contains("start", "complete");
+    }
+
+    @Test
+    @DisplayName("同一 sessionId 连续两轮：各自独立成流，不串事件")
+    void sameSessionSequentialStreamsAreIndependent() throws Exception {
+        String sessionId = "it-seq-" + UUID.randomUUID();
+
+        List<SseEvent> first = streamAndParseWithSession("第一轮提问", sessionId);
+        List<SseEvent> second = streamAndParseWithSession("第二轮提问", sessionId);
+
+        // 多轮对话共享 sessionId（记忆需要），但每轮必须是独立完整的一条流。
+        // 若第二轮沿用了上一轮的 emitter 或 traceId，
+        // 前端会把两轮回答拼在一起显示
+        assertThat(names(first)).contains("start", "complete");
+        assertThat(names(second)).contains("start", "complete");
+        assertThat(traceIdOf(first)).isNotEqualTo(traceIdOf(second));
+    }
+
+    /** 取一条流的 traceId（前面已断言过流内唯一） */
+    private String traceIdOf(List<SseEvent> events) {
+        return events.stream()
+                .map(e -> String.valueOf(e.data().get("traceId")))
+                .filter(v -> !"null".equals(v))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("流中没有任何带 traceId 的事件"));
+    }
+
+    /** 指定 sessionId 发起一次流式对话 */
+    private List<SseEvent> streamAndParseWithSession(String query, String sessionId) throws Exception {
+        String uri = url("/api/v1/chat/stream")
+                + "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
+                + "&sessionId=" + URLEncoder.encode(sessionId, StandardCharsets.UTF_8);
+        HttpRequest req = authed(HttpRequest.newBuilder(URI.create(uri))
+                .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                .timeout(STREAM_TIMEOUT)
+                .GET())
+                .build();
+        HttpResponse<String> res = sendTolerantOfAbruptClose(req);
+        assertThat(res.statusCode()).isEqualTo(200);
+        return parseOrExplain(res);
     }
 }
