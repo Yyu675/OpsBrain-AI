@@ -83,8 +83,15 @@ class KnowledgeDocServiceWriteTest {
         // 默认：内容清洗放行、指纹稳定
         when(contentCleaner.clean(anyString())).thenAnswer(i ->
                 new KnowledgeContentCleaner.CleanResult(i.getArgument(0), false, null, null));
-        when(fingerprint.sha256(anyString())).thenAnswer(i ->
-                "hash-" + String.valueOf(i.getArgument(0)).hashCode());
+        // ⚠️ 必须显式声明为 String。
+        // 写成 String.valueOf(i.getArgument(0)) 时，getArgument 的返回类型是泛型 T，
+        // 编译器按 String.valueOf(char[]) 这个重载来推断，运行时抛
+        // ClassCastException: String cannot be cast to [C —— 而且是在 lambda 里抛，
+        // 堆栈指向 setUp 而非用例本身，极难看出是打桩写错了。
+        when(fingerprint.sha256(anyString())).thenAnswer(i -> {
+            String content = i.getArgument(0);
+            return "hash-" + content.hashCode();
+        });
         when(fingerprint.simhash(anyString())).thenReturn(1L);
         when(docRepo.findSimhashCandidates(any(), any(), anyInt())).thenReturn(List.of());
         // update 返回受影响行数，未打桩时 Mockito 默认返回 0，
@@ -402,22 +409,7 @@ class KnowledgeDocServiceWriteTest {
             KnowledgeDoc patch = new KnowledgeDoc();
             patch.setContent("新正文");
 
-            // 自诊断：受限网络下 CI 的 artifact 与原始日志都取不到，
-            // 注解配额又极易被摘要行占满。把真实异常拼进断言消息，
-            // 是这个环境里唯一稳定可读的通道（与 SSE 集成测试同一做法）。
-            try {
-                service.update(1L, patch, null, null, "SYSTEM", null);
-            } catch (Exception e) {
-                StringBuilder where = new StringBuilder();
-                for (StackTraceElement f : e.getStackTrace()) {
-                    if (f.getClassName().startsWith("com.devops")) {
-                        where.append(f.getMethodName()).append(':').append(f.getLineNumber());
-                        break;
-                    }
-                }
-                throw new AssertionError("update 抛出 "
-                        + e.getClass().getName() + ": " + e.getMessage() + " @" + where, e);
-            }
+            service.update(1L, patch, null, null, "SYSTEM", null);
 
             verify(docRepo).update(any(), any());
         }
