@@ -202,7 +202,6 @@ exec_maven() {
       # 有报告时这里退化为普通输出，配额整个让给下方的 surefire 详情。
       # 探针：确认这段到底有没有跑、报告目录状态如何。
       # 连自诊断断言消息都没出现，说明整个 surefire 重放块可能压根没执行。
-      echo "::error::[诊断3] xml数=$(find target/surefire-reports -name '*.xml' -type f 2>/dev/null | wc -l) | 含失败的xml=$(find target/surefire-reports -name '*.xml' -type f 2>/dev/null | xargs grep -lE '<(failure|error)' 2>/dev/null | wc -l) | KDS存在=$(ls target/surefire-reports/ 2>/dev/null | grep -c KnowledgeDocServiceWrite)"
       _has_reports=0
       if [ -d target/surefire-reports ] \
          && [ -n "$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null | head -1)" ]; then
@@ -229,8 +228,17 @@ exec_maven() {
         # grep 收到的是字面量 "*.txt"，匹配不到任何文件，整个循环空转。
         # 这就是上一轮「详情凭空消失、且毫无报错」的真正原因：
         # 不是网络、不是注解配额，是自己脚本里的 -f 把 glob 关掉了。
-        find target/surefire-reports -name '*.txt' -type f 2>/dev/null \
-          | xargs grep -lE "FAILURE!|ERROR!" 2>/dev/null \
+        # ⚠️ 必须读 .xml 而非 .txt。
+        # 实测（CI 探针）：失败构建下 target/surefire-reports 有 64 个 .txt，
+        # 但 grep "FAILURE!|ERROR!" 匹配数为 0——失败详情只写进 .xml 的
+        # <failure>/<error> 节点，.txt 里那些是通过用例的摘要。
+        # 之前一直读 .txt，所以「找到了文件却一条详情都提取不出」。
+        #
+        # 本地仿真之所以一直是通的：我手工造的 txt 里塞了 "<<< ERROR!"，
+        # 与真实产物结构不同——这是仿真验证的固有盲区，
+        # 只有 CI 探针打出真实读数才能发现。
+        find target/surefire-reports -name '*.xml' -type f 2>/dev/null \
+          | xargs grep -lE "<(failure|error)" 2>/dev/null \
           | head -10 \
           | while IFS= read -r _rpt; do
               # 文件名走普通输出：注解配额只有 10 条，必须全留给异常内容。
@@ -242,7 +250,12 @@ exec_maven() {
               # 只把「异常类型/消息」这类真正有信息量的行升级为注解，
               # 摘要行（xxx <<< ERROR!）与栈帧走普通输出——
               # 10 条注解配额必须花在能定位问题的内容上。
-              grep -A 6 -E "<<< (FAILURE|ERROR)!" "$_rpt" \
+              # XML 里失败信息形如：
+              #   <error message="..." type="java.lang.NullPointerException">
+              #     java.lang.NullPointerException: ...
+              #         at com.devops.X.y(X.java:1)
+              # 取 <failure/<error 标签行及其后续若干行
+              grep -A 6 -E "<(failure|error)( |$)" "$_rpt" \
                 | head -60 \
                 | while IFS= read -r _l; do
                     _c=$(printf '%s' "$_l" | sed 's/%/%25/g; s/\r/ /g' | cut -c1-300)
@@ -252,7 +265,7 @@ exec_maven() {
                     # 且没有任何报错（上一轮 CI 详情凭空消失即此原因）。
                     if [ -n "$_c" ]; then
                     case "$_c" in
-                      *"<<< ERROR!"*|*"<<< FAILURE!"*|"--"|*"	at "*|"Tests run:"*)
+                      *"<<< ERROR!"*|*"<<< FAILURE!"*|"--"|*"	at "*|*"    at "*|"Tests run:"*|*"</"*)
                         printf '%s\n' "$_c" ;;
                       *)
                         echo "::error::$_c" ;;
