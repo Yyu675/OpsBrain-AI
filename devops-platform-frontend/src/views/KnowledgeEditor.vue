@@ -18,6 +18,8 @@ import { saveDraft, loadDraft, clearDraft } from '@/utils/draftStorage'
 import {
   appendHeading,
   appendMarkdownBlock,
+  buildCategoryPath,
+  findCategoryIdByName,
   extractToc,
   hasMeaningfulContent,
   hasTag,
@@ -183,24 +185,11 @@ const starterTemplates = [
 ] satisfies Array<{ key: StarterTemplateKey; label: string; icon: typeof FileText; content: string }>
 
 
-const categoryLabel = (category: KnowledgeCategoryEntity) => {
-  const names: string[] = [category.name]
-  const seen = new Set<number>([category.id])
-  let parentId = category.parentId
-  while (parentId != null && !seen.has(parentId)) {
-    const parent = directoryCategories.value.find(item => item.id === parentId)
-    if (!parent) break
-    names.unshift(parent.name)
-    seen.add(parent.id)
-    parentId = parent.parentId
-  }
-  return names.join(' / ')
-}
+const categoryLabel = (category: KnowledgeCategoryEntity) =>
+  buildCategoryPath(category, directoryCategories.value)
 
-const selectedCategoryId = computed<number | null>(() => {
-  const selected = directoryCategories.value.find(item => item.name === formData.value.category)
-  return selected?.id ?? null
-})
+const selectedCategoryId = computed<number | null>(() =>
+  findCategoryIdByName(formData.value.category, directoryCategories.value))
 
 // ==================== 离开保护 / 草稿 ====================
 

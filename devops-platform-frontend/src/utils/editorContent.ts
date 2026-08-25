@@ -332,3 +332,51 @@ export const hasTag = (tags: string[], tag: string): boolean => {
   const t = tag.trim().toLocaleLowerCase()
   return tags.some(item => item.trim().toLocaleLowerCase() === t)
 }
+
+// ==================== 分类路径 ====================
+
+/** 分类树节点的最小形状（与 KnowledgeCategoryEntity 兼容） */
+export interface CategoryNodeLike {
+  id: number
+  parentId: number | null
+  name: string
+}
+
+/**
+ * 构建分类的完整路径，如「运维 / 容器 / K8s」。
+ *
+ * <b>必须防循环引用</b>：分类的 parentId 由用户配置，
+ * 数据异常时可能出现 A→B→A 这样的环。没有 `seen` 集合的话，
+ * 这个 while 会死循环——表现是<b>整个页面卡死</b>，
+ * 不是报错、不是空白，是浏览器标签页直接无响应。
+ *
+ * 后端 KnowledgeCategoryService.ensureNoCycle 会拦住新建的环，
+ * 但历史数据与并发写入都可能绕过它，前端这层兜底不能省。
+ *
+ * 断链时（父分类不存在）返回已拼出的部分，而不是空串——
+ * 显示「容器 / K8s」比什么都不显示有用。
+ */
+export const buildCategoryPath = (
+  category: CategoryNodeLike,
+  all: readonly CategoryNodeLike[],
+): string => {
+  const names: string[] = [category.name]
+  const seen = new Set<number>([category.id])
+  let parentId = category.parentId
+
+  while (parentId != null && !seen.has(parentId)) {
+    const parent = all.find(item => item.id === parentId)
+    if (!parent) break
+    names.unshift(parent.name)
+    seen.add(parent.id)
+    parentId = parent.parentId
+  }
+
+  return names.join(' / ')
+}
+
+/** 按名称反查分类 ID；找不到返回 null（表示「未归类」而非出错） */
+export const findCategoryIdByName = (
+  name: string,
+  all: readonly CategoryNodeLike[],
+): number | null => all.find(item => item.name === name)?.id ?? null

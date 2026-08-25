@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   appendHeading,
   appendMarkdownBlock,
+  buildCategoryPath,
+  findCategoryIdByName,
   extractToc,
   hasMeaningfulContent,
   hasTag,
@@ -17,6 +19,7 @@ import {
   toPlainText,
   toVisualContent,
   type BlockCommand,
+  type CategoryNodeLike,
   type EditorFormLike,
 } from '../editorContent'
 
@@ -461,5 +464,50 @@ describe('标签规整 —— 大小写不敏感是关键', () => {
 
   it('hasTag 对空标签返回 false，不误判为已存在', () => {
     expect(hasTag(['k8s'], '   ')).toBe(false)
+  })
+})
+
+describe('分类路径 —— 没有防环保护会让整个页面卡死', () => {
+  const tree: CategoryNodeLike[] = [
+    { id: 1, parentId: null, name: '运维' },
+    { id: 2, parentId: 1, name: '容器' },
+    { id: 3, parentId: 2, name: 'K8s' },
+    { id: 9, parentId: null, name: '独立分类' },
+  ]
+
+  it('拼出从根到当前的完整路径', () => {
+    expect(buildCategoryPath(tree[2], tree)).toBe('运维 / 容器 / K8s')
+  })
+
+  it('顶级分类只显示自己', () => {
+    expect(buildCategoryPath(tree[3], tree)).toBe('独立分类')
+  })
+
+  it('循环引用不死循环 —— 表现会是浏览器标签页直接无响应', () => {
+    // 后端 ensureNoCycle 拦得住新建的环，但历史数据与并发写入可能绕过，
+    // 前端这层兜底不能省
+    const cyclic: CategoryNodeLike[] = [
+      { id: 1, parentId: 2, name: 'A' },
+      { id: 2, parentId: 1, name: 'B' },
+    ]
+    expect(buildCategoryPath(cyclic[0], cyclic)).toBe('B / A')
+  })
+
+  it('自引用（parentId 指向自己）同样安全', () => {
+    const self: CategoryNodeLike[] = [{ id: 1, parentId: 1, name: '自己' }]
+    expect(buildCategoryPath(self[0], self)).toBe('自己')
+  })
+
+  it('父分类缺失时返回已拼出的部分，不返回空串', () => {
+    const broken: CategoryNodeLike[] = [{ id: 3, parentId: 99, name: 'K8s' }]
+    // 显示「K8s」比什么都不显示有用
+    expect(buildCategoryPath(broken[0], broken)).toBe('K8s')
+  })
+
+  it('findCategoryIdByName 找得到返回 id，找不到返回 null', () => {
+    expect(findCategoryIdByName('容器', tree)).toBe(2)
+    // null 表示「未归类」，是合法状态而非错误
+    expect(findCategoryIdByName('不存在', tree)).toBeNull()
+    expect(findCategoryIdByName('', tree)).toBeNull()
   })
 })
