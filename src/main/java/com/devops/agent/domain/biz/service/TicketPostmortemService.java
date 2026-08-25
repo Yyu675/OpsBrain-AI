@@ -38,13 +38,15 @@ public class TicketPostmortemService {
      * 获取复盘（不存在返回 null）
      */
     public TicketPostmortem getPostmortem(String ticketId) {
-        TicketPostmortem pm = pmRepository.findByTicketId(ticketId);
-        if (pm != null) {
-            // 装填改进项
-            List<TicketActionItem> items = pmRepository.findActionItemsByPostmortemId(pm.getId());
-            pm.setTimeline(pm.getTimeline());  // 保持原值
-        }
-        return pm;
+        // 这里曾有两行无效代码：查出 actionItems 后既不返回也不使用
+        // （TicketPostmortem 实体根本没有 actionItems 字段），
+        // 外加一句 pm.setTimeline(pm.getTimeline()) 的自赋值。
+        //
+        // 后果是每次打开复盘详情都白跑一次改进项查询——
+        // 结果被直接丢弃，而前端本就走独立端点 /postmortem/action-items 取它们。
+        // 这类代码不报错、功能也没缺，只是安静地多打一次库，
+        // 且会让后来人误以为「返回值里带着改进项」。
+        return pmRepository.findByTicketId(ticketId);
     }
 
     /**
