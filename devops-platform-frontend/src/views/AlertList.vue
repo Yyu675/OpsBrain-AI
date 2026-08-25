@@ -93,13 +93,27 @@ const listQuery = useAlertListQuery({
 
 const pagination = useServerPaginationFrom(
   { total: () => listQuery.total.value, totalPages: () => listQuery.totalPages.value },
-  { pageSize: 10 }
+  { pageSize: 10, page: pageRef, size: sizeRef }
 )
-// 让 composable 的 currentPage 与传给 Query 的 pageRef 是同一个 ref，
-// 这样 goToPage 改页码即触发 Query 重拉，无需手动调用
+/**
+ * 页码与每页条数**只有一份 ref**（`pageRef` / `sizeRef`），
+ * 由本页持有并同时交给 Query 与分页 composable。
+ *
+ * 此前这里是「composable 内部自己 ref(1)，再用 watch 单向同步到 pageRef」，
+ * 注释写着「是同一个 ref」但实际是两个。两个方向都出过问题：
+ *
+ * 1. **URL 恢复失效**。`useUrlFilters` 在 setup 阶段把 `?page=3` 写进
+ *    `pageRef`，而分页条读的 `pagination.currentPage` 仍是 1——
+ *    列表显示第 3 页的数据、底部却高亮「1」。
+ *
+ * 2. **改筛选不回第 1 页**。`resetPage()` 把 `currentPage` 设为 1，
+ *    但它本来就是 1，watch 不触发，`pageRef` 仍停在 3——
+ *    换了筛选条件，请求却还在拉第 3 页。
+ *
+ * 共用一份 ref 之后，`useUrlFilters` 写它、`goToPage`/`resetPage` 写它、
+ * Query 的 queryKey 读它，三方天然一致，不再需要任何同步 watch。
+ */
 const { currentPage, total, totalPages, pageNumbers, pageStart, pageEnd } = pagination
-watch(currentPage, (p) => { pageRef.value = p })
-watch(() => pagination.pageSize.value, (s) => { sizeRef.value = s })
 
 const alerts = listQuery.alerts
 const listLoading = listQuery.isLoading

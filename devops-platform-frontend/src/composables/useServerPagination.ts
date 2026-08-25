@@ -20,6 +20,18 @@ export interface UseServerPaginationOptions {
    * 总页数不超过 `windowSize * 2 + 3` 时全部展开，不出现省略号。
    */
   windowSize?: number
+  /**
+   * 由调用方持有的页码 ref。
+   *
+   * 不传时 composable 自己建一个（原有行为）。
+   * **当页码同时还要交给别处使用时必须传**——典型是 TanStack Query 的
+   * queryKey 与 useUrlFilters：它们各自持有一份 ref 再用 watch 同步，
+   * 看似等价，实则有两个方向会断（见 AlertList.vue 的说明）。
+   * 传进来即保证全局只有一份，三方读写天然一致。
+   */
+  page?: Ref<number>
+  /** 同 `page`，由调用方持有的每页条数 ref */
+  size?: Ref<number>
 }
 
 export type PageItem = number | 'ellipsis'
@@ -104,8 +116,9 @@ export function useServerPaginationFrom(
   source: { total: () => number; totalPages: () => number },
   options: UseServerPaginationOptions = {}
 ): UseServerPaginationReturn {
-  const currentPage = ref(1)
-  const pageSize = ref(options.pageSize ?? 10)
+  // 调用方传了就用它的，没传才自建——保持既有调用点（TicketList）行为不变
+  const currentPage = options.page ?? ref(1)
+  const pageSize = options.size ?? ref(options.pageSize ?? 10)
 
   return buildPagination({
     currentPage,
