@@ -175,3 +175,160 @@ export const normalizeDraftState = (
     editorMode: 'visual',
   }
 }
+
+// ==================== 目录标题的增 / 改 / 删 ====================
+//
+// 这三个函数直接改写用户正文。它们在 HTML 与 Markdown 两条路径上做同一件事，
+// 而两条路径的定位方式完全不同（elementIndex vs lineIndex）——
+// 用错一条就是改到别的标题上，用户看到的是「我改了 A，B 却变了」。
+//
+// 抽出来的另一个理由：组件里这三个函数各自包着 ElMessageBox 的
+// try/catch（用户取消），交互与内容变换缠在一起，没法单测。
+// 现在交互留在组件、变换在这里，各测各的。
+
+/** 追加一个二级标题到文末（返回新正文，不改入参） */
+export const appendHeading = (content: string, text: string, isVisual: boolean): string => {
+  const title = text.trim()
+  if (!title) return content
+
+  if (isVisual) {
+    const parsed = new DOMParser().parseFromString(content, 'text/html')
+    const heading = parsed.createElement('h2')
+    heading.textContent = title
+    // 标题后补一个空段落：不补的话光标无处可去，
+    // 用户点完「新增标题」会发现没法接着往下写
+    parsed.body.append(heading, parsed.createElement('p'))
+    return parsed.body.innerHTML
+  }
+
+  const prefix = content.trimEnd()
+  return `${prefix}${prefix ? '\n\n' : ''}## ${title}\n\n`
+}
+
+/**
+ * 重命名指定标题（返回新正文）。
+ *
+ * 定位必须与 {@link extractToc} 产出的索引一致：
+ * 可视化模式用 elementIndex，Markdown 用 lineIndex。
+ * 索引越界时原样返回——宁可什么都不做，也不能改错一个标题。
+ */
+export const renameHeadingIn = (
+  content: string,
+  item: TocItem,
+  text: string,
+  isVisual: boolean,
+): string => {
+  const title = text.trim()
+  if (!title) return content
+
+  if (isVisual && item.elementIndex !== undefined) {
+    const parsed = new DOMParser().parseFromString(content, 'text/html')
+    const heading = parsed.body.querySelectorAll('h2,h3')[item.elementIndex]
+    if (!heading) return content
+    heading.textContent = title
+    return parsed.body.innerHTML
+  }
+
+  if (item.lineIndex !== undefined) {
+    const lines = content.split('\n')
+    if (item.lineIndex < 0 || item.lineIndex >= lines.length) return content
+    lines[item.lineIndex] = `${'#'.repeat(item.level)} ${title}`
+    return lines.join('\n')
+  }
+
+  return content
+}
+
+/**
+ * 删除指定标题（返回新正文）。
+ *
+ * <b>只删标题行本身，标题下的正文保留</b>——这是与「删除章节」不同的语义。
+ * 连正文一起删会让用户点一下丢掉整段内容，且没有撤销。
+ */
+export const removeHeadingIn = (
+  content: string,
+  item: TocItem,
+  isVisual: boolean,
+): string => {
+  if (isVisual && item.elementIndex !== undefined) {
+    const parsed = new DOMParser().parseFromString(content, 'text/html')
+    const heading = parsed.body.querySelectorAll('h2,h3')[item.elementIndex]
+    if (!heading) return content
+    heading.remove()
+    return parsed.body.innerHTML
+  }
+
+  if (item.lineIndex !== undefined) {
+    const lines = content.split('\n')
+    if (item.lineIndex < 0 || item.lineIndex >= lines.length) return content
+    lines.splice(item.lineIndex, 1)
+    return lines.join('\n')
+  }
+
+  return content
+}
+
+// ==================== 块模板 ====================
+
+export type BlockCommand = 'h2' | 'h3' | 'callout' | 'code' | 'table' | 'divider'
+
+/**
+ * 插入块的模板。
+ *
+ * 两套模板必须**语义一一对应**：用户在可视化模式插的表格，
+ * 切到 Markdown 模式应该还是表格。少一个键或语义对不上，
+ * 切换编辑模式时内容就会变形。
+ */
+export const HTML_BLOCKS: Record<BlockCommand, string> = {
+  h2: '<h2>二级标题</h2><p><br></p>',
+  h3: '<h3>三级标题</h3><p><br></p>',
+  callout: '<blockquote><p><br></p></blockquote><p><br></p>',
+  code: '<pre><code><br></code></pre><p><br></p>',
+  table: '<table><tbody><tr><th>字段</th><th>说明</th></tr>'
+    + '<tr><td><br></td><td><br></td></tr></tbody></table><p><br></p>',
+  divider: '<hr><p><br></p>',
+}
+
+export const MARKDOWN_BLOCKS: Record<BlockCommand, string> = {
+  h2: '## 二级标题\n\n',
+  h3: '### 三级标题\n\n',
+  callout: '> 提示内容\n\n',
+  code: '```text\n\n```\n\n',
+  table: '| 字段 | 说明 |\n| --- | --- |\n|  |  |\n\n',
+  divider: '---\n\n',
+}
+
+/** 把 Markdown 块追加到文末（可视化模式由富文本编辑器自己插入，不走这里） */
+export const appendMarkdownBlock = (content: string, command: BlockCommand): string => {
+  const prefix = content.trimEnd()
+  return `${prefix}${prefix ? '\n\n' : ''}${MARKDOWN_BLOCKS[command]}`
+}
+
+// ==================== 标签 ====================
+
+/** 标签上限，对齐后端 MAX_TAGS_PER_DOC */
+export const MAX_TAGS = 20
+
+/**
+ * 规整标签列表：去空白、按<b>不区分大小写</b>去重、截断到上限。
+ *
+ * 大小写不敏感是关键：`K8s` 与 `k8s` 是同一个标签，
+ * 当成两个会让标签云里出现一堆看起来重复的项，
+ * 而按标签筛选时又只能命中其中一个。
+ */
+export const normalizeTagList = (tags: string[]): string[] => {
+  const seen = new Set<string>()
+  return tags
+    .map(tag => tag.trim())
+    .filter(tag => {
+      const normalized = tag.toLocaleLowerCase()
+      return !!tag && !seen.has(normalized) && seen.add(normalized)
+    })
+    .slice(0, MAX_TAGS)
+}
+
+/** 判断标签是否已存在（不区分大小写） */
+export const hasTag = (tags: string[], tag: string): boolean => {
+  const t = tag.trim().toLocaleLowerCase()
+  return tags.some(item => item.trim().toLocaleLowerCase() === t)
+}

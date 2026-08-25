@@ -16,11 +16,20 @@ import { saveDraft, loadDraft, clearDraft } from '@/utils/draftStorage'
 // 内容处理逻辑已抽到 utils/editorContent（有 32 例单测），
 // 组件只负责编排。见该文件头部说明。
 import {
+  appendHeading,
+  appendMarkdownBlock,
   extractToc,
   hasMeaningfulContent,
+  hasTag,
+  HTML_BLOCKS,
+  MAX_TAGS,
   normalizeDraftState,
+  normalizeTagList,
+  removeHeadingIn,
+  renameHeadingIn,
   toPlainText,
   toVisualContent,
+  type BlockCommand,
   type EditorDraftState,
   type TocItem,
 } from '@/utils/editorContent'
@@ -93,7 +102,6 @@ type EditorForm = ReturnType<typeof emptyForm>
 /** 右侧面板 Tab */
 const activeSideTab = ref<'settings' | 'toc'>('toc')
 interface RichEditorExpose { insertHtml: (html: string) => void; focus: () => void }
-type BlockCommand = 'h2' | 'h3' | 'callout' | 'code' | 'table' | 'divider'
 type StarterTemplateKey = 'blank' | 'troubleshooting' | 'runbook' | 'postmortem'
 
 const tocItems = ref<TocItem[]>([])
@@ -174,8 +182,6 @@ const starterTemplates = [
   },
 ] satisfies Array<{ key: StarterTemplateKey; label: string; icon: typeof FileText; content: string }>
 
-// 标签上限对齐后端 MAX_TAGS_PER_DOC
-const MAX_TAGS = 20
 
 const categoryLabel = (category: KnowledgeCategoryEntity) => {
   const names: string[] = [category.name]
@@ -286,31 +292,13 @@ const switchEditorMode = async (mode: 'visual' | 'markdown') => {
 }
 
 const insertBlock = async (command: BlockCommand) => {
-  const htmlBlocks: Record<BlockCommand, string> = {
-    h2: '<h2>二级标题</h2><p><br></p>',
-    h3: '<h3>三级标题</h3><p><br></p>',
-    callout: '<blockquote><p><br></p></blockquote><p><br></p>',
-    code: '<pre><code><br></code></pre><p><br></p>',
-    table: '<table><tbody><tr><th>字段</th><th>说明</th></tr><tr><td><br></td><td><br></td></tr></tbody></table><p><br></p>',
-    divider: '<hr><p><br></p>',
-  }
-  const markdownBlocks: Record<BlockCommand, string> = {
-    h2: '## 二级标题\n\n',
-    h3: '### 三级标题\n\n',
-    callout: '> 提示内容\n\n',
-    code: '```text\n\n```\n\n',
-    table: '| 字段 | 说明 |\n| --- | --- |\n|  |  |\n\n',
-    divider: '---\n\n',
-  }
-
   starterDismissed.value = true
   if (editorMode.value === 'visual') {
     await nextTick()
-    richEditorRef.value?.insertHtml(htmlBlocks[command])
+    richEditorRef.value?.insertHtml(HTML_BLOCKS[command])
     return
   }
-  const prefix = formData.value.content.trimEnd()
-  formData.value.content = `${prefix}${prefix ? '\n\n' : ''}${markdownBlocks[command]}`
+  formData.value.content = appendMarkdownBlock(formData.value.content, command)
 }
 
 // ==================== 加载 ====================
@@ -507,7 +495,7 @@ onBeforeUnmount(() => {
 const addTag = (tag: string) => {
   const t = tag.trim()
   if (!t) return
-  if (formData.value.tags.some(item => item.trim().toLocaleLowerCase() === t.toLocaleLowerCase())) {
+  if (hasTag(formData.value.tags, t)) {
     notify.warning('标签已存在')
     return
   }
@@ -519,14 +507,7 @@ const addTag = (tag: string) => {
 }
 
 const normalizeTags = () => {
-  const seen = new Set<string>()
-  formData.value.tags = formData.value.tags
-    .map(tag => tag.trim())
-    .filter(tag => {
-      const normalized = tag.toLocaleLowerCase()
-      return !!tag && !seen.has(normalized) && seen.add(normalized)
-    })
-    .slice(0, MAX_TAGS)
+  formData.value.tags = normalizeTagList(formData.value.tags)
 }
 
 const createCategoryFromSettings = async () => {
@@ -771,16 +752,8 @@ const insertHeading = async () => {
       inputPattern: /\S+/,
       inputErrorMessage: '请输入标题名称',
     })
-    if (editorMode.value === 'visual') {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      const heading = parsed.createElement('h2')
-      heading.textContent = value.trim()
-      parsed.body.append(heading, parsed.createElement('p'))
-      formData.value.content = parsed.body.innerHTML
-    } else {
-      const prefix = formData.value.content.trimEnd()
-      formData.value.content = `${prefix}${prefix ? '\n\n' : ''}## ${value.trim()}\n\n`
-    }
+    formData.value.content = appendHeading(
+      formData.value.content, value, editorMode.value === 'visual')
   } catch {
     // 用户取消
   }
@@ -793,16 +766,8 @@ const renameHeading = async (item: TocItem) => {
       inputPattern: /\S+/,
       inputErrorMessage: '请输入标题名称',
     })
-    if (editorMode.value === 'visual' && item.elementIndex !== undefined) {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      const heading = parsed.body.querySelectorAll('h2,h3')[item.elementIndex]
-      if (heading) heading.textContent = value.trim()
-      formData.value.content = parsed.body.innerHTML
-    } else if (item.lineIndex !== undefined) {
-      const lines = formData.value.content.split('\n')
-      lines[item.lineIndex] = `${'#'.repeat(item.level)} ${value.trim()}`
-      formData.value.content = lines.join('\n')
-    }
+    formData.value.content = renameHeadingIn(
+      formData.value.content, item, value, editorMode.value === 'visual')
   } catch {
     // 用户取消
   }
@@ -815,15 +780,8 @@ const removeHeading = async (item: TocItem) => {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
-    if (editorMode.value === 'visual' && item.elementIndex !== undefined) {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      parsed.body.querySelectorAll('h2,h3')[item.elementIndex]?.remove()
-      formData.value.content = parsed.body.innerHTML
-    } else if (item.lineIndex !== undefined) {
-      const lines = formData.value.content.split('\n')
-      lines.splice(item.lineIndex, 1)
-      formData.value.content = lines.join('\n')
-    }
+    formData.value.content = removeHeadingIn(
+      formData.value.content, item, editorMode.value === 'visual')
   } catch {
     // 用户取消
   }

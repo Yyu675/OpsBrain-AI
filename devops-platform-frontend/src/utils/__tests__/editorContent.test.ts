@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  appendHeading,
+  appendMarkdownBlock,
   extractToc,
   hasMeaningfulContent,
+  hasTag,
+  HTML_BLOCKS,
   isHtmlContent,
+  MARKDOWN_BLOCKS,
+  MAX_TAGS,
   normalizeDraftState,
+  normalizeTagList,
+  removeHeadingIn,
+  renameHeadingIn,
   toPlainText,
   toVisualContent,
+  type BlockCommand,
   type EditorFormLike,
 } from '../editorContent'
 
@@ -261,3 +271,195 @@ describe('editorContent', () => {
 function await0<T>(p: Promise<T>): Promise<T> {
   return p
 }
+
+// ==========================================================================
+// 目录标题增改删 / 块模板 / 标签
+// 这三组都直接改写用户正文或提交数据，错了不会报错，只会「文档变得不对」。
+// ==========================================================================
+
+describe('目录标题操作 —— 改错一个索引就是改坏用户的文档', () => {
+  describe('appendHeading', () => {
+    it('HTML 模式追加 h2，并补一个空段落供继续输入', () => {
+      const out = appendHeading('<p>正文</p>', '新章节', true)
+
+      expect(out).toContain('<h2>新章节</h2>')
+      // 不补空段落的话，用户点完「新增标题」会发现没法接着往下写
+      expect(out).toMatch(/<h2>新章节<\/h2><p><\/p>$/)
+    })
+
+    it('Markdown 模式追加 ## 标题', () => {
+      expect(appendHeading('正文', '新章节', false)).toBe('正文\n\n## 新章节\n\n')
+    })
+
+    it('空文档追加时不产生前导空行', () => {
+      expect(appendHeading('', '开篇', false)).toBe('## 开篇\n\n')
+      expect(appendHeading('   ', '开篇', false)).toBe('## 开篇\n\n')
+    })
+
+    it('标题为空白时原样返回，不插入空标题', () => {
+      expect(appendHeading('<p>正文</p>', '   ', true)).toBe('<p>正文</p>')
+      expect(appendHeading('正文', '', false)).toBe('正文')
+    })
+
+    it('标题两端空格被裁掉', () => {
+      expect(appendHeading('', '  带空格  ', false)).toBe('## 带空格\n\n')
+    })
+
+    it('不改动原有内容', () => {
+      const out = appendHeading('<h2>已有</h2><p>正文</p>', '新增', true)
+      expect(out).toContain('<h2>已有</h2>')
+      expect(out).toContain('<p>正文</p>')
+    })
+  })
+
+  describe('renameHeadingIn', () => {
+    const html = '<h2>第一章</h2><p>a</p><h3>小节</h3><p>b</p>'
+
+    it('HTML 模式按 elementIndex 精确改名', () => {
+      const toc = extractToc(html)
+      const out = renameHeadingIn(html, toc[1], '改后小节', true)
+
+      expect(out).toContain('改后小节')
+      // 只改目标那一个，其余不动——这正是索引用错时会破的地方
+      expect(out).toContain('<h2>第一章</h2>')
+      expect(out).toContain('<p>a</p>')
+    })
+
+    it('Markdown 模式按 lineIndex 改名并保留原级别', () => {
+      const md = '前言\n## 第一章\n正文\n### 小节'
+      const toc = extractToc(md)
+      const out = renameHeadingIn(md, toc[1], '改后', false)
+
+      // 三级标题改名后仍是三级，不能被降成二级
+      expect(out).toBe('前言\n## 第一章\n正文\n### 改后')
+    })
+
+    it('索引越界时原样返回 —— 宁可什么都不做，也不能改错一个标题', () => {
+      const toc = extractToc(html)
+      const bad = { ...toc[0], elementIndex: 99 }
+      expect(renameHeadingIn(html, bad, '新名', true)).toBe(html)
+
+      const md = '## 一'
+      const badLine = { id: 'x', text: '一', level: 2 as const, lineIndex: 99 }
+      expect(renameHeadingIn(md, badLine, '新名', false)).toBe(md)
+    })
+
+    it('新名为空白时原样返回', () => {
+      const toc = extractToc(html)
+      expect(renameHeadingIn(html, toc[0], '  ', true)).toBe(html)
+    })
+
+    it('两种索引都缺失时原样返回，不误伤', () => {
+      const orphan = { id: 'x', text: '孤儿', level: 2 as const }
+      expect(renameHeadingIn(html, orphan, '新名', true)).toBe(html)
+    })
+  })
+
+  describe('removeHeadingIn', () => {
+    it('HTML 模式只删标题，标题下正文保留', () => {
+      const html = '<h2>第一章</h2><p>要保留的正文</p><h2>第二章</h2>'
+      const toc = extractToc(html)
+      const out = removeHeadingIn(html, toc[0], true)
+
+      expect(out).not.toContain('第一章')
+      // 连正文一起删会让用户点一下丢掉整段内容，且没有撤销
+      expect(out).toContain('要保留的正文')
+      expect(out).toContain('第二章')
+    })
+
+    it('Markdown 模式只删标题那一行', () => {
+      const md = '## 第一章\n正文一\n## 第二章\n正文二'
+      const toc = extractToc(md)
+      const out = removeHeadingIn(md, toc[0], false)
+
+      expect(out).toBe('正文一\n## 第二章\n正文二')
+    })
+
+    it('索引越界时原样返回', () => {
+      const html = '<h2>一</h2>'
+      const bad = { id: 'x', text: '一', level: 2 as const, elementIndex: 99 }
+      expect(removeHeadingIn(html, bad, true)).toBe(html)
+    })
+
+    it('删除后剩余标题的索引会重排 —— 调用方必须重新提取 TOC', () => {
+      const html = '<h2>一</h2><h2>二</h2><h2>三</h2>'
+      const out = removeHeadingIn(html, extractToc(html)[0], true)
+
+      const after = extractToc(out)
+      // 删掉「一」之后，「二」的 elementIndex 从 1 变成 0。
+      // 拿旧 TOC 连着删两次会删错目标，所以这条钉住重排行为
+      expect(after.map(t => t.text)).toEqual(['二', '三'])
+      expect(after[0].elementIndex).toBe(0)
+    })
+  })
+})
+
+describe('块模板 —— 两套模板必须语义一一对应', () => {
+  it('HTML 与 Markdown 模板键完全一致', () => {
+    // 少一个键，切换编辑模式时那种块就插不出来
+    expect(Object.keys(HTML_BLOCKS).sort()).toEqual(Object.keys(MARKDOWN_BLOCKS).sort())
+  })
+
+  it('每个命令的两套模板都非空', () => {
+    for (const key of Object.keys(HTML_BLOCKS) as BlockCommand[]) {
+      expect(HTML_BLOCKS[key].trim()).not.toBe('')
+      expect(MARKDOWN_BLOCKS[key].trim()).not.toBe('')
+    }
+  })
+
+  it('表格模板两侧都真的是表格 —— 切模式时不能变形', () => {
+    expect(HTML_BLOCKS.table).toContain('<table>')
+    expect(HTML_BLOCKS.table).toContain('<th>')
+    expect(MARKDOWN_BLOCKS.table).toContain('| --- |')
+  })
+
+  it('代码块与分隔线同理', () => {
+    expect(HTML_BLOCKS.code).toContain('<pre>')
+    expect(MARKDOWN_BLOCKS.code).toContain('```')
+    expect(HTML_BLOCKS.divider).toContain('<hr>')
+    expect(MARKDOWN_BLOCKS.divider.trim()).toBe('---')
+  })
+
+  it('HTML 模板都以空段落收尾，保证插入后光标有处可去', () => {
+    for (const key of Object.keys(HTML_BLOCKS) as BlockCommand[]) {
+      expect(HTML_BLOCKS[key]).toMatch(/<p><br><\/p>$/)
+    }
+  })
+
+  it('appendMarkdownBlock 追加到文末且空文档无前导空行', () => {
+    expect(appendMarkdownBlock('', 'divider')).toBe('---\n\n')
+    expect(appendMarkdownBlock('正文', 'h2')).toBe('正文\n\n## 二级标题\n\n')
+  })
+})
+
+describe('标签规整 —— 大小写不敏感是关键', () => {
+  it('去空白并过滤空标签', () => {
+    expect(normalizeTagList([' k8s ', '', '  ', 'mysql'])).toEqual(['k8s', 'mysql'])
+  })
+
+  it('K8s 与 k8s 视为同一个，保留先出现的写法', () => {
+    // 当成两个会让标签云出现一堆看起来重复的项，
+    // 而按标签筛选时又只能命中其中一个
+    expect(normalizeTagList(['K8s', 'k8s', 'K8S'])).toEqual(['K8s'])
+  })
+
+  it('截断到上限 20 个', () => {
+    const many = Array.from({ length: 30 }, (_, i) => `tag${i}`)
+    expect(normalizeTagList(many)).toHaveLength(MAX_TAGS)
+  })
+
+  it('空数组返回空数组', () => {
+    expect(normalizeTagList([])).toEqual([])
+  })
+
+  it('hasTag 不区分大小写与首尾空格', () => {
+    const tags = ['K8s', 'MySQL']
+    expect(hasTag(tags, 'k8s')).toBe(true)
+    expect(hasTag(tags, '  mysql  ')).toBe(true)
+    expect(hasTag(tags, 'redis')).toBe(false)
+  })
+
+  it('hasTag 对空标签返回 false，不误判为已存在', () => {
+    expect(hasTag(['k8s'], '   ')).toBe(false)
+  })
+})
