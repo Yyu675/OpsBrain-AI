@@ -165,14 +165,20 @@ exec_maven() {
     if grep -qE "^\[ERROR\]|BUILD FAILURE" "$_mvnw_log"; then _mvnw_rc=1; fi
     set -e
     if [ "$_mvnw_rc" != "0" ]; then
+      # ⚠️ GitHub 对**单个 step 的 ::error:: 注解硬性上限是 10 条**，
+      # 超出的会被静默丢弃。此前这里先打 60 条 [ERROR]（其中前 10 条恰好是
+      # surefire 的「xxx <<< ERROR!」摘要行），把配额占满，
+      # 导致后面真正带异常类型与消息的详情一条都出不来——
+      # 上一轮误判成「网络取不到日志」，实际是自己的脚本把自己挤掉了。
+      #
+      # 因此改成：详情用 ::error:: （稀缺配额留给它），
+      # 概览一律用普通 echo 打进日志正文（不占注解配额）。
       echo "::group::Maven 失败要点（自动提取）"
-      # 取前 60 条 [ERROR]，去掉 Maven 固定的帮助尾巴
       grep -E "^\[ERROR\]" "$_mvnw_log" \
         | grep -vE "re-run Maven|Read the following|http://cwiki|To see the full stack|For more information about the errors" \
         | head -60 \
         | while IFS= read -r _line; do
-            _clean=$(printf '%s' "$_line" | sed 's/^\[ERROR\] *//; s/%/%25/g; s/\r/ /g')
-            [ -n "$_clean" ] && echo "::error::$_clean"
+            printf '%s\n' "$_line"
           done
       echo "::endgroup::"
 
@@ -191,11 +197,20 @@ exec_maven() {
               echo "::error::===== $(basename "$_rpt") ====="
               # 取失败标记后紧跟的若干行：异常类型与消息在标记的**下一行**，
               # 只 grep 关键词会漏掉它（上一轮因此只看到「9 个 ERROR」而无原因）。
+              # 只把「异常类型/消息」这类真正有信息量的行升级为注解，
+              # 摘要行（xxx <<< ERROR!）与栈帧走普通输出——
+              # 10 条注解配额必须花在能定位问题的内容上。
               grep -A 6 -E "<<< (FAILURE|ERROR)!" "$_rpt" \
                 | head -60 \
                 | while IFS= read -r _l; do
                     _c=$(printf '%s' "$_l" | sed 's/%/%25/g; s/\r/ /g' | cut -c1-300)
-                    [ -n "$_c" ] && echo "::error::$_c"
+                    [ -z "$_c" ] && continue
+                    case "$_c" in
+                      *"<<< ERROR!"*|*"<<< FAILURE!"*|"--"|*"	at "*)
+                        printf '%s\n' "$_c" ;;
+                      *)
+                        echo "::error::$_c" ;;
+                    esac
                   done
             done
         echo "::endgroup::"
