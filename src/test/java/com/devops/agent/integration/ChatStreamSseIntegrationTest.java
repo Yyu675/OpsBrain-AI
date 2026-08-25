@@ -39,8 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 可以在 {@code @SpringBootTest} 里真实跑通。
  *
  * <p>剩下的问题只是<b>异步等待</b>：{@code handleStreamChat} 把工作交给
- * 虚拟线程执行器，请求返回时流还没跑完。用 {@code MvcResult#getAsyncResult}
- * 阻塞等待异步分发完成，再取完整响应体。</p>
+ * 虚拟线程执行器，请求返回时流还没跑完。等待方式见
+ * {@link #awaitStreamEnd}——那里记了一个踩过的坑。</p>
  *
  * <h3>不依赖具体文案</h3>
  * 断言只针对<b>事件名、顺序、字段存在性与类型</b>，不断言 MOCK 回复的具体文字——
@@ -70,10 +70,16 @@ class ChatStreamSseIntegrationTest {
     }
 
     /**
-     * 发起一次流式对话并等待异步完成，返回解析后的事件序列。
+     * 发起一次流式对话，等待流真正结束，返回解析后的事件序列。
      *
-     * <p>{@code getAsyncResult} 会阻塞直到 {@code SseEmitter} complete——
-     * 这正是「等模型流跑完」的正确姿势，比 sleep 轮询稳定。</p>
+     * <p><b>为什么不能用 {@code getAsyncResult()}</b>：对 {@code SseEmitter}
+     * 而言它返回的是 emitter 对象本身，在 emitter 被创建时就已「就绪」，
+     * <b>不会等流写完</b>。第一版这么写，9 个用例全部拿到空响应体而失败——
+     * 失败信息只说「事件列表为空」，很容易被误读成「产品没发事件」。</p>
+     *
+     * <p>SSE 的正确等待方式是看请求的异步分发是否结束
+     * （{@code isAsyncStarted} 转为 false，即 emitter 已 complete），
+     * 再读响应体。MOCK 模式下这通常在几十毫秒内完成。</p>
      */
     private List<SseEvent> streamAndParse(String query) throws Exception {
         MvcResult result = mockMvc.perform(get("/api/v1/chat/stream")
@@ -82,11 +88,23 @@ class ChatStreamSseIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        // 等待异步处理结束（MOCK 模式下毫秒级）
-        result.getRequest().getAsyncContext().setTimeout(30_000);
-        result.getAsyncResult(30_000);
-
+        awaitStreamEnd(result);
         return parse(result.getResponse().getContentAsString());
+    }
+
+    /**
+     * 轮询等待异步分发结束。
+     *
+     * <p>用轮询而非固定 sleep：固定等待要么在慢机器上不够、要么白白拖慢测试，
+     * 两种都会让这组用例变得不稳定。</p>
+     */
+    private void awaitStreamEnd(MvcResult result) throws Exception {
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (!result.getRequest().isAsyncStarted()) return;
+            Thread.sleep(20);
+        }
+        throw new AssertionError("SSE 流在 30 秒内未结束——MOCK 模式下不该发生");
     }
 
     private List<SseEvent> parse(String body) throws Exception {
@@ -220,7 +238,7 @@ class ChatStreamSseIntegrationTest {
                                 Map.of("query", "磁盘打满了怎么办", "sessionId", "it-post"))))
                 .andExpect(status().isOk())
                 .andReturn();
-        result.getAsyncResult(30_000);
+        awaitStreamEnd(result);
 
         List<String> seq = names(parse(result.getResponse().getContentAsString()));
 
@@ -238,7 +256,7 @@ class ChatStreamSseIntegrationTest {
                         .param("query", "简单问题"))
                 .andExpect(status().isOk())
                 .andReturn();
-        result.getAsyncResult(30_000);
+        awaitStreamEnd(result);
 
         assertThat(result.getResponse().getContentType())
                 .contains(MediaType.TEXT_EVENT_STREAM_VALUE);
