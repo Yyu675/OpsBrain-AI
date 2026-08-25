@@ -210,7 +210,7 @@ class AgentStateManagerTest {
             driveTo("t", AgentState.CONTEXT_PREPARED, AgentState.EVIDENCE_READY);
 
             // LangChain4j 1.1.0 只有 onToolExecuted（执行后）回调，
-            // 没有任何「模型正在规划工具」的钩子，TOOLS_PLANNING 在生产代码里零引用。
+            // 没有任何「模型正在规划工具」的钩子，那个中间状态已因此被删除。
             // 编排层实际就是从 EVIDENCE_READY 直接跳 TOOLS_RUNNING
             assertThat(manager.transition("t", AgentState.TOOLS_RUNNING,
                     AgentStateTransition.TriggerType.TOOL_STARTED, "工具调用", "SYSTEM", null))
@@ -231,7 +231,7 @@ class AgentStateManagerTest {
         void multiToolLoopIsLegal() {
             manager.getOrCreateSession("t", "s");
             driveTo("t", AgentState.CONTEXT_PREPARED, AgentState.EVIDENCE_READY,
-                    AgentState.TOOLS_PLANNING, AgentState.TOOLS_RUNNING, AgentState.TOOLS_COMPLETED);
+                    AgentState.TOOLS_RUNNING, AgentState.TOOLS_COMPLETED);
 
             // 第二个工具开始执行。这条边缺失时，双工具调用的第二次迁移
             // 会被静默丢弃，轨迹上只剩一个工具
@@ -270,7 +270,7 @@ class AgentStateManagerTest {
         void compensatingCanReachClosed() {
             manager.getOrCreateSession("t", "s");
             driveTo("t", AgentState.CONTEXT_PREPARED, AgentState.EVIDENCE_READY,
-                    AgentState.TOOLS_PLANNING, AgentState.TOOLS_RUNNING, AgentState.TOOLS_COMPLETED,
+                    AgentState.TOOLS_RUNNING, AgentState.TOOLS_COMPLETED,
                     AgentState.WAITING_APPROVAL, AgentState.EXECUTING, AgentState.COMPENSATING);
 
             // 修复前：isTerminal() 含 COMPENSATING → canTransition 直接 return false，
@@ -293,6 +293,42 @@ class AgentStateManagerTest {
             assertThat(manager.transition("t", AgentState.CLOSED,
                     AgentStateTransition.TriggerType.MANUAL_TAKEOVER, "人工处理完毕", "OPS", null))
                     .isNotNull();
+        }
+
+        @Test
+        @DisplayName("不存在「永远不可能被触发」的状态——枚举里每个值都得有真实触发点")
+        void noPermanentlyUnreachableState() {
+            // TOOLS_PLANNING 就是被这条规则删掉的：语义自然、迁移表也写好了通路，
+            // 但 LangChain4j 1.1.0 没有「模型开始规划工具」的回调，它永远不会亮。
+            // 更糟的是迁移表要求工具执行必须经它中转，
+            // 一个不会亮的中间站把真实存在的那条路给堵死了。
+            //
+            // 这条断言的作用是：谁再把它加回来，就得同时说明它由什么触发。
+            for (AgentState s : AgentState.values()) {
+                assertThat(s.name())
+                        .as("TOOLS_PLANNING 已删除且不应复活——加回它必须同时有生产代码触发点，"
+                                + "否则又会造出一个堵路的中间站")
+                        .isNotEqualTo("TOOLS_PLANNING");
+            }
+        }
+
+        @Test
+        @DisplayName("预留状态 EXECUTING/OBSERVING 保留且仍在合法通路上（L3 自愈用）")
+        void reservedStatesRemainWired() {
+            // 这两个同样零触发，但与 TOOLS_PLANNING 有本质区别：
+            // 它们是「尚未」触发（L3 自愈执行引擎未落地），而非「永远不可能」触发。
+            // 判据是「有没有可能被触发」，不是「现在有没有被触发」。
+            //
+            // 保留的前提是它们必须真的接在通路上——若进不去或出不来，
+            // 那就退化成了另一种形式的死代码。
+            assertThat(AgentState.canTransition(AgentState.WAITING_APPROVAL, AgentState.EXECUTING))
+                    .as("审批通过后要能进入执行").isTrue();
+            assertThat(AgentState.canTransition(AgentState.EXECUTING, AgentState.OBSERVING))
+                    .as("执行完要能进入健康观察期").isTrue();
+            assertThat(AgentState.canTransition(AgentState.OBSERVING, AgentState.SUCCESS))
+                    .as("心跳恢复正常应能自动结单").isTrue();
+            assertThat(AgentState.canTransition(AgentState.OBSERVING, AgentState.COMPENSATING))
+                    .as("观察到异常应能回滚").isTrue();
         }
 
         @Test
@@ -530,7 +566,7 @@ class AgentStateManagerTest {
         void exportDuringWriteIsSafe() throws InterruptedException {
             manager.getOrCreateSession("t", "s");
             driveTo("t", AgentState.CONTEXT_PREPARED, AgentState.EVIDENCE_READY,
-                    AgentState.TOOLS_PLANNING, AgentState.TOOLS_RUNNING);
+                    AgentState.TOOLS_RUNNING);
 
             var stop = new java.util.concurrent.atomic.AtomicBoolean(false);
             var error = new java.util.concurrent.atomic.AtomicReference<Throwable>();

@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       这条边根本不存在。每一次缓存命中的「成功」都被丢弃，
  *       会话永远停在「上下文就绪」，看板上全是永不完成的会话；</li>
  *   <li><b>所有带工具调用的会话</b>：编排层从 {@code EVIDENCE_READY} 直接迁往
- *       {@code TOOLS_RUNNING}，但状态机只允许经由 {@code TOOLS_PLANNING} 中转——
+ *       {@code TOOLS_RUNNING}，但状态机当时只允许经由 {@code TOOLS_PLANNING} 中转——
  *       而 LangChain4j 1.1.0 只有「执行后」回调，那个中间态在生产代码里
  *       <b>从未被触发过</b>。结果整个工具执行段（两次迁移）全部丢失，
  *       轨迹上看不出这次对话到底调没调工具；</li>
