@@ -319,6 +319,12 @@ CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得�
 
 ## 更新日志
 
+- **2026-08-26**（十五）：**TicketDetail 拆分 4/5 步**（`docs/08-benchmark/22`）。
+  抽出 `useTicketActions`（让「哪个动作有防重入」一眼可查）与
+  `TicketTimeline.vue`（带走 236 行专属样式）。2735 → **2026 行（-26%）**。
+  过程中删模板时多删了一个 `</div>`，**vue-tsc 只报「变量未使用」这类
+  误导性症状**，是 74 例组件测试报 `Element is missing end tag` 才定位到病因——
+  类型检查看到症状，测试指向病因。
 - **2026-08-25**（十四）：**TicketDetail 安全网就位并开始拆分**（`docs/08-benchmark/21`）。
   补齐三批共 74 例组件测试（派生逻辑 / 写操作防重入 / 表单校验），
   随后抽出 `useTicketClosure` 与 `useTicketAttachments`，
