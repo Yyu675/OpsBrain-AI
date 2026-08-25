@@ -2,9 +2,7 @@
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { marked } from 'marked'
 import TurndownService from 'turndown'
-import DOMPurify from 'dompurify'
 import {
   Save, Send, Upload, Sparkles, Settings2, FileText, Plus,
   Pencil, Trash2, BookOpen, Eye, Code2, ChevronDown, Lightbulb,
@@ -15,6 +13,17 @@ import {
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { useDirtyGuard } from '@/composables/useDirtyGuard'
 import { saveDraft, loadDraft, clearDraft } from '@/utils/draftStorage'
+// 内容处理逻辑已抽到 utils/editorContent（有 32 例单测），
+// 组件只负责编排。见该文件头部说明。
+import {
+  extractToc,
+  hasMeaningfulContent,
+  normalizeDraftState,
+  toPlainText,
+  toVisualContent,
+  type EditorDraftState,
+  type TocItem,
+} from '@/utils/editorContent'
 import {
   createKnowledgeCategory,
   DuplicateContentError,
@@ -81,17 +90,8 @@ const emptyForm = () => ({
 })
 const formData = ref(emptyForm())
 type EditorForm = ReturnType<typeof emptyForm>
-interface EditorDraftState {
-  form: EditorForm
-  baseVersion: number | null
-  publishOnCreate: boolean
-  changeReason: string
-  editorMode: 'visual' | 'markdown'
-}
 /** 右侧面板 Tab */
 const activeSideTab = ref<'settings' | 'toc'>('toc')
-/** 编辑时从内容提取的文章大纲项 */
-interface TocItem { id: string; text: string; level: 2 | 3; lineIndex?: number; elementIndex?: number }
 interface RichEditorExpose { insertHtml: (html: string) => void; focus: () => void }
 type BlockCommand = 'h2' | 'h3' | 'callout' | 'code' | 'table' | 'divider'
 type StarterTemplateKey = 'blank' | 'troubleshooting' | 'runbook' | 'postmortem'
@@ -246,17 +246,6 @@ const currentDraftState = (): EditorDraftState => ({
 
 const saveCurrentDraft = () => saveDraft(draftKey.value, currentDraftState())
 
-const normalizeDraftState = (raw: EditorDraftState | EditorForm): EditorDraftState => {
-  if ('form' in raw) return raw
-  return {
-    form: raw,
-    baseVersion: null,
-    publishOnCreate: false,
-    changeReason: '',
-    editorMode: 'visual',
-  }
-}
-
 const startAutoSave = () => {
   if (autoSaveTimer) clearInterval(autoSaveTimer)
   autoSaveTimer = window.setInterval(() => {
@@ -268,25 +257,6 @@ const startAutoSave = () => {
 
 const syncEditorViewport = () => {
   editorPreview.value = window.innerWidth > 760
-}
-
-const isHtmlContent = (content: string) => /^\s*</.test(content)
-
-const toVisualContent = async (content: string) => {
-  if (!content.trim()) return '<p><br></p>'
-  const html = isHtmlContent(content) ? content : String(await marked(content))
-  // 净化后送入编辑器，防止恶意文档在编辑态执行脚本
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['p','br','strong','em','u','s','del','code','pre','a','img','blockquote','hr','span','div','figure','figcaption','table','thead','tbody','tfoot','tr','th','td','h1','h2','h3','h4','h5','h6','ul','ol','li'],
-    ALLOWED_ATTR: ['href','target','rel','class','src','alt','title','data-language']
-  })
-}
-
-const hasMeaningfulContent = (content: string) => {
-  if (!isHtmlContent(content)) return !!content.trim()
-  const parsed = new DOMParser().parseFromString(content, 'text/html')
-  return !!parsed.body.textContent?.replace(/\u200B/g, '').trim()
-    || !!parsed.body.querySelector('img,table,pre,hr')
 }
 
 const showStarter = computed(() =>
@@ -511,21 +481,7 @@ let tocTimer: number | null = null
 watch(() => formData.value.content, () => {
   if (tocTimer) clearTimeout(tocTimer)
   tocTimer = window.setTimeout(() => {
-    const heads: TocItem[] = []
-    if (isHtmlContent(formData.value.content)) {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      parsed.body.querySelectorAll('h2,h3').forEach((heading, elementIndex) => {
-        const level = heading.tagName.toLowerCase() === 'h3' ? 3 : 2
-        heads.push({ id: `h-${elementIndex}`, text: heading.textContent?.trim() || `章节 ${elementIndex + 1}`, level, elementIndex })
-      })
-    } else {
-      const lines = formData.value.content.split('\n')
-      lines.forEach((line, lineIndex) => {
-        const match = /^(##|###)\s+(.+)/.exec(line)
-        if (match) heads.push({ id: `h-${heads.length}`, text: match[2].trim(), level: match[1].length as 2 | 3, lineIndex })
-      })
-    }
-    tocItems.value = heads
+    tocItems.value = extractToc(formData.value.content)
   }, 500)
 })
 
@@ -596,14 +552,7 @@ const generateSummary = () => {
     notify.warning('请先输入文档内容')
     return
   }
-  const source = isHtmlContent(formData.value.content)
-    ? new DOMParser().parseFromString(formData.value.content, 'text/html').body.textContent ?? ''
-    : formData.value.content
-  const text = source.replace(/[#*`>\-[\]()!]/g, '')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 150)
+  const text = toPlainText(formData.value.content).slice(0, 150)
   if (!text) {
     notify.warning('内容格式不正确，无法生成摘要')
     return

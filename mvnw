@@ -175,6 +175,29 @@ exec_maven() {
             [ -n "$_clean" ] && echo "::error::$_clean"
           done
       echo "::endgroup::"
+
+      # 测试失败时补充断言详情。
+      #
+      # 上面只提取 [ERROR] 行，而 surefire 把「expected X but was Y」这类
+      # 关键信息放在 target/surefire-reports/*.txt 的堆栈里，不带 [ERROR] 前缀。
+      # 沙箱环境下 artifact 走 Azure blob 无法下载（防火墙），
+      # 只靠 [ERROR] 行会得到「9 个测试失败」却看不到任何一条失败原因。
+      if [ -d target/surefire-reports ]; then
+        echo "::group::测试失败详情（surefire）"
+        # 只取失败/错误的报告，每个类最多 40 行，避免刷屏
+        grep -lE "FAILURE!|ERROR!" target/surefire-reports/*.txt 2>/dev/null \
+          | head -10 \
+          | while IFS= read -r _rpt; do
+              echo "::error::===== $(basename "$_rpt") ====="
+              grep -E "<<< (FAILURE|ERROR)!|expected|actual|AssertionError|Caused by|at com\.devops" "$_rpt" \
+                | head -40 \
+                | while IFS= read -r _l; do
+                    _c=$(printf '%s' "$_l" | sed 's/%/%25/g; s/\r/ /g' | cut -c1-300)
+                    [ -n "$_c" ] && echo "::error::$_c"
+                  done
+            done
+        echo "::endgroup::"
+      fi
     fi
     exit "$_mvnw_rc"
   fi
