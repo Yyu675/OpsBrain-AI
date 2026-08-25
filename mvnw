@@ -191,13 +191,32 @@ exec_maven() {
       # 探针：报告目录到底在哪。`verify` 会先跑 test 再打包，
       # 若此处 PWD 与 Maven 的 basedir 不一致，相对路径就找不到东西。
       # Maven 自身的 [ERROR] 摘要：编译错误、依赖解析失败等
-      # 不产生 surefire 报告的情况，只能靠这条通道看见。
+      # 不产生 surefire 报告的情况（编译错、依赖解析失败），只能靠这条通道看见。
+      #
+      # ⚠️ 但它**只在没有 surefire 报告时**才发注解。
+      # 注解配额只有 10 条，而 Maven 的 [ERROR] 摘要里前几条恰好是
+      # 「xxx <<< ERROR!」这类只说「哪个用例挂了」、不说「为什么」的行。
+      # 让它无条件发，就会把配额吃光，真正的异常类型一条都出不来——
+      # 本项目已因此多耗了两轮 CI（先是 SSE 定位，后是 KnowledgeDocService）。
+      #
+      # 有报告时这里退化为普通输出，配额整个让给下方的 surefire 详情。
+      _has_reports=0
+      if [ -d target/surefire-reports ] \
+         && [ -n "$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null | head -1)" ]; then
+        _has_reports=1
+      fi
       grep -E "^\[ERROR\]" "$_mvnw_log" \
         | grep -vE "re-run Maven|Read the following|http://cwiki|To see the full stack|For more information" \
         | head -6 \
         | while IFS= read -r _e; do
             _ec=$(printf '%s' "$_e" | sed 's/^\[ERROR\] *//; s/%/%25/g; s/\r/ /g' | cut -c1-300)
-            if [ -n "$_ec" ]; then echo "::error::$_ec"; fi
+            if [ -n "$_ec" ]; then
+              if [ "$_has_reports" = "1" ]; then
+                printf '%s\n' "$_ec"
+              else
+                echo "::error::$_ec"
+              fi
+            fi
           done
       if [ -d target/surefire-reports ]; then
         echo "----- 测试失败详情（surefire）-----"
