@@ -909,16 +909,29 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      */
     private void triggerSagaCompensation(String traceId, String reason) {
         try {
-            // 「正在回滚」此前从未进入过状态机：唯一一次迁移是补偿失败时的
-            // MANUAL_ESCALATED，而那条边要求 from 是 WAITING_APPROVAL/COMPENSATING，
-            // 编排层却从没把状态设成过 COMPENSATING，于是必然被拒。
-            // 先如实记录进入补偿，后续的成功/失败才有合法起点。
-            transitionOrWarn(traceId, AgentState.COMPENSATING,
-                    AgentStateTransition.TriggerType.COMPENSATION_STARTED, "开始 Saga 补偿: " + reason);
-
             var result = sagaManager.compensateSaga(traceId, reason);
 
-            if (result.compensatedCount() > 0 || result.failedCount() > 0) {
+            // 「本次补偿是否真的动了东西」——compensateSaga 在无待补偿步骤时返回 noop。
+            //
+            // 状态迁移必须挂在这个判断里面，不能无条件执行。onError 是所有流式失败的
+            // 公共出口，绝大多数失败（模型超时、网络抖动、安全拦截后的异常）
+            // 根本没发生过写操作，此时会话还停在 EVIDENCE_READY 之类的早期状态，
+            // 而 COMPENSATING 的合法前驱只有 TOOLS_COMPLETED / DRAFT_READY
+            // （写操作只可能发生在工具阶段）。
+            //
+            // 若无条件迁移，这些「无事可补偿」的常规失败每次都会撞非法迁移，
+            // 被 transitionOrWarn 打成 ERROR 日志——本轮刚加的告警会立刻变成噪音，
+            // 而告警一旦开始狼来了，真正的问题就再也没人看了。
+            boolean compensationRan = result.compensatedCount() > 0 || result.failedCount() > 0;
+
+            if (compensationRan) {
+                // 「正在回滚」此前从未进入过状态机：唯一一次迁移是补偿失败时的
+                // MANUAL_ESCALATED，而那条边要求 from 是 WAITING_APPROVAL/COMPENSATING，
+                // 编排层却从没把状态设成过 COMPENSATING，于是必然被拒。
+                // 补上这一步，后续的人工升级才有合法起点。
+                transitionOrWarn(traceId, AgentState.COMPENSATING,
+                        AgentStateTransition.TriggerType.COMPENSATION_STARTED, "开始 Saga 补偿: " + reason);
+
                 // 补偿动作本身要留痕
                 recordLogAsync(traceId, "[Saga 补偿]",
                         String.format("回滚成功 %d 步%s", result.compensatedCount(),

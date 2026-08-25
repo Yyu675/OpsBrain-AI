@@ -213,11 +213,18 @@ class AgentOrchestrationPathTest {
     @Test
     @DisplayName("补偿已升级人工时不再覆盖为 FAILED——信息量更大的状态优先")
     void escalationIsNotOverwrittenByFailed() {
-        replay("p8",
+        // 补偿只可能发生在「已经写过东西」之后，而写操作只发生在工具阶段。
+        // 因此这条路径必须先走完 TOOLS_RUNNING → TOOLS_COMPLETED，
+        // 那才是 COMPENSATING 的合法前驱。
+        assertPathIntact("p8", AgentState.MANUAL_ESCALATED,
                 step(AgentState.CONTEXT_PREPARED,
                         AgentStateTransition.TriggerType.SECURITY_PASSED, "安全检查通过"),
                 step(AgentState.EVIDENCE_READY,
                         AgentStateTransition.TriggerType.RETRIEVAL_COMPLETED, "进入 Agent 引擎"),
+                step(AgentState.TOOLS_RUNNING,
+                        AgentStateTransition.TriggerType.TOOL_STARTED, "工具调用：createDevOpsTicket"),
+                step(AgentState.TOOLS_COMPLETED,
+                        AgentStateTransition.TriggerType.TOOL_COMPLETED, "工具返回：createDevOpsTicket"),
                 step(AgentState.COMPENSATING,
                         AgentStateTransition.TriggerType.COMPENSATION_STARTED, "开始 Saga 补偿"),
                 step(AgentState.MANUAL_ESCALATED,
@@ -227,6 +234,25 @@ class AgentOrchestrationPathTest {
         // 且 MANUAL_ESCALATED 后续还要能走到 CLOSED 归档
         assertThat(manager.getCurrentState("p8")).isEqualTo(AgentState.MANUAL_ESCALATED);
         assertThat(AgentState.canTransition(AgentState.MANUAL_ESCALATED, AgentState.CLOSED)).isTrue();
+    }
+
+    @Test
+    @DisplayName("无写操作的流式失败：不迁 COMPENSATING，避免告警噪音")
+    void streamErrorWithoutWriteSkipsCompensationState() {
+        // onError 是所有流式失败的公共出口，而绝大多数失败（模型超时、网络抖动）
+        // 根本没发生过写操作，compensateSaga 返回 noop。
+        // 此时会话还停在 EVIDENCE_READY，而 COMPENSATING 的合法前驱只有
+        // TOOLS_COMPLETED / DRAFT_READY——若无条件迁移，每次常规失败都会
+        // 撞非法迁移并打出 ERROR 日志，本轮刚加的告警会立刻变成噪音。
+        // 告警一旦开始狼来了，真正的问题就再也没人看了。
+        assertPathIntact("p12", AgentState.FAILED,
+                step(AgentState.CONTEXT_PREPARED,
+                        AgentStateTransition.TriggerType.SECURITY_PASSED, "安全检查通过"),
+                step(AgentState.EVIDENCE_READY,
+                        AgentStateTransition.TriggerType.RETRIEVAL_COMPLETED, "进入 Agent 引擎"),
+                // 补偿判定为 noop，跳过 COMPENSATING，直接进终态
+                step(AgentState.FAILED,
+                        AgentStateTransition.TriggerType.SYSTEM_ERROR, "流式执行异常"));
     }
 
     @Test
