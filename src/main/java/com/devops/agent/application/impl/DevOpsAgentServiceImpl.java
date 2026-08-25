@@ -362,9 +362,15 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
             } catch (Exception e) {
                 log.error("❌ [AgentService] 异常 | traceId={}", traceId, e);
+                // 审计里必须带上**异常类型**，不能只写 getMessage()。
+                // NPE 这类异常 message 恒为 null，只记消息的话审计表里
+                // 只剩一句「系统异常: null」——等于什么都没记，
+                // 而客户端拿到的又是兜底的 50001，两头都看不出原因。
+                String detail = e.getClass().getSimpleName()
+                        + (e.getMessage() != null ? ": " + e.getMessage() : "");
                 transitionOrWarn(traceId, AgentState.FAILED,
-                        AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + e.getMessage());
-                recordLogAsync(traceId, query, "系统异常: " + e.getMessage(),
+                        AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + detail);
+                recordLogAsync(traceId, query, "系统异常: " + detail,
                         "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                         "FAILED_SYSTEM", "[]", "SYSTEM");
                 sendErrorEvent(emitter, traceId, 50001, "服务内部异常，请稍后重试或联系管理员");
