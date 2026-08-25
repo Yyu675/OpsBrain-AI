@@ -447,16 +447,22 @@ class AlertServiceTest {
             ReflectionTestUtils.setField(service, "aggregateEnabled", false);
             Alert group = new Alert();
             group.setId(100L);
-            group.setTicketId("TK-2026-0001");
+            // 刻意用与新建单不同的号，让下面那条 never 断言真正有区分力
+            group.setTicketId("TK-GROUP-EXISTING");
             when(alertRepository.findActiveGroupTicket(any(), any(), anyInt()))
                     .thenReturn(Optional.of(group));
 
             service.processWebhook(webhook(incoming("firing",
                     labels("alertname", "X", "service", "order", "module", "pod"))));
 
-            verify(alertRepository, never()).updateTicketId(anyLong(), anyString());
+            // 关掉聚合后必须自己建一张新单
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
                     any(), anyString(), anyString(), anyString());
+            // updateTicketId 仍会被调用——但那是「回填自己新建的工单号」，
+            // 不是「挂到组工单」。断言它拿到的是新单号而非组单号，
+            // 光断言 never() 是错的：成功建单本来就要回填，否则告警与工单失联
+            verify(alertRepository).updateTicketId(1L, "TK-2026-0001");
+            verify(alertRepository, never()).updateTicketId(eq(1L), eq("TK-GROUP-EXISTING"));
         }
 
         @Test
@@ -471,9 +477,13 @@ class AlertServiceTest {
             service.processWebhook(webhook(incoming("firing",
                     labels("alertname", "X", "service", "order", "module", "pod"))));
 
-            verify(alertRepository, never()).updateTicketId(anyLong(), any());
+            // 组告警没有工单号时不能聚合过去，必须自己建单
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
                     any(), anyString(), anyString(), anyString());
+            // 同上：这里的 updateTicketId 是回填自己新建的单号。
+            // 关键是绝不能回填 null——那等于把告警与工单的关联抹掉
+            verify(alertRepository).updateTicketId(1L, "TK-2026-0001");
+            verify(alertRepository, never()).updateTicketId(anyLong(), eq((String) null));
         }
     }
 }
