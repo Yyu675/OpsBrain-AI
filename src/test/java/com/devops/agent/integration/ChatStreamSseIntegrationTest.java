@@ -516,9 +516,12 @@ class ChatStreamSseIntegrationTest {
             List<String> traceIds = new ArrayList<>();
             for (Future<List<SseEvent>> f : futures) {
                 List<SseEvent> events = f.get(60, TimeUnit.SECONDS);
-                // 每一路都必须自成完整序列，不能被别人的事件截断
-                assertThat(names(events)).as("每一路都应有完整的 start/complete").
-                        contains("start", "complete");
+                // 每一路都必须自成完整序列，不能被别人的事件截断。
+                // 断言消息带上实际事件序列——CI 下这是唯一能看到上下文的通道，
+                // 只说「少了 complete」定位不到是哪一步断的。
+                assertThat(names(events))
+                        .as("每一路都应有完整的 start/complete，实际=%s", names(events))
+                        .contains("start", "complete");
 
                 // 同一路内 traceId 必须自洽——串号最典型的形态就是
                 // 一条流里混进了另一条流的 traceId
