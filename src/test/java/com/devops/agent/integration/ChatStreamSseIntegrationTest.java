@@ -520,7 +520,12 @@ class ChatStreamSseIntegrationTest {
                 // 断言消息带上实际事件序列——CI 下这是唯一能看到上下文的通道，
                 // 只说「少了 complete」定位不到是哪一步断的。
                 assertThat(names(events))
-                        .as("每一路都应有完整的 start/complete，实际=%s", names(events))
+                        .as("每一路都应有完整的 start/complete，实际=%s，error事件=%s",
+                                names(events),
+                                events.stream()
+                                        .filter(e -> "error".equals(e.name()))
+                                        .map(e -> String.valueOf(e.data()))
+                                        .toList())
                         .contains("start", "complete");
 
                 // 同一路内 traceId 必须自洽——串号最典型的形态就是
