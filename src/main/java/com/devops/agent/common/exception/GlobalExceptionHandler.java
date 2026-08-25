@@ -156,6 +156,84 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 缺少必填请求参数 → 40001 / HTTP 400。
+     *
+     * <p><b>为什么必须显式声明</b>：本类底部有一个
+     * {@code @ExceptionHandler(Exception.class)} 兜底处理器，而
+     * {@code ExceptionHandlerExceptionResolver} 的优先级<b>高于</b> Spring 内建的
+     * {@code DefaultHandlerExceptionResolver}。这意味着只要没在这里显式接管，
+     * Spring 本来会正确映射成 400 的绑定类异常，会被兜底分支抢先捕获，
+     * 变成 <b>HTTP 500「服务内部异常，请联系管理员」</b>。
+     *
+     * <p>后果是双向的：调用方拿到 5xx 会判定「服务端故障」而发起重试，
+     * 但少传一个参数重试多少次都不会好；运维侧则会看到一条本不该存在的
+     * 5xx 错误率毛刺，把排查方向引向服务器。</p>
+     */
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMissingParam(
+            org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        log.warn("⚠️ [GlobalException] 缺少必填参数: {}", ex.getParameterName());
+        return ApiResponse.error(BizError.INVALID_PARAM.code(),
+                "缺少必填参数：" + ex.getParameterName());
+    }
+
+    /**
+     * 请求参数类型不匹配 → 40001 / HTTP 400。
+     *
+     * <p>典型场景：{@code ?days=abc}、{@code /tickets/undefined}（前端拼路径时
+     * 变量未取到值是很常见的），以及 {@code ?includeDisabled=yes} 这类布尔写错。
+     * 同样因为兜底处理器的存在，此前这些都会返回 500。</p>
+     *
+     * <p>消息里带上<b>参数名</b>但<b>不带原值</b>：值来自用户输入，
+     * 原样回显等于把一个反射型输出点开在错误消息里。参数名足够定位问题。</p>
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        String expected = ex.getRequiredType() == null ? "预期类型" : ex.getRequiredType().getSimpleName();
+        log.warn("⚠️ [GlobalException] 参数类型不匹配: name={} | expected={}", ex.getName(), expected);
+        return ApiResponse.error(BizError.INVALID_PARAM.code(),
+                "参数「" + ex.getName() + "」格式不正确，应为 " + expected);
+    }
+
+    /**
+     * 请求体无法解析 → 40001 / HTTP 400。
+     *
+     * <p>JSON 语法错误、类型对不上（如给 {@code Integer} 字段传了字符串）、
+     * 或请求体为空。这是<b>客户端</b>的问题，不是服务端故障。</p>
+     *
+     * <p>不透传 {@code ex.getMessage()}：Jackson 的原始消息里含
+     * 完整的内部类名与字段路径（如
+     * {@code com.devops.agent.controller.XxxController$XxxRequest["version"]}），
+     * 等于把内部包结构公开出去。</p>
+     */
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleUnreadableBody(
+            org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        log.warn("⚠️ [GlobalException] 请求体无法解析: {}", ex.getMessage());
+        return ApiResponse.error(BizError.INVALID_PARAM.code(), "请求体格式不正确或为空");
+    }
+
+    /**
+     * HTTP 方法不支持 → 405。
+     *
+     * <p>路由写错（把 PUT 发成 POST）时应明确告知，而不是报 500 让人以为服务挂了。
+     * 响应头里的 {@code Allow} 由 Spring 在抛出前已按契约填好，
+     * 这里只负责把响应体也变成本项目的统一结构。</p>
+     */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
+    public ApiResponse<Void> handleMethodNotSupported(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex) {
+        log.warn("⚠️ [GlobalException] 方法不支持: {}", ex.getMessage());
+        return ApiResponse.error(BizError.INVALID_PARAM.code(),
+                "该地址不支持 " + ex.getMethod() + " 方法");
+    }
+
+    /**
      * 处理未找到匹配处理器/静态资源的请求（Spring Boot 3.x 用 NoResourceFoundException
      * 替代旧版 NoHandlerFoundException）。
      * <p>
