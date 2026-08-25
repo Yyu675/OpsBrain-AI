@@ -31,6 +31,7 @@ import CollapseToggle from '@/components/common/CollapseToggle.vue'
 import RailButton from '@/components/common/RailButton.vue'
 import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
+import { useDocOutline } from '@/composables/useDocOutline'
 import { notify, handleServerError } from '@/utils/notify'
 
 const route = useRoute()
@@ -77,8 +78,8 @@ watch(
     }
     safeHtml.value = safeMarkdown(raw, `doc-${doc.value?.id ?? 'unknown'}`)
     await nextTick()
-    decorateArticleContent()
-    buildToc()
+    // 一个入口同时做「代码块语言标注」与「构建目录」，避免漏掉其中一步
+    refreshAfterRender()
   },
   { immediate: true }
 )
@@ -132,63 +133,21 @@ watch(docId, () => {
 
 // ==================== 文章大纲（TOC + scroll spy） ====================
 
-interface TocItem { id: string; text: string; level: 2 | 3 }
-const toc = ref<TocItem[]>([])
-const activeToc = ref<string>('')
-/** h2/h3 元素引用，供 scroll spy 计算当前阅读章节 */
-const tocEls = ref<HTMLElement[]>([])
 /** 文章内容容器 ref，替代全局 querySelector */
 const articleContentRef = ref<HTMLElement | null>(null)
 
-const decorateArticleContent = () => {
-  const contentEl = articleContentRef.value
-  if (!contentEl) return
-  contentEl.querySelectorAll('pre').forEach(pre => {
-    const code = pre.querySelector('code')
-    const lang = Array.from(code?.classList ?? [])
-      .find(name => name.startsWith('language-'))
-      ?.slice('language-'.length)
-    pre.setAttribute('data-language', (lang || 'TEXT').toUpperCase())
-  })
-}
-
-const buildToc = () => {
-  const contentEl = articleContentRef.value
-  if (!contentEl) return
-  const heads = contentEl.querySelectorAll('h2,h3')
-  const items: TocItem[] = []
-  heads.forEach((h, idx) => {
-    const id = `toc-${idx}`
-    h.setAttribute('id', id)
-    items.push({
-      id,
-      text: h.textContent || `章节 ${idx + 1}`,
-      level: h.tagName.toLowerCase() === 'h3' ? 3 : 2,
-    })
-  })
-  toc.value = items
-  tocEls.value = Array.from(heads) as HTMLElement[]
-  activeToc.value = items[0]?.id || ''
-  updateActiveToc()
-}
-
-/** scroll spy：取最后一个处于视口上方（含 96px 视差偏移）的章节并高亮 */
-const updateActiveToc = () => {
-  const top = (mainContainer.value?.getBoundingClientRect().top ?? 0) + 96
-  let current = toc.value[0]?.id || ''
-  for (const el of tocEls.value) {
-    if (el.getBoundingClientRect().top <= top) current = el.id
-  }
-  activeToc.value = current
-}
-
-const scrollToToc = (id: string) => {
-  const el = document.getElementById(id)
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    activeToc.value = id
-  }
-}
+/**
+ * 目录 / scroll spy / 章节跳转 / 代码块语言标注。
+ *
+ * 抽成 useDocOutline 的理由：这四件事都必须在 v-html 把 Markdown 渲染成
+ * 真实 DOM **之后**才能执行，且共享同一个正文容器 ref——是一组内聚单元。
+ * 它们失效时全都不报错（目录变空、点了没反应、高亮对不上），
+ * 详见 composable 文件头注释。
+ */
+const {
+  toc, activeToc,
+  updateActiveToc, scrollToToc, refreshAfterRender,
+} = useDocOutline({ articleContentRef, mainContainer })
 
 // ==================== 格式化 ====================
 
