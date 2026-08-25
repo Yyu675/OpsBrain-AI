@@ -114,11 +114,48 @@ public enum AgentState {
     }
 
     /**
-     * 判断是否为终态
+     * 判断是否为<b>不可再迁移的终态</b>
+     * <p>
+     * <b>此处只列真正走不出去的状态</b>：{@link #SUCCESS}、{@link #FAILED}、{@link #CLOSED}。
+     * </p>
+     *
+     * <h3>为什么 COMPENSATING / MANUAL_ESCALATED 不算终态（缺陷修复）</h3>
+     * 这两个状态在 {@link #canTransition} 的 switch 里各自定义了出边
+     * （{@code COMPENSATING → CLOSED | MANUAL_ESCALATED}、{@code MANUAL_ESCALATED → CLOSED}），
+     * 但它们曾被本方法一并算作终态，而 {@code canTransition} 开头就有
+     * {@code if (from.isTerminal()) return false;}——<b>于是那些 case 分支永远执行不到，
+     * 是彻头彻尾的死代码</b>。
+     *
+     * <p>用户可见后果：Saga 补偿跑完、或人工接管处理完之后，会话<b>永远停在
+     * 「补偿中」「人工升级」</b>，无法归档到 CLOSED。运维在会话轨迹里看到的是一批
+     * 「卡在补偿中」的僵尸会话，无法区分「真的还在补偿」和「补偿早就结束了但状态没推进」，
+     * 后台还会刷出「非法状态迁移」告警。同时这些会话因为不再产生迁移，
+     * 也拿不到正确的空闲清理时间。</p>
+     *
+     * <p>语义上这两个状态本就是<b>进行时</b>（「补偿<b>中</b>」「已转人工<b>处理</b>」），
+     * 不是流程的句号；真正的句号是它们之后的 {@link #CLOSED}。</p>
+     *
+     * @return true 表示不允许再从此状态迁出
      */
     public boolean isTerminal() {
-        return this == SUCCESS || this == FAILED || this == COMPENSATING ||
-               this == MANUAL_ESCALATED || this == CLOSED;
+        return this == SUCCESS || this == FAILED || this == CLOSED;
+    }
+
+    /**
+     * 判断会话是否<b>已脱离自动流程</b>（不再由 Agent 主动推进）
+     * <p>
+     * 与 {@link #isTerminal()} 的区别：本方法为<b>「统计/展示」口径</b>——
+     * 补偿中与人工升级都已不在正常自动化链路上，看板上应与成功/失败一并
+     * 从「进行中」里摘出去；但它们<b>仍可继续迁移到 {@link #CLOSED}</b>，
+     * 所以不能拿本方法当迁移门禁。
+     * </p>
+     * <p>
+     * 拆成两个方法而非复用一个，是因为上一处同类缺陷已经证明：
+     * 把「不再活跃」和「不许再改」混成一个判断，必然有一方被误伤。
+     * </p>
+     */
+    public boolean isSettled() {
+        return isTerminal() || this == COMPENSATING || this == MANUAL_ESCALATED;
     }
 
     /**

@@ -90,13 +90,29 @@ public class AgentStateManager {
 
     /**
      * 清理空闲会话
+     * <p>
+     * <b>空闲基准取「最后一次迁移时间」，没迁移过则回落到「创建时间」。</b>
+     * 早先的写法是 {@code if (lastTransitionTime == null) return false;}——
+     * 直接放过从未迁移的会话，而 {@link #getOrCreateSession} 建出来的新会话
+     * {@code lastTransitionTime} 恰恰就是 null。
+     * </p>
+     * <p>
+     * 用户可见后果：任何在首次状态迁移之前就中断的会话
+     * （请求刚进来就被安全门卫拒绝、预算超限、客户端断连、
+     * 或后续迁移全被判非法而未落地）都会在这张 Map 里<b>永久驻留</b>，
+     * 清理线程每 5 分钟跑一次却一个都清不掉。这是一条随请求量线性增长、
+     * 永不回收的内存泄漏路径，最终表现为服务运行数日后堆占用只涨不跌、
+     * Full GC 频繁、响应变慢，直至 OOM——而日志里
+     * 「清理空闲会话 removed=0」看上去一切正常。
+     * </p>
      */
     private void evictIdleSessions() {
         LocalDateTime now = LocalDateTime.now();
         int before = sessionStates.size();
         sessionStates.values().removeIf(s -> {
-            if (s.getLastTransitionTime() == null) return false;
-            return java.time.Duration.between(s.getLastTransitionTime(), now).toMillis() > SESSION_IDLE_TIMEOUT_MS;
+            LocalDateTime since = s.getIdleSince();
+            if (since == null) return false;
+            return java.time.Duration.between(since, now).toMillis() > SESSION_IDLE_TIMEOUT_MS;
         });
         int removed = before - sessionStates.size();
         if (removed > 0) {
@@ -116,6 +132,48 @@ public class AgentStateManager {
      */
     public SessionState getSession(String traceId) {
         return sessionStates.get(traceId);
+    }
+
+    /**
+     * 查询会话当前状态，会话不存在返回 null
+     * <p>
+     * 刻意<b>不</b>在会话缺失时回落成 {@link AgentState#NEW}：
+     * 「这个会话处于新建态」和「根本没有这个会话」是两件事，
+     * 后者往往意味着会话已被空闲清理或 traceId 传错，
+     * 拿 NEW 冒充会让调用方以为流程刚开始而继续往下推。
+     * </p>
+     */
+    public AgentState getCurrentState(String traceId) {
+        SessionState session = sessionStates.get(traceId);
+        return session == null ? null : session.getCurrentState();
+    }
+
+    /**
+     * 导出会话的完整迁移轨迹，供审计与 Replay 回放使用
+     * <p>
+     * 类注释把「提供状态查询、回放数据导出」列为职责，但此前<b>没有任何导出方法</b>：
+     * 迁移记录全都锁在 {@code private static class SessionState} 里，
+     * 而 {@link #getSession} 的返回类型当时也是私有的，包外根本无法声明变量接住。
+     * 结果是每次迁移辛苦攒下的审计轨迹只进不出，等会话被清理就彻底消失，
+     * 出问题时运维<b>拿不到任何可回放的执行链路</b>，只能翻散落的日志文本。
+     * </p>
+     *
+     * @return 不可变的迁移记录副本（按发生顺序）；会话不存在时返回空列表
+     */
+    public List<AgentStateTransition> exportTransitions(String traceId) {
+        SessionState session = sessionStates.get(traceId);
+        if (session == null) {
+            return List.of();
+        }
+        return session.snapshotTransitions();
+    }
+
+    /**
+     * 当前驻留的会话数
+     * <p>用于监控内存占用与验证空闲清理确实生效。</p>
+     */
+    public int sessionCount() {
+        return sessionStates.size();
     }
 
     /**
@@ -146,38 +204,63 @@ public class AgentStateManager {
             return null;
         }
 
-        AgentState fromState = session.getCurrentState();
+        AgentState fromState;
+        AgentStateTransition transition;
+        long durationMs;
 
-        // 校验合法迁移
-        if (!AgentState.canTransition(fromState, toState)) {
-            log.warn("⚠️ [StateManager] 非法状态迁移 | traceId={} | from={} | to={} | trigger={}",
-                    traceId, fromState, toState, trigger);
-            return null;
+        // 「校验当前态 → 写入新态」必须是一个原子段。
+        //
+        // 这里的并发不是理论风险：状态迁移的调用方分布在至少两类线程上——
+        // 处理请求的 sessionExecutor 线程（安全检查、缓存命中、预算超限等），
+        // 以及模型的 SSE 回调线程（onToolExecuted / onCompleteResponse / onError）。
+        // 二者同时对同一个 traceId 迁移是常态而非例外。
+        //
+        // 不加锁时的具体后果：
+        //   1) 两个线程同时读到 fromState=TOOLS_COMPLETED，各自校验通过，
+        //      随后一个写 DRAFT_READY、一个写 WAITING_APPROVAL——
+        //      后写的覆盖先写的，状态机凭空跨过一条不存在的边，
+        //      「需人工审批」的会话可能被冲成「草稿就绪」，直接绕过审批闸门；
+        //   2) transitions 是普通 ArrayList，两个线程并发 add 会丢记录，
+        //      扩容期撞车甚至让审计轨迹里出现 null 空洞；
+        //   3) durationMs 基于 lastTransitionTime 计算，交错读写会算出负数或离谱大值，
+        //      各阶段耗时统计随之失真。
+        //
+        // 锁粒度取「单个会话对象」而非整个管理器：不同 traceId 之间本就互不影响，
+        // 锁在 sessionStates 上会让所有并发会话的状态迁移互相排队。
+        synchronized (session) {
+            fromState = session.getCurrentState();
+
+            // 校验合法迁移
+            if (!AgentState.canTransition(fromState, toState)) {
+                log.warn("⚠️ [StateManager] 非法状态迁移 | traceId={} | from={} | to={} | trigger={}",
+                        traceId, fromState, toState, trigger);
+                return null;
+            }
+
+            // 计算耗时
+            durationMs = 0;
+            if (session.getLastTransitionTime() != null) {
+                durationMs = java.time.Duration.between(session.getLastTransitionTime(), LocalDateTime.now()).toMillis();
+            }
+
+            // 创建迁移记录
+            transition = AgentStateTransition.of(
+                    traceId,
+                    session.getSessionId(),
+                    fromState,
+                    toState,
+                    trigger,
+                    detail,
+                    operator,
+                    durationMs,
+                    metadata
+            );
+
+            // 更新会话状态
+            session.setCurrentState(toState);
+            session.setLastTransitionTime(LocalDateTime.now());
+            session.addTransition(transition);
         }
-
-        // 计算耗时
-        long durationMs = 0;
-        if (session.getLastTransitionTime() != null) {
-            durationMs = java.time.Duration.between(session.getLastTransitionTime(), LocalDateTime.now()).toMillis();
-        }
-
-        // 创建迁移记录
-        AgentStateTransition transition = AgentStateTransition.of(
-                traceId,
-                session.getSessionId(),
-                fromState,
-                toState,
-                trigger,
-                detail,
-                operator,
-                durationMs,
-                metadata
-        );
-
-        // 更新会话状态
-        session.setCurrentState(toState);
-        session.setLastTransitionTime(LocalDateTime.now());
-        session.addTransition(transition);
 
         log.info("🔄 [StateManager] 状态迁移 | traceId={} | {} → {} | trigger={} | operator={} | duration={}ms",
                 traceId, fromState.name(), toState.name(), trigger, operator, durationMs);
@@ -203,8 +286,18 @@ public class AgentStateManager {
 
     /**
      * 单会话运行时状态
+     * <p>
+     * <b>改为 public：</b>{@link #getSession(String)} 是 public 方法却返回私有类型，
+     * 包外调用方连接住返回值的变量都声明不出来，这个「查询接口」实际只有本包能用。
+     * </p>
+     * <p>
+     * <b>线程安全：</b>本类的字段由 {@link AgentStateManager#transition} 在
+     * {@code synchronized (session)} 块内读写。会话状态会被两类线程并发触碰——
+     * 处理请求的 {@code sessionExecutor} 线程，以及模型 SSE 回调线程
+     * （{@code onToolExecuted} / {@code onCompleteResponse} 里都在迁移状态）。
+     * </p>
      */
-    private static class SessionState {
+    public static class SessionState {
         private final String traceId;
         private final String sessionId;
         private LocalDateTime createdAt;
@@ -228,6 +321,30 @@ public class AgentStateManager {
         public void setLastTransitionTime(LocalDateTime lastTransitionTime) { this.lastTransitionTime = lastTransitionTime; }
         public List<AgentStateTransition> getTransitions() { return transitions; }
         public void addTransition(AgentStateTransition t) { transitions.add(t); }
+
+        /**
+         * 计算空闲起算点：优先最后一次迁移时间，从未迁移过则用创建时间。
+         * <p>没有这条回落，「建好就再没动过」的会话会被清理逻辑当成永不空闲。</p>
+         */
+        public LocalDateTime getIdleSince() {
+            return lastTransitionTime != null ? lastTransitionTime : createdAt;
+        }
+
+        /**
+         * 迁移记录快照
+         * <p>
+         * 必须<b>拷贝</b>而非直接返回 {@code transitions}：内部用的是普通 ArrayList，
+         * 把它交给外部遍历时，若模型回调线程正好在 {@code addTransition}，
+         * 调用方会撞上 {@link java.util.ConcurrentModificationException}——
+         * 一次「只是看看审计轨迹」的读操作反而把请求打挂。
+         * 拷贝在持锁状态下完成，与 {@code transition} 的写入互斥。
+         * </p>
+         */
+        public List<AgentStateTransition> snapshotTransitions() {
+            synchronized (this) {
+                return List.copyOf(transitions);
+            }
+        }
     }
 
     // ==================== 内部方法（由 evictIdleSessions 代替）====================
