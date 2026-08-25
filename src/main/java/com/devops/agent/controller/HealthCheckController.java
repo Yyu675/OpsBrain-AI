@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -60,6 +59,25 @@ public class HealthCheckController {
     private String aiMode;
 
     /**
+     * 付费探测开关（devops.ai.health.ai-model-enabled）。
+     *
+     * <p><b>必须用 {@code @Value} 在方法里手工判断，不能靠
+     * {@code @ConditionalOnProperty}</b>——后者是 <b>Bean 注册阶段</b>的条件，
+     * 标注在 {@code @GetMapping} 方法上<b>完全不生效</b>：
+     * Controller 这个 Bean 一旦注册，它的全部 {@code @RequestMapping} 方法
+     * 都会被 {@code RequestMappingHandlerMapping} 扫描并注册成路由，
+     * 没有任何一步会去看方法上的 {@code @ConditionalOnProperty}。</p>
+     *
+     * <p>这个错误此前让 P1-7 的修复完全落空：开关配了（默认 false）、
+     * 文档也写了「默认关闭」，但端点实际一直开放。
+     * 叠加 {@code WebConfig} 把 {@code /api/v1/health/**} 放进鉴权白名单
+     * （为 K8s 探针放行），结果是一个<b>匿名可访问的付费 LLM 端点</b>——
+     * 正是 P1-7 声称已经堵上的那个成本失控风险。</p>
+     */
+    @Value("${devops.ai.health.ai-model-enabled:false}")
+    private boolean aiModelProbeEnabled;
+
+    /**
      * 基础健康检查（进程存活探针）
      * <p>
      * 路径：GET /api/v1/health 或 GET /api/v1/health/ping
@@ -113,13 +131,27 @@ public class HealthCheckController {
      * 即便开启，也仅供运维手动触发——不要接入 K8s probe 高频拉取。
      */
     @GetMapping("/ai-model")
-    @ConditionalOnProperty(name = "devops.ai.health.ai-model-enabled", havingValue = "true")
     public Map<String, Object> checkAiModel() {
-        log.info("🔍 [HealthCheck] 开始验证 AI 模型连通性，当前模式: {}", aiMode);
-
         Map<String, Object> result = new HashMap<>();
         result.put("mode", aiMode);
         result.put("timestamp", System.currentTimeMillis());
+
+        // 开关判断必须在**调用模型之前**。这一段替代了原来那个无效的
+        // @ConditionalOnProperty（它标在方法上不生效，见字段注释）。
+        //
+        // 不抛异常而是返回 DISABLED：健康检查端点被 K8s probe 高频拉取，
+        // 抛 5xx 会让探针把整个实例判为不健康并重启它——
+        // 而「这个探测被关掉了」根本不是实例不健康。
+        if (!aiModelProbeEnabled) {
+            log.debug("⏸️ [HealthCheck] AI 模型探测已关闭（devops.ai.health.ai-model-enabled=false）");
+            result.put("overallStatus", "DISABLED");
+            result.put("reason", "AI 模型探测默认关闭：它会真实调用付费 LLM 与 embedding API，"
+                    + "每次拉取都产生计费。需要时请设置 devops.ai.health.ai-model-enabled=true，"
+                    + "并且不要接入 K8s probe 高频拉取。");
+            return result;
+        }
+
+        log.info("🔍 [HealthCheck] 开始验证 AI 模型连通性，当前模式: {}", aiMode);
 
         try {
             // 1. 验证 Turbo 模型
