@@ -178,6 +178,25 @@
 
     <build>
         <plugins>
+            <!--
+              让测试失败详情直接进控制台，而不是只写进 target/surefire-reports/*.txt。
+
+              动因：本项目的 CI 日志走 Azure blob，而 artifact 下载在受限网络下
+              取不到（返回 0 字节）。默认 useFile=true 时，控制台只有
+              「Tests run: 9, Failures: 9」这一行，**看不到任何一条失败原因**——
+              排查时只能靠猜，而猜错方向会把本来正确的产品代码改坏。
+
+              useFile=false 后 assertion 的 expected/actual 会直接出现在
+              [ERROR] 行里，mvnw 的 ::error:: 重放机制就能把它转成可读的 annotation。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <useFile>false</useFile>
+                    <trimStackTrace>false</trimStackTrace>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
