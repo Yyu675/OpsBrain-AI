@@ -190,10 +190,8 @@ exec_maven() {
       # 只靠 [ERROR] 行会得到「9 个测试失败」却看不到任何一条失败原因。
       # 探针：报告目录到底在哪。`verify` 会先跑 test 再打包，
       # 若此处 PWD 与 Maven 的 basedir 不一致，相对路径就找不到东西。
-      # 直接从 Maven 自己的输出里取「测试是否跑过」与「失败原因」，
-      # 不再依赖 surefire 文件——全盘搜索已证实 CI 里根本没有这些文件，
-      # 说明构建在 test 阶段之前就结束了。
-      echo "::error::[诊断] Tests行=$(grep -cE '^\[INFO\] Tests run:|^Tests run:' "$_mvnw_log") | 反应堆=$(grep -c 'BUILD FAILURE' "$_mvnw_log")"
+      # Maven 自身的 [ERROR] 摘要：编译错误、依赖解析失败等
+      # 不产生 surefire 报告的情况，只能靠这条通道看见。
       grep -E "^\[ERROR\]" "$_mvnw_log" \
         | grep -vE "re-run Maven|Read the following|http://cwiki|To see the full stack|For more information" \
         | head -6 \
@@ -209,11 +207,6 @@ exec_maven() {
         # grep 收到的是字面量 "*.txt"，匹配不到任何文件，整个循环空转。
         # 这就是上一轮「详情凭空消失、且毫无报错」的真正原因：
         # 不是网络、不是注解配额，是自己脚本里的 -f 把 glob 关掉了。
-        _n=$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null | wc -l)
-        _nf=$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null \
-               | xargs grep -lE "FAILURE!|ERROR!" 2>/dev/null | wc -l)
-        # 探针：若详情为空，这行能区分「没找到报告」与「找到了但没输出」
-        echo "::error::[诊断] surefire 报告 ${_n} 个，其中含失败 ${_nf} 个"
         find target/surefire-reports -name '*.txt' -type f 2>/dev/null \
           | xargs grep -lE "FAILURE!|ERROR!" 2>/dev/null \
           | head -10 \
