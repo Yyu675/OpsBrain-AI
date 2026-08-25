@@ -1,6 +1,8 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 
+import { SANITIZE_ALLOWED_ATTR, SANITIZE_ALLOWED_TAGS } from './htmlSanitizePolicy'
+
 /**
  * 知识文档编辑器的内容处理逻辑。
  *
@@ -43,29 +45,18 @@ export interface TocItem {
 }
 
 /**
- * 富文本编辑器允许的标签/属性白名单。
+ * 富文本编辑器允许的标签/属性。
  *
- * 导出是为了让测试能断言「表格、代码块这些常用结构没被误删」——
- * 知识库文档里表格和代码块是主力内容，漏一个标签就等于粘贴进来的内容被吃掉。
- */
-export const ALLOWED_TAGS = [
-  'p', 'br', 'strong', 'em', 'u', 's', 'del', 'code', 'pre', 'a', 'img',
-  'blockquote', 'hr', 'span', 'div', 'figure', 'figcaption',
-  'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li',
-]
-
-export const ALLOWED_ATTR = [
-  'href', 'target', 'rel', 'class', 'src', 'alt', 'title', 'data-language',
-]
-
-/**
- * 判断内容是 HTML 还是 Markdown。
+ * 转发自 `htmlSanitizePolicy` —— 那里是全项目唯一真相。
+ * 此前本文件自带一份，与详情页、知识沉淀抽屉共三套各自维护，
+ * 结果是 `<u>` / `<s>` 只有编辑器允许：用户排好版保存成功、
+ * 编辑态看得见，一发布到详情页就没了，且全程零报错。
  *
- * 只看首个非空字符是不是 `<`。这个判据很粗，但它必须与
- * `toVisualContent` / `hasMeaningfulContent` / TOC 提取三处保持一致——
- * 三处各写一份判断才是真正的风险来源。
+ * 保留这两个导出名是为了不破坏既有 import 与测试。
  */
+export const ALLOWED_TAGS = SANITIZE_ALLOWED_TAGS
+export const ALLOWED_ATTR = SANITIZE_ALLOWED_ATTR
+
 export const isHtmlContent = (content: string): boolean => /^\s*</.test(content)
 
 /**
@@ -80,7 +71,10 @@ export const isHtmlContent = (content: string): boolean => /^\s*</.test(content)
 export const toVisualContent = async (content: string): Promise<string> => {
   if (!content.trim()) return '<p><br></p>'
   const html = isHtmlContent(content) ? content : String(await marked(content))
-  return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR })
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [...ALLOWED_TAGS],
+    ALLOWED_ATTR: [...ALLOWED_ATTR],
+  })
 }
 
 /**

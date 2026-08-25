@@ -13,16 +13,15 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
+import { SANITIZE_ALLOWED_ATTR, SANITIZE_ALLOWED_TAGS } from './htmlSanitizePolicy'
+
 marked.setOptions({ breaks: true, gfm: true })
 
-const ALLOWED_TAGS = [
-  'p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'blockquote',
-  'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'a', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'hr', 'span',
-  'img', 'div', 'figure', 'figcaption'
-]
-
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'class', 'src', 'alt', 'title', 'data-language']
+// 白名单来自 htmlSanitizePolicy（全项目唯一真相）。
+// 此前这里自带一份，缺 <u>/<s>——编辑器存得进、这里渲染时被剥掉，
+// 用户看到的是「排版发布后就没了」，且没有任何报错。
+const ALLOWED_TAGS = [...SANITIZE_ALLOWED_TAGS]
+const ALLOWED_ATTR = [...SANITIZE_ALLOWED_ATTR]
 
 // DOMPurify hook: 给所有 target=_blank 的 a 标签强制补 rel
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
