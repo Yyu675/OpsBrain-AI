@@ -188,6 +188,9 @@ exec_maven() {
       # 关键信息放在 target/surefire-reports/*.txt 的堆栈里，不带 [ERROR] 前缀。
       # 沙箱环境下 artifact 走 Azure blob 无法下载（防火墙），
       # 只靠 [ERROR] 行会得到「9 个测试失败」却看不到任何一条失败原因。
+      # 探针：报告目录到底在哪。`verify` 会先跑 test 再打包，
+      # 若此处 PWD 与 Maven 的 basedir 不一致，相对路径就找不到东西。
+      echo "::error::[诊断] PWD=$(pwd) | 全盘 surefire txt 数=$(find . -path ./node_modules -prune -o -name '*.txt' -path '*surefire-reports*' -print 2>/dev/null | wc -l)"
       if [ -d target/surefire-reports ]; then
         echo "----- 测试失败详情（surefire）-----"
         # 只取失败/错误的报告，每个类最多 40 行，避免刷屏
