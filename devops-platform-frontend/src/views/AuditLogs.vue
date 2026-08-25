@@ -33,6 +33,7 @@ import {
   type OperationAuditItem,
   type TraceDetail,
 } from '@/api/auditLogs'
+import AgentTraceDrawer from '@/components/ai/AgentTraceDrawer.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import RelativeTime from '@/components/common/RelativeTime.vue'
@@ -449,6 +450,33 @@ const latencyLevel = (v: number | null): 'fast' | 'normal' | 'slow' => {
   return 'normal'
 }
 
+// ==================== 执行轨迹（状态机） ====================
+
+/**
+ * 执行轨迹抽屉。
+ *
+ * 与本页的「链路下钻」是互补的两层，刻意做成两个入口而非合并：
+ * - 链路下钻查的是**落库**的审计记录（AI 问答原文、成本、写操作），长期保留；
+ * - 执行轨迹查的是**内存**里的状态机迁移（走到哪一步、每段多久、卡在哪），
+ *   30 分钟空闲即被清理。
+ *
+ * 合并成一个面板会给人「数据同源、同样可靠」的错觉——
+ * 而实际上老链路必然查不到轨迹，那时展示一片空白反而像是出了故障。
+ * 分开之后，「轨迹已过期」是用户点进去才会遇到的、有明确解释的状态。
+ *
+ * 权限：本页路由已限 roles: ['admin']，后端 AgentTraceController 也标了
+ * @SaCheckRole("ADMIN")。因此能走到这个按钮的必然是管理员，
+ * 入口无需再做一次角色判断。
+ */
+const agentTraceOpen = ref(false)
+const agentTraceId = ref<string | null>(null)
+
+const openAgentTrace = (traceId: string | null) => {
+  if (!traceId) return
+  agentTraceId.value = traceId
+  agentTraceOpen.value = true
+}
+
 /** 短 traceId：全长 32 位在表格里挤占过多宽度，前 8 位足以人工比对 */
 const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 </script>
@@ -749,6 +777,14 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
         <div class="trace-head">
           <span class="trace-head-label">traceId</span>
           <code class="trace-head-id">{{ traceData.traceId }}</code>
+          <!--
+            执行轨迹是另一层数据（内存状态机，30 分钟过期），
+            与本面板的落库记录互补。做成按钮而非直接展开：
+            老链路必然查不到轨迹，默认展开会让空白面板看起来像故障。
+          -->
+          <button class="trace-head-action" type="button" @click="openAgentTrace(traceData.traceId)">
+            查看执行轨迹
+          </button>
         </div>
 
         <section v-if="traceData.aiCall" class="trace-block">
@@ -797,6 +833,9 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
         </section>
       </div>
     </el-dialog>
+
+    <!-- 执行轨迹：状态机迁移时间轴（内存数据，与上方落库审计互补） -->
+    <AgentTraceDrawer v-model:visible="agentTraceOpen" :trace-id="agentTraceId" />
   </div>
 </template>
 
@@ -1277,6 +1316,19 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 
   &.is-error { color: var(--danger); }
 }
+
+.trace-head-action {
+  /* 推到最右：它切换的是另一层数据源，与左侧 traceId 标识不是同一类信息 */
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--color-primary);
+  background: transparent;
+  border: 1px solid var(--color-primary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.trace-head-action:hover { background: var(--color-primary); color: #fff; }
 
 .trace-head {
   display: flex;

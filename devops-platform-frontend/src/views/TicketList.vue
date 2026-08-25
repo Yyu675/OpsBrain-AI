@@ -15,6 +15,7 @@ import RelativeTime from '@/components/common/RelativeTime.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
+import { useTicketFilters } from '@/composables/useTicketFilters'
 import {
   useUrlFilters, defineUrlFilter, enumParser, positiveIntParser, textParser
 } from '@/composables/useUrlFilters'
@@ -125,28 +126,6 @@ const kpis = computed(() => [
   { label: '今日新增', value: String(store.stats.todayNew ?? 0), icon: AlertCircle, color: 'error' }
 ])
 
-const hasFilters = computed(() =>
-  !!appliedQuery.value ||
-  statusFilter.value !== 'all' ||
-  priorityFilter.value !== 'all' ||
-  serviceFilter.value !== 'all' ||
-  categoryFilter.value !== 'all' ||
-  assigneeFilter.value !== 'all' ||
-  tagFilters.value.length > 0 ||
-  !!dateFrom.value ||
-  !!dateTo.value
-)
-
-const searchQuery = ref('')
-const appliedQuery = ref('')
-const statusFilter = ref<'all' | TicketStatus>('all')
-const priorityFilter = ref<'all' | TicketPriority>('all')
-const serviceFilter = ref<string>('all')
-const categoryFilter = ref<string>('all')
-const assigneeFilter = ref<string>('all')
-const tagFilters = ref<string[]>([])
-const dateFrom = ref('')
-const dateTo = ref('')
 const advancedOpen = ref(false)
 const viewMode = ref<'list' | 'card'>('list')
 
@@ -167,6 +146,29 @@ const {
   currentPage, pageSize, totalPages,
   pageNumbers, pageStart, pageEnd
 } = pagination
+
+/**
+ * 筛选状态与派生逻辑统一由 useTicketFilters 提供。
+ *
+ * 抽出的理由是三处清单必须同步：hasFilters（清空按钮显不显示）、
+ * activeFilterChips（渲染成可见 chip）、removeFilterChip（chip 的 × 能不能点掉）。
+ * 散在本文件两千多行里时三者相隔数百行，漏改任何一处都不会报错，
+ * 只会表现为「找不到清空按钮」「筛了但看不见」「chip 删不掉」这类静默错误。
+ *
+ * cancelSearch 传箭头函数而非 applySearch 本身：后者定义在下方
+ * （它依赖 fetchList），直接引用会触发 TDZ。
+ */
+const {
+  searchQuery, appliedQuery,
+  statusFilter, priorityFilter, serviceFilter, categoryFilter, assigneeFilter,
+  tagFilters, dateFrom, dateTo,
+  hasFilters, activeFilterChips,
+  removeFilterChip, clearFilters, toggleTagFilter: toggleTagFilterInner,
+} = useTicketFilters({
+  cancelSearch: () => applySearch.cancel(),
+  currentPage,
+  fetchList: () => fetchList(),
+})
 /** 匹配总数（后端按当前筛选统计） */
 const totalCount = pagination.total
 
@@ -645,92 +647,8 @@ const resetPageOnFilterChange = async () => {
   await fetchList()
 }
 
-const toggleTagFilter = (tag: string) => {
-  const idx = tagFilters.value.indexOf(tag)
-  if (idx >= 0) tagFilters.value.splice(idx, 1)
-  else tagFilters.value.push(tag)
-  void resetPageOnFilterChange()
-}
-
-/**
- * 已选筛选条件（chip 摘要）
- *
- * 收起面板后仍能看到当前筛选了什么，且可逐条移除。
- * kind 用于 removeFilterChip 定位要重置哪个筛选项。
- */
-type FilterChip = { key: string; label: string; kind: string; value?: string }
-
-const activeFilterChips = computed<FilterChip[]>(() => {
-  const chips: FilterChip[] = []
-  if (appliedQuery.value) {
-    chips.push({ key: 'kw', label: `关键词：${appliedQuery.value}`, kind: 'keyword' })
-  }
-  if (statusFilter.value !== 'all') {
-    chips.push({ key: 'st', label: `状态：${getStatusLabel(statusFilter.value)}`, kind: 'status' })
-  }
-  if (priorityFilter.value !== 'all') {
-    chips.push({ key: 'pr', label: `优先级：${getPriorityLabel(priorityFilter.value)}`, kind: 'priority' })
-  }
-  if (serviceFilter.value !== 'all') {
-    chips.push({ key: 'sv', label: `服务：${serviceFilter.value}`, kind: 'service' })
-  }
-  if (categoryFilter.value !== 'all') {
-    chips.push({ key: 'ca', label: `分类：${categoryFilter.value}`, kind: 'category' })
-  }
-  if (assigneeFilter.value !== 'all') {
-    chips.push({ key: 'as', label: `负责人：${assigneeFilter.value}`, kind: 'assignee' })
-  }
-  if (dateFrom.value) {
-    chips.push({ key: 'df', label: `起：${dateFrom.value}`, kind: 'dateFrom' })
-  }
-  if (dateTo.value) {
-    chips.push({ key: 'dt', label: `止：${dateTo.value}`, kind: 'dateTo' })
-  }
-  // 标签是多选，每个标签一个可独立移除的 chip
-  for (const tag of tagFilters.value) {
-    chips.push({ key: `tag-${tag}`, label: `标签：${tag}`, kind: 'tag', value: tag })
-  }
-  return chips
-})
-
-/** 移除单个筛选条件并重新拉取 */
-const removeFilterChip = (chip: FilterChip) => {
-  switch (chip.kind) {
-    case 'keyword':
-      applySearch.cancel()
-      searchQuery.value = ''
-      appliedQuery.value = ''
-      break
-    case 'status': statusFilter.value = 'all'; break
-    case 'priority': priorityFilter.value = 'all'; break
-    case 'service': serviceFilter.value = 'all'; break
-    case 'category': categoryFilter.value = 'all'; break
-    case 'assignee': assigneeFilter.value = 'all'; break
-    case 'dateFrom': dateFrom.value = ''; break
-    case 'dateTo': dateTo.value = ''; break
-    case 'tag':
-      if (chip.value) tagFilters.value = tagFilters.value.filter(t => t !== chip.value)
-      break
-  }
-  currentPage.value = 1
-  void fetchList()
-}
-
-const clearFilters = () => {
-  applySearch.cancel()
-  searchQuery.value = ''
-  appliedQuery.value = ''
-  statusFilter.value = 'all'
-  priorityFilter.value = 'all'
-  serviceFilter.value = 'all'
-  categoryFilter.value = 'all'
-  assigneeFilter.value = 'all'
-  tagFilters.value = []
-  dateFrom.value = ''
-  dateTo.value = ''
-  currentPage.value = 1
-  void fetchList()
-}
+/** 标签多选：切换后回到第 1 页重新拉取（实现在 useTicketFilters） */
+const toggleTagFilter = (tag: string) => toggleTagFilterInner(tag, resetPageOnFilterChange)
 
 // 搜索防抖 300ms：每次输入都打后端会造成无谓压力
 const applySearch = debounce((v: string) => {

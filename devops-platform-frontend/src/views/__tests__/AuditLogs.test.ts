@@ -70,6 +70,9 @@ const mountAt = async (url = '/governance/audit-logs') => {
       stubs: {
         'el-table': true, 'el-table-column': true, 'el-dialog': true,
         RelativeTime: true, ServerPagination: true,
+        // 轨迹抽屉内部用 el-drawer（未全局注册），stub 掉避免解析告警；
+        // 它自身的行为由 AgentTraceDrawer.test.ts 覆盖，这里只关心接线
+        AgentTraceDrawer: true,
         DataStateBoundary: { template: '<div><slot /></div>' },
       },
     },
@@ -251,7 +254,7 @@ describe('AuditLogs — 降级与容错', () => {
         plugins: [router],
         stubs: {
           'el-table': true, 'el-table-column': true, 'el-dialog': true,
-          RelativeTime: true, ServerPagination: true,
+          RelativeTime: true, ServerPagination: true, AgentTraceDrawer: true,
           DataStateBoundary: { template: '<div><slot /></div>' },
         },
       },
@@ -274,5 +277,58 @@ describe('AuditLogs — 降级与容错', () => {
     const params = api.fetchAiCallLogs.mock.calls.at(-1)?.[0] ?? {}
     expect(params.page).toBe(1)
     expect(params.modelName).toBeUndefined()
+  })
+})
+
+/**
+ * 执行轨迹入口。
+ *
+ * 这里只验证**接线**：点开后把正确的 traceId 交给抽屉。
+ * 抽屉自身的取数、空状态区分、错误处理由 AgentTraceDrawer.test.ts 覆盖，
+ * 两边各守一段，避免同一行为在两处重复断言后一起漂移。
+ */
+describe('执行轨迹入口', () => {
+  type TraceVm = {
+    agentTraceOpen: boolean
+    agentTraceId: string | null
+    openAgentTrace: (id: string | null) => void
+  }
+
+  it('打开时把 traceId 传给抽屉', async () => {
+    const w = await mountAt('/governance/audit-logs')
+    const vm = w.vm as unknown as TraceVm
+
+    // 默认关闭：抽屉一挂载就自己去请求的话，
+    // 每次进审计页都会白白打一次内存轨迹接口
+    expect(vm.agentTraceOpen).toBe(false)
+
+    vm.openAgentTrace('tr-abc-123')
+    await w.vm.$nextTick()
+
+    expect(vm.agentTraceOpen).toBe(true)
+    expect(vm.agentTraceId).toBe('tr-abc-123')
+  })
+
+  it('traceId 为空时不打开——避免抽屉里显示一次必然查不到的结果', async () => {
+    const w = await mountAt('/governance/audit-logs')
+    const vm = w.vm as unknown as TraceVm
+
+    vm.openAgentTrace(null)
+    await w.vm.$nextTick()
+
+    expect(vm.agentTraceOpen).toBe(false)
+  })
+
+  it('抽屉以组件形式挂载，且 traceId 通过 prop 下传', async () => {
+    const w = await mountAt('/governance/audit-logs')
+    const drawer = w.findComponent({ name: 'AgentTraceDrawer' })
+
+    // 组件没挂上的话，openAgentTrace 改了 ref 也不会有任何界面反应——
+    // 这正是「逻辑写了但没接线」的典型形态
+    expect(drawer.exists()).toBe(true)
+
+    ;(w.vm as unknown as TraceVm).openAgentTrace('tr-xyz')
+    await w.vm.$nextTick()
+    expect(drawer.props('traceId')).toBe('tr-xyz')
   })
 })
