@@ -129,10 +129,16 @@ async function mountList(tickets: FrontendTicket[]) {
     global: {
       plugins: [router],
       stubs: {
-        // stub 掉 el-table 本身（jsdom 下它的布局计算拿不到宽高），
-        // 但保留我们自己写的容器与卡片 DOM——拆分要动的正是这些
-        'el-table': true,
-        'el-table-column': true,
+        // el-table 的布局计算在 jsdom 下拿不到宽高，必须 stub；
+        // 但**要渲染它的默认插槽**——列定义全在插槽里，
+        // 用 `true` 的全量 stub 会把子列整段吞掉，
+        // 「隐藏一列后 DOM 少一列」这类断言就永远拿到 0，测不到东西。
+        'el-table': { template: '<div class="el-table-stub"><slot /></div>' },
+        // el-table-column **不渲染插槽**：列内容是作用域插槽，
+        // 依赖 el-table 真实传入的 row，在 stub 环境下 row 是 undefined，
+        // 渲染它会抛 "Cannot read properties of undefined (reading 'id')"。
+        // 这里只需要「列壳子存不存在」，不需要单元格内容。
+        'el-table-column': { template: '<div class="el-table-column-stub" />' },
         'el-tag': true,
         'el-tooltip': true,
         TicketFormDialog: true,
@@ -222,6 +228,73 @@ describe('列设置只在列表视图出现', () => {
 
     // 留着它会让用户点开一个改不了任何东西的面板
     expect(w.find('.col-setting-wrap').exists()).toBe(false)
+  })
+})
+
+describe('列可见性真的影响 DOM（拆列表视图前必须守住）', () => {
+  /** 统计当前渲染出的 el-table-column 数量 */
+  const columnCount = (w: VueWrapper) => w.findAll('.el-table-column-stub').length
+
+  it('隐藏一列后表格里真的少一列', async () => {
+    const w = await mountList([makeTicket('T-1')])
+    const before = columnCount(w)
+    // 至少要有若干列，否则下面的比较没有意义（stub 名字若变了会退化成 0-0）
+    expect(before).toBeGreaterThan(5)
+
+    vmOf(w).toggleColumn('service')
+    await w.vm.$nextTick()
+
+    // 只改 columnVisible 而模板没跟着走（比如拆分时漏搬 v-if），
+    // 用户在列设置里取消勾选后表格纹丝不动——而且不会报错
+    expect(columnCount(w)).toBe(before - 1)
+  })
+
+  it('再次开启后列回来——切换是可逆的', async () => {
+    const w = await mountList([makeTicket('T-1')])
+    const before = columnCount(w)
+
+    vmOf(w).toggleColumn('service')
+    await w.vm.$nextTick()
+    vmOf(w).toggleColumn('service')
+    await w.vm.$nextTick()
+
+    expect(columnCount(w)).toBe(before)
+  })
+
+  it('默认隐藏的列（updatedAt）初始不渲染，开启后出现', async () => {
+    const w = await mountList([makeTicket('T-1')])
+    // updatedAt 默认 false：创建时间已在列表里，再加一列会让首屏过密
+    expect(vmOf(w).columnVisible.updatedAt).toBe(false)
+    const before = columnCount(w)
+
+    vmOf(w).toggleColumn('updatedAt')
+    await w.vm.$nextTick()
+
+    expect(columnCount(w)).toBe(before + 1)
+  })
+
+  it('隐藏多列时逐列生效，不是只认第一次', async () => {
+    const w = await mountList([makeTicket('T-1')])
+    const before = columnCount(w)
+
+    vmOf(w).toggleColumn('service')
+    vmOf(w).toggleColumn('category')
+    vmOf(w).toggleColumn('priority')
+    await w.vm.$nextTick()
+
+    expect(columnCount(w)).toBe(before - 3)
+  })
+
+  it('卡片视图不受列可见性影响——卡片没有「列」的概念', async () => {
+    const w = await mountList([makeTicket('T-1'), makeTicket('T-2')])
+    vmOf(w).viewMode = 'card'
+    await w.vm.$nextTick()
+
+    vmOf(w).toggleColumn('service')
+    await w.vm.$nextTick()
+
+    // 卡片数量与列设置无关。若拆分后把列过滤逻辑误用到卡片上，这里会掉数
+    expect(w.findAll('.ticket-card')).toHaveLength(2)
   })
 })
 
