@@ -70,6 +70,12 @@ public class TtlChatMemoryStore implements ChatMemoryStore {
     /** memoryId -> 最后访问时间戳（毫秒） */
     private final Map<Object, Long> lastAccess = new ConcurrentHashMap<>();
 
+    /**
+     * 按会话隔离的锁对象表。
+     * <p>与 {@link #lastAccess} 同生命周期，由 {@code deleteMessages} 与驱逐逻辑清理。</p>
+     */
+    private final Map<String, Object> memoryLocks = new ConcurrentHashMap<>();
+
     /** 空闲多久后回收（毫秒） */
     private final long expireAfterAccessMs;
 
@@ -110,21 +116,66 @@ public class TtlChatMemoryStore implements ChatMemoryStore {
 
     // ==================== ChatMemoryStore 实现 ====================
 
+    /**
+     * 读取会话消息。
+     *
+     * <h3>为什么必须拷贝一份返回</h3>
+     * {@link InMemoryChatMemoryStore} 内部按 memoryId 存 {@code ArrayList}，
+     * 且 {@code getMessages} 返回的是<b>那个活的 List 本身</b>，不是副本。
+     * 调用方（LangChain4j 的 {@code MessageWindowChatMemory} 与 AI Service）
+     * 拿到后会遍历它来拼请求，而<b>同一 sessionId 的另一个并发请求</b>
+     * 此刻可能正在 {@code updateMessages} 里往同一个 List 追加消息——
+     * 遍历与写入撞车即抛 {@link java.util.ConcurrentModificationException}。
+     *
+     * <p>这个缺陷由 SSE 并发集成测试抓出：4 路并发时必有一路
+     * 在 {@code TokenStream.start()} 阶段炸掉，被外层兜底 catch 吞成
+     * 一句「50001 服务内部异常」。单请求下永远撞不到，
+     * 因为读写之间隔着整个模型调用的时间。</p>
+     *
+     * <p>返回 {@code ArrayList} 副本而非 {@code List.copyOf}：
+     * 上游可能对返回值做原地修改（历史裁剪），不可变列表会让它抛
+     * {@code UnsupportedOperationException}——那是把一个并发问题换成了另一个问题。</p>
+     *
+     * <p>加锁范围只覆盖拷贝动作本身，不含后续的模型调用，
+     * 因此不会让同会话的并发请求互相阻塞。</p>
+     */
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
         touch(memoryId);
-        return delegate.getMessages(memoryId);
+        synchronized (memoryLock(memoryId)) {
+            return new java.util.ArrayList<>(delegate.getMessages(memoryId));
+        }
     }
 
     @Override
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
         touch(memoryId);
-        delegate.updateMessages(memoryId, messages);
+        // 与 getMessages 用同一把锁：读快照与写入必须互斥，
+        // 否则拷贝到一半被追加，同样会撞 CME
+        synchronized (memoryLock(memoryId)) {
+            delegate.updateMessages(memoryId, messages);
+        }
+    }
+
+    /**
+     * 按 memoryId 取锁对象。
+     *
+     * <p>锁粒度到会话而非全局：不同会话之间本就互不影响，
+     * 用一把全局锁会让所有并发对话的记忆读写排队。</p>
+     *
+     * <p>用 {@code computeIfAbsent} 保证同一 memoryId 始终拿到同一个对象——
+     * 直接拿 memoryId 本身当锁不可靠，它可能是每次新建的 String 实例。</p>
+     */
+    private Object memoryLock(Object memoryId) {
+        return memoryLocks.computeIfAbsent(String.valueOf(memoryId), k -> new Object());
     }
 
     @Override
     public void deleteMessages(Object memoryId) {
         lastAccess.remove(memoryId);
+        // 锁对象一并清理：不清的话 memoryLocks 会随会话数无限增长，
+        // 变成另一条形式的内存泄漏（TTL 清理的初衷正是防这个）
+        memoryLocks.remove(String.valueOf(memoryId));
         delegate.deleteMessages(memoryId);
     }
 
@@ -153,6 +204,8 @@ public class TtlChatMemoryStore implements ChatMemoryStore {
                 // >= 让边界含义明确：已达到存活时长即可回收。
                 if (now - e.getValue() >= expireAfterAccessMs) {
                     delegate.deleteMessages(e.getKey());
+                    // 锁对象随会话一起回收，否则 memoryLocks 只增不减
+                    memoryLocks.remove(String.valueOf(e.getKey()));
                     evictedCount.incrementAndGet();
                     return true;
                 }
@@ -169,6 +222,7 @@ public class TtlChatMemoryStore implements ChatMemoryStore {
                         .toList()   // 先物化，避免在流迭代中改动 map
                         .forEach(id -> {
                             lastAccess.remove(id);
+                            memoryLocks.remove(String.valueOf(id));
                             delegate.deleteMessages(id);
                             evictedCount.incrementAndGet();
                         });
