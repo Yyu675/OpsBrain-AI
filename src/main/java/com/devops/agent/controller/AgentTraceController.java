@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
 import com.devops.agent.application.runtime.AgentState;
 import com.devops.agent.application.runtime.AgentStateManager;
 import com.devops.agent.application.runtime.AgentStateTransition;
@@ -37,12 +38,31 @@ import java.util.Map;
  * 而不是长期审计（长期审计走 {@code recordLogAsync} 落库那条线）。
  * 接口对「查不到」与「没有轨迹」明确区分，不让运维误以为流程没走。
  *
+ * <h3>权限：限 ADMIN（与 AuditLogController / ApprovalController 一致）</h3>
+ * 这个接口<b>看起来</b>只读无害，实际上轨迹的 {@code triggerDetail} 字段
+ * 逐条拼进了相当敏感的内容：
+ * <ul>
+ *   <li>{@code "HIGH 优先级工单待审批: " + draft.title()} —— <b>工单标题原文</b>，
+ *       往往直接写着「XX 生产库主从延迟」这类内部系统与故障细节；</li>
+ *   <li>{@code "系统异常: " + e.getMessage()} / {@code "异常：" + error.getMessage()}
+ *       —— <b>原始异常消息</b>，可能带出内网地址、SQL 片段、依赖服务名；</li>
+ *   <li>{@code "安全拦截: " + e.getMessage()} —— <b>安全规则的命中原因</b>，
+ *       等于把提示词注入防线的判定逻辑透露给攻击者；</li>
+ *   <li>{@code "Saga 补偿失败，需人工清理: " + result.failed()} —— 脏数据位置。</li>
+ * </ul>
+ *
+ * <p>换言之它与 {@code AuditLogController} 是同一量级的高敏数据，
+ * 只是载体从数据库换成了内存。<b>「只读」说的是不改数据，不等于可以随便看。</b>
+ * 定级应当看<b>数据内容</b>而非操作类型——这一点在最初落地本控制器时判断失误，
+ * 此处修正并记录，避免后来人沿用「反正是 GET」的直觉。</p>
+ *
  * @author OpsBrain AI
  * @since 2026-08-25
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/agent/traces")
+@SaCheckRole("ADMIN")
 public class AgentTraceController {
 
     private final AgentStateManager stateManager;

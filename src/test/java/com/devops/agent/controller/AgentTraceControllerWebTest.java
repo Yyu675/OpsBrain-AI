@@ -48,6 +48,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <h3>另一条：状态同时输出机器码与中文标签</h3>
  * 与 {@code SagaController} 同样的取舍——看这个页面的人正在排障，
  * 「TOOLS_RUNNING」和「工具执行中」都要给，否则得去翻枚举定义。
+ *
+ * <h3>测试边界声明：这里<b>不</b>验证 ADMIN 权限</h3>
+ * 本控制器标了 {@code @SaCheckRole("ADMIN")}，但该注解由 Sa-Token 的注解
+ * 拦截器执行，而拦截器注册在 {@code WebConfig} 里——本切片刻意排除了它
+ * （切片中缺少 Sa-Token 运行时上下文，不排除会让所有请求变成 401，
+ * 把「契约是否正确」的断言变成「鉴权是否配好」的噪音）。
+ *
+ * <p><b>因此本类里的请求都是「已放行」状态，不构成对权限的任何保证。</b>
+ * 与 {@code AuditLogControllerWebTest} 同样的处理与同样的提醒：
+ * 别看到这组绿灯就以为权限有回归保护。轨迹的 {@code triggerDetail} 里
+ * 拼着工单标题原文、原始异常消息、安全拦截命中原因——
+ * 是与审计日志同一量级的高敏数据，其权限须由专门的鉴权集成测试覆盖。</p>
  */
 @ExtendWith(SpringExtension.class)
 @WebMvcTest(
