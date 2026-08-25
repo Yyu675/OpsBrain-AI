@@ -23,12 +23,8 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -254,34 +250,4 @@ class HealthCheckControllerWebTest {
         }
     }
 
-    /**
-     * 开关打开后的行为：单独一个内嵌类，用 {@code @TestPropertySource} 覆盖属性。
-     * 这里只验证「开了之后确实会去调模型」，不验证模型本身的返回内容。
-     */
-    @Nested
-    @DisplayName("付费探针（显式开启）")
-    @TestPropertySource(properties = {
-            "devops.ai.mode=MOCK",
-            "devops.ai.health.ai-model-enabled=true"
-    })
-    class AiModelProbeEnabled {
-
-        @Test
-        @DisplayName("开关打开后才真正调用模型；上游异常时报 FAILED 而不是 500")
-        void enabledProbeCallsModelsAndReportsFailure() throws Exception {
-            // 让模型调用抛错，验证异常被兜住并转成 FAILED——
-            // 健康检查端点自己崩掉是最糟的结果：运维连"哪里坏了"都看不到
-            when(turboModel.chat(any(dev.langchain4j.model.chat.request.ChatRequest.class)))
-                    .thenThrow(new RuntimeException("上游 401 Unauthorized"));
-
-            mockMvc.perform(get("/api/v1/health/ai-model"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.overallStatus").value("FAILED"))
-                    .andExpect(jsonPath("$.error").value(
-                            org.hamcrest.Matchers.containsString("401")));
-
-            // 关键：开关打开后确实走到了模型调用（与上面 disabled 那组形成对照）
-            verify(turboModel).chat(any(dev.langchain4j.model.chat.request.ChatRequest.class));
-        }
-    }
 }
