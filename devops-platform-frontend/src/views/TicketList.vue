@@ -17,6 +17,7 @@ import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
 import { useTicketFilters } from '@/composables/useTicketFilters'
 import { useTicketColumns, CONFIGURABLE_COLUMNS } from '@/composables/useTicketColumns'
+import { useTicketBulkActions } from '@/composables/useTicketBulkActions'
 import {
   useUrlFilters, defineUrlFilter, enumParser, positiveIntParser, textParser
 } from '@/composables/useUrlFilters'
@@ -35,7 +36,7 @@ import {
   type TicketStatus,
   type TicketPriority
 } from '@/stores/tickets'
-import { TICKET_STATUS_OPTIONS, TICKET_PRIORITY_OPTIONS, canTransitionStatus } from '@/constants/ticket'
+import { TICKET_STATUS_OPTIONS, TICKET_PRIORITY_OPTIONS } from '@/constants/ticket'
 import { exportTicketsCsv } from '@/api/tickets'
 import {
   firstResponseText,
@@ -146,7 +147,6 @@ const {
 /** 匹配总数（后端按当前筛选统计） */
 const totalCount = pagination.total
 
-const selectedIds = ref<string[]>([])
 
 // ==================== el-table：列宽 / 排序 / 选择 ====================
 
@@ -314,10 +314,6 @@ const onSortChange = async (data: {
 const rowClassName = ({ row }: { row: Ticket }) =>
   selectedIds.value.includes(row.id) ? 'selected' : ''
 
-/** el-table 选择变化 → 同步到既有 selectedIds（批量操作依赖它） */
-const onSelectionChange = (rows: Ticket[]) => {
-  selectedIds.value = rows.map(r => r.id)
-}
 
 /**
  * 行点击进详情
@@ -552,142 +548,21 @@ const handleTicketCreated = async (ticketId: string) => {
 
 // 批量操作
 //
-// 列表视图的全选/单选由 el-table 的 selection 列接管（onSelectionChange 同步到
-// selectedIds）；卡片视图无表格，仍用下面的 toggleSelect 手动维护。
-// 原 currentPageIds / allCurrentSelected / someCurrentSelected / toggleSelectAll
-// 是手写 <table> 表头勾选框的配套逻辑，迁移后已无调用方，一并删除避免死代码。
-const toggleSelect = (id: string) => {
-  const idx = selectedIds.value.indexOf(id)
-  if (idx >= 0) selectedIds.value.splice(idx, 1)
-  else selectedIds.value.push(id)
-}
-
-const bulkDelete = () => {
-  const count = selectedIds.value.length
-  if (count === 0) return
-  ElMessageBox.confirm(`确认删除选中的 ${count} 条工单？删除后 5 秒内可撤销。`, '批量删除', {
-    type: 'warning',
-    confirmButtonText: '删除',
-    cancelButtonText: '取消'
-  })
-    .then(async () => {
-      const ids = [...selectedIds.value]
-      selectedIds.value = []
-      const snaps = await store.bulkDelete(ids)
-      if (snaps.length === 0) {
-        notify.warning('没有可删除的工单')
-        return
-      }
-
-      // 分页在服务端，删除后须重新拉取：
-      // 否则当前页会少几行（本该由下一页记录补齐），且 total 仍是旧值。
-      // 若当前页已空且非首页，先退一页再拉，避免停在空白页。
-      if (store.tickets.length === 0 && currentPage.value > 1) {
-        currentPage.value -= 1
-      }
-      await fetchList()
-
-      // 部分失败时如实告知
-      const failedCount = ids.length - snaps.length
-      showUndoToast({
-        message: failedCount > 0
-          ? `已删除 ${snaps.length} 条，${failedCount} 条失败`
-          : `已删除 ${snaps.length} 条工单`,
-        duration: 5000,
-        onUndo: async () => {
-          // 后端不支持指定 ID 插入，恢复会得到新工单号
-          const ok = await store.bulkRestore(snaps)
-          await fetchList()   // 恢复的是新工单号，须重新拉取才能看到
-          notify.success(`已恢复 ${ok} 条工单（工单号已重新生成）`)
-        }
-      })
-    })
-    .catch(() => {})
-}
-
-const bulkStatusOpen = ref(false)
-
-/** 当前选中的工单实体（批量操作需要读它们的状态做流转校验） */
-const selectedTickets = computed(() =>
-  store.tickets.filter(t => selectedIds.value.includes(t.id))
-)
-
-/**
- * 批量状态选项 —— 按选中工单的**实际状态**计算可达性。
- *
- * 原实现直接铺 TICKET_STATUS_OPTIONS 全量五项，完全绕过状态机：
- * 用户勾了 20 张单点「已关闭」，其中处于 pending / processing 的
- * 根本不允许直接关闭（必须先 resolved），后端逐条拒绝，
- * 前端只报一句「12/20 条更新成功，其余失败」——
- * 用户既不知道是哪 8 条，也不知道为什么失败，只能一张张点开看。
- *
- * 改为：只要选中项里**没有任何一张**能走到目标状态，就整项置灰；
- * 部分可达时保留可点但在标签上标出「N/M 可执行」，让用户点之前
- * 就知道这次会影响多少张。
- */
-const bulkStatusOptions = computed(() =>
-  TICKET_STATUS_OPTIONS.map(opt => {
-    const applicable = selectedTickets.value.filter(t =>
-      t.status !== opt.value && canTransitionStatus(t.status, opt.value)
-    ).length
-    const total = selectedTickets.value.length
-    return {
-      ...opt,
-      applicable,
-      disabled: applicable === 0,
-      hint: applicable === 0
-        ? `选中的工单都不能变更为「${opt.label}」`
-        : applicable < total
-          ? `${applicable}/${total} 条可执行，其余状态不允许`
-          : ''
-    }
-  })
-)
-
-const applyBulkStatus = async (s: TicketStatus) => {
-  // 只对状态机允许的那些执行，不把注定失败的请求打给后端
-  const targets = selectedTickets.value.filter(t =>
-    t.status !== s && canTransitionStatus(t.status, s)
-  )
-  const skipped = selectedIds.value.length - targets.length
-  if (targets.length === 0) {
-    notify.warning(`选中的工单都不能变更为「${getStatusLabel(s)}」`)
-    bulkStatusOpen.value = false
-    return
-  }
-
-  const count = targets.length
-  const ids = targets.map(t => t.id)
-  selectedIds.value = []
-  bulkStatusOpen.value = false
-
-  const ok = await store.bulkUpdateStatus(ids, s)
-
-  // 重新拉取：若当前筛选含状态条件，改完的工单应移出结果集；
-  // 且这些工单的 version 已在后端自增，不刷新会导致后续编辑误报冲突
-  await fetchList()
-
-  // 跳过的条数要如实说明原因，否则用户以为自己勾的没生效
-  const skipNote = skipped > 0 ? `（${skipped} 条因状态不允许已跳过）` : ''
-  if (ok === count) {
-    notify.success(`已将 ${count} 条工单状态更新为「${getStatusLabel(s)}」${skipNote}`)
-  } else {
-    notify.warning(`${ok}/${count} 条更新成功，其余失败${skipNote}`)
-  }
-}
-
-const bulkAssignOpen = ref(false)
-const closeBulkMenus = (e: MouseEvent) => {
-  const target = e.target as HTMLElement
-  if (!target.closest('.bulk-dropdown')) {
-    bulkStatusOpen.value = false
-    bulkAssignOpen.value = false
-  }
-  // 列设置面板同样点击外部关闭，否则会一直挡住表头
-  if (!target.closest('.col-setting-wrap')) {
-    colSettingOpen.value = false
-  }
-}
+// 批量操作（选中集合 / 改状态 / 转派 / 删除撤销）统一由 useTicketBulkActions 提供。
+// 抽出理由：这块一次影响几十张工单，而正确性不在「成功时对不对」，
+// 而在「部分失败时说没说实话」——详见 composable 文件头注释。
+// 它已有 13 例测试兜底，是当前拆分风险最低的一块。
+const {
+  selectedIds, bulkStatusOpen, bulkAssignOpen, bulkStatusOptions,
+  toggleSelect, onSelectionChange, closeBulkMenus,
+  bulkDelete, applyBulkStatus, applyBulkAssign,
+} = useTicketBulkActions({
+  store,
+  currentPage,
+  fetchList: () => fetchList(),
+  // 列设置面板归 useTicketColumns 管，用回调传入避免两个 composable 互相引用
+  onCloseOtherMenus: () => { colSettingOpen.value = false },
+})
 
 onMounted(() => {
   document.addEventListener('click', closeBulkMenus)
@@ -695,25 +570,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeBulkMenus)
 })
-const applyBulkAssign = async (name: string) => {
-  const count = selectedIds.value.length
-  if (count === 0) return
-  const ids = [...selectedIds.value]
-  selectedIds.value = []
-  bulkAssignOpen.value = false
-
-  const ok = await store.bulkAssign(ids, name)
-
-  // 重新拉取：若筛选含负责人条件，改完的工单应移出结果集；
-  // 且转派会自增 version，不刷新会导致后续编辑误报冲突
-  await fetchList()
-
-  if (ok === count) {
-    notify.success(`已将 ${count} 条工单分配给「${name}」`)
-  } else {
-    notify.warning(`${ok}/${count} 条分配成功，其余失败`)
-  }
-}
 
 const getStatusClass = (s: TicketStatus) => `status-${s}`
 const getPriorityClass = (p: TicketPriority) => `priority-${p}`

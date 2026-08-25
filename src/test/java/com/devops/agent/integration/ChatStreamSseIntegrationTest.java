@@ -1,26 +1,34 @@
 package com.devops.agent.integration;
 
+import com.devops.agent.domain.auth.User;
+import com.devops.agent.domain.auth.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * AI 对话 SSE <b>正常路径</b>端到端测试 —— 验证事件序列本身。
@@ -40,47 +48,37 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 可以在 {@code @SpringBootTest} 里真实跑通。
  *
  * <p>剩下的问题只是<b>异步等待</b>：{@code handleStreamChat} 把工作交给
- * 虚拟线程执行器，请求返回时流还没跑完。等待方式见
- * {@link #awaitStreamEnd}——那里记了一个踩过的坑。</p>
+ * 虚拟线程执行器，请求返回时流还没跑完。本类改用真实 HTTP 后，
+ * 读到 EOF 即等于流结束，不再需要手写等待——见下一节。</p>
  *
  * <h3>不依赖具体文案</h3>
  * 断言只针对<b>事件名、顺序、字段存在性与类型</b>，不断言 MOCK 回复的具体文字——
  * 那属于桩的实现细节，钉住它只会让改桩变成改测试。
  *
- * <h3>⚠️ 当前状态：暂缓（@Disabled），原因是诊断通道受限而非测试无价值</h3>
- * 9 个用例在 CI 上全部失败，症状统一——{@code MockMvc} 拿到的响应体是空的，
- * 即事件从未被写入。已排除的可能：
- * <ul>
- *   <li>{@code getAsyncResult()} 对 {@code SseEmitter} 不会等流写完（已改为轮询
- *       {@code isAsyncStarted}，无效——耗时仍是个位数毫秒，说明它一开始就是 false）；</li>
- *   <li>surefire 默认 {@code useFile=true} 让详情只进文件（已改 false，
- *       但 GitHub 的 annotations API 只回传摘要行，仍拿不到 expected/actual）。</li>
- * </ul>
+ * <h3>本轮改用真实 HTTP 消费流（此前 @Disabled 的根因）</h3>
+ * 之前用 {@code @SpringBootTest + @AutoConfigureMockMvc}，9 个用例全部拿到
+ * <b>空响应体</b>，而受限网络下取不到 surefire 详情，一度只能挂起。
  *
- * <p><b>为什么停在这里</b>：本仓库 CI 的原始日志走 Azure blob、artifact 下载
- * 在受限网络下返回 0 字节，annotations API 又只给摘要。
- * 也就是说<b>没有任何通道能拿到这 9 条断言的实际值</b>，
- * 继续推进只能靠盲猜改代码——而盲猜的风险是把本来正确的产品实现改坏
- * （本会话已多次遇到「测试报错但错在测试」的情况）。
- * 已经为此消耗 5 轮 CI，投入产出不成立。</p>
- *
- * <p><b>重启条件</b>（任一满足即可继续）：</p>
+ * <p>本轮改成 <b>{@code RANDOM_PORT} + JDK 21 内置 {@code HttpClient}</b>，
+ * 真正起一个 Servlet 容器、真正走一次网络。这样做同时消除了两类问题：</p>
  * <ol>
- *   <li>能在本地跑通 Maven（当前沙箱所有 Maven 镜像不可达）——
- *       一次本地运行就能看到完整堆栈；</li>
- *   <li>CI 环境能取到 {@code target/surefire-reports/*.txt}；</li>
- *   <li>改用 {@code @SpringBootTest(webEnvironment = RANDOM_PORT)} +
- *       {@code WebTestClient} 真正走网络消费流——绕开 {@code MockMvc}
- *       对 {@code SseEmitter} 的模拟差异，这也是最可能直接解决问题的路径。</li>
+ *   <li><b>{@code MockMvc} 不真正执行异步分发。</b>{@code SseEmitter} 的写入
+ *       发生在容器的异步线程里，{@code MockMvc} 只是模拟 Servlet 环境，
+ *       {@code getAsyncResult()} 拿到的是 emitter 对象本身、
+ *       {@code isAsyncStarted()} 也随即为 false——两种等待方式都等不到流写完，
+ *       响应体自然是空的。真实容器不存在这个模拟差异；</li>
+ *   <li><b>{@code context-path=/ai} 被 MockMvc 忽略。</b>真实请求必须带上它，
+ *       否则 404。这一条在 MockMvc 下根本不会暴露，
+ *       却会在部署后变成「本地测试全绿、线上接口 404」。</li>
  * </ol>
  *
- * <p>用 {@code @Disabled} 而不是删除：这 9 条断言本身是对的（事件顺序、
- * traceId 一致性、citations 必须是数组而非 null），删掉等于把已经想清楚的
- * 契约又丢了。留着并写明重启条件，比留一个长期红着的 CI 有用。</p>
+ * <p>不用 {@code WebTestClient} 是因为它来自 {@code spring-webflux}，
+ * 而本项目只依赖 {@code spring-boot-starter-web}。为一个测试引入整个响应式栈
+ * 不划算，且当前沙箱 Maven 镜像不可达、无法验证新依赖能否解析。
+ * JDK 内置 {@code HttpClient} 零新增依赖，且 {@code BodyHandlers.ofString()}
+ * 会一直读到服务端关闭连接（即 emitter complete），天然就是我们要的等待语义。</p>
  */
-@Disabled("SSE 事件序列断言在 MockMvc 下拿到空响应体，而受限网络下无法取得 surefire 详情定位根因。重启条件见类注释——推荐改用 WebTestClient + RANDOM_PORT。")
-@SpringBootTest
-@AutoConfigureMockMvc
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "devops.ai.mode=MOCK",
         // 放宽限流：本类会连续发多次请求，用生产默认值会互相干扰
@@ -92,65 +90,157 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("AI 对话 SSE 正常路径（事件序列）")
 class ChatStreamSseIntegrationTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    @LocalServerPort
+    private int port;
+
+    /** 与生产一致的 context-path。MockMvc 会忽略它，真实请求必须带上，否则 404 */
+    @Value("${server.servlet.context-path:}")
+    private String contextPath;
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private com.devops.agent.domain.auth.AuthService authService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private final String username = "sse_" + UUID.randomUUID().toString().substring(0, 8);
+    private static final String RAW_PASSWORD = "SseStream#2026";
+
+    /** 登录后拿到的鉴权头（tokenName -> tokenValue） */
+    private String tokenName;
+    private String tokenValue;
+
+    /**
+     * 读取整条流的超时。
+     *
+     * MOCK 模式下通常几十毫秒完成；给到 30 秒是为了容忍 CI 冷启动，
+     * 同时保证真出问题时不会把构建挂死。
+     */
+    private static final Duration STREAM_TIMEOUT = Duration.ofSeconds(30);
+
+    private final HttpClient http = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
 
     /** 一条已解析的 SSE 事件 */
     private record SseEvent(String name, Map<String, Object> data) {
     }
 
+    private String url(String path) {
+        return "http://localhost:" + port + contextPath + path;
+    }
+
     /**
-     * 发起一次流式对话，等待流真正结束，返回解析后的事件序列。
+     * SSE 端点<b>需要登录</b>（WebConfig 的白名单只放行 auth/health/webhook）。
      *
-     * <p><b>为什么不能用 {@code getAsyncResult()}</b>：对 {@code SseEmitter}
-     * 而言它返回的是 emitter 对象本身，在 emitter 被创建时就已「就绪」，
-     * <b>不会等流写完</b>。第一版这么写，9 个用例全部拿到空响应体而失败——
-     * 失败信息只说「事件列表为空」，很容易被误读成「产品没发事件」。</p>
+     * <p>此前的切片测试用 {@code excludeFilters} 把 {@code WebConfig} 整个排掉，
+     * 于是无需鉴权。改走真实 HTTP 后拦截器是真的会执行的——
+     * 不带 token 的话每个用例都会拿到 401，
+     * 而症状（响应体里没有 SSE 事件）与「流没跑起来」一模一样，极易误判。
+     * 所以这里先建号、真登录、把 token 带在后续每个请求上。</p>
+     */
+    @BeforeEach
+    void loginForStream() throws Exception {
+        User u = new User();
+        u.setUsername(username);
+        u.setPassword(authService.encodePassword(RAW_PASSWORD));
+        u.setDisplayName("SSE 集成测试用户");
+        u.setRole("ADMIN");
+        u.setStatus("ACTIVE");
+        userRepository.insert(u);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("username", username);
+        body.put("password", RAW_PASSWORD);
+
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url("/api/v1/auth/login")))
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .timeout(Duration.ofSeconds(20))
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> res =
+                http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        assertThat(res.statusCode()).as("登录应成功，否则后续 SSE 全部 401").isEqualTo(200);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parsed = objectMapper.readValue(res.body(), Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) parsed.get("data");
+        tokenName = String.valueOf(data.get("tokenName"));
+        tokenValue = String.valueOf(data.get("token"));
+        assertThat(tokenValue).as("必须签发真实 token").isNotBlank();
+    }
+
+    /**
+     * 清理账号。
      *
-     * <p>SSE 的正确等待方式是看请求的异步分发是否结束
-     * （{@code isAsyncStarted} 转为 false，即 emitter 已 complete），
-     * 再读响应体。MOCK 模式下这通常在几十毫秒内完成。</p>
+     * 不用 {@code @Transactional} 回滚：Sa-Token 的会话写在 Redis 里，
+     * 事务管不到它，回滚反而会造成「库里没这个用户但 Redis 还有他的会话」的错位。
+     * （与 AuthLoginChainIntegrationTest 保持同一做法。）
+     */
+    @AfterEach
+    void cleanupUser() {
+        jdbcTemplate.update("DELETE FROM sys_user WHERE username = ?", username);
+    }
+
+    /** 给请求带上鉴权头 */
+    private HttpRequest.Builder authed(HttpRequest.Builder b) {
+        return b.header(tokenName, tokenValue);
+    }
+
+    /**
+     * 发起一次流式对话，读完整条流，返回解析后的事件序列。
+     *
+     * <p><b>为什么不需要手写等待</b>：SSE 是「服务端写完就关连接」的模型，
+     * {@code BodyHandlers.ofString()} 会一直读到 EOF，
+     * 即 emitter {@code complete()} 之后才返回。这正是我们要的语义，
+     * 比此前在 MockMvc 下轮询 {@code isAsyncStarted} 可靠得多——
+     * 那个标志在模拟环境里根本不反映真实的异步分发状态。</p>
      */
     private List<SseEvent> streamAndParse(String query) throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/v1/chat/stream")
-                        .param("query", query)
-                        .param("sessionId", "it-" + UUID.randomUUID()))
-                .andExpect(status().isOk())
-                .andReturn();
+        HttpResponse<String> res = getStream(query);
+        assertThat(res.statusCode()).as("SSE 请求应返回 200").isEqualTo(200);
+        return parseOrExplain(res);
+    }
 
-        awaitStreamEnd(result);
-        String body = result.getResponse().getContentAsString();
+    private HttpResponse<String> getStream(String query) throws Exception {
+        String uri = url("/api/v1/chat/stream")
+                + "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
+                + "&sessionId=" + URLEncoder.encode("it-" + UUID.randomUUID(), StandardCharsets.UTF_8);
+        HttpRequest req = authed(HttpRequest.newBuilder(URI.create(uri))
+                .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                .timeout(STREAM_TIMEOUT)
+                .GET())
+                .build();
+        return http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 解析事件；为空时把诊断信息塞进断言消息。
+     *
+     * <p>本仓库 CI 的原始日志走 Azure blob、artifact 在受限网络下返回 0 字节，
+     * annotations API 又只回摘要行——<b>断言消息是唯一能带出上下文的通道</b>。
+     * 上一轮就是因为只有一句「事件列表为空」而无法定位，才不得不挂起整个类。</p>
+     */
+    private List<SseEvent> parseOrExplain(HttpResponse<String> res) throws Exception {
+        String body = res.body();
         List<SseEvent> events = parse(body);
         if (events.isEmpty()) {
-            // 诊断信息直接进断言消息——本项目 CI 的原始日志与 artifact 在
-            // 受限网络下都取不到，只能靠这条消息定位
             throw new AssertionError(String.format(
-                    "SSE 未产生任何事件。asyncStarted=%s, status=%d, contentType=%s, bodyLen=%d, body=[%s]",
-                    result.getRequest().isAsyncStarted(),
-                    result.getResponse().getStatus(),
-                    result.getResponse().getContentType(),
+                    "SSE 未产生任何事件。status=%d, contentType=%s, bodyLen=%d, body=[%s]",
+                    res.statusCode(),
+                    res.headers().firstValue("Content-Type").orElse("(none)"),
                     body.length(),
                     body.length() > 500 ? body.substring(0, 500) : body));
         }
         return events;
-    }
-
-    /**
-     * 轮询等待异步分发结束。
-     *
-     * <p>用轮询而非固定 sleep：固定等待要么在慢机器上不够、要么白白拖慢测试，
-     * 两种都会让这组用例变得不稳定。</p>
-     */
-    private void awaitStreamEnd(MvcResult result) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (System.currentTimeMillis() < deadline) {
-            if (!result.getRequest().isAsyncStarted()) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("SSE 流在 30 秒内未结束——MOCK 模式下不该发生");
     }
 
     private List<SseEvent> parse(String body) throws Exception {
@@ -278,15 +368,19 @@ class ChatStreamSseIntegrationTest {
     @Test
     @DisplayName("POST 与 GET 产生同样的事件序列 —— 两个入口不能有行为差异")
     void postAndGetBehaveIdentically() throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/chat/stream")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(
-                                Map.of("query", "磁盘打满了怎么办", "sessionId", "it-post"))))
-                .andExpect(status().isOk())
-                .andReturn();
-        awaitStreamEnd(result);
+        HttpRequest req = authed(HttpRequest.newBuilder(URI.create(url("/api/v1/chat/stream")))
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                .timeout(STREAM_TIMEOUT)
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(
+                        Map.of("query", "磁盘打满了怎么办", "sessionId", "it-post")),
+                        StandardCharsets.UTF_8)))
+                .build();
+        HttpResponse<String> res =
+                http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        assertThat(res.statusCode()).isEqualTo(200);
 
-        List<String> seq = names(parse(result.getResponse().getContentAsString()));
+        List<String> seq = names(parseOrExplain(res));
 
         // 前端历史上用 GET，新版改 POST（避免 query 出现在 URL 与日志里）。
         // 两者行为若不一致，切换时会出现「换个方法就没有引用了」这类怪事
@@ -298,17 +392,15 @@ class ChatStreamSseIntegrationTest {
     @Test
     @DisplayName("响应始终是 text/event-stream，且带防缓冲头")
     void responseIsEventStreamWithAntiBuffering() throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/v1/chat/stream")
-                        .param("query", "简单问题"))
-                .andExpect(status().isOk())
-                .andReturn();
-        awaitStreamEnd(result);
+        HttpResponse<String> res = getStream("简单问题");
 
-        assertThat(result.getResponse().getContentType())
+        assertThat(res.statusCode()).isEqualTo(200);
+        assertThat(res.headers().firstValue("Content-Type").orElse(""))
                 .contains(MediaType.TEXT_EVENT_STREAM_VALUE);
         // 少了它 Nginx 会把整个流缓冲成一次性响应，
         // 用户看到的不是逐字输出而是转圈几十秒后整段蹦出来
-        assertThat(result.getResponse().getHeader("X-Accel-Buffering")).isEqualTo("no");
+        assertThat(res.headers().firstValue("X-Accel-Buffering").orElse(""))
+                .isEqualTo("no");
     }
 
     @Test
