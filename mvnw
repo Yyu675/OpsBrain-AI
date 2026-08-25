@@ -189,13 +189,18 @@ exec_maven() {
       # 沙箱环境下 artifact 走 Azure blob 无法下载（防火墙），
       # 只靠 [ERROR] 行会得到「9 个测试失败」却看不到任何一条失败原因。
       if [ -d target/surefire-reports ]; then
-        echo "::group::测试失败详情（surefire）"
+        echo "----- 测试失败详情（surefire）-----"
         # 只取失败/错误的报告，每个类最多 40 行，避免刷屏
         # ⚠️ 必须用 find 而非 target/surefire-reports/*.txt。
         # 本脚本开头是 `set -euf`，其中 -f 即 noglob——通配符**不会被展开**，
         # grep 收到的是字面量 "*.txt"，匹配不到任何文件，整个循环空转。
         # 这就是上一轮「详情凭空消失、且毫无报错」的真正原因：
         # 不是网络、不是注解配额，是自己脚本里的 -f 把 glob 关掉了。
+        _n=$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null | wc -l)
+        _nf=$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null \
+               | xargs grep -lE "FAILURE!|ERROR!" 2>/dev/null | wc -l)
+        # 探针：若详情为空，这行能区分「没找到报告」与「找到了但没输出」
+        echo "::error::[诊断] surefire 报告 ${_n} 个，其中含失败 ${_nf} 个"
         find target/surefire-reports -name '*.txt' -type f 2>/dev/null \
           | xargs grep -lE "FAILURE!|ERROR!" 2>/dev/null \
           | head -10 \
@@ -224,7 +229,7 @@ exec_maven() {
                     fi
                   done
             done
-        echo "::endgroup::"
+        echo "----- 详情结束 -----"
       fi
     fi
     exit "$_mvnw_rc"
