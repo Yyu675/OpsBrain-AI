@@ -532,8 +532,6 @@ class ChatStreamSseIntegrationTest {
      * <p>按既有纪律（长期红着的 CI 等于没有 CI）先挂起本例，
      * 同批另两例并发无关的新用例保持启用。</p>
      */
-    @org.junit.jupiter.api.Disabled("发现疑似并发缺陷：4 路并发时 code=50001。已排除限流/配额；"
-            + "疑为 Sa-Token 登录态在虚拟线程上的可见性问题，需服务端堆栈定型，详见方法注释")
     @Test
     @DisplayName("并发多路流互不串号 —— 串号会让 A 用户看到 B 用户的回答")
     void concurrentStreamsDoNotInterleave() throws Exception {
@@ -553,12 +551,8 @@ class ChatStreamSseIntegrationTest {
                 // 断言消息带上实际事件序列——CI 下这是唯一能看到上下文的通道，
                 // 只说「少了 complete」定位不到是哪一步断的。
                 assertThat(names(events))
-                        .as("每一路都应有完整的 start/complete，实际=%s，error事件=%s",
-                                names(events),
-                                events.stream()
-                                        .filter(e -> "error".equals(e.name()))
-                                        .map(e -> String.valueOf(e.data()))
-                                        .toList())
+                        .as("每一路都应有完整的 start/complete，实际=%s%s",
+                                names(events), explainFailure(events))
                         .contains("start", "complete");
 
                 // 同一路内 traceId 必须自洽——串号最典型的形态就是
@@ -649,5 +643,43 @@ class ChatStreamSseIntegrationTest {
         HttpResponse<String> res = sendTolerantOfAbruptClose(req);
         assertThat(res.statusCode()).isEqualTo(200);
         return parseOrExplain(res);
+    }
+
+    /**
+     * 流里出现 error 事件时，把<b>服务端记下的真实异常</b>拼进断言消息。
+     *
+     * <h3>为什么要绕这一圈</h3>
+     * 客户端只能看到兜底 catch 给的 {@code 50001「服务内部异常」}——
+     * 真实异常类型被吞掉了。而受限网络下 CI 的 job 日志取不到，
+     * 唯一能带出上下文的通道是断言消息。
+     *
+     * <p>好在 {@code recordLogAsync} 会把 {@code "系统异常: " + e.getMessage()}
+     * 写进 {@code sys_agent_call_log.agent_answer}，本类本来就注入了 JdbcTemplate。
+     * 于是从库里按 traceId 反查即可拿到真实原因，无需改动任何产品代码。</p>
+     *
+     * <p>记账是异步的（auditExecutor），这里给一点点等待时间；
+     * 取不到就如实说明「审计尚未落库」，不编造。</p>
+     */
+    private String explainFailure(List<SseEvent> events) {
+        List<Map<String, Object>> errors = events.stream()
+                .filter(e -> "error".equals(e.name()))
+                .map(SseEvent::data)
+                .toList();
+        if (errors.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("，error事件=").append(errors);
+        String traceId = String.valueOf(errors.get(0).get("traceId"));
+        try {
+            // 审计走独立线程池，稍等其落库
+            Thread.sleep(1500);
+            List<String> answers = jdbcTemplate.queryForList(
+                    "SELECT agent_answer FROM sys_agent_call_log WHERE trace_id = ?",
+                    String.class, traceId);
+            sb.append("，服务端记录=").append(answers.isEmpty() ? "(审计尚未落库)" : answers);
+        } catch (Exception e) {
+            sb.append("，反查审计失败=").append(e.getMessage());
+        }
+        return sb.toString();
     }
 }
