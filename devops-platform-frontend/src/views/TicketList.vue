@@ -7,12 +7,12 @@ import { ElMessageBox } from 'element-plus'
 import type { Sort, TableColumnCtx } from 'element-plus'
 import TicketFormDialog from '@/components/ticket/TicketFormDialog.vue'
 import TicketCardGrid from '@/components/ticket/TicketCardGrid.vue'
+import TicketTableView from '@/components/ticket/TicketTableView.vue'
 import { showUndoToast } from '@/utils/undoToast'
 // 搜索防抖（列宽持久化已移入 useTicketColumns）
 import { debounce } from '@/utils/persist'
 import { ticketEvents } from '@/utils/ticketEvents'
 import { nowAsBackendTime } from '@/utils/time'
-import RelativeTime from '@/components/common/RelativeTime.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
@@ -39,12 +39,9 @@ import {
 } from '@/stores/tickets'
 import { TICKET_STATUS_OPTIONS, TICKET_PRIORITY_OPTIONS } from '@/constants/ticket'
 import { exportTicketsCsv } from '@/api/tickets'
-import {
-  firstResponseText,
-  firstResponseTitle,
-  slaRemainText,
-  slaSeverity
-} from '@/utils/sla'
+// firstResponseText / firstResponseTitle / slaRemainText 已随表格模板
+// 迁入 TicketTableView.vue，此处只留页面自身仍在用的 slaSeverity
+import { slaSeverity } from '@/utils/sla'
 
 const store = useTicketsStore()
 const router = useRouter()
@@ -837,279 +834,31 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
       >
       <!-- 列表视图：el-table 提供原生列宽拖拉（border + resizable）
            列宽变化持久化到 localStorage，刷新后保持用户调整的布局 -->
-      <div v-if="viewMode === 'list'" class="table-container">
-        <el-table
-          class="tickets-table"
-          :data="pagedTickets"
-          border
-          stripe
-          row-key="id"
-          :row-class-name="rowClassName"
-          :default-sort="tableSort"
-          @row-click="onRowClick"
-          @selection-change="onSelectionChange"
-          @header-dragend="onHeaderDragend"
-          @sort-change="onSortChange"
-        >
-          <el-table-column type="selection" :width="columnWidths.selection" :resizable="false" />
-
-          <el-table-column
-            v-if="columnVisible.id"
-            prop="id"
-            label="工单 ID"
-            :width="columnWidths.id"
-            :min-width="120"
-            sortable="custom"
-          >
-            <template #default="{ row }">
-              <RouterLink :to="`/tickets/${row.id}`" class="ticket-id" @click.stop>{{ row.id }}</RouterLink>
-            </template>
-          </el-table-column>
-
-          <!-- 标题列：不设固定 width，由 min-width 弹性吸收剩余空间
-               （此前所有列定宽导致右侧一大片空白 gutter）。
-               悬浮改为结构化「速览卡」——原先 show-overflow-tooltip 会把整个单元格
-               文本（含描述、标签）糊成一片，描述属长文本不该进 tooltip -->
-          <el-table-column
-            prop="title"
-            label="标题"
-            :width="titleWidth"
-            :min-width="240"
-          >
-            <template #default="{ row }">
-              <el-tooltip placement="top-start" :show-after="250" effect="light" popper-class="ticket-peek-popper">
-                <template #content>
-                  <div class="ticket-peek">
-                    <div class="peek-title">{{ row.title }}</div>
-                    <div class="peek-row">
-                      <span class="peek-label">服务 · 分类</span>
-                      <span class="peek-value">{{ row.service || '未分类' }} · {{ row.category || '其他' }}</span>
-                    </div>
-                    <div class="peek-row">
-                      <span class="peek-label">SLA</span>
-                      <span class="peek-value" :class="slaClass(row)">
-                        {{ slaRemainText(row) }}
-                        <template v-if="row.sla"> · 目标 {{ row.sla }}</template>
-                      </span>
-                    </div>
-                    <div class="peek-row">
-                      <span class="peek-label">首响</span>
-                      <span class="peek-value" :class="frClass(row)">{{ firstResponseText(row) }}<template v-if="row.firstResponder"> · {{ row.firstResponder }}</template></span>
-                    </div>
-                    <div class="peek-row">
-                      <span class="peek-label">负责人 · 状态</span>
-                      <span class="peek-value">{{ row.assignee || '待分配' }} · {{ getStatusLabel(row.status) }}</span>
-                    </div>
-                    <div v-if="row.tags && row.tags.length" class="peek-row">
-                      <span class="peek-label">标签</span>
-                      <span class="peek-value">{{ row.tags.join('、') }}</span>
-                    </div>
-                    <div class="peek-row">
-                      <span class="peek-label">创建</span>
-                      <span class="peek-value">{{ row.creator || '未知' }} · {{ row.createdAt }}</span>
-                    </div>
-                    <div v-if="row.updatedAt" class="peek-row">
-                      <span class="peek-label">更新</span>
-                      <span class="peek-value">{{ row.updatedAt }}</span>
-                    </div>
-                  </div>
-                </template>
-                <div class="ticket-title-cell">
-                  <RouterLink :to="`/tickets/${row.id}`" class="ticket-title" @click.stop>{{ row.title }}</RouterLink>
-                  <div v-if="row.tags && row.tags.length" class="ticket-tags">
-                    <span v-for="tag in row.tags.slice(0, 3)" :key="tag" class="ticket-tag">{{ tag }}</span>
-                    <span v-if="row.tags.length > 3" class="ticket-tag-more">+{{ row.tags.length - 3 }}</span>
-                  </div>
-                </div>
-              </el-tooltip>
-            </template>
-          </el-table-column>
-
-          <!-- 服务：此前埋在标题副标题里，提为独立列可见可排序 -->
-          <el-table-column
-            v-if="columnVisible.service"
-            prop="service"
-            label="服务"
-            :width="columnWidths.service"
-            :min-width="110"
-            sortable="custom"
-            show-overflow-tooltip
-          >
-            <template #default="{ row }">
-              <span class="cell-muted">{{ row.service || '未分类' }}</span>
-            </template>
-          </el-table-column>
-
-          <!-- 分类：后端一直有 category 数据，列表页此前从未展示 -->
-          <el-table-column
-            v-if="columnVisible.category"
-            prop="category"
-            label="分类"
-            :width="columnWidths.category"
-            :min-width="90"
-            sortable="custom"
-            show-overflow-tooltip
-          >
-            <template #default="{ row }">
-              <span class="cell-muted">{{ row.category || '其他' }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            v-if="columnVisible.priority"
-            prop="priority"
-            label="优先级"
-            :width="columnWidths.priority"
-            :min-width="90"
-            sortable="custom"
-          >
-            <template #default="{ row }">
-              <span class="priority-badge" :class="getPriorityClass(row.priority)">{{ getPriorityLabel(row.priority) }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            v-if="columnVisible.status"
-            prop="status"
-            label="状态"
-            :width="columnWidths.status"
-            :min-width="90"
-            sortable="custom"
-          >
-            <template #default="{ row }">
-              <span class="status-badge" :class="getStatusClass(row.status)">{{ getStatusLabel(row.status) }}</span>
-            </template>
-          </el-table-column>
-
-          <!-- 首响状态（B1）：区分「已派单但无人理」与「已在处理」。
-               此前只有 assignee，看不出是否真有人响应过 -->
-          <el-table-column
-            v-if="columnVisible.firstResponse"
-            label="首响"
-            :width="columnWidths.firstResponse"
-            :min-width="96"
-          >
-            <template #default="{ row }">
-              <span class="fr-badge" :class="frClass(row)" :title="firstResponseTitle(row)">
-                {{ firstResponseText(row) }}
-              </span>
-            </template>
-          </el-table-column>
-
-          <!-- SLA 进度：后端计算的派生字段（6.15），此前列表页未展示，
-               运维看不到哪些单快超时。超时标红、≥70% 标橙 -->
-          <el-table-column v-if="columnVisible.sla" label="SLA" :width="columnWidths.sla" :min-width="120">
-            <template #default="{ row }">
-              <div class="sla-cell" :title="row.sla || 'SLA 未设置'">
-                <div class="sla-bar">
-                  <div
-                    class="sla-bar-fill"
-                    :class="slaClass(row)"
-                    :style="{ width: Math.min(100, Math.max(0, row.slaProgress || 0)) + '%' }"
-                  />
-                </div>
-                <span class="sla-text" :class="slaClass(row)">
-                  {{ row.slaBreached ? '已超时' : (row.slaProgress ?? 0) + '%' }}
-                </span>
-              </div>
-            </template>
-          </el-table-column>
-
-          <!-- B2 处置阶段（仅处理中时有值，其余为空） -->
-          <el-table-column
-            v-if="columnVisible.handlingStage"
-            label="处置阶段"
-            :width="columnWidths.handlingStage"
-            :min-width="90"
-          >
-            <template #default="{ row }">
-              <el-tooltip :content="'处置阶段: ' + row.handlingStage" placement="top" :show-after="300" :disabled="!row.handlingStage">
-                <span v-if="row.handlingStage" class="stage-badge" :class="`stage-${(row.handlingStage || '').toLowerCase()}`">{{ stageLabel(row.handlingStage) }}</span>
-              </el-tooltip>
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            v-if="columnVisible.assignee"
-            prop="assignee"
-            label="负责人"
-            :width="columnWidths.assignee"
-            :min-width="110"
-            sortable="custom"
-          >
-            <template #default="{ row }">
-              <div class="assignee-cell">
-                <span class="assignee-avatar">{{ (row.assignee || '?')[0] }}</span>
-                <span class="assignee-name">{{ row.assignee }}</span>
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            v-if="columnVisible.createdAt"
-            prop="createdAt"
-            label="创建时间"
-            :width="columnWidths.createdAt"
-            :min-width="100"
-            sortable="custom"
-          >
-            <template #default="{ row }">
-              <div class="timestamp"><RelativeTime :value="row.createdAt" /></div>
-            </template>
-          </el-table-column>
-
-          <!-- B3 根因分类（仅确认根因后有值） -->
-          <el-table-column
-            v-if="columnVisible.rootCause"
-            label="根因分类"
-            :width="columnWidths.rootCause"
-            :min-width="90"
-          >
-            <template #default="{ row }">
-              <el-tooltip :content="'根因分类: ' + row.rootCauseCategory" placement="top" :show-after="300" :disabled="!row.rootCauseCategory">
-                <span v-if="row.rootCauseCategory" class="rc-badge">{{ rcLabel(row.rootCauseCategory) }}</span>
-              </el-tooltip>
-            </template>
-          </el-table-column>
-
-          <!-- 更新时间：判断工单是否停滞（首响/处置进度）的关键信号 -->
-          <el-table-column
-            v-if="columnVisible.updatedAt"
-            prop="updatedAt"
-            label="更新时间"
-            :width="columnWidths.updatedAt"
-            :min-width="100"
-            sortable="custom"
-          >
-            <template #default="{ row }">
-              <div class="timestamp"><RelativeTime :value="row.updatedAt" /></div>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="操作" :width="columnWidths.actions" :min-width="90" fixed="right">
-            <template #default="{ row }">
-              <div class="actions" @click.stop>
-                <button class="action-icon-btn" title="编辑" @click.stop="openEditDialog(row)">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-                <button
-                  v-permission.disable="{ roles: ['admin'] }"
-                  class="action-icon-btn action-icon-btn-danger"
-                  title="删除"
-                  @click.stop="deleteTicket(row)"
-                >
-                  <Trash2 :size="14" />
-                </button>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div v-if="columnsResized" class="table-footnote">
-          <span>列布局已按你的调整保存</span>
-          <button class="link-btn" @click="resetColumnWidths">恢复默认列布局</button>
-        </div>
-      </div>
+      <TicketTableView
+        v-if="viewMode === 'list'"
+        :tickets="pagedTickets"
+        :column-widths="columnWidths"
+        :column-visible="columnVisible"
+        :title-width="titleWidth"
+        :columns-resized="columnsResized"
+        :table-sort="tableSort"
+        :row-class-name="rowClassName"
+        :get-status-class="getStatusClass"
+        :get-status-label="getStatusLabel"
+        :get-priority-class="getPriorityClass"
+        :get-priority-label="getPriorityLabel"
+        :fr-class="frClass"
+        :sla-class="slaClass"
+        :stage-label="stageLabel"
+        :rc-label="rcLabel"
+        @row-click="onRowClick"
+        @selection-change="onSelectionChange"
+        @header-dragend="onHeaderDragend"
+        @sort-change="onSortChange"
+        @edit="openEditDialog"
+        @delete="deleteTicket"
+        @reset-columns="resetColumnWidths"
+      />
 
       <!-- 卡片视图 -->
       <TicketCardGrid
