@@ -89,7 +89,20 @@ class ChatStreamSseIntegrationTest {
                 .andReturn();
 
         awaitStreamEnd(result);
-        return parse(result.getResponse().getContentAsString());
+        String body = result.getResponse().getContentAsString();
+        List<SseEvent> events = parse(body);
+        if (events.isEmpty()) {
+            // 诊断信息直接进断言消息——本项目 CI 的原始日志与 artifact 在
+            // 受限网络下都取不到，只能靠这条消息定位
+            throw new AssertionError(String.format(
+                    "SSE 未产生任何事件。asyncStarted=%s, status=%d, contentType=%s, bodyLen=%d, body=[%s]",
+                    result.getRequest().isAsyncStarted(),
+                    result.getResponse().getStatus(),
+                    result.getResponse().getContentType(),
+                    body.length(),
+                    body.length() > 500 ? body.substring(0, 500) : body));
+        }
+        return events;
     }
 
     /**
