@@ -372,8 +372,15 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 // 带上首个业务栈帧：异常类型本身往往不足以定位
                 // （ConcurrentModificationException 可能来自任何一处共享集合遍历）。
                 // 只取 com.devops 包内的第一帧，避免把框架栈全塞进审计字段。
-                // 取前 4 帧（不限包名）：只取业务帧时，异常发生在第三方库内部
-                // 就只能看到「调用它的那一行」，看不出库里到底哪一步炸的。
+                // 取前 4 帧且**不限包名**。
+                //
+                // 只取 com.devops 帧看起来更"干净"，但异常发生在第三方库内部时
+                // 就只能看到「调用它的那一行」——本项目为此多花了两轮 CI：
+                // 先报 streamAgent:681，修掉一处后变成 streamAgent:467，
+                // 两者都只是调用点。放开包名限制后一次就看到了真正的
+                // AbstractGuardrailService.hasInputGuardrails（LangChain4j 框架缺陷）。
+                //
+                // 4 帧是权衡：足够穿透一层框架封装，又不至于把整个栈塞进审计字段。
                 StringBuilder frames = new StringBuilder();
                 StackTraceElement[] st = e.getStackTrace();
                 for (int i = 0; i < Math.min(4, st.length); i++) {

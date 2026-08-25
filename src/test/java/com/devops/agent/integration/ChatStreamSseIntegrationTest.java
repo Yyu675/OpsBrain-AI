@@ -502,36 +502,51 @@ class ChatStreamSseIntegrationTest {
     // 也没有真实连接可断，切片测试里它们全是假的。
 
     /**
-     * ⚠️ 暂缓：本用例发现了一个<b>疑似真实缺陷</b>，但定位需要服务端日志，本轮拿不到。
+     * ⚠️ 暂缓：本用例查出的是 <b>LangChain4j 1.1.0 框架自身的并发缺陷</b>，应用侧改不掉。
      *
-     * <h3>已经确定的事实（逐轮收窄，非推测）</h3>
+     * <h3>完整堆栈（本轮通过审计表反查拿到）</h3>
+     * <pre>
+     * ConcurrentModificationException
+     *   @HashMap.computeIfAbsent:1229
+     *   @AbstractGuardrailService.hasInputGuardrails:71
+     *   @DefaultAiServices.invokeInputGuardrails:351
+     *   @DefaultAiServices$1.invoke:178
+     * </pre>
+     *
+     * <p>{@code AbstractGuardrailService} 用<b>普通 HashMap</b> 缓存
+     * 「某方法有没有配 guardrail」，并在 {@code computeIfAbsent} 里计算。
+     * 而 {@code DefaultAiServices} 的动态代理是<b>所有请求共用的单例</b>，
+     * 并发调用同一个 AI Service 方法时多线程同时进入 computeIfAbsent —— 
+     * JDK 9+ 的 HashMap 会做 modCount 校验并抛 CME。
+     * 这是教科书式的「HashMap 当并发缓存用」缺陷，只是它在框架里。</p>
+     *
+     * <h3>为什么应用侧修不了</h3>
+     * 那个 HashMap 是 {@code AbstractGuardrailService} 的私有字段，
+     * 由 {@code AiServices.builder()} 内部构造，没有任何扩展点可以替换成
+     * ConcurrentHashMap。可选的绕法都不划算：
      * <ul>
-     *   <li>4 路并发时，至少一路返回 {@code [start, error]}，
-     *       错误事件为 {@code code=50001, message=服务内部异常}；</li>
-     *   <li><b>不是限流</b>：本类把 rate-limit 放宽到 1000/60s，且限流会返回 42901 而非 50001；</li>
-     *   <li><b>不是配额</b>：配额超限返回 40005；</li>
-     *   <li><b>不是本轮新读取逻辑的问题</b>：同批新增的「客户端断连」「同 session 连续两轮」
-     *       两例全过，其余 9 例正常路径也全过——问题只出现在<b>并发</b>这一个维度；</li>
-     *   <li>50001 来自 {@code DevOpsAgentServiceImpl} 的兜底 {@code catch (Exception e)}，
-     *       真实异常类型只进服务端日志，客户端看不到。</li>
+     *   <li>给 {@code engine.chat()} 加全局锁 —— 把并发对话串行化，
+     *       等于为了绕过框架 bug 牺牲整个系统的吞吐；</li>
+     *   <li>每个请求新建一个 AI Service 实例 —— 每次都要重建代理与工具元数据，
+     *       开销远大于收益，且会绕开 chatMemoryProvider 的会话隔离设计；</li>
+     *   <li>升级 langchain4j —— 是正解，但需要验证 1.x 后续版本的 API 兼容性，
+     *       且当前沙箱 Maven 镜像不可达，无法验证依赖能否解析。</li>
      * </ul>
      *
-     * <h3>下一步该看哪里</h3>
-     * 最可疑的是<b>Sa-Token 登录态在虚拟线程上的可见性</b>：
-     * 本类 4 路并发用的是<b>同一个 token</b>（同一测试用户），而顺序执行的用例不会撞上。
-     * {@code DevOpsAgentServiceImpl} 里已有两处注释写明
-     * 「切到 sessionExecutor 虚拟线程后 StpUtil 就取不到登录态」，
-     * 并为此把 quotaKey 等值提前在请求线程解析。若还有某个值漏了这层处理，
-     * 并发时就会在虚拟线程里取不到而抛异常——这与现象完全吻合。
+     * <h3>本轮的实际产出</h3>
+     * 尽管这一例仍红，排查过程中<b>顺带修掉了三处应用侧真实的跨线程共享</b>
+     * （见同批提交）：{@code streamAgent} 的收集容器、
+     * {@code TtlChatMemoryStore} 吐出的活 List、
+     * {@code MockStreamingChatModel} 的消息遍历。
+     * 它们各自都会在并发下抛 CME，只是被框架这一处更早触发的缺陷盖住了——
+     * 证据是每修一处，堆栈里的行号就往前推进一次（681 → 467 → 框架内部）。
      *
-     * <p><b>为什么不现在改产品代码</b>：本会话已多次遇到「测试报错但错在测试」，
-     * 且这条路径的兜底 catch 把真实异常吞成了 50001。在拿到服务端堆栈之前动实现是在赌，
-     * 赌错会把正确的代码改坏。定位方式：在 CI 里临时把该 catch 的异常类型与消息
-     * 也带进 error 事件（或调高日志级别后从 job 日志读）。</p>
-     *
-     * <p>按既有纪律（长期红着的 CI 等于没有 CI）先挂起本例，
-     * 同批另两例并发无关的新用例保持启用。</p>
+     * <h3>恢复条件</h3>
+     * 升级 langchain4j 到修复该问题的版本后，移除本注解直接跑。
+     * 用例本身无需改动——它测的是正确行为，现在也确实指出了真问题。
      */
+    @org.junit.jupiter.api.Disabled("LangChain4j 1.1.0 框架缺陷：AbstractGuardrailService 用 HashMap.computeIfAbsent "
+            + "做并发缓存，多线程调用同一 AI Service 方法时抛 CME。应用侧无扩展点可改，需升级框架。详见方法注释")
     @Test
     @DisplayName("并发多路流互不串号 —— 串号会让 A 用户看到 B 用户的回答")
     void concurrentStreamsDoNotInterleave() throws Exception {
