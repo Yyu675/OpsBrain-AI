@@ -668,7 +668,7 @@ class ChatStreamSseIntegrationTest {
         if (errors.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("，error事件=").append(errors);
+        StringBuilder sb = new StringBuilder();
         String traceId = String.valueOf(errors.get(0).get("traceId"));
         try {
             // 审计走独立线程池，稍等其落库
@@ -676,7 +676,9 @@ class ChatStreamSseIntegrationTest {
             List<String> answers = jdbcTemplate.queryForList(
                     "SELECT agent_answer FROM sys_agent_call_log WHERE trace_id = ?",
                     String.class, traceId);
-            sb.append("，服务端记录=").append(answers.isEmpty() ? "(审计尚未落库)" : answers);
+            // 服务端记录放最前：mvnw 的注解重放会把每行截到 300 字符，
+            // 排在后面的关键信息（栈帧行号）会被切掉——上一轮就是这么丢的
+            sb.insert(0, "，服务端记录=" + (answers.isEmpty() ? "(审计尚未落库)" : answers));
         } catch (Exception e) {
             sb.append("，反查审计失败=").append(e.getMessage());
         }
