@@ -190,7 +190,17 @@ exec_maven() {
       # 只靠 [ERROR] 行会得到「9 个测试失败」却看不到任何一条失败原因。
       # 探针：报告目录到底在哪。`verify` 会先跑 test 再打包，
       # 若此处 PWD 与 Maven 的 basedir 不一致，相对路径就找不到东西。
-      echo "::error::[诊断] PWD=$(pwd) | 全盘 surefire txt 数=$(find . -path ./node_modules -prune -o -name '*.txt' -path '*surefire-reports*' -print 2>/dev/null | wc -l)"
+      # 直接从 Maven 自己的输出里取「测试是否跑过」与「失败原因」，
+      # 不再依赖 surefire 文件——全盘搜索已证实 CI 里根本没有这些文件，
+      # 说明构建在 test 阶段之前就结束了。
+      echo "::error::[诊断] Tests行=$(grep -cE '^\[INFO\] Tests run:|^Tests run:' "$_mvnw_log") | 反应堆=$(grep -c 'BUILD FAILURE' "$_mvnw_log")"
+      grep -E "^\[ERROR\]" "$_mvnw_log" \
+        | grep -vE "re-run Maven|Read the following|http://cwiki|To see the full stack|For more information" \
+        | head -6 \
+        | while IFS= read -r _e; do
+            _ec=$(printf '%s' "$_e" | sed 's/^\[ERROR\] *//; s/%/%25/g; s/\r/ /g' | cut -c1-300)
+            if [ -n "$_ec" ]; then echo "::error::$_ec"; fi
+          done
       if [ -d target/surefire-reports ]; then
         echo "----- 测试失败详情（surefire）-----"
         # 只取失败/错误的报告，每个类最多 40 行，避免刷屏
