@@ -152,6 +152,8 @@ const vmOf = (w: VueWrapper) =>
       value: string; disabled: boolean; applicable: number; hint: string
     }>
     applyBulkStatus: (s: string) => Promise<void>
+    applyBulkAssign: (name: string) => Promise<void>
+    bulkAssignOpen: boolean
   }
 
 beforeEach(() => {
@@ -265,5 +267,105 @@ describe('TicketList 批量状态 — 执行时只对可达项发请求', () => 
       ...notifyMock.notify.warning.mock.calls,
     ].map(c => String(c[0])).join('|')
     expect(allMsgs).toContain('1 条因状态不允许已跳过')
+  })
+})
+
+/**
+ * 批量转派的**结果如实上报**。
+ *
+ * store 层的 bulkAssign 已有测试（tickets.write.test.ts 覆盖了「返回成功数量」），
+ * 但那只保证数字对。这里守的是视图层：**那个数字有没有如实传达给用户**。
+ *
+ * 部分失败是这类操作最常见也最危险的结局——用户勾了 3 张、成功 1 张，
+ * 若一律弹「已分配」，他会以为全办完了，剩下两张就此无人认领，
+ * 而且不会有任何地方再提醒他。
+ */
+describe('批量转派 — 部分成功如实上报', () => {
+  it('全部成功时提示总数与负责人', async () => {
+    const w = await mountList([makeTicket('A', 'pending'), makeTicket('B', 'pending')])
+    const vm = vmOf(w)
+    api.transferTicket.mockResolvedValue({ id: 'x', version: 2 })
+
+    vm.selectedIds = ['A', 'B']
+    await vm.applyBulkAssign('王芳')
+
+    expect(notifyMock.notify.success).toHaveBeenCalledWith(
+      expect.stringContaining('2')
+    )
+    expect(notifyMock.notify.success).toHaveBeenCalledWith(
+      expect.stringContaining('王芳')
+    )
+    expect(notifyMock.notify.warning).not.toHaveBeenCalled()
+  })
+
+  it('部分失败时给出 N/M 计数，而不是笼统的「已分配」', async () => {
+    const w = await mountList([
+      makeTicket('A', 'pending'), makeTicket('B', 'pending'), makeTicket('C', 'pending'),
+    ])
+    const vm = vmOf(w)
+    // 只有 A 成功，B/C 失败
+    api.transferTicket
+      .mockResolvedValueOnce({ id: 'A', version: 2 })
+      .mockRejectedValueOnce(new Error('冲突'))
+      .mockRejectedValueOnce(new Error('冲突'))
+
+    vm.selectedIds = ['A', 'B', 'C']
+    await vm.applyBulkAssign('王芳')
+
+    // 报「已分配 3 条」会让用户以为全办完，剩下两张就此无人认领
+    expect(notifyMock.notify.success).not.toHaveBeenCalled()
+    const msg = String(notifyMock.notify.warning.mock.calls.at(-1)?.[0] ?? '')
+    expect(msg).toContain('1')
+    expect(msg).toContain('3')
+  })
+
+  it('全部失败时同样走 warning，不谎报成功', async () => {
+    const w = await mountList([makeTicket('A', 'pending')])
+    const vm = vmOf(w)
+    api.transferTicket.mockRejectedValue(new Error('后端不可用'))
+
+    vm.selectedIds = ['A']
+    await vm.applyBulkAssign('王芳')
+
+    expect(notifyMock.notify.success).not.toHaveBeenCalled()
+    expect(notifyMock.notify.warning).toHaveBeenCalled()
+  })
+
+  it('未选中任何工单时直接返回，不打后端也不提示', async () => {
+    const w = await mountList([makeTicket('A', 'pending')])
+    const vm = vmOf(w)
+
+    vm.selectedIds = []
+    await vm.applyBulkAssign('王芳')
+
+    expect(api.transferTicket).not.toHaveBeenCalled()
+    expect(notifyMock.notify.success).not.toHaveBeenCalled()
+    expect(notifyMock.notify.warning).not.toHaveBeenCalled()
+  })
+
+  it('操作后清空选中并关闭下拉——否则用户会对着已处理的选区再点一次', async () => {
+    const w = await mountList([makeTicket('A', 'pending')])
+    const vm = vmOf(w)
+    api.transferTicket.mockResolvedValue({ id: 'A', version: 2 })
+
+    vm.selectedIds = ['A']
+    vm.bulkAssignOpen = true
+    await vm.applyBulkAssign('王芳')
+
+    expect(vm.selectedIds).toEqual([])
+    expect(vm.bulkAssignOpen).toBe(false)
+  })
+
+  it('转派后重新拉取列表——筛选含负责人时改完的工单应移出结果集', async () => {
+    const w = await mountList([makeTicket('A', 'pending')])
+    const vm = vmOf(w)
+    api.transferTicket.mockResolvedValue({ id: 'A', version: 2 })
+    api.fetchTickets.mockClear()
+
+    vm.selectedIds = ['A']
+    await vm.applyBulkAssign('王芳')
+
+    // 不刷新还会导致 version 过期，后续编辑误报「数据已被他人修改」
+    expect(api.fetchTickets).toHaveBeenCalled()
   })
 })

@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentTraceDrawer: typeof import('./src/components/ai/AgentTraceDrawer.vue')['default']
     AlertStreamMode: typeof import('./src/components/ai/AlertStreamMode.vue')['default']
     AnalysisCard: typeof import('./src/components/ticket/AnalysisCard.vue')['default']
     AnalyticsMode: typeof import('./src/components/ai/AnalyticsMode.vue')['default']
@@ -27,6 +28,8 @@ declare module 'vue' {
     CollapsiblePanel: typeof import('./src/components/common/CollapsiblePanel.vue')['default']
     ComingSoonPanel: typeof import('./src/components/common/ComingSoonPanel.vue')['default']
     DataStateBoundary: typeof import('./src/components/common/DataStateBoundary.vue')['default']
+    DocOutlinePanel: typeof import('./src/components/knowledge/DocOutlinePanel.vue')['default']
+    DocPropertiesPanel: typeof import('./src/components/knowledge/DocPropertiesPanel.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElDrawer: typeof import('element-plus/es')['ElDrawer']
