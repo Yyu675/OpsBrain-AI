@@ -49,6 +49,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -437,9 +438,27 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         // 注：会话与 CONTEXT_PREPARED 迁移已由 handleStreamChat 完成，此处不重复
 
         // 收集流式过程中的状态（工具结果、完整答案、引用出处）
-        StringBuilder answerBuilder = new StringBuilder();
-        List<Map<String, Object>> toolResults = new ArrayList<>();
-        List<String> citations = new ArrayList<>();
+        //
+        // ⚠️ 必须用线程安全容器：这三者由**不同线程**读写。
+        //
+        //   写：onPartialResponse / onToolExecuted 跑在模型的 HTTP 回调线程；
+        //   读：onCompleteResponse 里 toolResults.stream()、citations.stream()
+        //       以及 answerBuilder.toString()。
+        //
+        // LangChain4j 不保证这些回调在同一条线程上，也不保证 onToolExecuted
+        // 一定在 onCompleteResponse 之前**完全**结束——多工具场景下尤其如此。
+        // 用普通 ArrayList 时，遍历与 add 撞车会抛 ConcurrentModificationException，
+        // 被外层兜底 catch 吞成一句「50001 服务内部异常」，
+        // 用户看到的是「AI 挂了」，而日志里连出事的集合都指不出来。
+        //
+        // 这个缺陷单请求下几乎撞不到（回调间隔远大于执行时间），
+        // 只有并发或工具较多时才暴露——正是 SSE 并发集成测试抓出来的那一个。
+        //
+        // StringBuilder → StringBuffer：后者方法级 synchronized。
+        // token 逐字追加与最终 toString() 同样跨线程。
+        StringBuffer answerBuilder = new StringBuffer();
+        List<Map<String, Object>> toolResults = new CopyOnWriteArrayList<>();
+        List<String> citations = new CopyOnWriteArrayList<>();
         // P2-17：匹配工具结果中的引用标记 【来源：文档标题 - 章节】
         Pattern citationPattern = Pattern.compile("【来源：[^】]+】");
         CompletableFuture<Void> done = new CompletableFuture<>();
