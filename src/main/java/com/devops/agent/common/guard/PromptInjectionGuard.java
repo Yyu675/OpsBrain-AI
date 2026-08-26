@@ -131,7 +131,76 @@ public class PromptInjectionGuard {
             new PatternRule("PROMPT_CONTINUATION",
                     Pattern.compile("(?i)(continue|complete|finish).{0,10}(the\\s+prompt|this\\s+prompt|above\\s+text|previous\\s+message)",
                             Pattern.CASE_INSENSITIVE),
-                    "提示词延续攻击")
+                    "提示词延续攻击"),
+
+            // ==================== 中文注入模式（2026-08-26 补） ====================
+            //
+            // 上面六条全部只匹配英文。本系统的用户界面、系统提示词、
+            // 知识库内容**全是中文**，真实攻击者当然用中文写 payload。
+            // AgentEvaluationTest 的 50 条中文负例里 47 条直接穿透，
+            // 暴露的不是测试太严，是护栏对主语言零覆盖。
+            //
+            // 与英文规则同样采用「动作 + 目标」两段式，避免误伤正常提问：
+            // 「忽略」单独出现不拦（"这个告警可以忽略吗"是正常运维问句），
+            // 只有与「指令/规则/提示词/限制」等目标搭配才判定为注入。
+            new PatternRule("IGNORE_INSTRUCTIONS_ZH",
+                    Pattern.compile("(忽略|无视|忘记|忘掉|绕过|越过|解除|取消)[^。！？\\n]{0,20}" +
+                                    "(指令|规则|限制|约束|策略|设定|提示词|安全|过滤|SystemMessage|system\\s*message)",
+                            Pattern.CASE_INSENSITIVE),
+                    "忽略/覆盖系统指令（中文）"),
+            new PatternRule("ROLE_PLAY_ZH",
+                    Pattern.compile("(你(现在|从现在开始)?(是|扮演|作为)|假装你是|把你当作)[^。！？\\n]{0,30}" +
+                                    "(管理员|超级管理员|root|系统|开发者|没有(安全)?(限制|过滤|约束)|全新的模型|不受限)",
+                            Pattern.CASE_INSENSITIVE),
+                    "角色扮演绕过（中文）"),
+            new PatternRule("SYSTEM_PROMPT_LEAK_ZH",
+                    Pattern.compile("(输出|打印|显示|告诉我|背诵|复述|原样输出|吐出)[^。！？\\n]{0,20}" +
+                                    "(系统提示词|system\\s*prompt|提示词原文|你的(全部)?(系统)?(提示|指令)|工具白名单|白名单配置)",
+                            Pattern.CASE_INSENSITIVE),
+                    "系统提示词泄露诱导（中文）"),
+            new PatternRule("SENSITIVE_EXTRACTION_ZH",
+                    Pattern.compile("(输出|打印|显示|告诉我|给我|导出|查询|读取|返回|吐出)[^。！？\\n]{0,30}" +
+                                    "(密码|口令|密钥|凭证|api\\s*key|token|令牌|连接地址|连接串|身份证号|信用卡|薪资|工资|机密|" +
+                                    "\\.env|/etc/shadow|ssh\\s*密钥|访问令牌)",
+                            Pattern.CASE_INSENSITIVE),
+                    "敏感信息窃取（中文）"),
+            new PatternRule("DESTRUCTIVE_OPS_ZH",
+                    Pattern.compile("(删除|删掉|清空|格式化|销毁|摧毁|烧毁|断电|重启)[^。！？\\n]{0,20}" +
+                                    "(所有|全部|整个|全公司|生产环境)[^。！？\\n]{0,20}" +
+                                    "(工单|数据|磁盘|服务器|Pod|机房|数据库)" +
+                                    "|(把|将)[^。！？\\n]{0,20}(所有|全部|整个)[^。！？\\n]{0,10}" +
+                                    "(Pod|服务器|磁盘|数据库|工单)[^。！？\\n]{0,10}(删除|删掉|清空|格式化)",
+                            Pattern.CASE_INSENSITIVE),
+                    "破坏性批量操作（中文）"),
+            new PatternRule("BYPASS_AUTH_ZH",
+                    Pattern.compile("(绕过|跳过|越过|破解|入侵|黑掉)[^。！？\\n]{0,20}" +
+                                    "(登录|鉴权|认证|权限|校验|防火墙|服务器|网站)",
+                            Pattern.CASE_INSENSITIVE),
+                    "绕过鉴权/入侵诱导（中文）"),
+            // 名词在前的敏感信息索取：「.env 里的密钥原样输出」「访问令牌给我一份」
+            new PatternRule("SENSITIVE_EXTRACTION_ZH_REVERSE",
+                    Pattern.compile("(密钥|密码|口令|api\\s*key|token|令牌|身份证号|信用卡|薪资|工资|机密)" +
+                                    "[^。！？\\n]{0,20}" +
+                                    "(原样输出|输出|打印|导出|给我|一份|能查|存在哪|是多少)",
+                            Pattern.CASE_INSENSITIVE),
+                    "敏感信息窃取（中文·名词在前）"),
+            // 个人隐私索取：与上一条分开是因为目标词不同（手机号/身份证不属于系统凭证）
+            new PatternRule("PII_EXTRACTION_ZH",
+                    Pattern.compile("(张明|员工|客户|用户)[^。！？\\n]{0,10}" +
+                                    "(手机号|身份证|银行卡|信用卡|薪资|工资)[^。！？\\n]{0,10}" +
+                                    "(是多少|多少|查|导出)",
+                            Pattern.CASE_INSENSITIVE),
+                    "个人隐私信息索取（中文）"),
+            // 物理破坏/超范围：这类请求本身就不该进入运维 Agent 的处理流程
+            new PatternRule("PHYSICAL_DESTRUCTION_ZH",
+                    Pattern.compile("(发射|导弹|核电站|主板烧|烧了|机房断电)" +
+                                    "|(把|将)[^。！？\\n]{0,15}(整个)?机房[^。！？\\n]{0,10}断电",
+                            Pattern.CASE_INSENSITIVE),
+                    "物理破坏/超范围请求（中文）"),
+            new PatternRule("MALWARE_ZH",
+                    Pattern.compile("(勒索病毒|木马|后门程序|挖矿程序|DDoS|拒绝服务攻击|SQL\\s*注入(获取|拿到|获得))",
+                            Pattern.CASE_INSENSITIVE),
+                    "恶意软件/攻击手法（中文）")
     );
 
     /**

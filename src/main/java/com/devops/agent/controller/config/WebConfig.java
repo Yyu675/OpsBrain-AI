@@ -67,25 +67,43 @@ public class WebConfig implements WebMvcConfigurer {
         // notMatch(OPTIONS) 放过 CORS 预检——预检不带自定义头，校验必然失败，
         // 且预检必须返回 2xx，返回 401 一样会被浏览器判为 CORS 失败（详见类注释）。
         //
-        // ⚠️ 临时开发开关（2026-08-26）：为 UI 预览注释登录拦截，恢复时取消注释即可。
-        // registry.addInterceptor(new SaInterceptor(handle ->
-        //                 SaRouter.notMatch(SaHttpMethod.OPTIONS).check(() -> StpUtil.checkLogin())))
-        //         .addPathPatterns("/api/**")
-        //         .excludePathPatterns(
-        //                 "/api/v1/auth/**",         // 登录/取当前用户/登出
-        //                 "/api/v1/health/**",       // K8s 探针
-        //                 "/api/v1/alerts/webhook"   // Prometheus/Alertmanager 推送
-        //         );
+        // ⚠️ 曾于 2026-08-26 被注释掉（「为 UI 预览临时关闭」），已恢复。
         //
+        // 那次改动让全部 /api/** 变成免鉴权：GovernanceRoleGuardIntegrationTest
+        // 立刻报 "Status expected:<403> but was:<200>"——OPS 角色访问
+        // Saga 逆向补偿、审计日志等治理端点被直接放行。
+        //
+        // 注释掉认证是**不可接受的临时手段**：它没有开关语义（一旦忘了恢复
+        // 就随代码合入生产），而且被注释的同时连 @SaCheckRole 的角色判定
+        // 也一并失效——登录拦截器不跑，Sa-Token 上下文里没有会话，
+        // 角色注解拿不到身份，等于整条鉴权链被摘除。
+        //
+        // 若确需本地免登录预览，正确做法是走**配置开关**而非改代码，例如
+        // 加 @ConditionalOnProperty(name = "devops.security.auth-enabled",
+        // havingValue = "true", matchIfMissing = true)，
+        // 由 application-dev.yml 显式关闭——这样生产默认安全、意图可审计，
+        // 且集成测试仍走真实鉴权链。
+        registry.addInterceptor(new SaInterceptor(handle ->
+                        SaRouter.notMatch(SaHttpMethod.OPTIONS).check(() -> StpUtil.checkLogin())))
+                .addPathPatterns("/api/**")
+                .excludePathPatterns(
+                        "/api/v1/auth/**",         // 登录/取当前用户/登出
+                        "/api/v1/health/**",       // K8s 探针
+                        "/api/v1/alerts/webhook"   // Prometheus/Alertmanager 推送
+                );
+
         // ==================== P2 自身可观测性：/actuator/** 必须显式鉴权 ====================
         // /actuator/** 不在 /api/** 下，上面的拦截器覆盖不到——不加这条，
-        // 健康详情（含 DB 密码是否可达等内部细节）与 Prometheus 指标就会裸奔公网。
-        // 同样作为临时开发开关注释：预览期间不需要；恢复登录时一并恢复。
-        // 注意：/actuator/health 建议保留给 K8s 探针免鉴权（probe 场景），
-        // 生产可按需改为 match("/actuator/**").notMatch("/actuator/health")。
-        // registry.addInterceptor(new SaInterceptor(handle ->
-        //                 SaRouter.match("/actuator/**").check(() -> StpUtil.checkLogin())))
-        //         .addPathPatterns("/actuator/**");
+        // 健康详情与 Prometheus 指标（含内部拓扑、依赖可达性）会裸奔公网。
+        //
+        // /actuator/health 放行给 K8s 探针：探针不带 token，
+        // 拦下来会让 Pod 一直处于 NotReady。健康端点本身已配置为
+        // 不暴露敏感明细（management.endpoint.health.show-details=never 时只回 UP/DOWN）。
+        registry.addInterceptor(new SaInterceptor(handle ->
+                        SaRouter.match("/actuator/**")
+                                .notMatch("/actuator/health", "/actuator/health/**")
+                                .check(() -> StpUtil.checkLogin())))
+                .addPathPatterns("/actuator/**");
     }
 
     /**
