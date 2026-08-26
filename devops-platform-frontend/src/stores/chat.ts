@@ -248,10 +248,31 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
+  /**
+   * 消息 ID 生成器。
+   *
+   * ── 为什么不能只用 Date.now() ─────────────────────────────
+   * 原实现是 `user-${Date.now()}` / `assistant-${Date.now()}`。
+   * `Date.now()` 只有**毫秒**精度，而下面两种场景会在同一毫秒内
+   * 连续建两条消息：
+   *   1. 「重新生成」：removeMessage(旧回答) 紧接着 startAssistantMessage(新)；
+   *   2. 发送时 pushUserMessage 之后立刻 startAssistantMessage。
+   *
+   * ID 撞车的后果不是显示乱，而是**操作打在错的消息上**：
+   *   - `removeMessage(id)` 用 findIndex 取第一个匹配 → 删掉的可能是另一条；
+   *   - `streamingMessage` 同样按 id 查找 → token 会追加到旧消息上。
+   *
+   * 加一个进程内单调递增序号即可根治，且仍保留时间前缀便于排序与排查。
+   * （本问题由 ChatMode 的「重新生成」测试偶发失败暴露：
+   *   同一毫秒内新旧两条 assistant 消息 ID 相同，删除删错了对象。）
+   */
+  let msgSeq = 0
+  const nextMsgId = (role: 'user' | 'assistant') => `${role}-${Date.now()}-${++msgSeq}`
+
   /** 追加用户消息 */
   function pushUserMessage(content: string): ChatMessage {
     const msg: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: nextMsgId('user'),
       role: 'user',
       content,
       timestamp: now()
@@ -263,7 +284,7 @@ export const useChatStore = defineStore('chat', () => {
   /** 创建 AI 响应占位消息并标记为流式目标 */
   function startAssistantMessage(sourceQuery: string): ChatMessage {
     const msg: ChatMessage = {
-      id: `assistant-${Date.now()}`,
+      id: nextMsgId('assistant'),
       role: 'assistant',
       content: '',
       timestamp: now(),
