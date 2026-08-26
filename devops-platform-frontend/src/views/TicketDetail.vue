@@ -152,7 +152,7 @@ const { closureStages, properties, showSlaAlert, slaBarClass } = useTicketClosur
 
 /** AI 分析 composable */
 const {
-  analysisContent, analysisStreaming, analysisDone, citations, analysisCost,
+  analysisContent, analysisStreaming, analysisDone, citations, citationDocs, analysisCost,
   analysisFromArchive, analysisArchivedAt,
   analysisId, analysisFeedback, submitFeedback,
   structured, confidenceClass, useStructuredRender,
@@ -811,6 +811,7 @@ const onSinkGotoDoc = (docId: number) => {
                 useStructuredRender,
                 confidenceClass,
                 citations,
+                citationDocs,
                 cost: analysisCost,
                 fromArchive: analysisFromArchive,
                 archivedAt: analysisArchivedAt,

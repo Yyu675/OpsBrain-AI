@@ -8,7 +8,7 @@
  * - 置信度标签
  * - 降级：未检测到结构时走全量 markdown 渲染
  */
-import { Sparkles, Copy, RefreshCw, Square, ThumbsUp, ThumbsDown } from 'lucide-vue-next'
+import { Sparkles, Copy, RefreshCw, Square, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-vue-next'
 import type { StructuredAnalysis } from '@/composables/useTicketAnalysis'
 
 defineProps<{
@@ -19,6 +19,8 @@ defineProps<{
   useStructuredRender: boolean
   confidenceClass: string
   citations: string[]
+  /** 引用标题对应的可跳转文档（与 citations 下标一一对应；null=知识库未命中，渲染纯文本） */
+  citationDocs?: Array<{ id: string | number; title: string } | null>
   cost: number
   renderMarkdown: (text: string) => string
   onCopyCommand: (cmd: string) => void
@@ -112,15 +114,28 @@ defineProps<{
       v-html="renderMarkdown(content)"
     ></div>
 
-    <!-- 引用文档 -->
+    <!-- 引用文档：citationDocs 命中知识库时渲染为可跳转链接，否则纯文本标题 -->
     <div v-if="citations.length" class="citations-section">
       <div class="citations-header">
         <span>引用文档（{{ citations.length }}）</span>
       </div>
       <div class="citations-list">
-        <div v-for="(cite, i) in citations" :key="i" class="citation-item">
-          <span>{{ cite }}</span>
-        </div>
+        <template v-for="(cite, i) in citations" :key="i">
+          <RouterLink
+            v-if="citationDocs?.[i]"
+            :to="`/knowledge/${citationDocs[i].id}`"
+            class="citation-item citation-link"
+            :title="`查看知识库文档：${citationDocs[i].title}`"
+          >
+            <span class="citation-dot" />
+            <span class="citation-text">{{ cite }}</span>
+            <ChevronRight :size="12" class="citation-arrow" />
+          </RouterLink>
+          <div v-else class="citation-item">
+            <span class="citation-dot" />
+            <span class="citation-text">{{ cite }}</span>
+          </div>
+        </template>
       </div>
     </div>
 

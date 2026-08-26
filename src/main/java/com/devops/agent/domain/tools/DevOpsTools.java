@@ -45,6 +45,9 @@ public class DevOpsTools {
     @Autowired
     private ToolRuntimeManager toolRuntimeManager;
 
+    @Autowired
+    private com.devops.agent.domain.tools.executor.OpsExecutorRegistry opsExecutorRegistry;
+
     /**
      * 工具1: 检索运维知识库
      * <p>
@@ -261,5 +264,60 @@ public class DevOpsTools {
         log.warn("↩️ [Tool] 补偿动作：作废工单 | ticketNo={}", ticketNo);
         // 异常向上抛出，由 SagaCompensationManager 捕获并标记补偿失败
         return ticketService.voidTicket(ticketNo, "Saga 自动补偿：同事务后续步骤失败");
+    }
+
+    /**
+     * 工具3: 查询 K8s Pod 状态（V1.2 第一个真实执行器，D1 适配器模式）
+     * <p>
+     * 只读动作（READ_ONLY_DIAGNOSTIC）：无副作用、免审批、幂等。
+     * 走 {@code OpsExecutorRegistry} → {@code K8sOpsExecutor}（适配器模式），
+     * 治理链路（白名单/风险分级/记录/审计）与目标系统解耦。
+     * 未配置 K8s 集群时返回明确提示，系统不崩溃。
+     * </p>
+     *
+     * @param namespace K8s 命名空间
+     * @param podName   Pod 名称
+     * @return Pod 状态摘要（phase/restartCount/容器状态）
+     */
+    @Tool("查询 K8s Pod 状态（只读诊断）")
+    @ToolMeta(
+            name = "queryPodStatus",
+            description = "查询 K8s Pod 的实时状态（phase/重启次数/容器状态），只读诊断动作",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#namespace + '_' + #podName",
+            requiresApproval = false,
+            timeoutMs = 15000,
+            maxRetries = 1
+    )
+    public String queryPodStatus(@P("K8s 命名空间，如 prod") String namespace,
+                                 @P("Pod 名称") String podName) {
+        log.info("[Tool] queryPodStatus 被调用,namespace={}, pod={}", namespace, podName);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod("queryPodStatusInternal", String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool("queryPodStatus", this, method, new Object[]{namespace, podName});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryPodStatus 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("查询工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryPodStatus 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询 Pod 状态失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 内部实现：经执行器注册表调用 K8s 适配器（业务逻辑，无治理代码）
+     */
+    public String queryPodStatusInternal(String namespace, String podName) {
+        var result = opsExecutorRegistry.resolve("k8s").execute(
+                com.devops.agent.domain.tools.executor.OpsCommand.of(
+                        "k8s", "queryPodStatus",
+                        java.util.Map.of("namespace", namespace, "pod", podName)));
+        if (result.isSuccess()) {
+            return "【K8s Pod 状态查询结果】\n" + result.summary()
+                    + "\n\n详细字段: " + result.data();
+        }
+        return "⚠️ 查询失败: " + result.errorMessage();
     }
 }

@@ -399,8 +399,9 @@ export const httpRequest = async <T = unknown>(
           await sleep(retryDelay * Math.pow(2, attempt))
           continue
         }
-        // 401：未登录或登录失效，清 token 并通知 App 跳登录页
-        if (res.status === 401) {
+        // 401：未登录或登录失效，清 token 并通知 App 跳登录页。
+        // ⚠️ 临时开发开关（2026-08-26）：UI 预览默认不跳登录（VITE_ENABLE_AUTH_REDIRECT=1 可恢复）。
+        if (res.status === 401 && import.meta.env.VITE_ENABLE_AUTH_REDIRECT === '1') {
           handleUnauthorized()
         }
         throw new HttpError(

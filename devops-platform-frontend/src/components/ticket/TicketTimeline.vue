@@ -42,6 +42,8 @@ export interface TimelineAnalysis {
   useStructuredRender: boolean
   confidenceClass: string
   citations: string[]
+  /** 引用标题对应的可跳转文档（与 citations 下标一一对应） */
+  citationDocs?: Array<{ id: string | number; title: string } | null>
   cost: number
   fromArchive?: boolean
   /** AnalysisCard 用 `string | undefined`，这里保持一致（不是 null） */
@@ -140,6 +142,7 @@ defineProps<{
           :use-structured-render="analysis.useStructuredRender"
           :confidence-class="analysis.confidenceClass"
           :citations="analysis.citations"
+          :citation-docs="analysis.citationDocs"
           :cost="analysis.cost"
           :from-archive="analysis.fromArchive"
           :archived-at="analysis.archivedAt"

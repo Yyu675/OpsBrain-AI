@@ -209,6 +209,26 @@ export function useTicketAnalysis(
   const relatedDocs = ref<KnowledgeDocListItem[]>([])
   const relatedLoading = ref(false)
 
+  /**
+   * 引用文档的可跳转形态：对 citations 标题逐个查知识库，解析出 {id, title}。
+   * <p>AnalysisCard 用它在「引用文档」区渲染 RouterLink（跳 /knowledge/{id}）。
+   * 查不到（知识库无该文档 / 标题为自由文本）时该项为 null，前端回退纯文本标题。</p>
+   */
+  const citationDocs = ref<Array<{ id: string | number; title: string } | null>>([])
+
+  /** 解析引用 → 可跳转文档（并发查询，任一失败仅该项降级为纯文本，不阻塞） */
+  const resolveCitations = async (titles: string[]) => {
+    const uniq = [...new Set(titles.map(t => t.trim()).filter(Boolean))]
+    if (!uniq.length) { citationDocs.value = []; return }
+    citationDocs.value = await Promise.all(uniq.map(async (title) => {
+      try {
+        const res = await fetchKnowledgeDocs({ keyword: title, size: 1, page: 1, status: 'PUBLISHED' })
+        const hit = (res.content ?? []).find(d => d.title === title || title.includes(d.title) || d.title.includes(title))
+        return hit ? { id: hit.id, title: hit.title } : null
+      } catch { return null }
+    }))
+  }
+
   let abortController: AbortController | null = null
 
   const structured = computed(() => parseStructuredAnalysis(analysisContent.value))
@@ -352,6 +372,7 @@ export function useTicketAnalysis(
         const fromText = extractCitationsFromText(latest.content)
         if (fromText.length) citations.value = fromText
       }
+      void resolveCitations(citations.value)
       return true
     } catch (e) {
       console.warn('[useTicketAnalysis] 读取分析存档失败，将走实时分析', e)
@@ -411,6 +432,7 @@ export function useTicketAnalysis(
             const fromText = extractCitationsFromText(analysisContent.value)
             if (fromText.length) citations.value = fromText
           }
+          void resolveCitations(citations.value)
           analysisDone.value = true
           analysisStreaming.value = false
           // 仅成功完成才存档：失败/中断的内容存下来会在下次被当作有效分析复用，
@@ -566,6 +588,7 @@ export function useTicketAnalysis(
     analysisStreaming,
     analysisDone,
     citations,
+    citationDocs,
     analysisCost,
     // 存档来源标识（供卡片标注「上次分析结果」及时间）
     analysisFromArchive,

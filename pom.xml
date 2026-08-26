@@ -40,6 +40,10 @@
         -->
         <langchain4j.version>1.2.0</langchain4j.version>
 
+        <!-- fabric8 K8s 客户端版本（V1.2 执行器适配器，2026-08-26）
+             6.13.x 为 2024 年稳定线，支持 K8s 1.28+；如需最新 API 再评估升级 -->
+        <fabric8.version>6.13.4</fabric8.version>
+
         <!--
           让 javac 把每条诊断打成 GitHub Actions 的 workflow command，
           从而变成一条 annotation。
@@ -82,6 +86,35 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <!-- ================= 自身可观测性（P2，2026-08-26 新增）=================
+             系统能监控别人（Prometheus 代理查询），也要能监控自己：
+             /actuator/health 供 K8s 探针与部署健康检查；/actuator/prometheus
+             暴露自身指标（工具调用/Saga 补偿/LLM 成本）供 Prometheus 抓取。
+             注意：/actuator/** 不在 /api/** 下，不会被 SaInterceptor 拦截，
+             必须在 WebConfig 显式配置鉴权（见 WebConfig 注释），否则内部指标裸奔公网。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <!-- ================= 真实执行器（V1.2，D1 适配器模式）=================
+             K8s 适配器实现依赖。CI 用 kubernetes-server-mock（FakeK8sClient）测试，
+             不依赖真实集群；演示用本机 kind + KubeConfig。凭证不进仓库。 -->
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-client</artifactId>
+            <version>${fabric8.version}</version>
+        </dependency>
+        <!-- FakeK8sClient：CI 无需真实集群即可测试 K8s 适配器（双轨验证轨道 A） -->
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-server-mock</artifactId>
+            <version>${fabric8.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <!-- ================= 对象存储（工单附件） ================= -->

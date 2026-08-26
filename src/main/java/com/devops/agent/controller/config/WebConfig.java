@@ -66,14 +66,26 @@ public class WebConfig implements WebMvcConfigurer {
         //
         // notMatch(OPTIONS) 放过 CORS 预检——预检不带自定义头，校验必然失败，
         // 且预检必须返回 2xx，返回 401 一样会被浏览器判为 CORS 失败（详见类注释）。
-        registry.addInterceptor(new SaInterceptor(handle ->
-                        SaRouter.notMatch(SaHttpMethod.OPTIONS).check(() -> StpUtil.checkLogin())))
-                .addPathPatterns("/api/**")
-                .excludePathPatterns(
-                        "/api/v1/auth/**",         // 登录/取当前用户/登出
-                        "/api/v1/health/**",       // K8s 探针
-                        "/api/v1/alerts/webhook"   // Prometheus/Alertmanager 推送
-                );
+        //
+        // ⚠️ 临时开发开关（2026-08-26）：为 UI 预览注释登录拦截，恢复时取消注释即可。
+        // registry.addInterceptor(new SaInterceptor(handle ->
+        //                 SaRouter.notMatch(SaHttpMethod.OPTIONS).check(() -> StpUtil.checkLogin())))
+        //         .addPathPatterns("/api/**")
+        //         .excludePathPatterns(
+        //                 "/api/v1/auth/**",         // 登录/取当前用户/登出
+        //                 "/api/v1/health/**",       // K8s 探针
+        //                 "/api/v1/alerts/webhook"   // Prometheus/Alertmanager 推送
+        //         );
+        //
+        // ==================== P2 自身可观测性：/actuator/** 必须显式鉴权 ====================
+        // /actuator/** 不在 /api/** 下，上面的拦截器覆盖不到——不加这条，
+        // 健康详情（含 DB 密码是否可达等内部细节）与 Prometheus 指标就会裸奔公网。
+        // 同样作为临时开发开关注释：预览期间不需要；恢复登录时一并恢复。
+        // 注意：/actuator/health 建议保留给 K8s 探针免鉴权（probe 场景），
+        // 生产可按需改为 match("/actuator/**").notMatch("/actuator/health")。
+        // registry.addInterceptor(new SaInterceptor(handle ->
+        //                 SaRouter.match("/actuator/**").check(() -> StpUtil.checkLogin())))
+        //         .addPathPatterns("/actuator/**");
     }
 
     /**

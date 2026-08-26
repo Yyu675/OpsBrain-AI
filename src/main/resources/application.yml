@@ -358,3 +358,23 @@ devops:
       # 关掉后 /api/v1/metrics/** 会返回 50020（数据源不可用），
       # 而不是让页面卡在加载中——没有 Prometheus 的部署应显式关掉
       enabled: ${PROMETHEUS_ENABLED:true}
+
+# ================= 自身可观测性（P2，2026-08-26 新增）=================
+# 系统监控别人的前提是先能监控自己：
+# - /actuator/health：K8s 探针 + 部署健康检查（含 DeepSeek/向量库可达性，见
+#   infrastructure/health 下自定义 HealthIndicator——这两个挂了系统表面正常、AI 全废）
+# - /actuator/prometheus：自身指标（工具调用耗时/失败率、Saga 补偿成功率、LLM 成本与 token）
+# - ⚠️ 安全：/actuator/** 不在 /api/** 下，WebConfig 必须显式加鉴权（见 WebConfig 注释）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: opsbrain-ai

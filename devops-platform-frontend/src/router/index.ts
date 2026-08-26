@@ -209,12 +209,12 @@ const router = createRouter({
       }
     },
     {
-      path: '/governance/saga-compensation', name: 'saga-compensation', component: lazy(() => import('../views/FutureCapability.vue'), 'SagaCompensation', 'dashboard'),
-      meta: { title: 'Saga 补偿中心', stage: 'L4', hiddenFromNavigation: true, description: '管理跨步骤自动化流程的失败补偿与一致性恢复。', capabilities: ['失败事务', '补偿步骤', '重试策略', '一致性状态'] }
+      path: '/governance/saga-compensation', name: 'saga-compensation', component: lazy(() => import('../views/SagaCompensation.vue'), 'SagaCompensation', 'dashboard'),
+      meta: { title: 'Saga 补偿中心', stage: 'L4', roles: ['admin'], description: '管理跨步骤自动化流程的失败补偿与一致性恢复。', capabilities: ['失败事务', '补偿步骤', '重试策略', '一致性状态'] }
     },
     {
-      path: '/governance/manual-intervention', name: 'manual-intervention', component: lazy(() => import('../views/FutureCapability.vue'), 'ManualIntervention', 'dashboard'),
-      meta: { title: '人工介入中心', stage: 'L4', hiddenFromNavigation: true, description: '集中处理自动化无法安全闭环的异常任务与升级请求。', capabilities: ['介入队列', '上下文快照', '接管操作', '恢复自动化'] }
+      path: '/governance/manual-intervention', name: 'manual-intervention', component: lazy(() => import('../views/ManualIntervention.vue'), 'ManualIntervention', 'dashboard'),
+      meta: { title: '人工介入中心', stage: 'L4', roles: ['admin'], description: '集中处理自动化无法安全闭环的异常任务与升级请求。', capabilities: ['介入队列', '上下文快照', '接管操作', '恢复自动化'] }
     },
     { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
     {
@@ -295,6 +295,12 @@ const promptLogin = async (targetTitle: string): Promise<boolean> => {
 router.beforeEach(async (to, from) => {
   const app = useAppStore()
   const meta = to.meta || {}
+
+  // ====================================================================
+  // ⚠️ 临时开发开关（2026-08-26）：为 UI 预览注释登录拦截，全部路由直接放行。
+  // 恢复登录鉴权：删除下面 3 行 return true 即可（守卫逻辑原样保留在下方）。
+  // ====================================================================
+  return true
 
   // 公开路由（首页、登录页、错误页）直接放行——访客默认落在首页而非登录页
   if (meta.public) {
