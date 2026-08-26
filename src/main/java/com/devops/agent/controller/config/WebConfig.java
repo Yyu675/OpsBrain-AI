@@ -50,6 +50,21 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor;
 
+    /**
+     * 鉴权总开关。<b>默认 true（开启）</b>，仅允许在本地开发环境显式关闭。
+     *
+     * <p><b>为什么需要它</b>：2026-08-26 出现过「为 UI 预览把登录拦截器整段注释掉」
+     * 的改动并被提交。注释代码没有开关语义——一旦忘了恢复就随代码合入生产，
+     * 而且 review 时极不显眼。更隐蔽的是：登录拦截器不注册时 Sa-Token 上下文里
+     * 没有会话，{@code @SaCheckRole} 的角色判定<b>也一并失效</b>，
+     * 等于整条鉴权链被摘除，而不只是「少了一层登录」。</p>
+     *
+     * <p>改成配置开关后：生产默认安全、意图可审计（yml 里写着而不是藏在注释里）、
+     * 关闭时启动日志会打醒目告警、集成测试仍走真实鉴权链。</p>
+     */
+    @Value("${devops.security.auth-enabled:true}")
+    private boolean authEnabled;
+
     public WebConfig(com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor) {
         this.auditInterceptor = auditInterceptor;
     }
@@ -67,22 +82,15 @@ public class WebConfig implements WebMvcConfigurer {
         // notMatch(OPTIONS) 放过 CORS 预检——预检不带自定义头，校验必然失败，
         // 且预检必须返回 2xx，返回 401 一样会被浏览器判为 CORS 失败（详见类注释）。
         //
-        // ⚠️ 曾于 2026-08-26 被注释掉（「为 UI 预览临时关闭」），已恢复。
-        //
-        // 那次改动让全部 /api/** 变成免鉴权：GovernanceRoleGuardIntegrationTest
-        // 立刻报 "Status expected:<403> but was:<200>"——OPS 角色访问
-        // Saga 逆向补偿、审计日志等治理端点被直接放行。
-        //
-        // 注释掉认证是**不可接受的临时手段**：它没有开关语义（一旦忘了恢复
-        // 就随代码合入生产），而且被注释的同时连 @SaCheckRole 的角色判定
-        // 也一并失效——登录拦截器不跑，Sa-Token 上下文里没有会话，
-        // 角色注解拿不到身份，等于整条鉴权链被摘除。
-        //
-        // 若确需本地免登录预览，正确做法是走**配置开关**而非改代码，例如
-        // 加 @ConditionalOnProperty(name = "devops.security.auth-enabled",
-        // havingValue = "true", matchIfMissing = true)，
-        // 由 application-dev.yml 显式关闭——这样生产默认安全、意图可审计，
-        // 且集成测试仍走真实鉴权链。
+        // ⚠️ 需要本地免登录预览时，请设 devops.security.auth-enabled=false，
+        // **不要注释这段代码**（2026-08-26 发生过一次，见 authEnabled 字段注释）。
+        if (!authEnabled) {
+            log.error("🚨🚨🚨 [WebConfig] 鉴权已关闭（devops.security.auth-enabled=false）"
+                    + " —— 全部 /api/** 与 /actuator/** 免登录，且 @SaCheckRole 角色判定同时失效。"
+                    + " 此配置仅供本地开发，出现在生产环境即为严重安全事故。");
+            return;
+        }
+
         registry.addInterceptor(new SaInterceptor(handle ->
                         SaRouter.notMatch(SaHttpMethod.OPTIONS).check(() -> StpUtil.checkLogin())))
                 .addPathPatterns("/api/**")
