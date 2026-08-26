@@ -109,13 +109,6 @@
             <artifactId>kubernetes-client</artifactId>
             <version>${fabric8.version}</version>
         </dependency>
-        <!-- FakeK8sClient：CI 无需真实集群即可测试 K8s 适配器（双轨验证轨道 A） -->
-        <dependency>
-            <groupId>io.fabric8</groupId>
-            <artifactId>kubernetes-server-mock</artifactId>
-            <version>${fabric8.version}</version>
-            <scope>test</scope>
-        </dependency>
 
         <!-- ================= 对象存储（工单附件） ================= -->
         <!-- MinIO SDK：S3 兼容协议，生产可平滑切换到阿里云 OSS / AWS S3 -->

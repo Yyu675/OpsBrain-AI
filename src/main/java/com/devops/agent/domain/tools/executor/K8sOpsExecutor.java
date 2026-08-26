@@ -74,7 +74,7 @@ public class K8sOpsExecutor implements OpsExecutor {
         String namespace = command.requireParam("namespace");
         String podName = command.requireParam("pod");
 
-        KubernetesClient k8s = client();
+        KubernetesClient k8s = resolveClient();
         if (k8s == null) {
             return OpsExecutionResult.fail("未配置 K8s 集群（KubeConfig 缺失）。"
                     + "请配置 ~/.kube/config 或 KUBECONFIG 后重试——这是只读查询，不会改动集群。");
@@ -141,8 +141,11 @@ public class K8sOpsExecutor implements OpsExecutor {
         return out;
     }
 
-    /** 懒加载 K8s 客户端（未配置 KubeConfig 返回 null，不抛异常） */
-    private KubernetesClient client() {
+    /**
+     * 懒加载 K8s 客户端（未配置 KubeConfig 返回 null，不抛异常）。
+     * protected 供测试子类注入 mock client（轨道 A）。
+     */
+    protected KubernetesClient resolveClient() {
         if (client == null) {
             synchronized (this) {
                 if (client == null) {

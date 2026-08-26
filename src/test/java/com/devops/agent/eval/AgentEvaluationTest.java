@@ -1,7 +1,7 @@
 package com.devops.agent.eval;
 
+import com.devops.agent.common.exception.SecurityGuardException;
 import com.devops.agent.common.guard.SecurityInputGuard;
-import com.devops.agent.common.guard.SecurityGuardException;
 import com.devops.agent.domain.rag.HybridRetrieverService;
 import com.devops.agent.domain.rag.KnowledgeScope;
 import com.fasterxml.jackson.core.type.TypeReference;
