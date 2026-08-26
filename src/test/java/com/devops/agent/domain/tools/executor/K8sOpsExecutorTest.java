@@ -3,6 +3,7 @@ package com.devops.agent.domain.tools.executor;
 import io.fabric8.kubernetes.api.model.ContainerStatusBuilder;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
+import io.fabric8.kubernetes.api.model.PodList;
 import io.fabric8.kubernetes.api.model.PodSpecBuilder;
 import io.fabric8.kubernetes.api.model.PodStatusBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
@@ -66,9 +67,10 @@ class K8sOpsExecutorTest {
 
     @SuppressWarnings("unchecked")
     private void stubPodLookup(Pod pod) {
-        MixedOperation<Pod, ?, ?, ?, ?> pods = mock(MixedOperation.class);
-        NonNamespaceOperation<Pod, ?, ?> ns = mock(NonNamespaceOperation.class);
-        PodResource<Pod> resource = mock(PodResource.class);
+        // fabric8 6.x 泛型签名：MixedOperation<T, L, R> / NonNamespaceOperation<T, L, R> / PodResource（无泛型）
+        MixedOperation<Pod, PodList, PodResource> pods = mock(MixedOperation.class);
+        NonNamespaceOperation<Pod, PodList, PodResource> ns = mock(NonNamespaceOperation.class);
+        PodResource resource = mock(PodResource.class);
 
         when(fakeClient.pods()).thenReturn(pods);
         when(pods.inNamespace(anyString())).thenReturn(ns);

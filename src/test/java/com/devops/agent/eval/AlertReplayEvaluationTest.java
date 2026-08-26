@@ -100,10 +100,11 @@ class AlertReplayEvaluationTest {
                     .filter(al -> key.equals(al.getDedupKey()))
                     .findFirst();
         });
-        when(alertRepository.incrementOccurrence(any(Long.class))).thenAnswer(inv -> {
+        // incrementOccurrence 返回 void：用 doAnswer 计数（when() 不允许 void 方法）
+        org.mockito.Mockito.doAnswer(inv -> {
             incrementCalls++;
             return null;
-        });
+        }).when(alertRepository).incrementOccurrence(any(Long.class));
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
                 any(), anyString(), anyString(), anyString()))
                 .thenAnswer(inv -> {
