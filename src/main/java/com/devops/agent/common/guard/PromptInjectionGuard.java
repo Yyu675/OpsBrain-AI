@@ -310,22 +310,33 @@ public class PromptInjectionGuard {
         }
 
         // 2. 关键模式检测（按严重级顺序）
-        matchedPatterns.addAll(checkPatterns(input, CRITICAL_PATTERNS, matchedPatterns));
-        if (matchedPatterns.stream().anyMatch(p -> p.startsWith("IGNORE_INSTRUCTIONS") || p.startsWith("ROLE_PLAY") || p.startsWith("CODE_EXECUTION"))) {
+        //
+        // ⚠️ 定级依据是「命中了 CRITICAL_PATTERNS 这个列表」，而不是
+        // 「命中的规则名是否在某张硬编码白名单里」。
+        //
+        // 原实现写的是 `anyMatch(p -> p.startsWith("IGNORE_INSTRUCTIONS")
+        // || p.startsWith("ROLE_PLAY") || p.startsWith("CODE_EXECUTION"))`——
+        // 只认三个名字。于是 CRITICAL_PATTERNS 里另外三条（SYSTEM_PROMPT_LEAK /
+        // SQL_INJECTION / PROMPT_CONTINUATION）即使命中也只被记为 LOW，
+        // 而 checkAndBlock 只对 CRITICAL/HIGH 抛异常——**等于没拦**。
+        //
+        // 2026-08-26 新增中文规则时这个坑立刻显形：规则匹配成功、
+        // 日志也打了，但请求照样放行，因为名字不在那张白名单上。
+        // 改成按列表定级后，往 CRITICAL_PATTERNS 里加规则即自动生效，
+        // 不必再同步维护一处名字清单（漏加不会报错，只会静默失效）。
+        List<String> criticalHits = checkPatterns(input, CRITICAL_PATTERNS, matchedPatterns);
+        matchedPatterns.addAll(criticalHits);
+        if (!criticalHits.isEmpty()) {
             maxSeverity = "CRITICAL";
             recommendation = "BLOCK";
         }
 
-        matchedPatterns.addAll(checkPatterns(input, HIGH_PATTERNS, matchedPatterns));
-        if (matchedPatterns.stream().anyMatch(p ->
-                p.startsWith("SENSITIVE_EXTRACTION") ||   // 覆盖正反两种语序
-                p.startsWith("ENCODING_OBFUSCATION") ||
-                p.startsWith("STRUCTURE_BREAK") ||
-                p.startsWith("DELIMITER_INJECTION"))) {
-            if (!maxSeverity.equals("CRITICAL")) {
-                maxSeverity = "HIGH";
-                recommendation = "BLOCK";
-            }
+        // 同上：按「命中 HIGH_PATTERNS」定级，不再枚举规则名
+        List<String> highHits = checkPatterns(input, HIGH_PATTERNS, matchedPatterns);
+        matchedPatterns.addAll(highHits);
+        if (!highHits.isEmpty() && !maxSeverity.equals("CRITICAL")) {
+            maxSeverity = "HIGH";
+            recommendation = "BLOCK";
         }
 
         matchedPatterns.addAll(checkPatterns(input, MEDIUM_PATTERNS, matchedPatterns));
