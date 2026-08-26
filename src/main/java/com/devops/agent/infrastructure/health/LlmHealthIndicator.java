@@ -1,6 +1,6 @@
 package com.devops.agent.infrastructure.health;
 
-import org.springframework.ai.chat.model.ChatModel;
+import dev.langchain4j.model.chat.ChatModel;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.stereotype.Component;
@@ -12,9 +12,9 @@ import org.springframework.stereotype.Component;
  * 但 AI 分析/问答全部失败。K8s 探针只看 TCP/HTTP 层探不到这一层。
  * 把它并进 /actuator/health，探针与告警才能在「AI 全废」时给出真实状态。</p>
  *
- * <p>实现说明：用 ChatModel 发一个极小的 probe 消息（maxTokens=1）验证连通。
- * 单条探测失败即 DOWN；探测本身失败（超时/网络）记为 DOWN 并带原因，
- * 由调度层/告警层决定是否重试——本指示器不做重试，保持幂等无副作用。</p>
+ * <p>实现说明：用 langchain4j 同步 {@link ChatModel} 发一个极小的 probe
+ * 消息验证连通。单条探测失败即 DOWN；探测本身失败（超时/网络）记为 DOWN
+ * 并带原因，由调度层/告警层决定是否重试——本指示器不做重试，保持幂等无副作用。</p>
  */
 @Component
 public class LlmHealthIndicator implements HealthIndicator {
@@ -28,8 +28,8 @@ public class LlmHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         try {
-            // maxTokens=1 的最小探测：只验证连通与鉴权，不产生有意义回答
-            String reply = chatModel.call("ping");
+            // 最小探测：只验证连通与鉴权，不产生有意义回答
+            String reply = chatModel.chat("ping");
             boolean ok = reply != null && !reply.isBlank();
             return ok
                     ? Health.up().withDetail("model", "deepseek").build()

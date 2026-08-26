@@ -14,12 +14,13 @@ import { computed, onMounted, ref } from 'vue'
 import {
   RefreshCw, AlertTriangle, RotateCcw, ChevronDown, ChevronRight, Clock, XCircle, CheckCircle2, Layers
 } from 'lucide-vue-next'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   fetchSagaAttention, fetchSagaSteps, compensateSaga,
   type SagaStep, type SagaStepState
 } from '@/api/saga'
 import { notify } from '@/utils/notify'
+import { formatDate } from '@/utils/time'
 
 const props = withDefaults(defineProps<{ initialTab?: string }>(), { initialTab: 'ALL' })
 
@@ -122,9 +123,9 @@ const onCompensate = async (step: SagaStep) => {
   try {
     const result = await compensateSaga(sagaId)
     if (result.fullySucceeded) {
-      ElMessage.success(`补偿完成：${result.compensatedCount} 个步骤已回滚，事务已收敛`)
+      notify.success(`补偿完成：${result.compensatedCount} 个步骤已回滚，事务已收敛`)
     } else {
-      ElMessage.warning(`补偿部分完成：成功 ${result.compensatedCount} / 失败 ${result.failedCount}，仍需人工介入`)
+      notify.warning(`补偿部分完成：成功 ${result.compensatedCount} / 失败 ${result.failedCount}，仍需人工介入`)
     }
     await load()
     // 刷新已展开的链路
@@ -158,9 +159,7 @@ const stateClass = (s: SagaStepState | null): string => {
 
 const fmtTime = (t: string | null): string => {
   if (!t) return '—'
-  const d = new Date(t)
-  if (Number.isNaN(d.getTime())) return t
-  return d.toLocaleString('zh-CN', { hour12: false })
+  return formatDate(t)
 }
 </script>
 
