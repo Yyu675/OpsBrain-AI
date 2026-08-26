@@ -1,5 +1,5 @@
 {
-  "_comment": "已人工审阅并接受的扫描命中。新增条目会让 run_audit.py 退出码为 1。Java 侧四类扫描当前 0 命中；export_coverage 是本轮新增的前端导出覆盖扫描，下列条目均已逐个核对（区分「间接覆盖」与「确属缺口」两类，理由见每条）。",
+  "_comment": "已人工审阅并接受的扫描命中。新增条目会让 run_audit.py 退出码为 1。Java 侧四类扫描当前 0 命中；export_coverage（前端导出）与 service_write_coverage（后端 Service 写方法）两类覆盖扫描，下列条目均已逐个核对（区分「间接覆盖」与「确属缺口」两类，理由见每条）。",
   "accepted": {
     "export_coverage|devops-platform-frontend/src/composables/useTicketActions.ts|useTicketActions": "间接覆盖：它的全部返回值（submitReply/doAcknowledge/doTransfer 等）由 TicketDetail.actions.test.ts 的 28 例直接断言，覆盖了乐观清空+失败恢复草稿、防重入、同人转派短路等分支。扫描器只看符号是否被 import，看不到这层——属已知假阳性，不另写重复的直测。",
     "export_coverage|devops-platform-frontend/src/composables/useUrlFilters.ts|defineUrlFilter": "间接覆盖：它是 useUrlFilters 的入参构造器，本身只做字段收敛无逻辑分支。真实行为由 AlertList.pagination.test.ts（URL 恢复页码/筛选）与 ActionAllowlist.test.ts 覆盖，KnowledgeBase.urlsync.test.ts 另测了写回与卸载取消。",
@@ -9,6 +9,23 @@
     "export_coverage|devops-platform-frontend/src/composables/useNetworkHeartbeat.ts|useNetworkHeartbeat": "确属缺口：断网心跳探测，消费方 NetworkBanner.vue 无测试。误判会常驻显示「网络异常」横幅。同上，列入下一轮。",
     "export_coverage|devops-platform-frontend/src/utils/focusTrap.ts|useFocusTrap": "确属缺口：弹窗焦点陷阱（无障碍）。三个消费方 HotkeysDialog/ProfileDialog/SettingsDialog 均无测试。功能失效只影响键盘用户，不产生数据错误，故优先级低于业务逻辑。",
     "export_coverage|devops-platform-frontend/src/utils/clipboard.ts|copyText": "确属缺口：31 行的复制封装（navigator.clipboard + execCommand 降级）。消费方 ChatMode/AppErrorBoundary 无测试。失败后果是「点了复制没反应」，可感知但不损坏数据。",
-    "export_coverage|devops-platform-frontend/src/composables/useTheme.ts|THEME_INIT_SCRIPT": "不适合单测：它是一段以字符串形式内联进 index.html <head> 的防闪烁脚本，在 Vue 应用启动前同步执行。测试环境里它既不会被执行也无 DOM 可验，断言只能退化为「字符串包含某子串」——那种用例改一个变量名就红，且抓不到任何真实缺陷。已由 theme-tokens.contract.test.ts 从另一侧保护暗色令牌。"
+    "export_coverage|devops-platform-frontend/src/composables/useTheme.ts|THEME_INIT_SCRIPT": "不适合单测：它是一段以字符串形式内联进 index.html <head> 的防闪烁脚本，在 Vue 应用启动前同步执行。测试环境里它既不会被执行也无 DOM 可验，断言只能退化为「字符串包含某子串」——那种用例改一个变量名就红，且抓不到任何真实缺陷。已由 theme-tokens.contract.test.ts 从另一侧保护暗色令牌。",
+    "service_write_coverage|AgentStateManager.destroy": "生命周期钩子：标了 @PreDestroy，由 Spring 容器在关闭时调用，不是业务写方法。直测只能验「调了会关掉线程池」，价值低于其成本。",
+    "service_write_coverage|DevOpsAgentServiceImpl.shutdownExecutors": "生命周期钩子：@PreDestroy，重启时冲刷在途记账。同上，容器调用而非业务路径。",
+    "service_write_coverage|SemanticCacheService.shutdownExecutor": "生命周期钩子：@PreDestroy，给在途缓存写入留 3 秒。容器调用，非业务路径。",
+    "service_write_coverage|SagaCompensationManager.compensateStep": "确属缺口·高优先级：单步补偿是 Saga 回滚的最小单元，决定「补偿成功/失败」的判定。已列入下一轮首选。本轮先补了它的下游 TicketService.voidTicket（补偿动作本身）。",
+    "service_write_coverage|TicketService.addAction": "确属缺口：B2 现场处置动作记录（止损/修复/回滚/验证），写入后影响闭环进度条判定。已列入下一轮。",
+    "service_write_coverage|TicketService.addReply": "确属缺口：工单回复写入，含 AI 回复与人工回复两条路径。已列入下一轮。",
+    "service_write_coverage|TicketService.saveTicket": "确属缺口：AI 建单主路径（DevOpsAgentServiceImpl 唯一调用点）。它有 6 个入参与多处归一化，值得直测；但已被 AlertReplayEvaluationTest 等集成路径间接走到，故优先级次于 addAction/addReply。",
+    "service_write_coverage|TicketService.replaceTags": "确属缺口：标签整体替换（先删后插）。中等优先级——出错表现为标签丢失，可感知但不损坏工单主体。",
+    "service_write_coverage|KnowledgeDocService.moveCategory": "确属缺口：文档移动分类，影响知识库树结构与检索过滤。中等优先级。",
+    "service_write_coverage|KnowledgeDocService.renameCategoryDocuments": "确属缺口：分类重命名后批量更新文档冗余字段。中等优先级，出错表现为分类名不一致。",
+    "service_write_coverage|TicketAiAnalysisService.recordFeedback": "确属缺口：AI 分析的用户反馈（有用/无用）落库，是后续评估模型质量的数据来源。低优先级——不影响主流程。",
+    "service_write_coverage|AgentMemoryManager.recordUserTurn": "确属缺口：三层记忆的用户轮次记录。低优先级——已被 SSE 集成测试间接覆盖到写入路径。",
+    "service_write_coverage|AgentMemoryManager.recordCompletedTurn": "确属缺口：同 recordUserTurn，完成轮次记录。低优先级。",
+    "service_write_coverage|HybridRetrieverService.retrieveWithSource": "间接覆盖：混合检索的带来源变体，已有 6 例集成测试走 retrieve 主路径。该方法字段注入 + 读 classpath 文件，需 @SpringBootTest 才能测（见 48 号报告已记录的限制）。",
+    "service_write_coverage|TicketService.backfillTraceId": "刻意保留：已标 @Deprecated(since=2026-08-09)，全仓确无调用方（已 grep 验证）。方法文档写明「保留以备数据修复场景（历史数据补关联）」——这是有意识的决定而非遗漏，故不删除也不补测试。若将来确认不再需要，连同 repository.backfillSourceTraceId 一并移除。",
+    "service_write_coverage|TicketService.fillTags": "不适合单测：批量填充标签的内部辅助方法（给查询结果补 tags 字段），无分支、无校验，仅一次仓储调用后 setter 回填。直测等同于断言 mock 被调用，抓不到真实缺陷。其正确性由 findTickets 系列的既有查询测试间接保证。",
+    "service_write_coverage|ContextBudgetManager.estimateTokensPublic": "不适合单测：Token 估算的 public 包装（内部方法的对外暴露），实现是字符数除以固定系数。断言只能复述那个系数，改系数就红且抓不到缺陷。"
   }
 }

@@ -243,6 +243,7 @@ def scan_unread_config():
 
 # 前端导出覆盖扫描独立成文件（逻辑较长，且可单独运行看完整清单）
 from scan_export_coverage import scan as scan_export_coverage  # noqa: E402
+from scan_service_write_coverage import scan as scan_service_write  # noqa: E402
 
 
 SCANS = [
@@ -251,6 +252,7 @@ SCANS = [
     ('transactional_visibility', '@Transactional 标在非 public 方法上', scan_transactional_visibility),
     ('unread_config', '配置项无代码读取', scan_unread_config),
     ('export_coverage', '前端逻辑层导出从未被测试引用', scan_export_coverage),
+    ('service_write_coverage', '后端 Service 写方法从未被测试调用', scan_service_write),
 ]
 
 
@@ -262,6 +264,8 @@ def fingerprint(scan_id, item):
         return f"{scan_id}|{item['key']}"
     if scan_id == 'export_coverage':
         return f"{scan_id}|{item['file']}|{item['symbol']}"
+    if scan_id == 'service_write_coverage':
+        return f"{scan_id}|{item['method']}"
     return f"{scan_id}|{item['file']}|{item.get('method') or item['detail'][:40]}"
 
 
