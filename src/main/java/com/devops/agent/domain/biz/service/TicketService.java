@@ -806,7 +806,7 @@ public class TicketService {
 
         TicketAction action = new TicketAction();
         action.setTicketId(ticketId);
-        action.setActionType(actionType != null ? actionType.trim().toUpperCase() : ACTION_INVESTIGATE);
+        action.setActionType(actionType != null ? actionType.trim() : ACTION_INVESTIGATE);
         action.setSummary(summary.trim());
         action.setDetail(detail);
         action.setOperator((operator == null || operator.isBlank()) ? "未知" : operator.trim());
