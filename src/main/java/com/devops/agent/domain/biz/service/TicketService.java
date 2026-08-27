@@ -657,6 +657,7 @@ public class TicketService {
     // 而调用方收到异常会以为整个操作都没发生。
     //
     // 加在最外层方法上之后，内层自调用共用同一个事务，任一步失败整体回滚。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket acknowledgeTicket(String ticketId, String responder, String assignee) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
