@@ -60,6 +60,7 @@ class AgentMemoryManagerTest {
     private HotMemoryStore hotMemory;
     private SessionSummaryRepository summaryRepo;
     private SummaryDistiller distiller;
+    private com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository turnRepo;
     private AgentMemoryManager manager;
 
     @BeforeEach
@@ -67,7 +68,8 @@ class AgentMemoryManagerTest {
         hotMemory = mock(HotMemoryStore.class);
         summaryRepo = mock(SessionSummaryRepository.class);
         distiller = mock(SummaryDistiller.class);
-        manager = new AgentMemoryManager(hotMemory, summaryRepo, distiller, new ObjectMapper());
+        turnRepo = mock(com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository.class);
+        manager = new AgentMemoryManager(hotMemory, summaryRepo, distiller, new ObjectMapper(), turnRepo);
 
         // 默认：蒸馏与合并返回空事实、摘要文本固定，具体用例再覆盖
         when(distiller.distill(any(), any(), any())).thenReturn(new KeyFacts());
@@ -289,6 +291,113 @@ class AgentMemoryManagerTest {
             SessionSummary s = upserted();
             assertThat(s.getTraceId()).isEqualTo("trace-9");
             assertThat(s.getFinalState()).isEqualTo("DEGRADED");
+        }
+    }
+
+    // ==================================================================
+    // 对话原文转写（B-2 冷归档补全）
+    // ==================================================================
+
+    @Nested
+    @DisplayName("对话原文转写")
+    class TranscriptPersistence {
+
+        @Test
+        @DisplayName("每轮结束后把问答原文写入原文表")
+        void persistsRawTranscript() {
+            when(turnRepo.nextTurnSeq("S1")).thenReturn(3);
+
+            manager.recordCompletedTurn("S1", "T1", "Pod 起不来", "先看事件日志",
+                    List.of(), 120, 0.05, "SUCCESS");
+
+            // 冷归档按天执行，而热记忆 TTL 仅 120 分钟——
+            // 不在这里落库，归档时原文早已消失，只能存摘要
+            verify(turnRepo).append(org.mockito.ArgumentMatchers.eq("S1"),
+                    org.mockito.ArgumentMatchers.eq("T1"),
+                    org.mockito.ArgumentMatchers.eq(3),
+                    org.mockito.ArgumentMatchers.eq("Pod 起不来"),
+                    org.mockito.ArgumentMatchers.eq("先看事件日志"),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(120),
+                    org.mockito.ArgumentMatchers.eq(0.05),
+                    org.mockito.ArgumentMatchers.eq("SUCCESS"));
+        }
+
+        @Test
+        @DisplayName("轮次序号取自原文表自身，而不是温记忆的累计轮次")
+        void turnSeqComesFromTranscriptTable() {
+            // 温记忆与原文表是两条独立写入路径。任一条曾经失败过，
+            // 两者的轮次就会错位——用温记忆的轮次去写原文表会撞唯一键，
+            // 而 ON CONFLICT DO NOTHING 会让它被静默跳过
+            SessionSummary existing = new SessionSummary();
+            existing.setTurnCount(10);          // 温记忆说第 11 轮
+            when(summaryRepo.findBySessionId("S1")).thenReturn(existing);
+            when(turnRepo.nextTurnSeq("S1")).thenReturn(4);   // 原文表只有 3 条
+
+            manager.recordCompletedTurn("S1", "T1", "问", "答", List.of(), 10, 0.01, "SUCCESS");
+
+            verify(turnRepo).append(org.mockito.ArgumentMatchers.anyString(),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(4),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt(),
+                    org.mockito.ArgumentMatchers.anyDouble(), org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        @DisplayName("原文转写失败不影响温记忆——它是旁路")
+        void transcriptFailureDoesNotBreakMemory() {
+            // ── 本组最重要的一条 ──────────────────────────────
+            // 用户已经收到回答了。存档失败不能让「温记忆已更新」
+            // 这件已完成的事被回滚或被日志描述成失败
+            doThrow(new RuntimeException("库连接断了"))
+                    .when(turnRepo).nextTurnSeq(org.mockito.ArgumentMatchers.anyString());
+
+            assertThatCode(() -> manager.recordCompletedTurn(
+                    "S1", "T1", "问", "答", List.of(), 10, 0.01, "SUCCESS"))
+                    .doesNotThrowAnyException();
+
+            // 温记忆照常写入
+            verify(summaryRepo).upsert(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        @DisplayName("工具结果序列化失败时仍写入问答原文，仅 tool_results 置空")
+        void toolSerializationFailureStillPersistsQa() {
+            // 问答原文才是主要内容。因为工具结果序列化失败就整轮放弃，
+            // 等于用次要字段的问题毁掉主要数据
+            when(turnRepo.nextTurnSeq("S1")).thenReturn(1);
+            List<Map<String, Object>> unserializable =
+                    List.of(Map.of("bad", new Object() {
+                        @SuppressWarnings("unused")
+                        public Object getSelf() {
+                            throw new IllegalStateException("boom");
+                        }
+                    }));
+
+            manager.recordCompletedTurn("S1", "T1", "问", "答",
+                    unserializable, 10, 0.01, "SUCCESS");
+
+            verify(turnRepo).append(org.mockito.ArgumentMatchers.eq("S1"),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(1),
+                    org.mockito.ArgumentMatchers.eq("问"),
+                    org.mockito.ArgumentMatchers.eq("答"),
+                    org.mockito.ArgumentMatchers.isNull(),
+                    org.mockito.ArgumentMatchers.anyInt(),
+                    org.mockito.ArgumentMatchers.anyDouble(),
+                    org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        @DisplayName("sessionId 为空时不写原文——与既有短路行为一致")
+        void blankSessionSkipsTranscript() {
+            manager.recordCompletedTurn(null, "T1", "问", "答", List.of(), 10, 0.01, "SUCCESS");
+
+            verify(turnRepo, never()).append(org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt(),
+                    org.mockito.ArgumentMatchers.anyDouble(), org.mockito.ArgumentMatchers.any());
         }
     }
 }

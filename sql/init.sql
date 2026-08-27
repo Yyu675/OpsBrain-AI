@@ -230,6 +230,52 @@ CREATE TABLE IF NOT EXISTS sys_agent_session_summary (
     update_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_summary_session      ON sys_agent_session_summary (session_id);
+
+-- ---------------------------------------------------------------------
+-- Table 6.1: sys_agent_conversation_turn - 对话原文（B-2 冷归档补全）
+-- ---------------------------------------------------------------------
+-- 为什么需要这张表
+--   三层记忆里，热层（Redis）存对话原文但 TTL 仅 120 分钟，
+--   而冷归档按天执行——归档时原文早已过期。于是冷归档只能存摘要，
+--   并在 JSON 里用 contentScope=SUMMARY_ONLY 如实标注。
+--   合规审计与模型评测取数都需要逐轮原文，摘要不够。
+--
+-- 为什么不延长 Redis TTL 代替本表
+--   对话原文体积远大于摘要（单轮可达数 KB，含日志/堆栈粘贴）。
+--   把保留期从 2 小时拉到 90 天，等于把 Redis 当主存储用——
+--   内存成本不可接受，且 Redis 无持久化保证时数据仍会丢。
+--
+-- 写入语义：旁路、幂等、不阻塞主流程
+--   由 AgentMemoryManager.recordCompletedTurn 在每轮结束后写入。
+--   失败只记日志——用户已经收到回答了，不能因为「存档」失败而报错。
+--   (session_id, turn_seq) 唯一：重放或重试不会写重。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_agent_conversation_turn (
+    id            BIGSERIAL PRIMARY KEY,
+    session_id    VARCHAR(64) NOT NULL,
+    trace_id      VARCHAR(64),
+    tenant_id     VARCHAR(64) DEFAULT 'default',
+    -- 轮次序号：从 1 递增。与 session_id 组成唯一键，保证重试幂等
+    turn_seq      INT         NOT NULL,
+    user_query    TEXT,
+    ai_answer     TEXT,
+    -- 工具调用结果（JSON 数组）。评测时需要它区分「模型自己答的」
+    -- 与「基于工具返回答的」——只看问答对无法判断
+    tool_results  TEXT,
+    tokens        INT              DEFAULT 0,
+    cost_rmb      DOUBLE PRECISION DEFAULT 0,
+    final_state   VARCHAR(32),
+    create_time   TIMESTAMP        DEFAULT CURRENT_TIMESTAMP
+);
+-- 幂等键：同一会话同一轮次只存一条
+CREATE UNIQUE INDEX IF NOT EXISTS uk_turn_session_seq
+    ON sys_agent_conversation_turn (session_id, turn_seq);
+-- 按会话回放：归档与审计都按 session 维度取全量
+CREATE INDEX IF NOT EXISTS idx_turn_session
+    ON sys_agent_conversation_turn (session_id, turn_seq);
+-- 按时间清理：保留期到期后批量删除
+CREATE INDEX IF NOT EXISTS idx_turn_create_time
+    ON sys_agent_conversation_turn (create_time);
 CREATE INDEX IF NOT EXISTS idx_summary_trace              ON sys_agent_session_summary (trace_id);
 CREATE INDEX IF NOT EXISTS idx_summary_tenant             ON sys_agent_session_summary (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_summary_create_time        ON sys_agent_session_summary (create_time);
