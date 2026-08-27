@@ -155,7 +155,7 @@ public class AgentMemoryManager {
             s.setSummary(distiller.buildSummaryText(merged, totalTurnCount));
             s.setKeyFacts(merged);
             // UPSERT 中 turn/token/cost 是累加语义，故只传本轮增量
-            s.setTurnCount(totalTurnCount);
+            s.setTurnCount(1);
             s.setTotalTokens(tokens);
             s.setTotalCostRmb(costRmb);
             s.setFinalState(finalState);

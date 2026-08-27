@@ -95,7 +95,7 @@ public class TicketAiAnalysisService {
      * @return true=记录成功，false=分析不存在
      */
     public boolean recordFeedback(Long analysisId, boolean helpful) {
-        String fb = helpful ? TicketAiAnalysis.FEEDBACK_UNHELPFUL : TicketAiAnalysis.FEEDBACK_HELPFUL;
+        String fb = helpful ? TicketAiAnalysis.FEEDBACK_HELPFUL : TicketAiAnalysis.FEEDBACK_UNHELPFUL;
         int rows = repository.updateFeedback(analysisId, fb);
         if (rows == 0) {
             log.warn("⚠️ [AiAnalysisService] 反馈记录失败，分析不存在 | analysisId={}", analysisId);
