@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 import java.util.List;
@@ -89,6 +90,23 @@ class KnowledgeCategoryMoveRenameTest {
         when(docRepo.findSimhashCandidates(any(), any(), anyInt())).thenReturn(List.of());
         when(docRepo.update(any(), any())).thenReturn(1);
         when(docRepo.updateCategory(any(), any(), any(), any())).thenReturn(1);
+    }
+
+    /**
+     * 登记一批文档：既能被 findByCategory 查到，也能被 update() 内部的
+     * findById 查到。
+     *
+     * <p>renameCategoryDocuments 是通过 {@code update()} 落盘的，
+     * 而 update() 开头会 {@code docRepo.findById(docId)} 再查一次。
+     * 只桩 findByCategory 的话，那一步拿到 null 就抛「文档不存在」——
+     * 报错信息指向被测方法之外，很容易被误读成产品缺陷。
+     * 实测踩过：CI 上就是两条 {@code 文档不存在: 1}。</p>
+     */
+    private void givenDocsInCategory(Long categoryId, String categoryName, KnowledgeDoc... docs) {
+        when(docRepo.findByCategory(categoryId, categoryName)).thenReturn(List.of(docs));
+        for (KnowledgeDoc d : docs) {
+            when(docRepo.findById(d.getId())).thenReturn(d);
+        }
     }
 
     private KnowledgeDoc doc(Long id, int version, String category, Long categoryId) {
@@ -203,8 +221,7 @@ class KnowledgeCategoryMoveRenameTest {
         @Test
         @DisplayName("逐个更新该分类下的全部文档")
         void updatesEveryDocInCategory() {
-            when(docRepo.findByCategory(10L, "旧名"))
-                    .thenReturn(List.of(doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L)));
+            givenDocsInCategory(10L, "旧名", doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L));
 
             service.renameCategoryDocuments(10L, "旧名", "新名", "张三");
 
@@ -228,13 +245,20 @@ class KnowledgeCategoryMoveRenameTest {
         void usesEachDocOwnVersion() {
             // 两篇文档的 version 不同（1 和 2）。若实现里写死某个版本，
             // 另一篇的 CAS 必然失败——而失败会抛 OptimisticLockException，
-            // 整批重命名中断，前面几篇已改、后面没改，分类处于半更新状态
-            when(docRepo.findByCategory(10L, "旧名"))
-                    .thenReturn(List.of(doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L)));
+            // 整批重命名中断，前面几篇已改、后面没改，分类处于半更新状态。
+            //
+            // 断言必须落到「传下去的版本号」上，只数调用次数是分辨不出来的：
+            // 写死版本时照样调用两次。这里让 findById 返回各自版本，
+            // 再验证 update 收到的 expectedVersion 分别是 1 和 2
+            givenDocsInCategory(10L, "旧名", doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L));
 
             service.renameCategoryDocuments(10L, "旧名", "新名", "张三");
 
-            verify(docRepo, times(2)).update(any(), any());
+            ArgumentCaptor<Integer> versions = ArgumentCaptor.forClass(Integer.class);
+            verify(docRepo, times(2)).update(any(), versions.capture());
+            assertThat(versions.getAllValues())
+                    .as("每篇文档必须用自己的版本号做 CAS，写死一个会让其余文档更新失败")
+                    .containsExactlyInAnyOrder(1, 2);
         }
 
         @Test
