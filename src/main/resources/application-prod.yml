@@ -25,6 +25,23 @@ devops:
     # ——这个组合曾经真实发生过（当时是为了预览临时注释掉拦截器）。
     auth-enabled: true
 
+  auth:
+    seed:
+      # 生产强制要求显式提供种子密码，不接受内置默认值。
+      #
+      # 默认配置是 seed.enabled=true + password=admin123：生产部署若没设
+      # AUTH_SEED_PASSWORD，启动时会自动建出用户名 admin / 密码 admin123 的
+      # 管理员账号——这是一个在源码里公开可查的弱口令，而它拥有全部权限。
+      #
+      # 这里不写死 enabled=false：那样全新部署会因为没有任何用户而完全
+      # 登录不进去，运维只能手工插库。折中是保留建号能力，但密码必须由
+      # 环境变量提供；未提供时下面的占位串会被 BCrypt 编码成一个无人知晓的
+      # 哈希，等效于「账号存在但登不进」，再由运维走改密流程。
+      # 失败方向朝「登不进」而不是「谁都能进」。
+      enabled: ${AUTH_SEED_ENABLED:true}
+      username: ${AUTH_SEED_USERNAME:admin}
+      password: ${AUTH_SEED_PASSWORD:__MUST_SET_AUTH_SEED_PASSWORD__}
+
   ai:
     # 刻意不写死 REAL：误部署就开始烧 API 额度。
     # 由部署方通过环境变量显式打开（docker-compose.yml 默认给 MOCK）。
