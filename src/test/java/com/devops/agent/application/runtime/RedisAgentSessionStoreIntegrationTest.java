@@ -320,29 +320,37 @@ class RedisAgentSessionStoreIntegrationTest {
         }
 
         @Test
-        @DisplayName("释放锁只删自己那把——不得误删别人的")
-        void releaseOnlyOwnLock() {
-            // 手工在 Redis 里放一把「别人的锁」，然后让 store 走一次
-            // 正常的加锁-释放流程，最后确认那把外来的锁还在。
+        @DisplayName("锁超时后被他人接管，原持有者收尾不得删掉接管者的锁")
+        void doesNotDeleteLockTakenOverByOthers() {
+            // ── 这条第一版写错了，记下来 ──────────────────────
+            // 最初的写法是「在**另一个 traceId** 上放一把外来锁，
+            // 验证它没被删」——那把锁本就与 nodeA 要删的 key 不同，
+            // 不比对持有者的实现同样不会碰它。注入验证时 CI 照常通过，
+            // 说明用例根本没构造出竞争。
             //
-            // 不带持有者标识的实现会在这里把别人的锁删掉：
-            // A 超时后 B 拿到锁，A 收尾时 DEL 掉的是 B 的锁，
-            // 于是两个实例同时进入临界区——正是加锁要防的事
-            String otherTrace = "it-foreign-" + java.util.UUID.randomUUID();
-            String foreignLockKey = "devops:agent:session:lock:" + otherTrace;
-            redis.opsForValue().set(foreignLockKey, "held-by-someone-else",
-                    Duration.ofSeconds(30));
+            // 真正要复现的是**同一把锁易主**：
+            // A 持锁 → 锁超时自动释放 → B 拿到同一个 key → A 收尾调 DEL。
+            // 不带持有者标识的实现此刻删掉的是 B 的锁，
+            // 两个实例同时进入临界区——正是加锁要防的事。
+            //
+            // 这里在 A 的临界区内直接把锁的 value 改成别人的 token，
+            // 等价于「锁已易主」，无需真的等 TTL 过期。
+            nodeA.getOrCreate(traceId, "sess-1");
+            String lockKey = "devops:agent:session:lock:" + traceId;
+
+            nodeA.inLock(traceId, () -> {
+                // 模拟：A 的锁已过期，B 抢到了同一个 key
+                redis.opsForValue().set(lockKey, "token-of-node-B", Duration.ofSeconds(30));
+                return null;
+            });
+            // 此刻 A 已执行完 release()
 
             try {
-                nodeA.getOrCreate(traceId, "sess-1");
-                nodeA.inLock(traceId, () -> "ok");
-
-                assertThat(redis.opsForValue().get(foreignLockKey))
-                        .as("释放自己的锁时不得动别人的")
-                        .isEqualTo("held-by-someone-else");
+                assertThat(redis.opsForValue().get(lockKey))
+                        .as("A 收尾时只能删自己那把；删掉接管者的锁会让两个实例同时进临界区")
+                        .isEqualTo("token-of-node-B");
             } finally {
-                redis.delete(foreignLockKey);
-                nodeA.remove(otherTrace);
+                redis.delete(lockKey);
             }
         }
 
