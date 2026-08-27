@@ -61,7 +61,7 @@ class AgentStateManagerTest {
 
     @BeforeEach
     void setUp() {
-        manager = new AgentStateManager();
+        manager = new AgentStateManager(new InMemoryAgentSessionStore());
     }
 
     @AfterEach

@@ -83,12 +83,33 @@ public class AgentEngineConfig {
     private long memorySweepIntervalMinutes;
 
     /**
+     * 会话状态存储 Bean（可插拔）
+     *
+     * <p>默认内存实现，适用于单实例部署。多实例部署需换成
+     * Redis 实现——{@code synchronized} 是进程内锁，跨实例不生效，
+     * 两个实例可同时通过同一会话的状态校验，
+     * 「需人工审批」可能被冲成「草稿就绪」（详见 {@code AgentSessionStore} 注释）。</p>
+     *
+     * <p>用 {@code @ConditionalOnMissingBean} 而非配置开关：
+     * 将来加 Redis 实现时只需让它以更高优先级注册，
+     * 无需在本类里维护一张 if-else 的实现表。</p>
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(
+            com.devops.agent.application.runtime.AgentSessionStore.class)
+    public com.devops.agent.application.runtime.AgentSessionStore agentSessionStore() {
+        log.info("🚀 [AgentEngineConfig] 创建会话状态存储（内存实现，单实例适用）");
+        return new com.devops.agent.application.runtime.InMemoryAgentSessionStore();
+    }
+
+    /**
      * Agent 状态管理器 Bean (MVP-2)
      */
     @Bean
-    public AgentStateManager agentStateManager() {
-        log.info("🚀 [AgentEngineConfig] 创建 AgentStateManager");
-        return new AgentStateManager();
+    public AgentStateManager agentStateManager(
+            com.devops.agent.application.runtime.AgentSessionStore sessionStore) {
+        log.info("🚀 [AgentEngineConfig] 创建 AgentStateManager | backend={}", sessionStore.backend());
+        return new AgentStateManager(sessionStore);
     }
 
     /**

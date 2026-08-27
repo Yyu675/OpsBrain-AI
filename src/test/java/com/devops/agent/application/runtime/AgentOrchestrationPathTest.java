@@ -53,7 +53,7 @@ class AgentOrchestrationPathTest {
 
     @BeforeEach
     void setUp() {
-        manager = new AgentStateManager();
+        manager = new AgentStateManager(new InMemoryAgentSessionStore());
     }
 
     /**

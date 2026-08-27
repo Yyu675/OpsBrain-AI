@@ -43,7 +43,23 @@ public class AgentStateManager {
      * 会话状态存储：traceId -> SessionState
      * 生产环境应持久化到 Redis/PostgreSQL，此处用内存演示
      */
-    private final Map<String, SessionState> sessionStates = new ConcurrentHashMap<>();
+    private final AgentSessionStore sessionStore;
+
+    /**
+     * 会话状态存储按接口注入（可插拔）。
+     *
+     * <p>原先是写死的 {@code ConcurrentHashMap} + {@code synchronized}，
+     * 单实例下正确，但 <b>synchronized 是进程内锁，多实例部署时完全失效</b>——
+     * 两个实例可同时通过同一会话的状态校验，后写覆盖先写，
+     * 「需人工审批」可能被冲成「草稿就绪」，审批闸门被绕过且无任何报错。
+     * 详见 {@link AgentSessionStore} 类注释。</p>
+     *
+     * <p>抽出接口后，换成 Redis 实现只需新增一个类 + 改配置，
+     * 本类的状态机规则（哪些边合法、耗时怎么算、审计怎么记）一行不动。</p>
+     */
+    public AgentStateManager(AgentSessionStore sessionStore) {
+        this.sessionStore = sessionStore;
+    }
 
     /**
      * 会话空闲超时（毫秒），超过此时间未迁移的会话自动清理
@@ -75,8 +91,10 @@ public class AgentStateManager {
                 CLEANUP_INTERVAL_MS,
                 TimeUnit.MILLISECONDS
         );
-        log.info("🧹 [StateManager] 会话空闲清理已启动 | idleTimeout={}ms | interval={}ms",
-                SESSION_IDLE_TIMEOUT_MS, CLEANUP_INTERVAL_MS);
+        // 把后端打进启动日志：多实例部署却用着 memory 实现是一类典型配置事故，
+        // 而它在单实例测试时完全看不出来——日志是最低成本的提示
+        log.info("🧹 [StateManager] 会话空闲清理已启动 | backend={} | idleTimeout={}ms | interval={}ms",
+                sessionStore.backend(), SESSION_IDLE_TIMEOUT_MS, CLEANUP_INTERVAL_MS);
     }
 
     /**
@@ -108,15 +126,20 @@ public class AgentStateManager {
      */
     private void evictIdleSessions() {
         LocalDateTime now = LocalDateTime.now();
-        int before = sessionStates.size();
-        sessionStates.values().removeIf(s -> {
-            LocalDateTime since = s.getIdleSince();
-            if (since == null) return false;
-            return java.time.Duration.between(since, now).toMillis() > SESSION_IDLE_TIMEOUT_MS;
-        });
-        int removed = before - sessionStates.size();
+        int before = sessionStore.size();
+        if (sessionStore instanceof InMemoryAgentSessionStore mem) {
+            // 内存实现：直接按空闲时间剔除。
+            // Redis 实现会改用键 TTL 让其自然过期，无需本地遍历——
+            // 故这里按实现类型分支，而不是往接口上加一个只有一种实现用得到的方法
+            mem.rawView().values().removeIf(s -> {
+                LocalDateTime since = s.getIdleSince();
+                if (since == null) return false;
+                return java.time.Duration.between(since, now).toMillis() > SESSION_IDLE_TIMEOUT_MS;
+            });
+        }
+        int removed = before - sessionStore.size();
         if (removed > 0) {
-            log.info("🧹 [StateManager] 清理空闲会话 | removed={} | remaining={}", removed, sessionStates.size());
+            log.info("🧹 [StateManager] 清理空闲会话 | removed={} | remaining={}", removed, sessionStore.size());
         }
     }
 
@@ -124,14 +147,14 @@ public class AgentStateManager {
      * 获取或创建会话状态
      */
     public SessionState getOrCreateSession(String traceId, String sessionId) {
-        return sessionStates.computeIfAbsent(traceId, k -> new SessionState(traceId, sessionId));
+        return sessionStore.getOrCreate(traceId, sessionId);
     }
 
     /**
      * 获取会话状态（不创建）
      */
     public SessionState getSession(String traceId) {
-        return sessionStates.get(traceId);
+        return sessionStore.get(traceId);
     }
 
     /**
@@ -144,7 +167,7 @@ public class AgentStateManager {
      * </p>
      */
     public AgentState getCurrentState(String traceId) {
-        SessionState session = sessionStates.get(traceId);
+        SessionState session = sessionStore.get(traceId);
         return session == null ? null : session.getCurrentState();
     }
 
@@ -161,7 +184,7 @@ public class AgentStateManager {
      * @return 不可变的迁移记录副本（按发生顺序）；会话不存在时返回空列表
      */
     public List<AgentStateTransition> exportTransitions(String traceId) {
-        SessionState session = sessionStates.get(traceId);
+        SessionState session = sessionStore.get(traceId);
         if (session == null) {
             return List.of();
         }
@@ -173,7 +196,7 @@ public class AgentStateManager {
      * <p>用于监控内存占用与验证空闲清理确实生效。</p>
      */
     public int sessionCount() {
-        return sessionStates.size();
+        return sessionStore.size();
     }
 
     /**
@@ -198,15 +221,16 @@ public class AgentStateManager {
             String operator,
             String metadata) {
 
-        SessionState session = sessionStates.get(traceId);
+        SessionState session = sessionStore.get(traceId);
         if (session == null) {
             log.warn("⚠️ [StateManager] 会话不存在，无法迁移 | traceId={} | targetState={}", traceId, toState);
             return null;
         }
 
-        AgentState fromState;
-        AgentStateTransition transition;
-        long durationMs;
+        // 迁移结果用 record 承载：lambda 只能捕获 effectively final 变量，
+        // 原先在锁外声明、锁内赋值的三个局部变量搬不进回调
+        record Outcome(AgentState fromState, AgentStateTransition transition, long durationMs) {
+        }
 
         // 「校验当前态 → 写入新态」必须是一个原子段。
         //
@@ -226,46 +250,57 @@ public class AgentStateManager {
         //      各阶段耗时统计随之失真。
         //
         // 锁粒度取「单个会话对象」而非整个管理器：不同 traceId 之间本就互不影响，
-        // 锁在 sessionStates 上会让所有并发会话的状态迁移互相排队。
-        synchronized (session) {
-            fromState = session.getCurrentState();
+        // 锁在整个 store 上会让所有并发会话的状态迁移互相排队。
+        //
+        // 互斥交由 AgentSessionStore.inLock 实现：内存实现用 synchronized(session)
+        // （与重构前逐字对应），Redis 实现可换成分布式锁而本类无需改动。
+        Outcome outcome = sessionStore.inLock(traceId, () -> {
+            AgentState from = session.getCurrentState();
 
             // 校验合法迁移
-            if (!AgentState.canTransition(fromState, toState)) {
+            if (!AgentState.canTransition(from, toState)) {
                 log.warn("⚠️ [StateManager] 非法状态迁移 | traceId={} | from={} | to={} | trigger={}",
-                        traceId, fromState, toState, trigger);
+                        traceId, from, toState, trigger);
                 return null;
             }
 
             // 计算耗时
-            durationMs = 0;
+            long elapsed = 0;
             if (session.getLastTransitionTime() != null) {
-                durationMs = java.time.Duration.between(session.getLastTransitionTime(), LocalDateTime.now()).toMillis();
+                elapsed = java.time.Duration.between(session.getLastTransitionTime(), LocalDateTime.now()).toMillis();
             }
 
             // 创建迁移记录
-            transition = AgentStateTransition.of(
+            AgentStateTransition t = AgentStateTransition.of(
                     traceId,
                     session.getSessionId(),
-                    fromState,
+                    from,
                     toState,
                     trigger,
                     detail,
                     operator,
-                    durationMs,
+                    elapsed,
                     metadata
             );
 
             // 更新会话状态
             session.setCurrentState(toState);
             session.setLastTransitionTime(LocalDateTime.now());
-            session.addTransition(transition);
+            session.addTransition(t);
+            // 值语义的存储（如 Redis）必须显式回写，否则改动只留在本地副本
+            sessionStore.save(session);
+            return new Outcome(from, t, elapsed);
+        });
+
+        if (outcome == null) {
+            // 非法迁移，已在锁内记 WARN
+            return null;
         }
 
         log.info("🔄 [StateManager] 状态迁移 | traceId={} | {} → {} | trigger={} | operator={} | duration={}ms",
-                traceId, fromState.name(), toState.name(), trigger, operator, durationMs);
+                traceId, outcome.fromState().name(), toState.name(), trigger, operator, outcome.durationMs());
 
-        return transition;
+        return outcome.transition();
     }
 
     /**
