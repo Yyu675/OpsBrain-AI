@@ -5,7 +5,7 @@ import com.devops.agent.domain.alert.entity.Alert;
 import com.devops.agent.domain.alert.repository.AlertRepository;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
 import com.devops.agent.domain.biz.service.TicketService;
-import com.devops.agent.domain.notify.DingTalkNotifier;
+import com.devops.agent.domain.notify.Notifier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -64,7 +64,7 @@ class AlertServiceTest {
     private AlertRepository alertRepository;
     private TicketService ticketService;
     private AlertWebSocketNotifier notifier;
-    private DingTalkNotifier dingTalk;
+    private Notifier dingTalk;
     private AlertService service;
 
     @BeforeEach
@@ -72,7 +72,7 @@ class AlertServiceTest {
         alertRepository = mock(AlertRepository.class);
         ticketService = mock(TicketService.class);
         notifier = mock(AlertWebSocketNotifier.class);
-        dingTalk = mock(DingTalkNotifier.class);
+        dingTalk = mock(Notifier.class);
         service = new AlertService(alertRepository, ticketService, notifier, dingTalk);
 
         // @Value 字段在非 Spring 环境不会注入，必须显式设成与生产默认值一致

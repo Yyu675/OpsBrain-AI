@@ -8,7 +8,7 @@ import com.devops.agent.domain.biz.repository.TicketActivityRepository;
 import com.devops.agent.domain.biz.repository.TicketPostmortemRepository;
 import com.devops.agent.domain.biz.repository.TicketReplyRepository;
 import com.devops.agent.domain.biz.repository.TicketTagRepository;
-import com.devops.agent.domain.notify.DingTalkNotifier;
+import com.devops.agent.domain.notify.Notifier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -78,7 +78,7 @@ class TicketVoidDeleteTest {
         tagRepository = mock(TicketTagRepository.class);
         actionRepository = mock(TicketActionRepository.class);
         postmortemRepository = mock(TicketPostmortemRepository.class);
-        DingTalkNotifier dingTalkNotifier = mock(DingTalkNotifier.class);
+        Notifier dingTalkNotifier = mock(Notifier.class);
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
         ValueOperations<String, String> valueOps = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);

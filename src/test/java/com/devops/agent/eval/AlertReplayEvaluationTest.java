@@ -7,7 +7,7 @@ import com.devops.agent.domain.alert.service.AlertService;
 import com.devops.agent.domain.alert.service.AlertWebSocketNotifier;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
 import com.devops.agent.domain.biz.service.TicketService;
-import com.devops.agent.domain.notify.DingTalkNotifier;
+import com.devops.agent.domain.notify.Notifier;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,7 +73,7 @@ class AlertReplayEvaluationTest {
         alertRepository = mock(AlertRepository.class);
         ticketService = mock(TicketService.class);
         AlertWebSocketNotifier notifier = mock(AlertWebSocketNotifier.class);
-        DingTalkNotifier dingTalk = mock(DingTalkNotifier.class);
+        Notifier dingTalk = mock(Notifier.class);
         service = new AlertService(alertRepository, ticketService, notifier, dingTalk);
 
         ReflectionTestUtils.setField(service, "alertEnabled", true);

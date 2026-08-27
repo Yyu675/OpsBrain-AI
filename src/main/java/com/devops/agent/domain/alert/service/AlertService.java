@@ -60,15 +60,16 @@ public class AlertService {
     private final AlertRepository alertRepository;
     private final TicketService ticketService;
     private final AlertWebSocketNotifier alertNotifier;
-    private final com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
+    /** 通知渠道：依赖接口而非具体厂商实现（可插拔） */
+    private final com.devops.agent.domain.notify.Notifier notifier;
 
     public AlertService(AlertRepository alertRepository, TicketService ticketService,
                         AlertWebSocketNotifier alertNotifier,
-                        com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier) {
+                        com.devops.agent.domain.notify.Notifier notifier) {
         this.alertRepository = alertRepository;
         this.ticketService = ticketService;
         this.alertNotifier = alertNotifier;
-        this.dingTalkNotifier = dingTalkNotifier;
+        this.notifier = notifier;
     }
 
     // ==================== 配置注入（application.yml devops.alert.*） ====================
@@ -360,7 +361,7 @@ public class AlertService {
             NotifyMessage msg = alert.isHighRisk()
                     ? NotifyMessage.urgent(title, md.toString())
                     : NotifyMessage.normal(title, md.toString());
-            dingTalkNotifier.send(msg);
+            notifier.send(msg);
         } catch (Exception e) {
             // 通知构造异常也不影响建单主流程
             log.warn("⚠️ [AlertService] 告警通知构造失败（已忽略）| alertId={} | {}", alert.getId(), e.getMessage());

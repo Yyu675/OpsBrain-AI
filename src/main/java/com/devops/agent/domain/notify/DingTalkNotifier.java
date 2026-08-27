@@ -46,7 +46,7 @@ import java.util.concurrent.Executors;
  */
 @Slf4j
 @Component
-public class DingTalkNotifier {
+public class DingTalkNotifier implements Notifier {
 
     /** 通知总开关。默认关闭——需运维显式填 webhook 并开启 */
     @Value("${devops.notify.dingtalk.enabled:false}")
@@ -88,11 +88,30 @@ public class DingTalkNotifier {
         }
     }
 
+    /** 渠道标识：多渠道并存时按此选用，日志与审计里标明发到了哪 */
+    @Override
+    public String channel() {
+        return "dingtalk";
+    }
+
+    /**
+     * 是否真正可用：开关已开且 webhook 已配。
+     *
+     * <p>与「发送成功」是两回事——这里只回答「配没配」，
+     * 连通性由实际发送时的响应判断。区分这两者是为了让
+     * 健康检查能说清「没配」还是「配了但连不通」。</p>
+     */
+    @Override
+    public boolean available() {
+        return enabled && webhook != null && !webhook.isBlank();
+    }
+
     /**
      * 异步发送通知（失败旁路，不阻塞调用方）
      *
      * @param msg 通知消息
      */
+    @Override
     public void send(NotifyMessage msg) {
         if (msg == null) return;
         // 异步：不占用调用方线程（告警回调线程/定时扫描线程）

@@ -40,7 +40,7 @@ class TicketServiceTest {
     private TicketTagRepository tagRepository;
     private com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository;
     private com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository;
-    private com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
+    private com.devops.agent.domain.notify.Notifier dingTalkNotifier;
     private StringRedisTemplate redisTemplate;
     private TicketService service;
 
@@ -53,7 +53,7 @@ class TicketServiceTest {
         tagRepository = mock(TicketTagRepository.class);
         actionRepository = mock(com.devops.agent.domain.biz.repository.TicketActionRepository.class);
         postmortemRepository = mock(com.devops.agent.domain.biz.repository.TicketPostmortemRepository.class);
-        dingTalkNotifier = mock(com.devops.agent.domain.notify.DingTalkNotifier.class);
+        dingTalkNotifier = mock(com.devops.agent.domain.notify.Notifier.class);
         redisTemplate = mock(StringRedisTemplate.class);
         ValueOperations<String, String> valueOps = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);

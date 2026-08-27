@@ -45,7 +45,8 @@ public class TicketService {
     private final TicketTagRepository tagRepository;
     private final com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository;
     private final com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository;
-    private final com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
+    /** 通知渠道：依赖接口而非具体厂商实现——换 Slack/Teams 只需换实现类，本类不动 */
+    private final com.devops.agent.domain.notify.Notifier notifier;
     private final StringRedisTemplate redisTemplate;
 
     public TicketService(DevOpsTicketRepository ticketRepository,
@@ -54,7 +55,7 @@ public class TicketService {
                         TicketTagRepository tagRepository,
                         com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository,
                         com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository,
-                        com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier,
+                        com.devops.agent.domain.notify.Notifier notifier,
                         StringRedisTemplate redisTemplate) {
         this.ticketRepository = ticketRepository;
         this.replyRepository = replyRepository;
@@ -62,7 +63,7 @@ public class TicketService {
         this.tagRepository = tagRepository;
         this.actionRepository = actionRepository;
         this.postmortemRepository = postmortemRepository;
-        this.dingTalkNotifier = dingTalkNotifier;
+        this.notifier = notifier;
         this.redisTemplate = redisTemplate;
     }
 
@@ -730,7 +731,7 @@ public class TicketService {
                     + "- **升级人**：" + who + "\n"
                     + "- **升级原因**：" + reason.trim() + "\n"
                     + "- **负责人**：" + (existing.getAssignee() != null ? existing.getAssignee() : "待分配") + "\n";
-            dingTalkNotifier.send(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md));
+            notifier.send(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md));
         } catch (Exception e) {
             log.warn("⚠️ [TicketService] 升级通知构造失败（已忽略）| ticketId={} | {}", ticketId, e.getMessage());
         }
