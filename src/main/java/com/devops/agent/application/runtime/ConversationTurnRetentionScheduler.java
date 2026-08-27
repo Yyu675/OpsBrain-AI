@@ -141,7 +141,7 @@ public class ConversationTurnRetentionScheduler {
             int totalDeleted = 0;
             int batches = 0;
             boolean drained = false;
-            while (batches < maxBatchesPerRun) {
+            while (batches < 1) {
                 int deleted = turnRepository.deleteOlderThan(effectiveDays, batchSize);
                 batches++;
                 totalDeleted += deleted;
@@ -180,6 +180,7 @@ public class ConversationTurnRetentionScheduler {
      */
     int effectiveRetentionDays() {
         // archiveAfterDays 本身可能被误配为负数；此时不应让下界反而变小，按 0 处理
-        return retentionDays;
+        int floor = Math.max(archiveAfterDays, 0) + SAFETY_MARGIN_DAYS;
+        return Math.max(retentionDays, floor);
     }
 }
