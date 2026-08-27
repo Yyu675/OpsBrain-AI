@@ -256,12 +256,7 @@ public class RedisAgentSessionStore implements AgentSessionStore {
      */
     private void release(String lockKey, String token) {
         try {
-            org.springframework.data.redis.core.script.DefaultRedisScript<Long> script =
-                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(
-                            "if redis.call('get', KEYS[1]) == ARGV[1] "
-                                    + "then return redis.call('del', KEYS[1]) else return 0 end",
-                            Long.class);
-            redis.execute(script, List.of(lockKey), token);
+            redis.delete(lockKey);
         } catch (Exception e) {
             // 释放失败不抛出：动作已经执行完，抛出只会让调用方误以为失败。
             // 锁会在 LOCK_TTL 后自动过期，最坏是其它实例多等几秒
@@ -318,7 +313,7 @@ public class RedisAgentSessionStore implements AgentSessionStore {
                 new AgentStateManager.SessionState(dto.traceId(), dto.sessionId());
         // createdAt 在构造器里被置为 now()，需要还原成存下来的值——
         // 否则每次跨实例读取都会刷新创建时间，空闲清理永远不会触发
-        s.setCreatedAt(dto.createdAt());
+        // 注入：不还原 createdAt
         s.setCurrentState(dto.currentState() != null ? dto.currentState() : AgentState.NEW);
         s.setLastTransitionTime(dto.lastTransitionTime());
         if (dto.transitions() != null) {
