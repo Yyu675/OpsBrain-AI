@@ -3,7 +3,7 @@ package com.devops.agent.domain.tools;
 import com.devops.agent.application.runtime.ToolRuntimeManager;
 import com.devops.agent.domain.biz.entity.TicketEnums;
 import com.devops.agent.domain.biz.service.TicketService;
-import com.devops.agent.domain.rag.HybridRetrieverService;
+import com.devops.agent.domain.rag.Retriever;
 import com.devops.agent.domain.tools.ToolRiskLevel;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -33,8 +33,13 @@ public class DevOpsTools {
 
     private static final Logger log = LoggerFactory.getLogger(DevOpsTools.class);
 
+    /**
+     * 检索能力按接口注入，而非具体的 pgvector 实现。
+     * <p>工具层只需要「给我几段相关知识」，不该知道知识存在
+     * pgvector 还是 Milvus——换后端时本类一行不用改。</p>
+     */
     @Autowired
-    private HybridRetrieverService hybridRetrieverService;
+    private Retriever retriever;
 
     @Autowired
     private TicketService ticketService;
@@ -51,7 +56,7 @@ public class DevOpsTools {
     /**
      * 工具1: 检索运维知识库
      * <p>
-     * L4 熔断: HybridRetrieverService 内部已做 Score < 0.73 过滤
+     * L4 熔断: Retriever 实现内部已做 Score < 0.73 过滤
      * 元数据: READ_ONLY、幂等、可重试、无需审批
      * </p>
      *
@@ -118,7 +123,7 @@ public class DevOpsTools {
         com.devops.agent.domain.rag.KnowledgeScope scope =
                 com.devops.agent.domain.rag.AgentKnowledgeScopeHolder.getOrRestrictive();
         List<com.devops.agent.domain.rag.RetrievedChunk> chunks =
-                hybridRetrieverService.retrieveWithSource(keyword, 3, scope);
+                retriever.retrieveWithSource(keyword, 3, scope);
 
         if (chunks == null) {
             // 检索链路故障（向量化/检索服务不可用）——不是「无文档」。

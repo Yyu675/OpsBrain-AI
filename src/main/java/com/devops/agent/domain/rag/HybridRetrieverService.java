@@ -39,12 +39,20 @@ import java.util.Map;
  *   <li>关键词检索可与向量检索在同一查询内加权融合</li>
  * </ul>
  *
+ * <h3>它是 {@link Retriever} 的 pgvector 实现</h3>
+ * <p>
+ * 上层（{@code DevOpsTools} 等）只依赖 {@link Retriever} 接口，
+ * 因此把向量库换成 Milvus / Qdrant 时只需新增一个实现类 + 改配置，
+ * RAG 上层一行不动。本类内部的 SQL、余弦距离算子、JdbcTemplate
+ * 都是 pgvector 专有细节，<b>不得泄漏到接口签名上</b>。
+ * </p>
+ *
  * @author OpsBrain AI
  * @since 2026-07-15
  */
 @Slf4j
 @Service
-public class HybridRetrieverService {
+public class HybridRetrieverService implements Retriever {
 
     /**
      * L4 相似度阈值（架构契约冻结）
@@ -72,6 +80,17 @@ public class HybridRetrieverService {
     private JdbcTemplate jdbcTemplate;
 
     /**
+     * 后端标识：本实现直查 pgvector。
+     *
+     * <p>灰度迁移到别的向量库时，两套实现会同时在线，
+     * 日志里没有这个标识就分不清一条结果来自哪套存储。</p>
+     */
+    @Override
+    public String backend() {
+        return "pgvector";
+    }
+
+    /**
      * 检索入口
      *
      * @param query 用户查询
@@ -82,6 +101,7 @@ public class HybridRetrieverService {
      *         不能引入 null。需区分「无文档」与「服务不可用」的调用方
      *         请使用 {@link #retrieveWithSource}
      */
+    @Override
     public List<String> retrieve(String query, int topK, KnowledgeScope scope) {
         List<RetrievedChunk> chunks = retrieveWithSource(query, topK, scope);
         if (chunks == null) {
@@ -110,6 +130,7 @@ public class HybridRetrieverService {
      *         {@code DevOpsTools} 经 {@code ToolRuntimeManager} 执行，
      *         异常会触发重试（每次重试都是付费 embedding 调用）
      */
+    @Override
     public List<RetrievedChunk> retrieveWithSource(String query, int topK, KnowledgeScope scope) {
         if (query == null || query.isBlank()) {
             return List.of();
@@ -324,6 +345,7 @@ public class HybridRetrieverService {
      * 统计当前可检索的切片数
      * <p>供健康检查与看板使用：区分「知识库为空」与「检索链路故障」。</p>
      */
+    @Override
     public long countRetrievable() {
         try {
             Long n = jdbcTemplate.queryForObject("""
