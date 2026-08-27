@@ -101,7 +101,6 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
      * <p>5 秒是权衡：审计单条是一次 INSERT，2 个线程排完 500 条通常远快于此；
      * 而容器编排给的优雅停机窗口一般是 30 秒，占用 5 秒不影响其它组件收尾。</p>
      */
-    @PreDestroy
     public void shutdown() {
         ManagedExecutors.shutdownGracefully(auditExecutor, "operation-audit", 5);
     }
