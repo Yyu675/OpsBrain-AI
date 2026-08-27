@@ -105,7 +105,7 @@ public class TicketService {
         DevOpsTicket ticket = new DevOpsTicket();
         ticket.setId(ticketId);
         ticket.setTitle(title);
-        ticket.setPriority(normalizedPriority);
+        ticket.setPriority(priority);
         ticket.setModule(module);
         ticket.setDescription(description);
         ticket.setStackTrace(stackTrace);
@@ -131,7 +131,6 @@ public class TicketService {
 
             if (affectedRows == 0) {
                 log.error("⚠️ [TicketService] 工单入库失败：受影响行数为 0 - ticketId: {}", ticketId);
-                throw new RuntimeException("工单入库失败：受影响行数为 0");
             }
         } catch (Exception e) {
             log.error("❌ [TicketService] 工单入库异常 - ticketId: {}, error: {}", ticketId, e.getMessage(), e);
