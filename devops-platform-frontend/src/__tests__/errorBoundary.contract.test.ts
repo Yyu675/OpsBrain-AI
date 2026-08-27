@@ -46,6 +46,30 @@ function codeOf(path: string): string {
     .join('\n')
 }
 
+/**
+ * 从 `anchor` 出现处按花括号配平提取整个块。
+ *
+ * 不能用 `/anchor[\s\S]{0,1200}notify\.error/` 这类「窗口正则」——
+ * 它会跨过块边界匹配到后面**别的分支**里的内容。
+ * 注入验证时实测撞到：拆掉 unhandledrejection 末尾的用户提示后，
+ * 正则仍匹配到了上方 HttpError 分支里的 `notify.error`，断言照常通过。
+ */
+function blockAfter(code: string, anchor: string): string {
+  const start = code.indexOf(anchor)
+  if (start < 0) return ''
+  const open = code.indexOf('{', start)
+  if (open < 0) return ''
+  let depth = 0
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '{') depth++
+    else if (code[i] === '}') {
+      depth--
+      if (depth === 0) return code.slice(open, i + 1)
+    }
+  }
+  return code.slice(open)
+}
+
 function walk(dir: string, acc: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
@@ -65,8 +89,10 @@ describe('全局错误兜底不得被拆除', () => {
     // 而控制台只有一行 Vue 内部堆栈，用户侧完全没有提示
     const code = codeOf(MAIN_TS)
     expect(code).toContain('app.config.errorHandler')
-    expect(code, 'errorHandler 里必须给用户可见的提示，只 console 等于没提示')
-      .toMatch(/errorHandler[\s\S]{0,600}notify\.error/)
+    expect(
+      blockAfter(code, 'app.config.errorHandler'),
+      'errorHandler 里必须给用户可见的提示，只 console 等于没提示'
+    ).toContain('notify.error')
   })
 
   it('未捕获的 Promise rejection 有 unhandledrejection 兜底', () => {
@@ -75,8 +101,13 @@ describe('全局错误兜底不得被拆除', () => {
     // 表现为「点了没反应」，是最难收集到反馈的故障形态
     const code = codeOf(MAIN_TS)
     expect(code).toContain("addEventListener('unhandledrejection'")
-    expect(code, 'unhandledrejection 里必须给用户可见的提示')
-      .toMatch(/unhandledrejection[\s\S]{0,1200}notify\.error/)
+    const body = blockAfter(code, "addEventListener('unhandledrejection'")
+    expect(body, 'unhandledrejection 里必须给用户可见的提示').toContain('notify.error')
+    // 末尾的「非 HttpError 未知 rejection」分支同样要提示——
+    // 只保留 HttpError 分支的提示会让所有非 HTTP 异常静默消失
+    const tail = body.slice(body.lastIndexOf('未知错误'))
+    expect(tail, '未知 rejection 分支也必须提示用户，不能只 console')
+      .toContain('notify.error')
   })
 
   it('两条兜底路径都做了去重，避免同一错误弹两次', () => {
