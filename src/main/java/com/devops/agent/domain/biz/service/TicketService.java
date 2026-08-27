@@ -800,7 +800,7 @@ public class TicketService {
         if (summary == null || summary.isBlank()) {
             throw new IllegalArgumentException("处置摘要不能为空");
         }
-        if (summary.length() >= 255) {
+        if (summary.length() > 255) {
             throw new IllegalArgumentException("处置摘要过长（上限 255 字）");
         }
 
