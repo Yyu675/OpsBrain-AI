@@ -1,5 +1,5 @@
 {
-  "_comment": "已人工审阅并接受的扫描命中。新增条目会让 run_audit.py 退出码为 1。Java 侧四类扫描当前 0 命中；export_coverage（前端导出）与 service_write_coverage（后端 Service 写方法）两类覆盖扫描，下列条目均已逐个核对（区分「间接覆盖」与「确属缺口」两类，理由见每条）。",
+  "_comment": "已人工审阅并接受的扫描命中。新增条目会让 run_audit.py 退出码为 1。Java 侧四类扫描当前 0 命中；export_coverage（前端导出）与 service_write_coverage（后端 Service 写方法）两类覆盖扫描，下列条目均已逐个核对（区分「间接覆盖」与「确属缺口」两类，理由见每条）。注：已补测试并被扫描器确认覆盖的条目会从本文件移除——留着会让人以为它们仍是欠账。2026-08-27 移除 4 条：SagaCompensationManager.compensateStep、TicketService.addAction / addReply / replaceTags。",
   "accepted": {
     "export_coverage|devops-platform-frontend/src/composables/useTicketActions.ts|useTicketActions": "间接覆盖：它的全部返回值（submitReply/doAcknowledge/doTransfer 等）由 TicketDetail.actions.test.ts 的 28 例直接断言，覆盖了乐观清空+失败恢复草稿、防重入、同人转派短路等分支。扫描器只看符号是否被 import，看不到这层——属已知假阳性，不另写重复的直测。",
     "export_coverage|devops-platform-frontend/src/composables/useUrlFilters.ts|defineUrlFilter": "间接覆盖：它是 useUrlFilters 的入参构造器，本身只做字段收敛无逻辑分支。真实行为由 AlertList.pagination.test.ts（URL 恢复页码/筛选）与 ActionAllowlist.test.ts 覆盖，KnowledgeBase.urlsync.test.ts 另测了写回与卸载取消。",
@@ -13,11 +13,7 @@
     "service_write_coverage|AgentStateManager.destroy": "生命周期钩子：标了 @PreDestroy，由 Spring 容器在关闭时调用，不是业务写方法。直测只能验「调了会关掉线程池」，价值低于其成本。",
     "service_write_coverage|DevOpsAgentServiceImpl.shutdownExecutors": "生命周期钩子：@PreDestroy，重启时冲刷在途记账。同上，容器调用而非业务路径。",
     "service_write_coverage|SemanticCacheService.shutdownExecutor": "生命周期钩子：@PreDestroy，给在途缓存写入留 3 秒。容器调用，非业务路径。",
-    "service_write_coverage|SagaCompensationManager.compensateStep": "确属缺口·高优先级：单步补偿是 Saga 回滚的最小单元，决定「补偿成功/失败」的判定。已列入下一轮首选。本轮先补了它的下游 TicketService.voidTicket（补偿动作本身）。",
-    "service_write_coverage|TicketService.addAction": "确属缺口：B2 现场处置动作记录（止损/修复/回滚/验证），写入后影响闭环进度条判定。已列入下一轮。",
-    "service_write_coverage|TicketService.addReply": "确属缺口：工单回复写入，含 AI 回复与人工回复两条路径。已列入下一轮。",
     "service_write_coverage|TicketService.saveTicket": "确属缺口：AI 建单主路径（DevOpsAgentServiceImpl 唯一调用点）。它有 6 个入参与多处归一化，值得直测；但已被 AlertReplayEvaluationTest 等集成路径间接走到，故优先级次于 addAction/addReply。",
-    "service_write_coverage|TicketService.replaceTags": "确属缺口：标签整体替换（先删后插）。中等优先级——出错表现为标签丢失，可感知但不损坏工单主体。",
     "service_write_coverage|KnowledgeDocService.moveCategory": "确属缺口：文档移动分类，影响知识库树结构与检索过滤。中等优先级。",
     "service_write_coverage|KnowledgeDocService.renameCategoryDocuments": "确属缺口：分类重命名后批量更新文档冗余字段。中等优先级，出错表现为分类名不一致。",
     "service_write_coverage|TicketAiAnalysisService.recordFeedback": "确属缺口：AI 分析的用户反馈（有用/无用）落库，是后续评估模型质量的数据来源。低优先级——不影响主流程。",
