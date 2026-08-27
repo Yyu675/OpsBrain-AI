@@ -265,6 +265,32 @@ CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得�
 
 > 一句话判据：**断言必须落在「会被改错的那个值」上，且该值不能在到达断言前被任何一步归一化掉。**
 
+#### 本地 ECJ 自检的能力边界（别把它当编译器用）
+
+沙箱无 Maven，只能用 ECJ 做**语法**自检。它有一条硬伤：
+缺少 junit / mockito / assertj / lombok 等 jar 时，
+**「包路径写错」与「jar 缺失」都报成 `cannot be resolved to a type`**，
+两者混在同一堆噪音里无法区分。
+
+实测代价：`TicketQuery` 在 `domain.biz.repository`，我按直觉写成
+`domain.biz.entity`，ECJ 自检「0 语法错误」，CI 上直接编译失败。
+
+可行的补救是**逐个校验 import 而非依赖 ECJ**：
+
+```bash
+for imp in $(grep "^import " <测试文件> | sed 's/^import \(static \)\?//;s/;$//'); do
+  case "$imp" in
+    com.devops.*) p=$(echo "$imp" | sed 's|\.|/|g')
+      [ -f "src/main/java/${p}.java" ] || echo "  [缺失] $imp";;
+  esac
+done
+```
+
+另外两条：
+- **同包的类不需要 import**——写了反而暴露路径判断错误；
+- 用到某个测试注解（如 `@ParameterizedTest`）前，先 grep 项目里
+  有没有先例，确认依赖真的在 classpath 上。
+
 #### CI 注解上限
 
 GitHub check-runs 的 annotations **最多只返回 3 条失败**。
