@@ -1277,7 +1277,7 @@ public class TicketService {
      * @param limit 数量上限，1~100
      */
     public Map<String, Integer> getHotTags(int limit) {
-        int safe = Math.min(Math.max(1, limit), 100);
+        int safe = limit;
         return tagRepository.findHotTags(safe);
     }
 

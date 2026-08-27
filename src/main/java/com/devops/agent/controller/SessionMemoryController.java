@@ -44,8 +44,8 @@ public class SessionMemoryController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "default") String tenantId) {
 
-        int safePage = Math.max(1, page);
-        int safeSize = Math.min(Math.max(1, size), 100);
+        int safePage = page;
+        int safeSize = size;
         int offset = (safePage - 1) * safeSize;
 
         List<SessionSummary> sessions = memoryManager.listRecentSessions(tenantId, safeSize, offset);
