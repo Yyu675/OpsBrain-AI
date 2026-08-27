@@ -298,6 +298,25 @@ devops:
       # 配置化而非硬编码：运维需按业务低峰调整，验证时需临时提频。
       archive-cron: ${MEMORY_ARCHIVE_CRON:0 23 4 * * *}
 
+      # ---- 对话原文保留期清理（B-2 收尾）----
+      # sys_agent_conversation_turn 存逐轮原文（用户常粘贴整段日志/堆栈），
+      # 体积比摘要大一到两个数量级，不清理会成为库里最大的表。
+      turn-retention:
+        # 默认开启（与归档默认关闭相反）：清理只依赖数据库无外部前置，
+        # 而不清理的后果会持续恶化。关闭它应是一次有意识的决定。
+        enabled: ${MEMORY_TURN_RETENTION_ENABLED:true}
+        # 保留天数。必须明显长于 archive-after-days(90)——原文要等会话被
+        # 冷归档、写进归档 JSON 之后才能删。配置短于「归档保留期+7 天安全余量」
+        # 时程序会自动抬升并 WARN，不会真的提前删除。
+        retention-days: 180
+        # 单批删除上限，防长事务锁表
+        batch-size: 500
+        # 单轮执行最大批数：500×20=10000 条/轮，够消化日常增量；
+        # 达上限时如实 WARN 报告积压，下一轮继续
+        max-batches-per-run: 20
+        # 每日 04:47，排在冷归档 04:23 之后——必须先归档再清理
+        cron: ${MEMORY_TURN_RETENTION_CRON:0 47 4 * * *}
+
   # ==================== 告警接入（L2 实时监测） ====================
   alert:
     # 告警接收总开关。关闭后 AlertWebhookController 仍返回 200 但跳过处理。
