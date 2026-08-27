@@ -3011,7 +3011,7 @@ devops-platform-frontend/src/views/Login.vue          登录页
 - `mvn test` **123/123**；前端 `npm run build` 通过（含 Login 产物）
 
 **已知限制**
-1. 种子密码默认 admin/admin123（`AUTH_SEED_*` 环境变量可覆盖），启动日志提示改密——生产必须改
+1. 种子密码默认 admin/admin123（`AUTH_SEED_*` 环境变量可覆盖）。**启动日志只提示「当前在用内置默认密码」，不再打印密码本身**（2026-08-27 修复：日志会被采集到访问面远宽于数据库的系统，且归档后收不回来）。生产 profile 已强制要求 `AUTH_SEED_PASSWORD`，未设置时占位串会编码成无人知晓的哈希，等效于「账号存在但登不进」
 2. WebSocket `/ws/alerts` 暂不鉴权（不在 `/api/**` 拦截范围）——WS 握手鉴权待后续
 3. 角色权限：登录校验（checkLogin）全局生效；细粒度 `@SaCheckRole` 已在 6.57 审批中心接通并验证（非管理员 403）。其余端点的 `@SaCheckRole`/`@SaCheckPermission` 按需增补
 4. 前端 Login 页为独立页面级验证（构建通过 + 后端链路 curl 全验），浏览器端到端交互未跑（需 dev server + 浏览器）
