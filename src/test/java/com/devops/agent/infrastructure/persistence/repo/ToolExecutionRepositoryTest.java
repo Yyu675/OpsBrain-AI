@@ -160,14 +160,27 @@ class ToolExecutionRepositoryTest {
             // / MANUAL_INTERVENTION_REQUIRED（已标记需介入）
             // 漏掉其中任何一类，那类脏数据就永远不会出现在看板上，
             // 而看板本身显示正常——这比看板报错更难发现
-            org.mockito.ArgumentCaptor<Object> args =
-                    org.mockito.ArgumentCaptor.forClass(Object.class);
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class), args.capture()))
-                    .thenReturn(List.of());
+            // 用 thenAnswer 直接读实参，而不是 ArgumentCaptor。
+            // 原因：这里是 varargs 重载，capture() 放在 varargs 位置时
+            // Mockito 只会捕获到「匹配那一次调用的单个槽位」，
+            // 实测 getAllValues() 拿到的是空列表——断言于是恒假。
+            // getArguments() 能拿到展开后的完整实参数组。
+            final java.util.List<Object> captured = new java.util.ArrayList<>();
+            when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
+                    .thenAnswer(inv -> {
+                        for (Object o : inv.getArguments()) {
+                            if (o instanceof Object[] arr) {
+                                captured.addAll(java.util.Arrays.asList(arr));
+                            } else {
+                                captured.add(o);
+                            }
+                        }
+                        return List.of();
+                    });
 
             repo.findNeedingAttention(50);
 
-            assertThat(args.getAllValues())
+            assertThat(captured)
                     .contains(ToolExecutionState.PARTIAL_SUCCESS.name())
                     .contains(ToolExecutionState.COMPENSATION_FAILED.name())
                     .contains(ToolExecutionState.MANUAL_INTERVENTION_REQUIRED.name());
