@@ -64,6 +64,13 @@ class ColdMemoryArchiveScopeTest {
         minio = mock(MinioClient.class);
         scheduler = new ColdMemoryArchiveScheduler(
                 summaryRepo, minio, new ObjectMapper(), turnRepo);
+        // archiveBucket 是 @Value 注入的，直接 new 时为 null，
+        // PutObjectArgs.builder().bucket(null) 会抛
+        // 「bucket name must not be null」——那是夹具缺失，
+        // 与被测的 contentScope 逻辑无关，却会让整组用例以无关原因失败。
+        // 本地无法跑 JUnit，这类问题只能靠先读 @Value 字段清单来避免
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                scheduler, "archiveBucket", "test-archive-bucket");
     }
 
     private SessionSummary summary(String sessionId) {
