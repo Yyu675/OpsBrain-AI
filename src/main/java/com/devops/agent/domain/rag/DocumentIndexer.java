@@ -1,5 +1,6 @@
 package com.devops.agent.domain.rag;
 
+import jakarta.annotation.PreDestroy;
 import com.devops.agent.infrastructure.persistence.entity.KnowledgeChunkEntity;
 import com.devops.agent.infrastructure.persistence.repo.KnowledgeChunkWriter;
 import dev.langchain4j.data.document.Document;
@@ -17,7 +18,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -50,11 +50,33 @@ public class DocumentIndexer {
 
     private final AtomicReference<Long> currentDocId = new AtomicReference<>(null);
 
-    private final ExecutorService indexExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "doc-indexer");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * 向量化执行池：单线程。
+     *
+     * <p>队列容量给 16 而非无界——虽然上面的 {@code currentDocId} CAS
+     * 已保证同一时刻最多一个任务在跑（队列实际不会堆积），
+     * 但显式有界能让「CAS 万一失效」退化为快速失败而不是静默 OOM。</p>
+     */
+    private final ExecutorService indexExecutor =
+            com.devops.agent.infrastructure.concurrent.ManagedExecutors
+                    .forBestEffort("doc-indexer", 1, 16);
+
+    /**
+     * 优雅停机：给正在跑的向量化留出收尾时间
+     *
+     * <p>不做这件事，应用停止时正在向量化的文档会被硬中断，
+     * 其 {@code index_status} 停在 PENDING——下次启动后没有任何机制
+     * 会自动重试它，那篇文档就此<b>永远检索不到</b>，
+     * 而文档列表里它看起来完全正常。</p>
+     *
+     * <p>10 秒比其它池长：单次向量化要调用外部 Embedding API，
+     * 耗时本就以秒计，给太短等于没等。</p>
+     */
+    @PreDestroy
+    public void shutdown() {
+        com.devops.agent.infrastructure.concurrent.ManagedExecutors
+                .shutdownGracefully(indexExecutor, "doc-indexer", 10);
+    }
 
     public DocumentIndexer(ParentChildDocumentSplitter splitter,
                           EmbeddingModel embeddingModel,

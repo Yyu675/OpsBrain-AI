@@ -3,7 +3,9 @@ package com.devops.agent.common.audit;
 import cn.dev33.satoken.stp.StpUtil;
 import com.devops.agent.common.context.TraceContext;
 import com.devops.agent.common.web.ClientIpResolver;
+import com.devops.agent.infrastructure.concurrent.ManagedExecutors;
 import com.devops.agent.infrastructure.persistence.repo.OperationAuditRepository;
+import jakarta.annotation.PreDestroy;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +16,6 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.time.LocalDateTime;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * 通用写操作审计拦截器（C5）。
@@ -69,16 +70,41 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
      * 审计写入线程池：2 线程 + 有界队列 500 + CallerRuns。
      * <p>队列满时由调用线程直接执行（同步写），形成天然背压，
      * 既不丢审计也不会无限堆积。</p>
+     * <p>
+     * 用 {@link ManagedExecutors#forCriticalWrites} 而非手写：该工厂已内置
+     * 有界队列、可读线程名与未捕获异常处理，行为与原手写版本一致
+     * （2 线程 / 队列 500 / CallerRuns / daemon）。
+     * </p>
+     * <p>
+     * 线程是 daemon（不阻塞 JVM 退出），这意味着<b>关闭时队列里排队的
+     * 审计记录会随进程一起消失</b>——故必须配 {@link #shutdown()}。
+     * </p>
      */
-    private final ExecutorService auditExecutor = new ThreadPoolExecutor(
-            2, 2, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
-            new java.util.concurrent.LinkedBlockingQueue<>(500),
-            r -> {
-                Thread t = new Thread(r, "operation-audit");
-                t.setDaemon(true);
-                return t;
-            },
-            new ThreadPoolExecutor.CallerRunsPolicy());
+    private final ExecutorService auditExecutor =
+            ManagedExecutors.forCriticalWrites("operation-audit", 2, 500);
+
+    /**
+     * 优雅关闭：给在途审计留出落库时间
+     *
+     * <h3>不做这件事会丢什么</h3>
+     * 线程池是 daemon（不阻塞 JVM 退出）+ 有界队列 500。
+     * 应用停止时若不等待，队列里<b>尚未写库的审计记录会随进程直接消失</b>，
+     * 而且没有任何痕迹——审计的用途恰恰是「事后追溯谁在什么时候做了什么」，
+     * 偏偏最需要它的场景（发布、重启、故障处置）正是关闭发生的时刻。
+     *
+     * <h3>为什么是 shutdown 而不是 shutdownNow</h3>
+     * {@code shutdownNow} 会丢弃队列中未开始的任务，与本方法的目的相反。
+     * 这里用 {@code shutdown()} 停止接单但把存量排完，再等 5 秒；
+     * 超时仍未排完才降级为 {@code shutdownNow}，并<b>如实记录丢了多少条</b>——
+     * 静默丢弃会让人以为审计是完整的，那比丢失本身更糟。
+     *
+     * <p>5 秒是权衡：审计单条是一次 INSERT，2 个线程排完 500 条通常远快于此；
+     * 而容器编排给的优雅停机窗口一般是 30 秒，占用 5 秒不影响其它组件收尾。</p>
+     */
+    @PreDestroy
+    public void shutdown() {
+        ManagedExecutors.shutdownGracefully(auditExecutor, "operation-audit", 5);
+    }
 
     public OperationAuditInterceptor(OperationAuditRepository repository,
                                      ClientIpResolver clientIpResolver) {
