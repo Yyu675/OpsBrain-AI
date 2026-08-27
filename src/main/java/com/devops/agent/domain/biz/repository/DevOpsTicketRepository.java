@@ -197,8 +197,8 @@ public class DevOpsTicketRepository {
                     + dir + ", create_time DESC";
         }
 
-        String column = sortBy.replaceAll("[^A-Za-z0-9_]", "");
-        if (column.isEmpty()) {
+        String column = SORTABLE_COLUMNS.get(sortBy);
+        if (column == null) {
             // 未在白名单内：降级为默认排序而非报错。
             // 前端新增可排序列但后端未同步时，列表仍可用（只是排序不生效），
             // 比整个列表 500 更可接受
