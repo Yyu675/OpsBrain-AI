@@ -16,27 +16,32 @@ import java.util.Map;
  * 启动期数据库 Schema 自检。
  *
  * <h3>解决什么问题</h3>
- * 本项目的迁移脚本靠人工按顺序执行（{@code sql/migration_vNN_*.sql}），
- * 没有 Flyway 之类的版本表来记录"执行到哪了"。于是存在一类很难查的故障：
- * <b>部署了新版 JAR 但漏执行了迁移</b>。
+ * 表结构由单一幂等脚本 {@code sql/init.sql} 定义，没有 Flyway 之类的
+ * 版本表来记录"执行到哪了"。于是存在一类很难查的故障：
+ * <b>部署了新版 JAR，但数据库还是旧结构</b>。
  *
- * <p>后果不对称，取决于漏的是哪一个：
+ * <p>最常见的触发方式是<b>挂了一个已存在的数据卷</b>：
+ * PostgreSQL 官方镜像的 {@code /docker-entrypoint-initdb.d} 只在
+ * <b>数据目录为空时</b>执行。也就是说升级时复用老卷，init.sql 根本不会跑，
+ * 新增的列就永远不会出现——而容器启动完全正常，没有任何报错。
+ *
+ * <p>后果不对称，取决于缺的是哪一项：
  * <ul>
- *   <li>漏 v24（知识可见性）→ 检索 SQL 引用不存在的 {@code visibility} 列，
+ *   <li>缺 {@code visibility}（知识可见性）→ 检索 SQL 引用不存在的列，
  *       <b>整个知识检索链路报错</b>。而 {@code DevOpsTools} 会把检索异常
  *       呈现为「知识库暂不可用」，排查者会去查向量库、查模型，
- *       很难想到是少跑了一个 ALTER TABLE；</li>
- *   <li>漏 v25（审计表）→ 审计写入失败但已被 catch，业务不受影响，
- *       只是<b>悄悄没有审计记录</b>——这在 L3/L4 阶段是合规问题。</li>
+ *       很难想到是数据库少了一列；</li>
+ *   <li>缺 {@code sys_operation_audit}（审计表）→ 审计写入失败但已被 catch，
+ *       业务不受影响，只是<b>悄悄没有审计记录</b>——这在 L3/L4 阶段是合规问题。</li>
  * </ul>
  *
  * <h3>为什么在 ApplicationReadyEvent 而不是启动时直接失败</h3>
  * 用 {@code @EventListener(ApplicationReadyEvent)} 而非 {@code @PostConstruct}：
  * 此时数据源已完全就绪，且即使检查本身出错也不会阻断启动。
  * <p>
- * 默认<b>只告警不阻断</b>（{@code fail-fast=false}）：开发环境常常只跑了
- * 部分迁移，直接拒绝启动会让人无法调试。生产建议开
- * {@code devops.schema.fail-fast=true}，让漏迁移在部署时就暴露，
+ * 默认<b>只告警不阻断</b>（{@code fail-fast=false}）：开发环境的库常常
+ * 是半旧状态，直接拒绝启动会让人无法调试。生产建议开
+ * {@code devops.schema.fail-fast=true}，让结构不一致在部署时就暴露，
  * 而不是等用户点了检索才发现。
  *
  * @author OpsBrain AI
@@ -54,7 +59,7 @@ public class SchemaGuard {
     private static final Map<String, List<String>> REQUIRED_COLUMNS = new LinkedHashMap<>();
 
     static {
-        // v24：知识可见性。缺失会让检索 SQL 直接报错
+        // 知识可见性（C1）。缺失会让检索 SQL 直接报错
         REQUIRED_COLUMNS.put("sys_knowledge_doc", List.of("visibility", "owner_dept"));
         REQUIRED_COLUMNS.put("sys_knowledge_chunk", List.of("visibility", "owner_dept"));
         REQUIRED_COLUMNS.put("sys_user", List.of("dept"));
@@ -114,7 +119,12 @@ public class SchemaGuard {
         }
 
         String detail = String.join("、", problems);
-        String hint = "请按序执行 sql/migration_v*.sql（缺 visibility 列会导致知识检索整体报错）";
+        // 提示要落到「怎么修」上：init.sql 是幂等的，可对已有库重复执行，
+        // 补齐缺失的表和列而不影响存量数据。
+        // 最常见成因是复用了旧数据卷——官方镜像只在数据目录为空时跑
+        // initdb 脚本，升级时挂老卷等于 init.sql 从未执行。
+        String hint = "请对该库重新执行 sql/init.sql（脚本幂等，可安全重复执行）"
+                + "；若是复用旧数据卷升级，这是预期内的一次性补齐";
 
         if (failFast) {
             throw new IllegalStateException(

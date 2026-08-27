@@ -711,7 +711,11 @@ src/main/resources/db/migration/
 现状：`docs/` 下 **60+ 个 markdown**，命名规则混乱（`01-project-governance/` 目录 与 `01-AI-Interview-QA-Manual.md` 文件同级同号；`02-architecture-design/` 与 `02-LawFirm-AI-Enhancement-Plan.md`；根目录还散落 6 个中文名报告）。而且有 `docs/文档状态清单.md` 说明你自己也意识到了。
 
 **建议**：
-1. 根目录 6 个中文报告（`工单模块*.md`、`前后端联调测试指南.md`）→ 移入 `docs/06-implementation-progress/`；
+1. ~~根目录 6 个中文报告（`工单模块*.md`、`前后端联调测试指南.md`）→ 移入 `docs/06-implementation-progress/`~~
+   —— **2026-08-27 已处理**：核查后直接删除而非移动。它们是 2026-07 的一次性过程记录
+   （「已修复 6 个问题」「待规划/待执行」），引用的 `sql/ticket_extensions.sql` 与
+   `devops-platform-backend/` 路径均已不存在，且零文档引用。移进 docs/ 只是把过期内容
+   换个位置继续误导——正是本条第 4 点要防的事；
 2. 编号目录与编号文件不要混用，散落文件归入对应目录；
 3. `docs/README.md` 做导航索引（README 里那个目录树已过时——它写的是 `/home/user/` 下只有 4 个 docs 子目录，实际有 7 个）；
 4. **归档已完成的方案文档**，避免 AI 读到过期方案照着实现。

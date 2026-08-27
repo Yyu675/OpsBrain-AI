@@ -41,6 +41,10 @@ build/
 devops-platform-frontend/node_modules/
 devops-platform-frontend/dist/
 devops-platform-frontend/dist-ssr/
+# 测试覆盖率报告：每次 `npm run test:coverage` 都会重新生成的产物。
+# 此前 43 个 HTML 文件（852KB）被提交进版本库——它们随每次测试变动，
+# 会让 diff 里塞满与代码无关的噪音，review 时真正的改动被淹没。
+devops-platform-frontend/coverage/
 
 ### 日志与运行期产物 ###
 log/

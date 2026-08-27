@@ -31,8 +31,17 @@ CREATE TABLE IF NOT EXISTS sys_knowledge_chunk (
     expired_at       TIMESTAMP,                               -- 过期时间，NULL=永不过期
     status           VARCHAR(16) DEFAULT 'ACTIVE'  NOT NULL,  -- ACTIVE/DEPRECATED/ARCHIVED
     knowledge_source VARCHAR(32) DEFAULT 'UNKNOWN' NOT NULL,  -- OFFICIAL/SOP/TICKET/BLOG/UNKNOWN
+    -- C1 可见性（冗余自 sys_knowledge_doc，供检索 SQL 免 JOIN 过滤）。
+    -- 为什么冗余：检索走 HNSW 向量索引，若权限字段只在 doc 表，
+    -- 检索 SQL 必须 JOIN，而带 JOIN 的 ORDER BY embedding <=> ? 会让 PG
+    -- 放弃 HNSW 走全表扫描——几十万切片下从毫秒退化到秒级。
+    visibility       VARCHAR(16) DEFAULT 'PUBLIC'  NOT NULL,  -- PUBLIC/INTERNAL/RESTRICTED
+    owner_dept       VARCHAR(64),                             -- RESTRICTED 时的归属部门
     create_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    update_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    update_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- 取值约束：防止应用层写入拼写错误的档位（如 'Public'/'PRIVATE'），
+    -- 那会让该切片在所有权限比较中落到未知分支，行为不可预测
+    CONSTRAINT ck_chunk_visibility CHECK (visibility IN ('PUBLIC', 'INTERNAL', 'RESTRICTED'))
 );
 CREATE INDEX IF NOT EXISTS idx_chunk_doc_id       ON sys_knowledge_chunk (doc_id);
 CREATE INDEX IF NOT EXISTS idx_chunk_content_hash ON sys_knowledge_chunk (content_hash);
@@ -56,6 +65,14 @@ CREATE INDEX IF NOT EXISTS idx_chunk_effective_expired
     ON sys_knowledge_chunk (effective_at, expired_at);
 CREATE INDEX IF NOT EXISTS idx_chunk_source
     ON sys_knowledge_chunk (knowledge_source);
+
+-- C1 权限过滤索引：检索热路径的过滤条件是 (status, visibility)
+CREATE INDEX IF NOT EXISTS idx_chunk_status_visibility
+    ON sys_knowledge_chunk (status, visibility);
+-- 部分索引只覆盖受限切片，体积远小于全表索引（绝大多数是 PUBLIC）
+CREATE INDEX IF NOT EXISTS idx_chunk_owner_dept
+    ON sys_knowledge_chunk (owner_dept)
+    WHERE visibility = 'RESTRICTED';
 
 -- P2-21: content_tsv 全文检索触发器
 -- 此前 content_tsv 列存在但无触发器填充，始终为 NULL，
@@ -335,8 +352,17 @@ CREATE TABLE IF NOT EXISTS sys_knowledge_doc (
     -- B-2 来源回链：由工单沉淀的文档反查源工单（L1.5 复盘知识沉淀）
     source_ticket_id BIGINT,                      -- 源工单 ID，非工单沉淀时为 NULL
     source_type      VARCHAR(32),                 -- 来源类型：TICKET/MANUAL/IMPORT 等
+    -- C1 可见性三档，越严格数值越大：
+    --   PUBLIC     全员可见（默认，兼容存量数据）
+    --   INTERNAL   登录用户可见
+    --   RESTRICTED 仅 owner_dept 内成员 + ADMIN 可见
+    -- 默认 PUBLIC 是刻意的向后兼容：若默认 RESTRICTED，升级后所有历史文档
+    -- 对所有人不可见，知识库瞬间「清空」，比权限过宽更像事故。
+    visibility       VARCHAR(16)  DEFAULT 'PUBLIC' NOT NULL,
+    owner_dept       VARCHAR(64),
     create_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    update_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    update_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_doc_visibility CHECK (visibility IN ('PUBLIC', 'INTERNAL', 'RESTRICTED'))
 );
 
 -- 来源回链索引：按源工单反查「此工单已沉淀为哪些知识」
@@ -352,6 +378,15 @@ CREATE INDEX IF NOT EXISTS idx_doc_index_status ON sys_knowledge_doc (index_stat
 CREATE INDEX IF NOT EXISTS idx_doc_simhash     ON sys_knowledge_doc (simhash);
 CREATE INDEX IF NOT EXISTS idx_doc_update_time ON sys_knowledge_doc (update_time DESC);
 CREATE INDEX IF NOT EXISTS idx_doc_title       ON sys_knowledge_doc (title);
+CREATE INDEX IF NOT EXISTS idx_doc_visibility  ON sys_knowledge_doc (visibility);
+
+-- 分类外键：category_id 指向 sys_knowledge_category。
+-- 建表时无法内联声明（sys_knowledge_category 在本表之后才创建），
+-- 故在分类表建好后用 DO 块补加，保持幂等。
+COMMENT ON COLUMN sys_knowledge_doc.visibility IS
+    'PUBLIC=全员可见 / INTERNAL=登录可见 / RESTRICTED=仅 owner_dept + ADMIN';
+COMMENT ON COLUMN sys_knowledge_chunk.visibility IS
+    '冗余自 sys_knowledge_doc，供检索 SQL 免 JOIN 过滤（保住 HNSW 索引）';
 
 -- ---------------------------------------------------------------------
 -- Table 10.1: sys_knowledge_category - 可独立维护的知识库目录分类
@@ -379,6 +414,27 @@ SELECT DISTINCT TRIM(d.category), 0
        SELECT 1 FROM sys_knowledge_category c
         WHERE LOWER(c.name) = LOWER(TRIM(d.category))
    );
+
+-- 回填文档的 category_id（把自由文本分类对应到分类表的行）
+UPDATE sys_knowledge_doc d
+   SET category_id = c.id
+  FROM sys_knowledge_category c
+ WHERE d.category_id IS NULL
+   AND d.category IS NOT NULL
+   AND LOWER(TRIM(d.category)) = LOWER(c.name);
+
+-- 文档 → 分类的外键。必须放在分类表创建之后，故用 DO 块补加。
+-- pg_constraint 判重使其可重复执行（ADD CONSTRAINT 无 IF NOT EXISTS 语法）。
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_knowledge_doc_category'
+    ) THEN
+        ALTER TABLE sys_knowledge_doc
+            ADD CONSTRAINT fk_knowledge_doc_category
+            FOREIGN KEY (category_id) REFERENCES sys_knowledge_category(id);
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- Table 11: sys_knowledge_doc_history - 历史版本（只存原文，不存向量）
@@ -427,6 +483,24 @@ CREATE TABLE IF NOT EXISTS sys_knowledge_tag (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_knowledge_tag_normalized
     ON sys_knowledge_tag (normalized_name);
+
+-- 兼容旧数据：把文档上已有的自由文本标签收进标签字典。
+-- 与上面分类的回填对称——升级前打在文档上的标签若不入字典，
+-- 标签管理页会看不到它们，用户会以为标签「丢了」而重新建一遍，
+-- 造成同义标签并存（"K8s" 与 "k8s"）。
+-- 按 LOWER(TRIM()) 分组归一，取字典序最小的原始写法作展示名。
+INSERT INTO sys_knowledge_tag (name, normalized_name)
+SELECT s.name, s.normalized_name
+  FROM (
+        SELECT MIN(TRIM(tag)) AS name, LOWER(TRIM(tag)) AS normalized_name
+          FROM sys_knowledge_doc_tag
+         WHERE TRIM(tag) <> ''
+         GROUP BY LOWER(TRIM(tag))
+       ) s
+ WHERE NOT EXISTS (
+       SELECT 1 FROM sys_knowledge_tag k
+        WHERE k.normalized_name = s.normalized_name
+   );
 
 -- ---------------------------------------------------------------------
 -- Table 13: sys_alert - 告警实体（L2 实时监测）
@@ -607,6 +681,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     password      VARCHAR(100) NOT NULL,                        -- BCrypt 哈希
     display_name  VARCHAR(64),
     role          VARCHAR(32)  NOT NULL DEFAULT 'OPS',          -- ADMIN/OPS
+    dept          VARCHAR(64),                                  -- C1 RESTRICTED 文档的可见性判定依据
     status        VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE',       -- ACTIVE/DISABLED
     last_login_at TIMESTAMP,
     create_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,

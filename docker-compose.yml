@@ -67,9 +67,7 @@ services:
       # 首次启动自动建表（仅在数据目录为空时运行，已有数据的卷不会被重复初始化）。
       #
       # 只挂一个显式脚本，不挂整个 sql/ 目录：
-      #   - sql/ 里有 mock_data.sql，整目录挂载会把演示数据灌进生产库；
-      #   - initdb 按文件名字母序执行，init.sql 排在 migration_* 之前
-      #     只是 'i'<'m' 的巧合，不是保证。顺序必须显式写死。
+      # sql/ 里有 mock_data.sql，整目录挂载会把演示数据灌进生产库。
       - ./scripts/docker-initdb.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
       - ./sql:/opt/opsbrain-sql:ro
     healthcheck:
