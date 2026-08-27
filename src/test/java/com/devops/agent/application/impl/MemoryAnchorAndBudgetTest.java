@@ -137,6 +137,73 @@ class MemoryAnchorAndBudgetTest {
     }
 
     // ==================================================================
+    // 主链路接线（防「拼装方法写好了却没接上」）
+    // ==================================================================
+
+    @Nested
+    @DisplayName("主链路接线")
+    class Wiring {
+
+        private static final java.nio.file.Path IMPL = java.nio.file.Path.of(
+                "src/main/java/com/devops/agent/application/impl/DevOpsAgentServiceImpl.java");
+
+        /**
+         * 这条用例补的是一个真实盲区。
+         *
+         * <p>注入验证时把 {@code engine.chat(sessionId, promptWithMemory)} 改回
+         * {@code engine.chat(sessionId, query)}——也就是本次修复的缺陷本身——
+         * 上面那些锚点拼装用例<b>全部照常通过</b>：它们只测了拼装函数，
+         * 没人验证拼装结果有没有被真正用出去。</p>
+         *
+         * <p>而「函数写好了却没接上主链路」正是这两个缺陷的共同形态
+         * （预算裁剪结果被丢弃、温记忆加载后没送进模型）。
+         * 只测纯函数会让同样的错误再犯一次而测试全绿。</p>
+         *
+         * <p>用源码断言而非行为断言，是因为要真跑到 {@code engine.chat}
+         * 需要装配 17 个依赖 + SSE 上下文，成本远高于收益；
+         * 而这条契约的本质就是「调用点必须传拼装后的值」。</p>
+         */
+        /** 读取源码并剔除注释行——注释里常有「反例字面量」，会让断言恒假 */
+        private String codeLinesOf(java.nio.file.Path p) {
+            try {
+                return java.nio.file.Files.readAllLines(p, java.nio.charset.StandardCharsets.UTF_8)
+                        .stream()
+                        .map(String::trim)
+                        .filter(l -> !l.startsWith("//") && !l.startsWith("*") && !l.startsWith("/*"))
+                        .collect(java.util.stream.Collectors.joining("\n"));
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException("读取源码失败: " + p, e);
+            }
+        }
+
+        @Test
+        @DisplayName("engine.chat 必须传入拼装了记忆锚点的提示词，而不是原始 query")
+        void enginePromptCarriesMemoryAnchor() {
+            // 只看代码行：注释里为了说明「此前是怎么错的」正好写了
+            // engine.chat(sessionId, query) 这个字样，
+            // 不剔除注释会让这条断言恒假（本地预跑时已实测撞到）
+            String code = codeLinesOf(IMPL);
+
+            assertThat(code)
+                    .as("温记忆锚点必须真正送进模型，否则三层记忆的温层在读取侧空转")
+                    .contains("engine.chat(sessionId, promptWithMemory)");
+            assertThat(code)
+                    .as("不得退回只传原始 query 的写法")
+                    .doesNotContain("engine.chat(sessionId, query)");
+        }
+
+        @Test
+        @DisplayName("预算裁剪结果必须被取用，而不是只看 isWithinBudget")
+        void budgetTrimResultIsConsumed() {
+            // 同源盲区：allocate() 算得再准，主链路不取 includedHistory
+            // 就等于没算。此前全仓 grep 该 getter 零调用点
+            assertThat(codeLinesOf(IMPL))
+                    .as("裁剪结果必须被消费，否则 ContextBudgetManager 空转")
+                    .contains("budgetCheck.getIncludedHistory()");
+        }
+    }
+
+    // ==================================================================
     // 预算裁剪
     // ==================================================================
 
