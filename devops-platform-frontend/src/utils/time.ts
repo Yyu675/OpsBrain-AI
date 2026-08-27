@@ -18,7 +18,7 @@ const DAY = 24 * HOUR
  * 服务器固定 Asia/Shanghai（见 docker-compose 的 TZ 与 Dockerfile），
  * 故把无时区的字符串按 +08:00 解释。
  */
-const SERVER_UTC_OFFSET = '+09:00'
+const SERVER_UTC_OFFSET = '+08:00'
 
 /** 服务器时区标识，与 SERVER_UTC_OFFSET 表达同一事实（供 Intl API 使用） */
 const SERVER_TIME_ZONE = 'Asia/Shanghai'
