@@ -146,14 +146,16 @@ public class KnowledgeTagRepository {
                    SET name = ?, normalized_name = ?, description = ?, color = ?, update_time = CURRENT_TIMESTAMP
                  WHERE id = ? AND status = 'ACTIVE'
                 """, value, value.toLowerCase(Locale.ROOT), description, color, id);
+            if (rows == 0) {
+                // 不能继续：下一条 UPDATE 无状态守卫，会把文档上的标签名
+                // 改成一个标签表里已不存在的值，造成按标签检索为空
+                throw new IllegalStateException("标签不存在或已被删除/合并，重命名未生效");
+            }
             jdbcTemplate.update("""
                 UPDATE sys_knowledge_doc_tag
                    SET tag = ?
                  WHERE LOWER(tag) = ?
                 """, value, existing.name().toLowerCase(Locale.ROOT));
-            if (rows == 0) {
-                throw new IllegalStateException("标签不存在或已被删除/合并，重命名未生效");
-            }
             return findById(id);
         } catch (DataIntegrityViolationException e) {
             throw new IllegalArgumentException("标签名称已存在");
