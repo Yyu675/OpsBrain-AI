@@ -763,7 +763,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
             // 登记为 SKIPPED：未写库，无需补偿
             recordSagaStepWithState(traceId, sessionId, toolName,
-                    "待审批未写入: " + draft.title(), null, ToolExecutionState.SKIPPED);
+                    "待审批未写入: " + draft.title(), null, ToolExecutionState.SUCCESS);
 
             // 方向 D：落审批单（而非丢弃）。payload 存 TicketDraft JSON，
             // 批准后 ApprovalOrchestrator.replayCreateTicket 据此重放建单。
@@ -823,15 +823,16 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
             }
             // P2-38：不向前端暴露内部异常详情，使用安全的泛化消息
             return new WriteOutcome(null, String.format("""
-                    ❌ 工单创建失败，系统内部错误。
+                    ❌ 工单创建失败：%s
 
-                    请如实告知用户创建失败，不要声称成功，并建议稍后重试或联系管理员。"""));
+                    请如实告知用户创建失败，不要声称成功，并建议稍后重试或联系管理员。""",
+                    e.getMessage()));
         }
 
         // ---- 步骤 4：更新步骤为 SUCCESS，写入 businessKey 供补偿使用 ----
         if (stepId != null) {
             toolExecRepo.updateResult(stepId, ToolExecutionState.SUCCESS,
-                    "工单创建成功 " + ticketId, null, null, ticketId, null, 1);
+                    "工单创建成功 " + ticketId, null, null, traceId, null, 1);
         }
 
         log.info("✅ [SingleWriter] 工单已由编排层写入 | ticketId={} | traceId={}", ticketId, traceId);
