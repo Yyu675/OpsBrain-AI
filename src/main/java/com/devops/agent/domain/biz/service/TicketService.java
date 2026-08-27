@@ -806,7 +806,7 @@ public class TicketService {
 
         TicketAction action = new TicketAction();
         action.setTicketId(ticketId);
-        action.setActionType(actionType != null ? actionType.trim() : ACTION_INVESTIGATE);
+        action.setActionType(actionType != null ? actionType.trim().toUpperCase() : ACTION_INVESTIGATE);
         action.setSummary(summary.trim());
         action.setDetail(detail);
         action.setOperator((operator == null || operator.isBlank()) ? "未知" : operator.trim());
@@ -1156,14 +1156,13 @@ public class TicketService {
     @Transactional(rollbackFor = Exception.class)
     public TicketReply addReply(String ticketId, String role, String author,
                                 String authorColor, String content) {
+        DevOpsTicket ticket = ticketRepository.findById(ticketId);
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException("回复内容不能为空");
         }
         if (content.length() > 5000) {
             throw new IllegalArgumentException("回复内容过长（上限 5000 字）");
         }
-
-        DevOpsTicket ticket = ticketRepository.findById(ticketId);
         if (ticket == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
