@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 import com.devops.agent.domain.notify.NotifyMessage;
 
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.*;
 
 /**
@@ -503,14 +503,45 @@ public class AlertService {
     }
 
     /**
-     * OffsetDateTime → LocalDateTime（UTC）
+     * OffsetDateTime → LocalDateTime（<b>系统默认时区</b>）
+     *
+     * <h3>为什么不是 UTC</h3>
      * <p>
-     * Alertmanager 下发 RFC3339 时间（含时区），统一转为 UTC 存储。
-     * null 安全：入参为 null 时返回当前时间。
+     * 此前这里写的是 {@code atZoneSameInstant(ZoneOffset.UTC)}，把 Alertmanager
+     * 下发的 RFC3339 时间转成 UTC 墙钟再存。但库里 {@code sys_alert.first_occurred_at}
+     * 是无时区的 {@code TIMESTAMP}，而<b>同一张表的其它时间列全部是本地时间</b>——
+     * {@code last_occurred_at}/{@code create_time} 由 {@code LocalDateTime.now()} 写入，
+     * 数据库默认值是 {@code CURRENT_TIMESTAMP}，容器 TZ 固定 {@code Asia/Shanghai}
+     * （见 Dockerfile 与 docker-compose）。
      * </p>
+     * <p>
+     * 一列存 UTC、邻列存 +08:00，两者在同一行里相差 8 小时，而<b>没有任何字段
+     * 记录这个差异</b>。所有下游都无从分辨，只能一律按本地时间解释。
+     * </p>
+     *
+     * <h3>用户可见后果</h3>
+     * <ul>
+     *   <li>告警详情页的「持续时长」把 {@code firstOccurredAt} 与
+     *       {@code resolvedAt}/当前时间相减，前者晚 8 小时 →
+     *       <b>刚触发的告警显示已持续 8 小时</b>；</li>
+     *   <li>处置时间线上「首次发生」排在「已恢复」之后，顺序倒置；</li>
+     *   <li>前端 {@code parseDate} 把无时区字符串统一按 {@code +08:00} 解释
+     *       （{@code utils/time.ts} 已明确注释「服务器固定 Asia/Shanghai」），
+     *       所以列表里的相对时间会显示成「8 小时前」而非「刚刚」。</li>
+     * </ul>
+     *
+     * <h3>为什么用系统默认时区而非硬编码 +08:00</h3>
+     * <p>
+     * 目标是「与同表其它列口径一致」，而那些列用的是
+     * {@code LocalDateTime.now()} 与数据库 {@code CURRENT_TIMESTAMP}——
+     * 两者都跟随部署环境的时区。硬编码 +08:00 会在部署到其它时区时
+     * 重新制造同一个偏差，而且更隐蔽（本地跑测试正常、线上错 N 小时）。
+     * </p>
+     *
+     * <p>null 安全：入参为 null 时返回当前时间——同样是本地时区，口径一致。</p>
      */
     private LocalDateTime toLocalDateTime(OffsetDateTime odt) {
         if (odt == null) return LocalDateTime.now();
-        return odt.atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        return odt.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime();
     }
 }
