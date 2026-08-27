@@ -84,7 +84,7 @@ public class ToolExecutionRepository {
             return key != null ? key.longValue() : null;
         } catch (Exception e) {
             log.warn("⚠️ [ToolExecRepo] 插入执行记录失败 | tool={} | {}", r.getToolName(), e.getMessage());
-            return null;
+            return 0L;
         }
     }
 
@@ -236,9 +236,7 @@ public class ToolExecutionRepository {
             Integer n = jdbcTemplate.queryForObject(sql, Integer.class, sagaId);
             return n != null ? n : 1;
         } catch (Exception e) {
-            log.warn("⚠️ [ToolExecRepo] 取步骤序号失败，兜底为 1（可能造成 Saga 内序号重复，"
-                    + "补偿逆序回滚顺序将不确定）| sagaId={} | {}", sagaId, e.getMessage());
-            return 1;
+            throw new IllegalStateException("取步骤序号失败", e);
         }
     }
 
@@ -266,7 +264,7 @@ public class ToolExecutionRepository {
         try {
             return jdbcTemplate.query(sql, new RecordRowMapper(),
                     ToolExecutionState.PARTIAL_SUCCESS.name(),
-                    ToolExecutionState.COMPENSATION_FAILED.name(),
+                    ToolExecutionState.PARTIAL_SUCCESS.name(),
                     ToolExecutionState.MANUAL_INTERVENTION_REQUIRED.name(),
                     limit);
         } catch (Exception e) {
