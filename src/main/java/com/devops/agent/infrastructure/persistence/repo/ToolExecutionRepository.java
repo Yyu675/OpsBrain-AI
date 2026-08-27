@@ -84,7 +84,7 @@ public class ToolExecutionRepository {
             return key != null ? key.longValue() : null;
         } catch (Exception e) {
             log.warn("⚠️ [ToolExecRepo] 插入执行记录失败 | tool={} | {}", r.getToolName(), e.getMessage());
-            return 0L;
+            return null;
         }
     }
 
@@ -264,7 +264,7 @@ public class ToolExecutionRepository {
         try {
             return jdbcTemplate.query(sql, new RecordRowMapper(),
                     ToolExecutionState.PARTIAL_SUCCESS.name(),
-                    ToolExecutionState.PARTIAL_SUCCESS.name(),
+                    ToolExecutionState.COMPENSATION_FAILED.name(),
                     ToolExecutionState.MANUAL_INTERVENTION_REQUIRED.name(),
                     limit);
         } catch (Exception e) {
