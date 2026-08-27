@@ -542,6 +542,6 @@ public class AlertService {
      */
     private LocalDateTime toLocalDateTime(OffsetDateTime odt) {
         if (odt == null) return LocalDateTime.now();
-        return odt.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime();
+        return odt.atZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime();
     }
 }
