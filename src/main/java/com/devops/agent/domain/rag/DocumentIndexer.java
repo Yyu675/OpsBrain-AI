@@ -58,7 +58,8 @@ public class DocumentIndexer {
      * 但显式有界能让「CAS 万一失效」退化为快速失败而不是静默 OOM。</p>
      */
     private final ExecutorService indexExecutor =
-            java.util.concurrent.Executors.newSingleThreadExecutor();
+            com.devops.agent.infrastructure.concurrent.ManagedExecutors
+                    .forBestEffort("doc-indexer", 1, 16);
 
     /**
      * 优雅停机：给正在跑的向量化留出收尾时间

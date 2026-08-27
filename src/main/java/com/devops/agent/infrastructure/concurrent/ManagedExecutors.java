@@ -71,7 +71,7 @@ public final class ManagedExecutors {
      * <p>用于审计等「丢失即证据缺失」的场景。</p>
      */
     public static ExecutorService forCriticalWrites(String name, int threads, int queueCapacity) {
-        return build(name, threads, queueCapacity, new ThreadPoolExecutor.DiscardPolicy());
+        return build(name, threads, queueCapacity, new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     /**
