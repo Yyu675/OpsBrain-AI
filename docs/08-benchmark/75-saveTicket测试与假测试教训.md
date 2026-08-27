@@ -153,19 +153,75 @@ AssertionError: E2-优先级不归一化: OCCURS 2 TIMES - ambiguous
 
 ## 六、下一步推进建议
 
-### 优先级 1 —— 复核既有测试里的「聚合断言」
+### 优先级 1 —— 复核既有测试里的「聚合断言」 ✅ 本轮已完成
 
-本轮暴露的假测试大概率不止一处。建议扫一遍全仓测试中的
-`toMinutes()` / `toHours()` / `toFixed()` / `Math.round`，
-逐个判断被截断的精度里是否藏着要防的缺陷。
-这比再补几个新用例价值高——**一个假绿的测试比没有测试更危险**。
+扫描结论：**后端无同类隐患**（`Duration.between` / `toMinutes` / `toHours`
+在测试中的唯一出现处就是本轮修的那条）。前端 3 处命中均属正常：
 
-### 优先级 2 —— 基线剩余 5 条「确属缺口」
+- `Dashboard.render.smoke.test.ts` —— 只是注释里提到 `toFixed`；
+- `Home.render.smoke.test.ts` —— 已刻意锁住 `40.55.toFixed(1) === '40.5'` 的实际行为；
+- `time.test.ts:211` 的 `Math.round(... / 3600_000)` —— 它防的是
+  **8 小时级**偏差，取整到小时不会掩盖该量级的缺陷，判定为合理。
 
-1. `KnowledgeDocService.moveCategory` / `renameCategoryDocuments`
-   —— 影响知识库树结构与检索过滤；
+### 优先级 2 —— 基线剩余「确属缺口」
+
+1. ~~`KnowledgeDocService.moveCategory` / `renameCategoryDocuments`~~
+   —— ✅ 本轮已补（10 例，见下方补记）；
 2. `TicketAiAnalysisService.recordFeedback` —— 模型质量评估的数据来源；
 3. `AgentMemoryManager.recordUserTurn` / `recordCompletedTurn` —— 三层记忆写入。
+
+---
+
+## 七、补记：同轮完成的分类移动/重命名测试
+
+新增 `KnowledgeCategoryMoveRenameTest`（10 例）。基线 21 → **19**，审计命中 19 → **17**。
+
+### 守的是「分类」这个检索过滤维度
+
+`category` / `categoryId` 不只是界面上的一棵树，它们是知识检索的过滤条件。
+这两个方法出错的后果是**文档还在、但查不到**。
+
+重点锁住 `moveCategory` 的**乐观锁双重检查**：先比对 `expectedVersion`，
+再看 UPDATE 影响行数。看似重复，实则拦的是不同时刻——读与写之间存在时间窗，
+别人在窗口里改了文档，前一道会放行，只有后一道能拦住。
+
+### 连续两次夹具缺失，暴露一个写测试的盲区
+
+CI 先后报出「文档不存在: 1」与「分类不存在」，都不是产品缺陷，
+而是我漏打桩：
+
+- `renameCategoryDocuments` → `update()` → `docRepo.findById()`；
+- `update()` → `resolveCategory()` → `categoryRepo.findById()`。
+
+共同原因：**`renameCategoryDocuments` 自身只有 4 行，但它委托给 `update()`，
+而 `update()` 有一整条前置链路。**
+
+> 给「薄封装 + 厚委托」的方法写测试时，要顺着**被委托方法**的依赖逐个打桩，
+> 不能只看被测方法本身用到什么。
+
+更麻烦的是报错信息（「文档不存在」）指向被测方法之外，
+很容易被误读成产品有问题。已把这个坑写进 `givenDocsInCategory` 的方法注释。
+
+### 又抓到一条自己写的假断言
+
+「按各文档自己的版本号更新」原先只断言 `update` 被调用 2 次——
+**实现里写死某个版本时照样调用 2 次**，这条用例抓不到它。
+改为用 `ArgumentCaptor` 捕获传给 `update` 的 `expectedVersion`，断言分别是 1 和 2。
+
+这与本文第三节的 SLA 是同一类问题：**断言若落不到「会被改错的那个值」上，
+用例就是假的。** 一轮之内连遇两次，说明这不是偶然疏忽，
+而是写测试时的系统性倾向——容易满足于「调用了/没调用」这类容易写的断言。
+
+### 注入验证 3/3
+
+| 注入项 | 检出信息 |
+|--------|---------|
+| F1 删除第二道乐观锁（UPDATE 零行不报错） | `Expecting code to raise a throwable` |
+| F2 移动前不归档快照 | `Wanted but not invoked: archive(<any>, "UPDATE", "张三", ...)` |
+| F3 批量重命名写死版本号 | `该记录已被他人修改（你基于第 1 版编辑，当前已是第 2 版）...：文档 2` |
+
+F3 的报错恰好印证了用例注释里预测的后果：第二篇文档 CAS 失败、整批中断，
+分类处于半更新状态。
 
 ### 优先级 3 —— 仍受阻于权限的两项
 
