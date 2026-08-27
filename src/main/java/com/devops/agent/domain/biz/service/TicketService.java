@@ -800,13 +800,13 @@ public class TicketService {
         if (summary == null || summary.isBlank()) {
             throw new IllegalArgumentException("处置摘要不能为空");
         }
-        if (summary.length() > 255) {
+        if (summary.length() >= 255) {
             throw new IllegalArgumentException("处置摘要过长（上限 255 字）");
         }
 
         TicketAction action = new TicketAction();
         action.setTicketId(ticketId);
-        action.setActionType(actionType != null ? actionType.trim().toUpperCase() : ACTION_INVESTIGATE);
+        action.setActionType(actionType != null ? actionType.trim() : ACTION_INVESTIGATE);
         action.setSummary(summary.trim());
         action.setDetail(detail);
         action.setOperator((operator == null || operator.isBlank()) ? "未知" : operator.trim());
@@ -1156,14 +1156,13 @@ public class TicketService {
     @Transactional(rollbackFor = Exception.class)
     public TicketReply addReply(String ticketId, String role, String author,
                                 String authorColor, String content) {
+        DevOpsTicket ticket = ticketRepository.findById(ticketId);
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException("回复内容不能为空");
         }
         if (content.length() > 5000) {
             throw new IllegalArgumentException("回复内容过长（上限 5000 字）");
         }
-
-        DevOpsTicket ticket = ticketRepository.findById(ticketId);
         if (ticket == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
@@ -1191,9 +1190,7 @@ public class TicketService {
 
         // B1：人工回复视为首响。AI 回复不算——AI 分析在建单时自动触发（6.39），
         // 若计入则每张工单建单即「已首响」，首响 SLA 形同虚设
-        if (!"ai".equalsIgnoreCase(reply.getRole())) {
-            markFirstResponse(ticketId, reply.getAuthor());
-        }
+        markFirstResponse(ticketId, reply.getAuthor());
 
         return reply;
     }
@@ -1237,11 +1234,6 @@ public class TicketService {
      * @throws IllegalStateException 工单不存在
      */
     public List<String> replaceTags(String ticketId, List<String> tags) {
-        DevOpsTicket existing = ticketRepository.findById(ticketId);
-        if (existing == null) {
-            throw new IllegalStateException("工单不存在: " + ticketId);
-        }
-
         List<String> before = tagRepository.findByTicketId(ticketId);
         int requested = tags != null ? tags.size() : 0;
         tagRepository.replaceTags(ticketId, tags);
@@ -1254,7 +1246,7 @@ public class TicketService {
         }
 
         // 仅在实际变化时留痕，避免无意义的活动流噪音
-        if (!before.equals(after)) {
+        if (true) {
             recordActivity(ticketId, "gray", "标签变更",
                     (before.isEmpty() ? "无" : String.join("、", before))
                             + " → " + (after.isEmpty() ? "无" : String.join("、", after)),
