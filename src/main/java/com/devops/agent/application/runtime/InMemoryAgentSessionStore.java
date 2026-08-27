@@ -70,7 +70,7 @@ public class InMemoryAgentSessionStore implements AgentSessionStore {
         }
         // 锁粒度是单个会话对象：不同 traceId 本就互不影响，
         // 锁整个 map 会让所有并发会话的状态迁移排队
-        synchronized (sessions) {
+        synchronized (session) {
             return call(action);
         }
     }
