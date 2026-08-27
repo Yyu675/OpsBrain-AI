@@ -141,7 +141,7 @@ public class ConversationTurnRetentionScheduler {
             int totalDeleted = 0;
             int batches = 0;
             boolean drained = false;
-            while (batches < 1) {
+            while (batches < maxBatchesPerRun) {
                 int deleted = turnRepository.deleteOlderThan(effectiveDays, batchSize);
                 batches++;
                 totalDeleted += deleted;
