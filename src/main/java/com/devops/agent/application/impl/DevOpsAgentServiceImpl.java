@@ -543,7 +543,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         // 这里以「记忆锚点」前缀的形式拼进 userMessage，而不是改接口签名：
         // LangChain4j 的 @SystemMessage 是编译期常量，无法按会话动态注入；
         // 拼进用户消息是侵入最小且对所有模型一致的做法。
-        TokenStream tokenStream = engine.chat(sessionId, query);
+        String promptWithMemory = buildPromptWithMemoryAnchor(query, keyFactsText);
+        TokenStream tokenStream = engine.chat(sessionId, promptWithMemory);
 
         // 状态：证据就绪（进入引擎，检索将在工具内完成）
         // P1-1：此处仍在 sessionExecutor 线程（streamAgent 由 handleStreamChat 同步调用），
