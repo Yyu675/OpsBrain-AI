@@ -61,6 +61,7 @@ class KnowledgeCategoryMoveRenameTest {
 
     private KnowledgeDocRepository docRepo;
     private KnowledgeDocHistoryRepository historyRepo;
+    private KnowledgeCategoryRepository categoryRepo;
     private KnowledgeDocService service;
 
     @BeforeEach
@@ -72,7 +73,7 @@ class KnowledgeCategoryMoveRenameTest {
         DocumentIndexer indexer = mock(DocumentIndexer.class);
         SemanticCacheService semanticCache = mock(SemanticCacheService.class);
         KnowledgeContentCleaner contentCleaner = mock(KnowledgeContentCleaner.class);
-        KnowledgeCategoryRepository categoryRepo = mock(KnowledgeCategoryRepository.class);
+        categoryRepo = mock(KnowledgeCategoryRepository.class);
         KnowledgeTagRepository tagCatalog = mock(KnowledgeTagRepository.class);
 
         service = new KnowledgeDocService(docRepo, historyRepo, tagRepo, fingerprint,
@@ -102,11 +103,17 @@ class KnowledgeCategoryMoveRenameTest {
      * 报错信息指向被测方法之外，很容易被误读成产品缺陷。
      * 实测踩过：CI 上就是两条 {@code 文档不存在: 1}。</p>
      */
-    private void givenDocsInCategory(Long categoryId, String categoryName, KnowledgeDoc... docs) {
+    private void givenDocsInCategory(Long categoryId, String categoryName,
+                                     String newName, KnowledgeDoc... docs) {
         when(docRepo.findByCategory(categoryId, categoryName)).thenReturn(List.of(docs));
         for (KnowledgeDoc d : docs) {
             when(docRepo.findById(d.getId())).thenReturn(d);
         }
+        // update() 里的 resolveCategory 会按 patch 的 categoryId 反查分类，
+        // 查不到就抛「分类不存在」。桩成返回新名字，与真实流程一致——
+        // 分类表先改名，再由本方法把文档上的冗余字段刷成同一个名字。
+        when(categoryRepo.findById(categoryId)).thenReturn(
+                new KnowledgeCategory(categoryId, null, newName, 0, 0L, null, null));
     }
 
     private KnowledgeDoc doc(Long id, int version, String category, Long categoryId) {
@@ -221,7 +228,7 @@ class KnowledgeCategoryMoveRenameTest {
         @Test
         @DisplayName("逐个更新该分类下的全部文档")
         void updatesEveryDocInCategory() {
-            givenDocsInCategory(10L, "旧名", doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L));
+            givenDocsInCategory(10L, "旧名", "新名", doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L));
 
             service.renameCategoryDocuments(10L, "旧名", "新名", "张三");
 
@@ -250,7 +257,7 @@ class KnowledgeCategoryMoveRenameTest {
             // 断言必须落到「传下去的版本号」上，只数调用次数是分辨不出来的：
             // 写死版本时照样调用两次。这里让 findById 返回各自版本，
             // 再验证 update 收到的 expectedVersion 分别是 1 和 2
-            givenDocsInCategory(10L, "旧名", doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L));
+            givenDocsInCategory(10L, "旧名", "新名", doc(1L, 1, "旧名", 10L), doc(2L, 2, "旧名", 10L));
 
             service.renameCategoryDocuments(10L, "旧名", "新名", "张三");
 
