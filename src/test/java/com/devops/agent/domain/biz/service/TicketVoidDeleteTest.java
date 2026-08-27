@@ -10,7 +10,6 @@ import com.devops.agent.domain.biz.repository.TicketReplyRepository;
 import com.devops.agent.domain.biz.repository.TicketTagRepository;
 import com.devops.agent.domain.notify.DingTalkNotifier;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -59,10 +58,6 @@ import static org.mockito.Mockito.when;
  * @author OpsBrain AI
  * @since 2026-08-26
  */
-@Disabled("临时隔离：本类进入 CI 后后端 job 失败，但失败详情取不到"
-        + "（annotations 只给出 exit code 1；surefire 报告与完整日志走 Azure blob，本沙箱不可达；"
-        + "本地无 Maven 亦无法复现）。先隔离恢复 CI 绿，再单独启用本类定位。"
-        + "恢复条件：拿到真实失败原因并修复后移除本注解。")
 @DisplayName("TicketService 作废与删除（Saga 补偿 / 物理删除）")
 class TicketVoidDeleteTest {
 

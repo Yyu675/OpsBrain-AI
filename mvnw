@@ -220,6 +220,30 @@ exec_maven() {
               fi
             fi
           done
+      # ── 编译错误专用通道（2026-08-26 新增）────────────────────────
+      # 编译失败时**不产生任何 surefire 报告**，上面那段 [ERROR] 概览
+      # 又因 _has_reports=0 走了注解通道、但 Maven 的编译错误摘要行
+      # 往往是「Compilation failure」这类无信息量的标题，
+      # 真正的 `路径:[行,列] 错误描述` 在其后的缩进行里，不带 [ERROR] 前缀。
+      #
+      # 上一轮就卡在这里：annotations 只有一句 exit code 1，
+      # 而完整日志与 artifact 都走 Azure blob（沙箱防火墙不可达），
+      # 导致「知道挂了、不知道为什么」，只能先 @Disabled 隔离。
+      #
+      # 这里直接从日志里捞 javac 的诊断行升级为注解，配额优先给它——
+      # 编译不过时根本没有测试详情要抢配额。
+      if ! [ -d target/surefire-reports ] \
+         || [ -z "$(find target/surefire-reports -name '*.xml' -type f 2>/dev/null | head -1)" ]; then
+        echo "----- 编译诊断（无 surefire 报告，疑似编译失败）-----"
+        grep -aE "\.java:\[[0-9]+,[0-9]+\]|COMPILATION ERROR|symbol:|location:|required:|found:" "$_mvnw_log" \
+          | head -8 \
+          | while IFS= read -r _l; do
+              _c=$(printf '%s' "$_l" | sed 's/^\[ERROR\] *//; s/%/%25/g; s/\r/ /g' | cut -c1-300)
+              if [ -n "$_c" ]; then echo "::error::$_c"; fi
+            done
+        echo "----- 编译诊断结束 -----"
+      fi
+
       if [ -d target/surefire-reports ]; then
         echo "----- 测试失败详情（surefire）-----"
         # 只取失败/错误的报告，每个类最多 40 行，避免刷屏
