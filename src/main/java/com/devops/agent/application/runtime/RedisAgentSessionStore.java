@@ -256,7 +256,12 @@ public class RedisAgentSessionStore implements AgentSessionStore {
      */
     private void release(String lockKey, String token) {
         try {
-            redis.delete(lockKey);
+            org.springframework.data.redis.core.script.DefaultRedisScript<Long> script =
+                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                            "if redis.call('get', KEYS[1]) == ARGV[1] "
+                                    + "then return redis.call('del', KEYS[1]) else return 0 end",
+                            Long.class);
+            redis.execute(script, List.of(lockKey), token);
         } catch (Exception e) {
             // 释放失败不抛出：动作已经执行完，抛出只会让调用方误以为失败。
             // 锁会在 LOCK_TTL 后自动过期，最坏是其它实例多等几秒
