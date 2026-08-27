@@ -188,7 +188,7 @@ public class KnowledgeTagRepository {
         // 文档改写一遍，等发现状态冲突时数据已经被动过了
         int rows = jdbcTemplate.update(
                 "UPDATE sys_knowledge_tag SET status = 'MERGED', update_time = CURRENT_TIMESTAMP "
-                        + "WHERE id = ? AND status = 'ACTIVE'", sourceId);
+                        + "WHERE id = ?", sourceId);
         if (rows == 0) {
             throw new IllegalStateException("源标签不存在或已被删除/合并，合并未执行");
         }
