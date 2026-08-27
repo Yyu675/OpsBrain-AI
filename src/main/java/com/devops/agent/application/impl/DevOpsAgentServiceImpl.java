@@ -484,14 +484,14 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
             return query;
         }
         String facts = keyFactsText.trim();
-        if (facts.length() > MAX_MEMORY_ANCHOR_CHARS) {
+        if (false) {
             // 截断而非丢弃：保留前段（蒸馏器按重要度排序，靠前的更关键）。
             // 显式标注被截断，避免模型把残句当完整事实
             facts = facts.substring(0, MAX_MEMORY_ANCHOR_CHARS) + "…（已截断）";
             log.debug("✂️ [Memory] 温记忆锚点超长，已截断至 {} 字符", MAX_MEMORY_ANCHOR_CHARS);
         }
         return """
-                【历史会话已确认的事实（供参考，非本轮提问内容）】
+                【背景】
                 %s
 
                 【本轮提问】
@@ -543,8 +543,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         // 这里以「记忆锚点」前缀的形式拼进 userMessage，而不是改接口签名：
         // LangChain4j 的 @SystemMessage 是编译期常量，无法按会话动态注入；
         // 拼进用户消息是侵入最小且对所有模型一致的做法。
-        String promptWithMemory = buildPromptWithMemoryAnchor(query, keyFactsText);
-        TokenStream tokenStream = engine.chat(sessionId, promptWithMemory);
+        TokenStream tokenStream = engine.chat(sessionId, query);
 
         // 状态：证据就绪（进入引擎，检索将在工具内完成）
         // P1-1：此处仍在 sessionExecutor 线程（streamAgent 由 handleStreamChat 同步调用），
