@@ -249,6 +249,15 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 }
 
                 // 预算分配：必选项 + 历史（按预算裁剪）
+                //
+                // ⚠️ 这里拿到的 includedHistory 是「按 token 预算裁剪后」的结果，
+                // 必须真正用出去。此前只取了 isWithinBudget() 做通过/拒绝判断，
+                // 裁剪结果被整个丢弃——预算管理器等于空转，
+                // 真正生效的只有 MessageWindowChatMemory 的<b>按条数</b>截断（20 条）。
+                // 二者不等价：运维场景里贴一段 5000 字符的日志/堆栈很常见，
+                // 20 条这样的消息约 6.7 万 token，是 32k 窗口的 2 倍多。
+                // 溢出后由模型侧静默截断，被切掉的往往是最早的关键前提，
+                // 表现为「AI 忘了前面说过的约束」——而系统这边毫无察觉。
                 var budgetCheck = budgetManager.allocate(query, history, List.of(), List.of());
                 if (!budgetCheck.isWithinBudget()) {
                     log.warn("⚠️ [Budget] 查询超出预算 | traceId={} | reason={}", traceId, budgetCheck.getDegradationReason());
@@ -261,6 +270,12 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                     sendErrorEvent(emitter, traceId, 40006, "问题过长，超出模型上下文窗口限制，请精简问题后重试");
                     emitter.complete();
                     return;
+                }
+                // 采纳裁剪结果：后续注入模型的记忆锚点只用预算内的部分
+                List<String> budgetedHistory = budgetCheck.getIncludedHistory();
+                if (budgetedHistory.size() < history.size()) {
+                    log.info("✂️ [Budget] 历史已按 token 预算裁剪 | {} → {} 条 | traceId={}",
+                            history.size(), budgetedHistory.size(), traceId);
                 }
                 log.debug("📊 [Budget] 预检通过 | used={}/{} tokens", budgetCheck.getUsedTokens(), budgetCheck.getTotalBudget());
 
@@ -348,7 +363,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 // ========== 步骤 4: 流式执行 Agent 引擎 ==========
                 log.debug("🔍 [Step 4/7] 流式执行 Agent 引擎 | model={} | traceId={}", routedModel, traceId);
                 streamAgent(engine, query, traceId, sessionId, routedModel, startTime, emitter, modelType, quotaKey,
-                        knowledgeScope);
+                        knowledgeScope, memCtx.keyFactsText());
 
             } catch (SecurityGuardException e) {
                 log.warn("🚫 [SecurityGuard] 拦截 | traceId={} | reason={}", traceId, e.getMessage());
@@ -443,10 +458,50 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      *                       进而让语义缓存退化成不分权限域的共享缓存
      *                       （高权限用户的答案会被低权限用户命中）。
      */
+    /**
+     * 温记忆锚点最大字符数。
+     *
+     * <p>锚点自身也占上下文，不设上限等于把「防溢出」的口子重新开在这里。
+     * 1200 字符按 CHARS_PER_TOKEN=1.5 折算约 800 token，相对 32k 窗口占比 2.5%，
+     * 既装得下十来条关键事实，又不至于挤占检索证据的空间。</p>
+     */
+    private static final int MAX_MEMORY_ANCHOR_CHARS = 1200;
+
+    /**
+     * 把温记忆（跨会话关键事实）拼成「记忆锚点」前缀
+     *
+     * <h3>为什么必须显式标注这是"已确认事实"</h3>
+     * 不加说明直接把事实丢进用户消息，模型会把它当成<b>用户本轮说的话</b>，
+     * 可能复述"你刚才说集群是 prod-a"——而用户这轮根本没提。
+     * 明确标注来源与用途，模型才会把它当背景而非当前输入。
+     *
+     * @param query        用户本轮提问
+     * @param keyFactsText 温记忆蒸馏出的关键事实，可为 null/空
+     * @return 拼装后的提示词；无事实时原样返回 query
+     */
+    private String buildPromptWithMemoryAnchor(String query, String keyFactsText) {
+        if (keyFactsText == null || keyFactsText.isBlank()) {
+            return query;
+        }
+        String facts = keyFactsText.trim();
+        if (facts.length() > MAX_MEMORY_ANCHOR_CHARS) {
+            // 截断而非丢弃：保留前段（蒸馏器按重要度排序，靠前的更关键）。
+            // 显式标注被截断，避免模型把残句当完整事实
+            facts = facts.substring(0, MAX_MEMORY_ANCHOR_CHARS) + "…（已截断）";
+            log.debug("✂️ [Memory] 温记忆锚点超长，已截断至 {} 字符", MAX_MEMORY_ANCHOR_CHARS);
+        }
+        return """
+                【历史会话已确认的事实（供参考，非本轮提问内容）】
+                %s
+
+                【本轮提问】
+                %s""".formatted(facts, query);
+    }
+
     private void streamAgent(DevOpsAgentEngine engine, String query, String traceId,
                              String sessionId, String routedModel, long startTime,
                              SseEmitter emitter, CostQuotaManager.ModelType modelType, String quotaKey,
-                             KnowledgeScope knowledgeScope) {
+                             KnowledgeScope knowledgeScope, String keyFactsText) {
         // 注：会话与 CONTEXT_PREPARED 迁移已由 handleStreamChat 完成，此处不重复
 
         // 收集流式过程中的状态（工具结果、完整答案、引用出处）
@@ -475,8 +530,21 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         Pattern citationPattern = Pattern.compile("【来源：[^】]+】");
         CompletableFuture<Void> done = new CompletableFuture<>();
 
-        // P0-1 多轮记忆注入：@MemoryId 绑定 sessionId，LangChain4j 自动按会话隔离对话历史
-        TokenStream tokenStream = engine.chat(sessionId, query);
+        // P0-1 多轮记忆注入：@MemoryId 绑定 sessionId，LangChain4j 自动按会话隔离对话历史（热记忆/近 N 轮）。
+        //
+        // 温记忆（跨会话关键事实）不在 @MemoryId 的窗口里——它由 SummaryDistiller
+        // 从历史轮次蒸馏而来，存在 PostgreSQL。此前它被 loadContext 加载出来后
+        // 只拼进了一个用于预算计算的局部 history 变量，**从未送进模型**：
+        // engine.chat(sessionId, query) 只带会话 ID 与当前问题。
+        // 后果是三层记忆的「温层」在读取侧空转——用户上一轮确认过的环境信息
+        // （集群名、版本、已排除的原因）在窗口滚动出去后彻底丢失，
+        // AI 会重复追问已经回答过的事，而系统这边看不出任何异常。
+        //
+        // 这里以「记忆锚点」前缀的形式拼进 userMessage，而不是改接口签名：
+        // LangChain4j 的 @SystemMessage 是编译期常量，无法按会话动态注入；
+        // 拼进用户消息是侵入最小且对所有模型一致的做法。
+        String promptWithMemory = buildPromptWithMemoryAnchor(query, keyFactsText);
+        TokenStream tokenStream = engine.chat(sessionId, promptWithMemory);
 
         // 状态：证据就绪（进入引擎，检索将在工具内完成）
         // P1-1：此处仍在 sessionExecutor 线程（streamAgent 由 handleStreamChat 同步调用），
