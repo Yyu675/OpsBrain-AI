@@ -491,7 +491,7 @@ public class KnowledgeDocService {
             KnowledgeDoc patch = new KnowledgeDoc();
             patch.setCategory(newName);
             patch.setCategoryId(categoryId);
-            update(doc.getId(), patch, null, 1, operator, "分类重命名");
+            update(doc.getId(), patch, null, doc.getVersion(), operator, "分类重命名");
         }
     }
 
@@ -506,7 +506,14 @@ public class KnowledgeDocService {
                     "文档 " + docId, expectedVersion, existing.getVersion());
         }
         KnowledgeDoc snapshot = existing;
-        docRepo.updateCategory(docId, categoryName, categoryId, expectedVersion);
+        historyRepo.archive(snapshot, KnowledgeDocLifecycle.CHANGE_UPDATE, operator, "移动文档分类");
+        int rows = docRepo.updateCategory(docId, categoryName, categoryId, expectedVersion);
+        if (rows == 0) {
+            KnowledgeDoc latest = docRepo.findById(docId);
+            throw new com.devops.agent.common.exception.OptimisticLockException(
+                    "文档 " + docId, expectedVersion,
+                    latest == null ? null : latest.getVersion());
+        }
     }
 
     private void resolveCategory(KnowledgeDoc doc) {
