@@ -720,21 +720,27 @@ public class TicketService {
                 ticketId, who, reason.trim());
 
         // L2 钉钉通知（方向二）：升级上报是「需要更多人关注」的强信号，@所有人。
-        // 旁路——DingTalkNotifier 内部异步 + 失败仅 WARN，不影响升级主流程。
         // 只在升级这一个工单事件推送：普通状态流转有活动流+列表可见即可，
         // 群机器人 @所有人 不适合逐条状态变更（会刷屏）。
-        try {
-            String title = "⬆️ 工单升级 " + existing.getPriority() + " · " + existing.getTitle();
-            String md = "### " + title + "\n\n"
-                    + "- **工单**：" + ticketId + "\n"
-                    + "- **优先级**：" + existing.getPriority() + "\n"
-                    + "- **升级人**：" + who + "\n"
-                    + "- **升级原因**：" + reason.trim() + "\n"
-                    + "- **负责人**：" + (existing.getAssignee() != null ? existing.getAssignee() : "待分配") + "\n";
-            notifier.send(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md));
-        } catch (Exception e) {
-            log.warn("⚠️ [TicketService] 升级通知构造失败（已忽略）| ticketId={} | {}", ticketId, e.getMessage());
-        }
+        //
+        // ⚠️ 必须等事务提交后再发（sendAfterCommit）。
+        // Notifier.send 是<b>立即异步投递</b>，不等事务结束；而本方法带
+        // @Transactional(rollbackFor = Exception.class)，下面 findById
+        // 或提交阶段任何一步失败都会整体回滚。
+        // 若在事务内直接发，就会出现「群里通报工单已升级 P0，
+        // 库里却查无此次升级」——收到 @所有人 的人赶来处理，
+        // 打开工单发现状态没变，而这种不一致<b>没有任何报错</b>，
+        // 事后也无从复现。与 TicketAttachmentService 删对象存储是同一类问题，
+        // 沿用同一套 afterCommit 范式。
+        String title = "⬆️ 工单升级 " + existing.getPriority() + " · " + existing.getTitle();
+        String md = "### " + title + "\n\n"
+                + "- **工单**：" + ticketId + "\n"
+                + "- **优先级**：" + existing.getPriority() + "\n"
+                + "- **升级人**：" + who + "\n"
+                + "- **升级原因**：" + reason.trim() + "\n"
+                + "- **负责人**：" + (existing.getAssignee() != null ? existing.getAssignee() : "待分配") + "\n";
+        sendAfterCommit(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md), ticketId);
+
         return ticketRepository.findById(ticketId);
     }
 
@@ -1309,6 +1315,44 @@ public class TicketService {
                 ticketId, color, text, detail,
                 (userName == null || userName.isBlank()) ? "系统自动" : userName,
                 highlight));
+    }
+
+    /**
+     * 事务提交成功后再发通知；无事务上下文时立即发送
+     * <p>
+     * 通知一旦投递就<b>收不回来</b>，因此它必须在数据库那边板上钉钉之后才执行。
+     * 事务回滚时注册的回调不会触发，也就不会发出与库内状态矛盾的通知。
+     * </p>
+     * <p>
+     * 无事务上下文（被非事务方法直接调用）时退化为立即发送，
+     * 保持行为可预期，而不是静默什么都不做——后者会让通知在某些
+     * 调用路径上「无声消失」，比发早了更难查。
+     * </p>
+     */
+    private void sendAfterCommit(com.devops.agent.domain.notify.NotifyMessage msg, String ticketId) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager
+                .isSynchronizationActive()) {
+            silentSend(msg, ticketId);
+            return;
+        }
+        org.springframework.transaction.support.TransactionSynchronizationManager
+                .registerSynchronization(
+                        new org.springframework.transaction.support.TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                silentSend(msg, ticketId);
+                            }
+                        });
+    }
+
+    /** 发通知，任何异常只告警——通知是旁路，不得影响已提交的业务结果 */
+    private void silentSend(com.devops.agent.domain.notify.NotifyMessage msg, String ticketId) {
+        try {
+            notifier.send(msg);
+        } catch (Exception e) {
+            log.warn("⚠️ [TicketService] 升级通知发送失败（已忽略）| ticketId={} | {}",
+                    ticketId, e.getMessage());
+        }
     }
 
     /**
