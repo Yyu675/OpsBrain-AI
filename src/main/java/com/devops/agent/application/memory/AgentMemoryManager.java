@@ -251,7 +251,7 @@ public class AgentMemoryManager {
                             + " | sessionId={} | {}", sessionId, e.getMessage());
                 }
             }
-            int seq = 1;  // 注入：不再从原文表推导
+            int seq = turnRepo.nextTurnSeq(sessionId);
             turnRepo.append(sessionId, traceId, seq, userQuery, aiAnswer,
                     toolJson, tokens, costRmb, finalState);
         } catch (Exception e) {
