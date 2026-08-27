@@ -487,4 +487,104 @@ class KnowledgeDocServiceWriteTest {
                     .hasMessageContaining("文档不存在");
         }
     }
+
+    /**
+     * 补偿向量化的批量上限（分页边界切面）。
+     *
+     * <h3>为什么这个 limit 比普通分页危险得多</h3>
+     * <p>
+     * {@code POST /reindex/pending?limit=N} 此前一路裸传到
+     * {@code findNeedingIndex} 的 {@code LIMIT ?}，全链路无上界。
+     * 而它与列表分页不是一回事——<b>取回的每一条都会触发一次远程 embedding
+     * 调用</b>，且每条成功后还会清空一次语义缓存。
+     * </p>
+     * <p>
+     * 一次 {@code ?limit=100000} 的后果不是「查得慢」，而是
+     * <b>embedding 账单被打爆 + 请求挂起到超时 + 语义缓存被反复清空
+     * 导致全站问答退化到无缓存</b>。
+     * </p>
+     *
+     * <h3>断言落点</h3>
+     * 全部落在<b>传给 {@code findNeedingIndex} 的那个整数值</b>上，
+     * 而不是「被调用过」——不钳制的实现照样会调用，只是参数不同。
+     */
+    @Nested
+    @DisplayName("补偿向量化批量上限")
+    class ReindexBatchClamp {
+
+        @BeforeEach
+        void noPendingDocs() {
+            // 返回空列表：本组只关心「传下去的 limit 是多少」，
+            // 不关心后续重嵌流程。留空可避免 indexer 的行为混进断言
+            when(docRepo.findNeedingIndex(anyInt())).thenReturn(List.of());
+        }
+
+        @Test
+        @DisplayName("正常值原样透传")
+        void passesThroughNormalValue() {
+            service.retryFailedIndexing(20);
+
+            verify(docRepo).findNeedingIndex(eq(20));
+        }
+
+        @Test
+        @DisplayName("超出上限被夹到 200，而非原样打到数据库")
+        void clampsAboveUpperBound() {
+            service.retryFailedIndexing(100_000);
+
+            // 不钳制的实现会把 100000 原样传下去 —— 拉起十万次远程 embedding
+            verify(docRepo).findNeedingIndex(eq(KnowledgeDocService.MAX_REINDEX_BATCH));
+            verify(docRepo, never()).findNeedingIndex(eq(100_000));
+        }
+
+        @Test
+        @DisplayName("恰好等于上限时不被改动（边界值不越界）")
+        void acceptsExactUpperBound() {
+            // 200 与 201 分别落在边界两侧：若实现误写成 < 而非 <=，
+            // 这条会退化成 199 或抛错，与下一条共同锁死边界位置
+            service.retryFailedIndexing(KnowledgeDocService.MAX_REINDEX_BATCH);
+
+            verify(docRepo).findNeedingIndex(eq(KnowledgeDocService.MAX_REINDEX_BATCH));
+        }
+
+        @Test
+        @DisplayName("刚过上限一格就被夹回 200")
+        void clampsJustAboveUpperBound() {
+            service.retryFailedIndexing(KnowledgeDocService.MAX_REINDEX_BATCH + 1);
+
+            verify(docRepo).findNeedingIndex(eq(KnowledgeDocService.MAX_REINDEX_BATCH));
+        }
+
+        @Test
+        @DisplayName("limit=0 抬为 1，不得静默地一条都不处理")
+        void raisesZeroToOne() {
+            service.retryFailedIndexing(0);
+
+            // LIMIT 0 会返回空列表，调用方看到「成功处理 0 条」，
+            // 会以为没有待索引文档 —— 而真相是参数写错了。
+            // 这种静默失败比报错更难查
+            verify(docRepo).findNeedingIndex(eq(1));
+            verify(docRepo, never()).findNeedingIndex(eq(0));
+        }
+
+        @Test
+        @DisplayName("负数抬为 1，不得让 LIMIT 收到负值")
+        void raisesNegativeToOne() {
+            service.retryFailedIndexing(-5);
+
+            // PostgreSQL 的 LIMIT 不接受负数，会直接抛 SQL 异常 ——
+            // 用户看到 500 而非「参数不合法」
+            verify(docRepo).findNeedingIndex(eq(1));
+        }
+
+        @Test
+        @DisplayName("Integer.MIN_VALUE 不因取绝对值之类的写法溢出")
+        void handlesIntegerMinValue() {
+            // Math.abs(Integer.MIN_VALUE) 仍是 Integer.MIN_VALUE（溢出），
+            // 若有人用 abs 而非 max 来"纠正"负数，这条会抓到
+            service.retryFailedIndexing(Integer.MIN_VALUE);
+
+            verify(docRepo).findNeedingIndex(eq(1));
+        }
+    }
 }
