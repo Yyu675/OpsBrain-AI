@@ -156,7 +156,7 @@ public class HybridRetrieverService implements Retriever {
             // 「知识库无相关文档」，误导用户去补文档。返回 null 作为显式
             // 「服务不可用」信号，由调用方区分两种语义。
             log.error("[HybridRetriever] 查询向量化失败，返回服务不可用信号: {}", e.getMessage());
-            return List.of();
+            return null;
         }
 
         String vectorLiteral = toVectorLiteral(queryEmbedding);
