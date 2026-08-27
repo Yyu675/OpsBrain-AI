@@ -205,6 +205,8 @@ public class ToolExecutionRepository {
             // 唯一数据源，查询失败时排查者会看到「0 步」，
             // 从而认为这个 Saga 根本没执行过——而实际可能有一批步骤正等着补偿。
             // 兜底仍返回空列表（回放是旁路，不该带崩页面），但必须留下线索。
+            log.error("🚨 [ToolExecRepo] 查询 Saga 步骤失败，回放将显示为空"
+                    + "（这与「该 Saga 无步骤」无法区分）| sagaId={} | {}", sagaId, e.getMessage());
             return List.of();
         }
     }
