@@ -800,7 +800,7 @@ public class TicketService {
         if (summary == null || summary.isBlank()) {
             throw new IllegalArgumentException("处置摘要不能为空");
         }
-        if (summary.length() > 255) {
+        if (summary.length() >= 255) {
             throw new IllegalArgumentException("处置摘要过长（上限 255 字）");
         }
 
@@ -1156,13 +1156,14 @@ public class TicketService {
     @Transactional(rollbackFor = Exception.class)
     public TicketReply addReply(String ticketId, String role, String author,
                                 String authorColor, String content) {
-        DevOpsTicket ticket = ticketRepository.findById(ticketId);
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException("回复内容不能为空");
         }
         if (content.length() > 5000) {
             throw new IllegalArgumentException("回复内容过长（上限 5000 字）");
         }
+
+        DevOpsTicket ticket = ticketRepository.findById(ticketId);
         if (ticket == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
