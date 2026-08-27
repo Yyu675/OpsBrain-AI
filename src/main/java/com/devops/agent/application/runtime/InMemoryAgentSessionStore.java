@@ -43,8 +43,7 @@ public class InMemoryAgentSessionStore implements AgentSessionStore {
         if (traceId == null) {
             return null;
         }
-        return sessions.computeIfAbsent(traceId,
-                k -> new AgentStateManager.SessionState(traceId, "auto"));
+        return sessions.get(traceId);
     }
 
     @Override
@@ -71,7 +70,9 @@ public class InMemoryAgentSessionStore implements AgentSessionStore {
         }
         // 锁粒度是单个会话对象：不同 traceId 本就互不影响，
         // 锁整个 map 会让所有并发会话的状态迁移排队
-        return call(action);
+        synchronized (sessions) {
+            return call(action);
+        }
     }
 
     private <T> T call(Callable<T> action) {
