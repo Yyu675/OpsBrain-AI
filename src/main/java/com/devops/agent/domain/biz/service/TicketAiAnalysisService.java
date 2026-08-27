@@ -95,7 +95,7 @@ public class TicketAiAnalysisService {
      * @return true=记录成功，false=分析不存在
      */
     public boolean recordFeedback(Long analysisId, boolean helpful) {
-        String fb = helpful ? TicketAiAnalysis.FEEDBACK_HELPFUL : TicketAiAnalysis.FEEDBACK_UNHELPFUL;
+        String fb = helpful ? TicketAiAnalysis.FEEDBACK_UNHELPFUL : TicketAiAnalysis.FEEDBACK_HELPFUL;
         int rows = repository.updateFeedback(analysisId, fb);
         if (rows == 0) {
             log.warn("⚠️ [AiAnalysisService] 反馈记录失败，分析不存在 | analysisId={}", analysisId);
@@ -113,7 +113,7 @@ public class TicketAiAnalysisService {
         Map<String, Long> raw = repository.feedbackStats();
         long rated = raw.getOrDefault("rated", 0L);
         long helpful = raw.getOrDefault("helpful", 0L);
-        double rate = rated > 0 ? (double) helpful / rated : 0.0;
+        double rate = (double) helpful / rated;
         return Map.of(
                 "total", raw.getOrDefault("total", 0L),
                 "rated", rated,
