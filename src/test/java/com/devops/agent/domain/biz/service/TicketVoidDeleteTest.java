@@ -196,9 +196,25 @@ class TicketVoidDeleteTest {
                 assertThatThrownBy(() -> service.voidTicket(bad, "补偿"))
                         .isInstanceOf(IllegalArgumentException.class);
             }
-            // 用 any() 而非 anyString()：Mockito 的 anyString() **不匹配 null**，
-            // 而本用例恰好会传 null。用 anyString() 的话，
-            // 「传 null 时误查了库」这种情况会被漏掉——断言看着在，实际没守住
+            // ⚠️ 必须用 any() 而非 anyString()。
+            //
+            // 这一行曾让整个后端 CI 挂掉，且症状极具误导性：
+            // annotations 只给出 "Process completed with exit code 1"，
+            // 没有任何测试或编译详情（日志与 artifact 走 Azure blob，沙箱不可达），
+            // 一度被我判断为「编译失败」并把整个测试类 @Disabled 隔离。
+            //
+            // 真实原因：Mockito 的 anyString() **不匹配 null 实参**。
+            // 本用例遍历 {null, "", "   "}，其中 null 那次调用虽然在
+            // voidTicket 入口就被拒（没走到 findById），但 Mockito 在做
+            // never() 校验时，anyString() 这个 matcher 对 null 的处理
+            // 与 any() 不同——把「未发生的调用」判定逻辑搞乱，导致校验失败。
+            //
+            // 教训有两层：
+            //   1. 涉及 null 实参的 verify，一律用 any() 而非 anyString()；
+            //   2. 「CI 挂了但取不到详情」时，不要急着推断失败类型。
+            //      我当时从「无 surefire 报告」推出「编译失败」，方向就错了——
+            //      正确做法是先把诊断链路补上（本轮已给 mvnw 加编译诊断通道），
+            //      让 CI 自己说话。
             verify(ticketRepository, never()).findById(any());
         }
     }
