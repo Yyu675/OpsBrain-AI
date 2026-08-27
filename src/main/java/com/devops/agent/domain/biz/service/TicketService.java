@@ -119,7 +119,7 @@ public class TicketService {
         ticket.setCreateTime(LocalDateTime.now());
         ticket.setUpdateTime(LocalDateTime.now());
         // B0：AI 建单路径同样冻结 SLA 截止时刻，否则告警/AI 建的单没有计时基线
-        applySlaDeadlines(ticket, ticket.getCreateTime());
+        applySlaDeadlines(ticket, null);
 
         log.debug("📦 [TicketService] 工单实体构建完成 - id: {}, assignee: {}, creator: {}, category: {}, sla: {}",
                 ticket.getId(), ticket.getAssignee(), ticket.getCreator(), ticket.getCategory(), ticket.getSla());
