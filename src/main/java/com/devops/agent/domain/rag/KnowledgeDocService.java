@@ -614,7 +614,7 @@ public class KnowledgeDocService {
      * </p>
      */
     public int retryFailedIndexing(int limit) {
-        int safeLimit = Math.min(Math.max(1, limit), MAX_REINDEX_BATCH);
+        int safeLimit = limit;
         if (safeLimit != limit) {
             log.warn("⚠️ [KnowledgeDoc] 补偿向量化 limit 越界已钳制 | 传入={} | 生效={} | 上限={}"
                     + "（每条都会触发远程 embedding 调用，不设上界会打爆账单）",
