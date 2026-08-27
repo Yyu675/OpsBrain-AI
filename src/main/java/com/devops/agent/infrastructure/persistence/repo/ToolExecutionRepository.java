@@ -200,6 +200,13 @@ public class ToolExecutionRepository {
         try {
             return jdbcTemplate.query(sql, new RecordRowMapper(), sagaId);
         } catch (Exception e) {
+            // 与 findNeedingAttention 同型：空列表与「这个 Saga 真的没有步骤」
+            // 在接口上无法区分。本方法是 Saga 链路回放（/saga/{id}/steps）的
+            // 唯一数据源，查询失败时排查者会看到「0 步」，
+            // 从而认为这个 Saga 根本没执行过——而实际可能有一批步骤正等着补偿。
+            // 兜底仍返回空列表（回放是旁路，不该带崩页面），但必须留下线索。
+            log.error("🚨 [ToolExecRepo] 查询 Saga 步骤失败，回放将显示为空"
+                    + "（这与「该 Saga 无步骤」无法区分）| sagaId={} | {}", sagaId, e.getMessage());
             return List.of();
         }
     }
@@ -212,6 +219,8 @@ public class ToolExecutionRepository {
         try {
             return jdbcTemplate.query(sql, new RecordRowMapper(), traceId);
         } catch (Exception e) {
+            log.error("🚨 [ToolExecRepo] 按 traceId 查询工具执行记录失败，"
+                    + "调用链追溯将显示为空 | traceId={} | {}", traceId, e.getMessage());
             return List.of();
         }
     }
