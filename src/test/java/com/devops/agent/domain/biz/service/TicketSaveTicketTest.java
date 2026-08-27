@@ -17,7 +17,6 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.TimeUnit;
@@ -233,11 +232,18 @@ class TicketSaveTicketTest {
 
             assertThat(t.getResponseDeadline()).isNotNull();
             assertThat(t.getResolveDeadline()).isNotNull();
-            // P1：30 分钟首响 / 8 小时解决，基准是 createTime
-            assertThat(Duration.between(t.getCreateTime(), t.getResponseDeadline()).toMinutes())
-                    .isEqualTo(30);
-            assertThat(Duration.between(t.getCreateTime(), t.getResolveDeadline()).toHours())
-                    .isEqualTo(8);
+            // P1：30 分钟首响 / 8 小时解决。
+            //
+            // 必须断言「精确等于 createTime + 时限」，不能用 toMinutes() 比较差值——
+            // 那样会把亚分钟的偏差截断掉。实测教训：把基准误写成
+            // LocalDateTime.now() 时，它与 createTime 只差几十微秒，
+            // toMinutes() 后两者都是 30，测试照样通过（注入验证时 CI 全绿）。
+            // 而这个「基准取哪个时刻」恰恰是本方法最该守住的东西：
+            // 用当前时刻重算，等于把已消耗的 SLA 时间一笔勾销。
+            assertThat(t.getResponseDeadline())
+                    .isEqualTo(t.getCreateTime().plusMinutes(30));
+            assertThat(t.getResolveDeadline())
+                    .isEqualTo(t.getCreateTime().plusHours(8));
         }
 
         @Test
@@ -246,10 +252,10 @@ class TicketSaveTicketTest {
             callWith("P0", "K8S");
             DevOpsTicket t = saved();
 
-            assertThat(Duration.between(t.getCreateTime(), t.getResponseDeadline()).toMinutes())
-                    .isEqualTo(15);
-            assertThat(Duration.between(t.getCreateTime(), t.getResolveDeadline()).toHours())
-                    .isEqualTo(4);
+            assertThat(t.getResponseDeadline())
+                    .isEqualTo(t.getCreateTime().plusMinutes(15));
+            assertThat(t.getResolveDeadline())
+                    .isEqualTo(t.getCreateTime().plusHours(4));
         }
 
         @Test
