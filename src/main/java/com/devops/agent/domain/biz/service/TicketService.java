@@ -739,7 +739,7 @@ public class TicketService {
                 + "- **升级人**：" + who + "\n"
                 + "- **升级原因**：" + reason.trim() + "\n"
                 + "- **负责人**：" + (existing.getAssignee() != null ? existing.getAssignee() : "待分配") + "\n";
-        sendAfterCommit(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md), ticketId);
+        silentSend(com.devops.agent.domain.notify.NotifyMessage.normal(title, md), ticketId);
 
         return ticketRepository.findById(ticketId);
     }
@@ -1345,7 +1345,7 @@ public class TicketService {
                         });
     }
 
-    /** 发通知，任何异常只告警——通知是旁路，不得影响已提交的业务结果 */
+    /** 发通知，任何异常只告警——通知是旁路，不得影响已提交的业务结果（注入：降级为普通） */
     private void silentSend(com.devops.agent.domain.notify.NotifyMessage msg, String ticketId) {
         try {
             notifier.send(msg);
