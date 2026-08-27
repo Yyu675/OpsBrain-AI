@@ -230,17 +230,37 @@ class TicketAiAnalysisServiceTest {
         @Test
         @DisplayName("已评价数为 0 时 helpfulRate 为 0，而不是 NaN")
         void zeroRatedYieldsZeroNotNaN() {
-            // ── 本组最重要的一条 ──────────────────────────────
-            // 新部署的系统没有任何反馈，helpful/rated 就是 0/0。
-            // Java 里 double 的 0.0/0.0 是 NaN，序列化成 JSON 后
-            // 前端拿到 null 或直接崩溃——而这只在「刚上线、还没人反馈」
-            // 这个特定时刻出现，测试不覆盖就只能等线上暴露
+            // ── 本组最重要的一条，也是踩过坑的一条 ────────────────
+            // 新部署的系统没有任何反馈，helpful/rated 就是 0/0，
+            // Java 里 double 的 0.0/0.0 是 NaN。
+            //
+            // 但光断言「结果等于 0.0」抓不到缺陷：末尾那步
+            // Math.round(rate * 1000) / 1000.0 会把 NaN 悄悄变成 0.0
+            // （Math.round(NaN) 返回 0，已实测确认）。也就是说去掉
+            // rated > 0 这道保护后，返回值依然是 0.0，测试照样通过——
+            // 注入验证时 CI 就是全绿的。
+            //
+            // 真正能分辨的是「有 helpful 但 rated 为 0」这种不一致数据：
+            // 保护在时结果是 0.0；保护不在时 3/0 = Infinity，
+            // Math.round(Infinity * 1000) 得到 Long.MAX_VALUE，
+            // 除以 1000.0 是一个巨大的数，与 0.0 截然不同。
+            //
+            // rated=0 而 helpful>0 看似矛盾，却真实存在：feedbackStats
+            // 是多个聚合子查询拼出来的，统计口径不一致或并发写入时就会出现。
             when(repository.feedbackStats()).thenReturn(
-                    Map.of("total", 5L, "rated", 0L, "helpful", 0L, "unhelpful", 0L));
+                    Map.of("total", 5L, "rated", 0L, "helpful", 3L, "unhelpful", 0L));
 
             Object rate = service.accuracyStats().get("helpfulRate");
-            assertThat(rate).isEqualTo(0.0);
-            assertThat(Double.isNaN((Double) rate)).isFalse();
+            assertThat(rate)
+                    .as("rated=0 时必须短路为 0，而不是让除法产生 Infinity/NaN")
+                    .isEqualTo(0.0);
+
+            // 再补一条纯 0/0 的常规场景，确保正常路径也是 0.0
+            when(repository.feedbackStats()).thenReturn(
+                    Map.of("total", 5L, "rated", 0L, "helpful", 0L, "unhelpful", 0L));
+            Object plainRate = service.accuracyStats().get("helpfulRate");
+            assertThat(plainRate).isEqualTo(0.0);
+            assertThat(Double.isNaN((Double) plainRate)).isFalse();
         }
 
         @Test
