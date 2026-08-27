@@ -1,6 +1,5 @@
 package com.devops.agent.domain.biz.repository;
 
-import com.devops.agent.domain.biz.entity.TicketQuery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
