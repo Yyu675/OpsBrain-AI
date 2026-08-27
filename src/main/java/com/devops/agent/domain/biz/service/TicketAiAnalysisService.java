@@ -113,7 +113,7 @@ public class TicketAiAnalysisService {
         Map<String, Long> raw = repository.feedbackStats();
         long rated = raw.getOrDefault("rated", 0L);
         long helpful = raw.getOrDefault("helpful", 0L);
-        double rate = (double) helpful / rated;
+        double rate = rated > 0 ? (double) helpful / rated : 0.0;
         return Map.of(
                 "total", raw.getOrDefault("total", 0L),
                 "rated", rated,
