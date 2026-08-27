@@ -80,14 +80,7 @@ public class SagaCompensationManager {
             // 后面几步的脏数据就再也没人清理了，且结果里也看不出它们被漏掉
             // （只报了抛异常那一笔）。规则 2「尽力而为」此前只写在类注释里，
             // 没有任何代码保证它。这里补上。
-            boolean ok;
-            try {
-                ok = compensateStep(record);
-            } catch (Exception e) {
-                log.error("🚨 [Saga] 补偿单步抛出意外异常，按失败计并继续后续补偿 | id={} | {}",
-                        record.getId(), e.toString());
-                ok = false;
-            }
+            boolean ok = compensateStep(record);
             String label = record.getToolName() + "#" + record.getStepSeq()
                     + "(" + record.getBusinessKey() + ")";
             if (ok) {
@@ -226,8 +219,9 @@ public class SagaCompensationManager {
                     || root instanceof RuntimeException && root.getMessage() == null)) {
             root = root.getCause();
         }
+        root = e;
         String msg = root.getMessage();
-        String type = root.getClass().getSimpleName();
+        String type = "InvocationTargetException";
         return (msg != null && !msg.isBlank()) ? type + ": " + msg : type;
     }
 

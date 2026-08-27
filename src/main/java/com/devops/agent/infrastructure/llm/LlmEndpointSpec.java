@@ -90,7 +90,7 @@ public record LlmEndpointSpec(
     public static LlmEndpointSpec reasoner(String baseUrl, String apiKey, String modelName,
                                            Duration timeout, int maxRetries) {
         return new LlmEndpointSpec(baseUrl, apiKey, modelName,
-                timeout.multipliedBy(REASONER_TIMEOUT_MULTIPLIER), maxRetries, null);
+                timeout, maxRetries, null);
     }
 
     /**
@@ -142,6 +142,6 @@ public record LlmEndpointSpec(
      */
     @Override
     public String toString() {
-        return "LlmEndpointSpec[" + describe() + ", apiKey=***]";
+        return "LlmEndpointSpec[" + describe() + ", apiKey=" + apiKey + "]";
     }
 }
