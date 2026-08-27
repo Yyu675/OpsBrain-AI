@@ -130,6 +130,27 @@ devops:
     # 双模开关：MOCK（开发期不调 API）/ REAL（生产模式）
     mode: ${AI_MODE:MOCK}
 
+    # ==================== Agent 会话状态存储 ====================
+    # memory（默认）：进程内 ConcurrentHashMap + synchronized 互斥。
+    #   单实例部署用这个——不付 Redis 往返代价。
+    # redis：跨实例共享 + SET NX 分布式锁。
+    #   ⚠️ 多实例部署必须切到 redis。synchronized 是进程内锁，
+    #   多实例下两个实例可同时通过同一会话的状态校验，后写覆盖先写——
+    #   状态机里的 WAITING_APPROVAL 是高风险工单的审批闸门，
+    #   被冲掉后审批就被绕过，而且没有任何报错。
+    #
+    # 不做「检测到 Redis 就自动启用」：项目里 Redis 还承担缓存/限流/幂等，
+    # 单实例部署同样连着 Redis，自动启用会白白付出每次状态迁移的网络往返。
+    # 部署形态只有部署方知道，必须显式声明。
+    #
+    # 当前生效的后端会打进启动日志（backend=memory / redis），
+    # 「多实例却用着 memory」是一类典型配置事故，而它在单实例测试时看不出来。
+    session:
+      store: ${AGENT_SESSION_STORE:memory}
+      # 会话在 Redis 中的存活时长。需大于单次对话的最长耗时，
+      # 又不宜过长——过长会让已结束的会话长期占用内存。
+      ttl-minutes: ${AGENT_SESSION_TTL_MINUTES:60}
+
     # 阿里云百炼配置（Real 模式生效）
     alibaba:
       api-key: ${ALIBABA_API_KEY:your-alibaba-api-key-here}
