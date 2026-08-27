@@ -178,7 +178,7 @@ public class ColdMemoryArchiveScheduler {
         // 若一律标 FULL_TRANSCRIPT，使用者会以为「这个会话只聊了 0 轮」，
         // 而实际是原文从未被记录过——这比老老实实标 SUMMARY_ONLY 更误导。
         boolean hasTranscript = !turns.isEmpty();
-        payload.put("contentScope", "FULL_TRANSCRIPT");
+        payload.put("contentScope", hasTranscript ? "FULL_TRANSCRIPT" : "SUMMARY_ONLY");
         payload.put("contentScopeNote", hasTranscript
                 ? "含温记忆摘要、关键事实与逐轮对话原文（原文超 32K 字符的字段已截断并标注）"
                 : "仅含温记忆摘要与关键事实；该会话无原文记录"
