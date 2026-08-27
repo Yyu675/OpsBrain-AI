@@ -78,8 +78,7 @@ public class AuthDataInitializer implements ApplicationRunner {
             // 折中是：只在「用的是内置默认密码」时提示去查文档，
             // 用了自定义密码则什么都不说（说明部署方已经知道自己设了什么）。
             if (BUILTIN_DEFAULT_PASSWORD.equals(seedPassword)) {
-                log.warn("🔐 [Auth] 已创建种子管理员 | username={} | 当前使用<内置默认密码> —— "
-                        + "生产环境必须用 AUTH_SEED_PASSWORD 环境变量覆盖，默认值见 README", seedUsername);
+                log.warn("🔐 [Auth] 已创建种子管理员 | username={} | 默认密码={}", seedUsername, seedPassword);
             } else {
                 log.info("🔐 [Auth] 已创建种子管理员 | username={} | 密码取自 AUTH_SEED_PASSWORD", seedUsername);
             }

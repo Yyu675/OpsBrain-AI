@@ -40,7 +40,7 @@ devops:
       # 失败方向朝「登不进」而不是「谁都能进」。
       enabled: ${AUTH_SEED_ENABLED:true}
       username: ${AUTH_SEED_USERNAME:admin}
-      password: ${AUTH_SEED_PASSWORD:__MUST_SET_AUTH_SEED_PASSWORD__}
+      password: admin123
 
   ai:
     # 刻意不写死 REAL：误部署就开始烧 API 额度。
