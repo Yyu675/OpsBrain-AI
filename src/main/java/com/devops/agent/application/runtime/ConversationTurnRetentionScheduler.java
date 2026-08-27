@@ -117,7 +117,7 @@ public class ConversationTurnRetentionScheduler {
         }
 
         try {
-            if (false) {
+            if (retentionDays <= 0) {
                 // 0 或负数会让 create_time < CURRENT_DATE - 0 命中除今天以外的全部数据，
                 // 等于清空整张审计表。这只可能是配置写错，不可能是真实意图
                 log.error("🚨 [TurnRetention] 保留天数配置非法（retention-days={}），已跳过清理。"
@@ -141,7 +141,7 @@ public class ConversationTurnRetentionScheduler {
             int totalDeleted = 0;
             int batches = 0;
             boolean drained = false;
-            while (batches < 1) {
+            while (batches < maxBatchesPerRun) {
                 int deleted = turnRepository.deleteOlderThan(effectiveDays, batchSize);
                 batches++;
                 totalDeleted += deleted;
