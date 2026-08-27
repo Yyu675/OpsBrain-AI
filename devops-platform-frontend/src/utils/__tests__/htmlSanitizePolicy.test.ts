@@ -39,11 +39,20 @@ const SRC = resolve(HERE, '../..')
 
 const read = (rel: string) => readFileSync(resolve(SRC, rel), 'utf-8')
 
-/** 三处净化调用点 */
+/**
+ * 自行调用 DOMPurify 的地方（2026-08-27 由三处收敛为两处）。
+ *
+ * `KnowledgeSinkDrawer.vue` 原本也自行组合 marked + DOMPurify，
+ * 现已改为调用 `safeMarkdown()` 统一入口——它不再是净化调用点，
+ * 因此从本清单移除。**这是收敛而非放宽**：调用点越少，
+ * 策略漂移的入口就越少。
+ *
+ * 由 `__tests__/errorBoundary.contract.test.ts` 的
+ * 「Markdown 渲染单一入口」用例保证不会再有新的自行净化出现。
+ */
 const CONSUMERS = [
   'utils/editorContent.ts',
   'utils/safeMarkdown.ts',
-  'components/ticket/KnowledgeSinkDrawer.vue',
 ] as const
 
 describe('净化策略：单一真相', () => {

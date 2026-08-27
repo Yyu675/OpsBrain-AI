@@ -23,10 +23,8 @@ import {
   BookPlus, RefreshCw, Square, Send, AlertCircle,
   CheckCircle, Loader, Sparkles
 } from 'lucide-vue-next'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 
-import { sanitizeConfig } from '@/utils/htmlSanitizePolicy'
+import { safeMarkdown } from '@/utils/safeMarkdown'
 import { chatStream } from '@/api/chat'
 import {
   createKnowledgeDoc,
@@ -104,16 +102,19 @@ const publishing = ref(false)
 
 // ==================== Markdown 渲染（DOMPurify 白名单，前端 CLAUDE.md 第 12 项）====================
 
-marked.setOptions({ breaks: true, gfm: true })
-
 // 白名单来自 htmlSanitizePolicy（全项目唯一真相）。
 // 此前这里自带一份最严格的（26 标签 / 4 属性），比编辑器少 7 个标签、
 // 少 src/alt——同一篇文档在这里预览时图片与表尾直接消失，
 // 用户会以为是 AI 整理时把内容弄丢了。
+// 走统一入口 safeMarkdown，不自行组合 marked + DOMPurify。
+//
+// 净化配置（允许哪些标签/属性、给 a[target=_blank] 补 rel）集中在
+// safeMarkdown.ts 一处才能保证一致。自行组合的地方一旦漏配某项，
+// 就成了绕过全局策略的 XSS 缺口，而它看起来「也净化了」——
+// safeMarkdown.ts 的注释本就写明禁止自行调用，此处此前是个例外。
 const renderMarkdown = (text: string): string => {
   if (!text) return ''
-  const raw = marked.parse(text) as string
-  return DOMPurify.sanitize(raw, sanitizeConfig())
+  return safeMarkdown(text)
 }
 
 // ==================== 构建工单上下文（供 AI 整理）====================
