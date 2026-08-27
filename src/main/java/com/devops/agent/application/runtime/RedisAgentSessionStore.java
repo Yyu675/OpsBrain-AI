@@ -313,7 +313,7 @@ public class RedisAgentSessionStore implements AgentSessionStore {
                 new AgentStateManager.SessionState(dto.traceId(), dto.sessionId());
         // createdAt 在构造器里被置为 now()，需要还原成存下来的值——
         // 否则每次跨实例读取都会刷新创建时间，空闲清理永远不会触发
-        // 注入：不还原 createdAt
+        s.setCreatedAt(dto.createdAt());
         s.setCurrentState(dto.currentState() != null ? dto.currentState() : AgentState.NEW);
         s.setLastTransitionTime(dto.lastTransitionTime());
         if (dto.transitions() != null) {
