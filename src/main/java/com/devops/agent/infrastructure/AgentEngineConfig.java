@@ -94,6 +94,31 @@ public class AgentEngineConfig {
      * 将来加 Redis 实现时只需让它以更高优先级注册，
      * 无需在本类里维护一张 if-else 的实现表。</p>
      */
+    /**
+     * Redis 会话状态存储（多实例部署时启用）
+     *
+     * <p>由 {@code devops.ai.session.store=redis} 显式开启。
+     * <b>不做「检测到 Redis 就自动启用」</b>：项目里 Redis 还承担缓存、
+     * 限流、幂等等用途，单实例部署同样连着 Redis，
+     * 自动启用会让单实例白白付出每次状态迁移的网络往返代价。
+     * 部署形态只有部署方知道，必须显式声明。</p>
+     *
+     * <p>{@code @ConditionalOnProperty} 先于下面的
+     * {@code @ConditionalOnMissingBean} 生效，故开启后内存实现不再注册。</p>
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "devops.ai.session.store", havingValue = "redis")
+    public com.devops.agent.application.runtime.AgentSessionStore redisAgentSessionStore(
+            org.springframework.data.redis.core.StringRedisTemplate redisTemplate,
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+            @Value("${devops.ai.session.ttl-minutes:60}") long sessionTtlMinutes) {
+        log.info("🚀 [AgentEngineConfig] 创建会话状态存储（Redis 实现，多实例适用）| TTL={}min",
+                sessionTtlMinutes);
+        return new com.devops.agent.application.runtime.RedisAgentSessionStore(
+                redisTemplate, objectMapper, java.time.Duration.ofMinutes(sessionTtlMinutes));
+    }
+
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(
             com.devops.agent.application.runtime.AgentSessionStore.class)

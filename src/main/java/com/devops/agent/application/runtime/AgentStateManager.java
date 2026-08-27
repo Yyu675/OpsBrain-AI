@@ -350,6 +350,20 @@ public class AgentStateManager {
         public String getTraceId() { return traceId; }
         public String getSessionId() { return sessionId; }
         public LocalDateTime getCreatedAt() { return createdAt; }
+
+        /**
+         * 还原创建时间——<b>仅供存储实现反序列化时使用</b>。
+         *
+         * <p>构造器把 createdAt 置为 {@code now()}。Redis 这类值语义存储
+         * 每次读取都会重新构造对象，若不还原成存下来的值，
+         * 创建时间会被刷新为「本次读取时刻」——而
+         * {@link #getIdleSince()} 在从未迁移过的会话上正是回落到 createdAt，
+         * 于是这类会话<b>永远不会被判定为空闲</b>，清理线程一个都清不掉。
+         * 表现为「重启前内存正常，接上 Redis 后会话数只涨不跌」。</p>
+         *
+         * <p>业务代码不应调用它：创建时间是事实，不是可改的状态。</p>
+         */
+        public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
         public AgentState getCurrentState() { return currentState; }
         public void setCurrentState(AgentState currentState) { this.currentState = currentState; }
         public LocalDateTime getLastTransitionTime() { return lastTransitionTime; }
