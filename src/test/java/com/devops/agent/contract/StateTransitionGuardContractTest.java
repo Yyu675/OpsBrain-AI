@@ -114,7 +114,8 @@ class StateTransitionGuardContractTest {
     @DisplayName("本轮修复的两处标签状态流转不回退")
     void knowledgeTagTransitionsStayGuarded() throws IOException {
         Path tagRepo = MAIN.resolve("infrastructure/persistence/repo/KnowledgeTagRepository.java");
-        String code = stripComments(Files.readString(tagRepo, StandardCharsets.UTF_8));
+        String code = flattenJavaStrings(
+                stripComments(Files.readString(tagRepo, StandardCharsets.UTF_8)));
 
         // 置 MERGED / 置 DELETED 各一处，都必须带 ACTIVE 守卫。
         // 用整句匹配而非分别找关键词：后者会被
@@ -158,6 +159,20 @@ class StateTransitionGuardContractTest {
         }
         int where = seg.toUpperCase().indexOf("WHERE");
         return where < 0 ? "" : seg.substring(where);
+    }
+
+    /**
+     * 消除 Java 源码里的字符串拼接，让跨行 SQL 还原成连续文本。
+     *
+     * <p>长 SQL 常写成 {@code "UPDATE ... SET ... " + "WHERE ..."}，
+     * 源码里这中间夹着 {@code " + "} 与换行缩进。直接按整句 {@code contains}
+     * 匹配会落空——<b>本测试第一版就栽在这里，CI 报了一次红</b>。
+     * 值得记：这是「断言写错」而非「产品代码有问题」，
+     * 而两者在 CI 上的表现完全一样，只能靠读失败详情区分。</p>
+     */
+    private static String flattenJavaStrings(String src) {
+        // 把 " + "（含两侧任意空白与换行）折叠掉，使相邻字面量首尾相接
+        return src.replaceAll("\"\\s*\\+\\s*\"", "");
     }
 
     private static String stripComments(String src) {
