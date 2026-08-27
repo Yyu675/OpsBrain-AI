@@ -236,7 +236,9 @@ public class ToolExecutionRepository {
             Integer n = jdbcTemplate.queryForObject(sql, Integer.class, sagaId);
             return n != null ? n : 1;
         } catch (Exception e) {
-            throw new IllegalStateException("取步骤序号失败", e);
+            log.warn("⚠️ [ToolExecRepo] 取步骤序号失败，兜底为 1（可能造成 Saga 内序号重复，"
+                    + "补偿逆序回滚顺序将不确定）| sagaId={} | {}", sagaId, e.getMessage());
+            return 1;
         }
     }
 
