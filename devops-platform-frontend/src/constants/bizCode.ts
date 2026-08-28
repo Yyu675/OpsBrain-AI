@@ -114,3 +114,51 @@ export function isAutoRetryable(code: number | undefined): boolean {
   const meta = getBizError(code)
   return meta?.retry === 'SAFE' || meta?.retry === 'BACKOFF'
 }
+
+/** SSE 错误事件的展示信息 */
+export interface StreamErrorView {
+  /** 追加到对话气泡里的文本 */
+  text: string
+  /** toast 标题 */
+  title: string
+  /** 下一步该怎么做；无对应文案时为 undefined */
+  hint?: string
+  /** 是否值得让用户重试 —— 决定要不要显示「重试」入口 */
+  retryable: boolean
+}
+
+/**
+ * 把 SSE error 事件翻译成可展示信息。
+ *
+ * 为什么需要它：SSE 是本产品的主链路（AI 问答全走它），
+ * 而两处消费方此前都只用 `data.message`、**把 `data.code` 整个丢掉**。
+ * 后果是同一个错误在 REST 与 SSE 两条路上的呈现完全不同：
+ *
+ * - REST 侧走 `getBizError()` 查表，用户能看到「下一步做什么」；
+ * - SSE 侧只有后端那句 message。而 `DevOpsChatController` 下发
+ *   `SSE_CONNECTION_ERROR` 时 message 只有「连接超时」四个字——
+ *   它的 `Retry` 是 `SAFE`（重试就能好），用户却完全看不出这一点，
+ *   多半以为服务坏了就走了。
+ *
+ * SSE 侧可重试的码有 50001 / 42901 / 50002 三个，丢弃 code 等于
+ * 把 `BizError` 里精心标注的重试语义在主链路上全部作废。
+ *
+ * 文案优先级：后端 message 优先（它常带上下文，如具体的配额原因），
+ * 词表的 hint 作为补充；两者都没有才用兜底。
+ */
+export function toStreamError(
+  code: number | undefined,
+  message: string | undefined,
+  fallback = '请求失败，请稍后重试'
+): StreamErrorView {
+  const meta = getBizError(code)
+  const detail = message?.trim() || meta?.title || fallback
+  return {
+    // hint 拼进正文而不是只放 toast：对话气泡会留在页面上，
+    // toast 几秒就消失了，用户回头看不到该怎么办
+    text: meta?.hint ? `${detail}（${meta.hint}）` : detail,
+    title: meta?.title || detail,
+    hint: meta?.hint,
+    retryable: isAutoRetryable(code)
+  }
+}

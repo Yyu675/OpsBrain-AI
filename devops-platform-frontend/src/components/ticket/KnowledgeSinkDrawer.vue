@@ -17,6 +17,7 @@
  *   - 发布成功后只发事件，刷新策略由父组件决定（6.17 契约）
  */
 import { notify, handleServerError } from '@/utils/notify'
+import { toStreamError } from '@/constants/bizCode'
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import {
@@ -186,7 +187,9 @@ const generateDraft = async () => {
           streaming.value = false
         },
         onError: (data: SSEErrorEvent) => {
-          formContent.value += `\n\n❌ ${data.message || 'AI 整理失败，请稍后重试或手动编写'}`
+          // 同 ChatMode：查表拿到 hint 与重试语义，而不是只回显 message
+          const view = toStreamError(data.code, data.message, 'AI 整理失败，请稍后重试或手动编写')
+          formContent.value += `\n\n❌ ${view.text}`
           loadState.value = 'error'
           streaming.value = false
         },

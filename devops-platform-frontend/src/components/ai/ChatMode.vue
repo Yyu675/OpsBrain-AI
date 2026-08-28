@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { notify } from '@/utils/notify'
+import { toStreamError } from '@/constants/bizCode'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
   Send, Bot, User, Loader, CheckCircle, AlertCircle, Wrench,
@@ -144,8 +145,17 @@ const runStream = async (query: string) => {
         },
 
         onError: (data: SSEErrorEvent) => {
-          chat.finishStreaming(`❌ ${data.message || '请求失败，请稍后重试'}`)
-          notify.error(data.message || '请求失败，请稍后重试')
+          // 走 BIZ_ERRORS 查表而非只用 message：后端下发的 message 有时
+          // 只有「连接超时」四个字，而该码（50002）的 Retry 是 SAFE——
+          // 重试就能好。丢掉 code 等于把这个信息藏起来，
+          // 用户多半以为服务坏了就走了
+          const view = toStreamError(data.code, data.message)
+          chat.finishStreaming(`❌ ${view.text}`)
+          if (view.retryable) {
+            notify.warning(`${view.title}，可重试`)
+          } else {
+            notify.error(view.title)
+          }
         },
 
         /**
