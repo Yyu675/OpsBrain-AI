@@ -277,6 +277,19 @@ class ApiCodeContractTest {
         return sb.toString().replaceAll("(?m)//[^\\n]*", "");
     }
 
+    /**
+     * 取 pos 所在那一行的文本（截断到 90 字符），让报错能直接看出是哪句代码。
+     *
+     * <p>只报行号不报内容时，读者还得切到编辑器去翻——而扫描器报出的位置
+     * 必须能直接核对（93 号教训）。</p>
+     */
+    private static String lineTextAt(String code, int pos) {
+        int start = code.lastIndexOf('\n', pos) + 1;
+        int end = code.indexOf('\n', pos);
+        String line = (end < 0 ? code.substring(start) : code.substring(start, end)).trim();
+        return line.length() > 90 ? line.substring(0, 90) + "…" : line;
+    }
+
     private static int lineOf(String code, int pos) {
         return (int) code.substring(0, pos).chars().filter(c -> c == '\n').count() + 1;
     }
