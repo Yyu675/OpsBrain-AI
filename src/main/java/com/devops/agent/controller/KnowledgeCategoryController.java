@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.rag.KnowledgeCategory;
 import com.devops.agent.domain.rag.KnowledgeCategoryService;
@@ -46,10 +47,10 @@ public class KnowledgeCategoryController {
             return ApiResponse.success(service.create(
                     request.parentId(), request.name(), request.sortOrder()));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return ApiResponse.error(40001, e.getMessage());
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("创建知识分类失败", e);
-            return ApiResponse.error(50001, "创建分类失败: " + e.getMessage());
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "创建分类失败: " + e.getMessage());
         }
     }
 
@@ -59,10 +60,10 @@ public class KnowledgeCategoryController {
             return ApiResponse.success(service.update(
                     id, request.parentId(), request.name(), request.sortOrder()));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return ApiResponse.error(40001, e.getMessage());
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("更新知识分类失败 | id={}", id, e);
-            return ApiResponse.error(50001, "更新分类失败: " + e.getMessage());
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "更新分类失败: " + e.getMessage());
         }
     }
 
@@ -72,10 +73,10 @@ public class KnowledgeCategoryController {
             service.delete(id);
             return ApiResponse.success(Map.of("id", id, "deleted", true));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return ApiResponse.error(40001, e.getMessage());
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("删除知识分类失败 | id={}", id, e);
-            return ApiResponse.error(50001, "删除分类失败: " + e.getMessage());
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "删除分类失败: " + e.getMessage());
         }
     }
 

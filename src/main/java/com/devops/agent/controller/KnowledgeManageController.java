@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.rag.KnowledgeStatsService;
 import lombok.extern.slf4j.Slf4j;
@@ -76,7 +77,7 @@ public class KnowledgeManageController {
         // 40010：4xx 段，语义「端点已废弃」。沿用项目 4 位业务码惯例（40001/40004/40009/40021）。
         // 虽 HTTP 层仍返回 200（本项目 ApiResponse 统一包装），body 含 deprecated=true 与 migrateTo，
         // 调用方可据此判断并迁移。
-        return ApiResponse.error(40010, "端点已废弃，请改用 POST /api/v1/knowledge/docs", body);
+        return ApiResponse.error(ApiCode.ENDPOINT_DEPRECATED, "端点已废弃，请改用 POST /api/v1/knowledge/docs", body);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.rag.KnowledgeTag;
 import com.devops.agent.domain.rag.KnowledgeTagService;
@@ -38,10 +39,10 @@ public class KnowledgeTagController {
         try {
             return ApiResponse.success(tagService.rename(id, request.name(), request.description(), request.color()));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return ApiResponse.error(40001, e.getMessage());
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("更新知识标签失败 | id={}", id, e);
-            return ApiResponse.error(50001, "更新标签失败: " + e.getMessage());
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "更新标签失败: " + e.getMessage());
         }
     }
 
@@ -50,7 +51,7 @@ public class KnowledgeTagController {
         try {
             return ApiResponse.success(tagService.merge(id, request.targetId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return ApiResponse.error(40001, e.getMessage());
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         }
     }
 
@@ -60,7 +61,7 @@ public class KnowledgeTagController {
             tagService.delete(id, request == null ? null : request.replacementId());
             return ApiResponse.success(Map.of("id", id, "deleted", true));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return ApiResponse.error(40001, e.getMessage());
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         }
     }
 }

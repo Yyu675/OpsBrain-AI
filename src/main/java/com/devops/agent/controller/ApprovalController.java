@@ -3,6 +3,7 @@ package com.devops.agent.controller;
 import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.dev33.satoken.stp.StpUtil;
 import com.devops.agent.application.runtime.ApprovalOrchestrator;
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.approval.ApprovalRequest;
 import com.devops.agent.domain.approval.ApprovalService;
@@ -81,10 +82,10 @@ public class ApprovalController {
         try {
             return ApiResponse.success(approvalService.getById(id));
         } catch (ApprovalService.ApprovalException e) {
-            return ApiResponse.error(40004, e.getMessage());
+            return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 查询审批单失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询审批单失败");
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "查询审批单失败");
         }
     }
 
@@ -110,7 +111,7 @@ public class ApprovalController {
             return ApiResponse.error(code, e.getMessage());
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 批准失败 | id={}", id, e);
-            return ApiResponse.error(50001, "批准失败，请稍后重试");
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "批准失败，请稍后重试");
         }
     }
 
@@ -130,7 +131,7 @@ public class ApprovalController {
             return ApiResponse.error(code, msg);
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 驳回失败 | id={}", id, e);
-            return ApiResponse.error(50001, "驳回失败，请稍后重试");
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "驳回失败，请稍后重试");
         }
     }
 

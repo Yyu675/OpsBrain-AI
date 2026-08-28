@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
 import com.devops.agent.domain.biz.entity.TicketAction;
@@ -125,7 +126,7 @@ public class TicketController {
         // 走 Service 以自动装填标签
         DevOpsTicket ticket = ticketService.getTicketWithTags(id);
         if (ticket == null) {
-            return ApiResponse.error(40004, "工单不存在");
+            return ApiResponse.error(ApiCode.NOT_FOUND, "工单不存在");
         }
 
         return ApiResponse.success(ticket);
@@ -143,7 +144,7 @@ public class TicketController {
 
         DevOpsTicket ticket = ticketService.findByTraceId(traceId);
         if (ticket == null) {
-            return ApiResponse.error(40004, "工单不存在");
+            return ApiResponse.error(ApiCode.NOT_FOUND, "工单不存在");
         }
 
         return ApiResponse.success(ticket);
@@ -662,7 +663,7 @@ public class TicketController {
                                                                @RequestBody FeedbackRequest req) {
         boolean ok = aiAnalysisService.recordFeedback(analysisId, req.helpful());
         if (!ok) {
-            return ApiResponse.error(40004, "分析不存在: " + analysisId);
+            return ApiResponse.error(ApiCode.NOT_FOUND, "分析不存在: " + analysisId);
         }
         return ApiResponse.success(Map.of("analysisId", analysisId, "helpful", req.helpful()));
     }

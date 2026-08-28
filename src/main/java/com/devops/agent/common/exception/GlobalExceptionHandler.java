@@ -3,6 +3,7 @@ package com.devops.agent.common.exception;
 import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.exception.NotPermissionException;
 import cn.dev33.satoken.exception.NotRoleException;
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.common.error.BizError;
 import org.slf4j.Logger;
@@ -64,7 +65,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ApiResponse<Void> handleNotRoleException(NotRoleException ex) {
         log.warn("🚫 [GlobalException] 角色不足: 需要角色={}", ex.getRole());
-        return ApiResponse.error(40103, "权限不足：该操作需要「" + ex.getRole() + "」角色");
+        return ApiResponse.error(ApiCode.FORBIDDEN, "权限不足：该操作需要「" + ex.getRole() + "」角色");
     }
 
     /**
@@ -74,7 +75,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ApiResponse<Void> handleNotPermissionException(NotPermissionException ex) {
         log.warn("🚫 [GlobalException] 权限不足: 需要权限={}", ex.getPermission());
-        return ApiResponse.error(40103, "权限不足：缺少「" + ex.getPermission() + "」权限");
+        return ApiResponse.error(ApiCode.FORBIDDEN, "权限不足：缺少「" + ex.getPermission() + "」权限");
     }
 
     /**

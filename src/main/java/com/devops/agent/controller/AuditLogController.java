@@ -1,6 +1,7 @@
 package com.devops.agent.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.infrastructure.persistence.repo.AuditLogQueryRepository;
 import org.slf4j.Logger;
@@ -113,7 +114,7 @@ public class AuditLogController {
 
         if (aiCall == null && operations.isEmpty()) {
             log.debug("[Audit] traceId 无任何记录 | trace={}", traceId);
-            return ApiResponse.error(40004, "该链路无记录，可能已过保留期");
+            return ApiResponse.error(ApiCode.NOT_FOUND, "该链路无记录，可能已过保留期");
         }
 
         Map<String, Object> result = new LinkedHashMap<>();

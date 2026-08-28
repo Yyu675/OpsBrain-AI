@@ -1,6 +1,7 @@
 package com.devops.agent.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.auth.AuthService;
 import com.devops.agent.domain.auth.User;
@@ -76,10 +77,10 @@ public class AuthController {
             return ApiResponse.success(data, "登录成功");
         } catch (AuthService.AuthException e) {
             log.info("🔒 [Auth] 登录失败 | username={} | reason={}", req.username(), e.getMessage());
-            return ApiResponse.error(40100, e.getMessage());
+            return ApiResponse.error(ApiCode.LOGIN_FAILED, e.getMessage());
         } catch (Exception e) {
             log.error("❌ [Auth] 登录异常 | username={}", req.username(), e);
-            return ApiResponse.error(50001, "登录失败，请稍后重试");
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "登录失败，请稍后重试");
         }
     }
 
@@ -87,7 +88,7 @@ public class AuthController {
     @GetMapping("/me")
     public ApiResponse<Map<String, Object>> me() {
         if (!StpUtil.isLogin()) {
-            return ApiResponse.error(40101, "未登录");
+            return ApiResponse.error(ApiCode.UNAUTHORIZED, "未登录");
         }
         try {
             Long userId = StpUtil.getLoginIdAsLong();
@@ -95,11 +96,11 @@ public class AuthController {
             if (user == null || !user.isActive()) {
                 // 用户被删/停用：踢下线，避免残留 token 继续可用
                 StpUtil.logout();
-                return ApiResponse.error(40101, "用户不存在或已停用");
+                return ApiResponse.error(ApiCode.UNAUTHORIZED, "用户不存在或已停用");
             }
             return ApiResponse.success(toUserView(user));
         } catch (Exception e) {
-            return ApiResponse.error(40101, "登录已失效，请重新登录");
+            return ApiResponse.error(ApiCode.UNAUTHORIZED, "登录已失效，请重新登录");
         }
     }
 

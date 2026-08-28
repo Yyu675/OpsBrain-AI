@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.controller.dto.KnowledgeDocDto;
 import com.devops.agent.domain.rag.KnowledgeDoc;
@@ -85,10 +86,10 @@ public class KnowledgeDocController {
             data.put("duplicateTitle", e.getDuplicateTitle());
             return ApiResponse.<Object>error(40021, e.getMessage(), data);
         } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
             log.error("创建文档失败", e);
-            return ApiResponse.error(50001, "创建文档失败: " + e.getMessage());
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "创建文档失败: " + e.getMessage());
         }
     }
 
@@ -246,7 +247,7 @@ public class KnowledgeDocController {
     public ApiResponse<Object> detail(@PathVariable Long id) {
         KnowledgeDoc doc = docService.findById(id, true);
         if (doc == null) {
-            return ApiResponse.error(40004, "文档不存在");
+            return ApiResponse.error(ApiCode.NOT_FOUND, "文档不存在");
         }
         return ApiResponse.success(KnowledgeDocDto.Detail.from(doc));
     }
@@ -293,7 +294,7 @@ public class KnowledgeDocController {
         int from = Math.min(fromV, toV);
         int to = Math.max(fromV, toV);
         if (from < 1) {
-            return ApiResponse.error(40001, "版本号必须为正整数");
+            return ApiResponse.error(ApiCode.BAD_REQUEST, "版本号必须为正整数");
         }
 
         try {
@@ -311,10 +312,10 @@ public class KnowledgeDocController {
 
             return ApiResponse.success(result);
         } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40004, e.getMessage());
+            return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
         } catch (Exception e) {
             log.error("版本对比失败 | id={} | from={} | to={}", id, from, to, e);
-            return ApiResponse.error(50001, "对比失败: " + e.getMessage());
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "对比失败: " + e.getMessage());
         }
     }
 
@@ -326,7 +327,7 @@ public class KnowledgeDocController {
             @PathVariable Long id, @PathVariable int version) {
         KnowledgeDoc doc = docService.findVersion(id, version);
         if (doc == null) {
-            return ApiResponse.error(40004, "历史版本不存在");
+            return ApiResponse.error(ApiCode.NOT_FOUND, "历史版本不存在");
         }
         return ApiResponse.success(KnowledgeDocDto.Detail.from(doc));
     }
