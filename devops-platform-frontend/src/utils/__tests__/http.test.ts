@@ -326,3 +326,57 @@ describe('重试决策遵循业务码的 retry 语义', () => {
     expect(calls.n).toBe(3)
   })
 })
+
+describe('契约 · http.ts 不得与词表并行维护错误码文案', () => {
+  /**
+   * 结构性断言：`toFriendlyError` 的 BIZ 分支里不许再出现按具体业务码分流的代码。
+   *
+   * 行为断言（上面那些 `40001 用词表文案…`）能验「现在的输出对不对」，
+   * 但验不出「有没有人又加了一段永远执行不到的分支」——
+   * 那段代码不影响输出，却会让后来者以为这个码要在两处维护。
+   *
+   * 实际发生过：删除前 http.ts 里有 40001/40400/40009/40021 四段分支，
+   * 而这四个码词表全都有，getBizError() 会先命中并 return，
+   * 四段全是死代码。更糟的是其中 40004 那段写着「数据不存在」，
+   * 与词表的「当前状态不允许该操作」互相矛盾 —— 读代码的人无从判断哪个是对的。
+   */
+  it('BIZ 分支里没有按具体业务码分流的判断', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, resolve } = await import('node:path')
+
+    const here = dirname(fileURLToPath(import.meta.url))
+    const src = readFileSync(resolve(here, '../http.ts'), 'utf-8')
+
+    // 剥注释：本文件与 http.ts 的注释里都引用了这些码来说明成因，
+    // 不剥会被自己的说明文字打中而永远失败
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => '\n'.repeat((m.match(/\n/g) || []).length))
+      .replace(/\/\/[^\n]*/g, '')
+
+    // 只看 case 'BIZ' 到下一个 case 之间，避免把 HTTP 状态码分支
+    // （e.status === 404 之类）误判为业务码分流
+    const bizStart = code.indexOf("case 'BIZ':")
+    expect(bizStart, "http.ts 里找不到 case 'BIZ' —— 结构变了，本断言需同步").toBeGreaterThan(0)
+    const bizEnd = code.indexOf('case ', bizStart + 10)
+    const bizBlock = code.slice(bizStart, bizEnd > 0 ? bizEnd : undefined)
+
+    const branches = bizBlock.match(/e\.bizCode\s*===/g) ?? []
+    expect(
+      branches,
+      'BIZ 分支里出现了按具体业务码分流的判断。这些码词表里若已有，' +
+        'getBizError() 会先命中并 return，新增的分支是死代码；' +
+        '词表里若没有，正确做法是把它加进 bizCode.ts（那里有跨端契约测试守着），' +
+        '而不是在这里开一个只有前端知道的分支'
+    ).toEqual([])
+  })
+
+  it('词表命中时不落到通用兜底 —— 证明查表确实在 switch 之前', () => {
+    // 与上一条互补：上一条防「加了死代码」，这条防「把查表挪到了 switch 后面」。
+    // 50020 只在词表里有，http.ts 从来没有为它写过分支，
+    // 若查表失效它会落到「操作失败」
+    const r = toFriendlyError(new HttpError('', 200, 'BIZ', null, 50020))
+    expect(r.title).toBe('监控数据源不可用')
+    expect(r.title).not.toBe('操作失败')
+  })
+})

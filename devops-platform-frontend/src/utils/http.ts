@@ -1,4 +1,4 @@
-import { getBizError, isAutoRetryable, BizCode } from '../constants/bizCode'
+import { getBizError, isAutoRetryable } from '../constants/bizCode'
 
 // ==================== Sa-Token 鉴权 token 管理（方向三）====================
 // token 存 localStorage，每个请求由 httpRequest 自动附带 satoken 头。
@@ -201,34 +201,16 @@ export function toFriendlyError(e: unknown): FriendlyError {
       }
 
     case 'BIZ':
-      if (e.bizCode === BizCode.PARAM_ERROR) {
-        return {
-          title: '参数校验失败',
-          detail: e.message || '提交的数据不符合要求',
-          hint: '请检查输入内容后重试'
-        }
-      }
-      if (e.bizCode === BizCode.NOT_FOUND) {
-        return {
-          title: '数据不存在',
-          detail: e.message || '请求的资源不存在或已被删除',
-          hint: '请刷新列表获取最新数据'
-        }
-      }
-      if (e.bizCode === BizCode.OPTIMISTIC_LOCK) {
-        return {
-          title: '数据已被修改',
-          detail: e.message || '该记录已被他人修改，你的编辑基于旧版本',
-          hint: '请刷新页面获取最新数据后重新编辑'
-        }
-      }
-      if (e.bizCode === 40021) {
-        return {
-          title: '内容重复',
-          detail: e.message || '提交的内容与已有数据重复',
-          hint: '请修改内容后重试'
-        }
-      }
+      // 这里只剩「词表查不到」的兜底。
+      //
+      // 上方 getBizError() 已优先查表并 return，凡是词表里有的码都到不了这儿。
+      // 此前这个 case 里还硬编码了 40001/40400/40009/40021 四个分支，
+      // 而这四个码词表全都有 —— 也就是说它们是**四段永远执行不到的死代码**，
+      // 却让人误以为「这几个码要在两个地方维护」。
+      // 实际风险已经发生过：40004 在词表里是「当前状态不允许该操作」，
+      // 在这里却写成「数据不存在」，同一个码两套互相矛盾的文案。
+      //
+      // 删除时把它们措辞更好的部分回填进了词表（见 bizCode.ts 的 40400）。
       return {
         title: '操作失败',
         detail: e.message || `业务错误（码 ${e.bizCode}）`,

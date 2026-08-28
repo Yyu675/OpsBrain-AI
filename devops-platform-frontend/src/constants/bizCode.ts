@@ -49,7 +49,13 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
   40103: { title: '权限不足', hint: '如需访问请联系管理员开通', retry: 'NEVER' },
   40104: { title: 'Webhook 鉴权失败', hint: '请检查 X-Webhook-Token 配置', retry: 'NEVER' },
   40301: { title: '操作被拦截', hint: '该操作存在安全风险', retry: 'NEVER' },
-  40400: { title: '资源不存在', hint: '它可能已被删除或从未创建', retry: 'NEVER' },
+  // hint 兼顾「为什么」与「下一步」：原文案只说了可能的原因，
+  // 用户读完仍不知道该做什么。合并自 http.ts 删除的重复分支
+  40400: {
+    title: '资源不存在',
+    hint: '它可能已被删除或从未创建，请刷新列表获取最新数据',
+    retry: 'NEVER'
+  },
   42901: { title: '请求过于频繁', hint: '请稍等片刻后再试', retry: 'BACKOFF' },
 
   // 5xx 服务端
