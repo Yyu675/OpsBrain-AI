@@ -288,7 +288,7 @@ class AuditLogControllerWebTest {
 
             mockMvc.perform(get("/api/v1/audit/trace/t-gone"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.code").value(40004))
+                    .andExpect(jsonPath("$.code").value(40400))
                     // 「已过保留期」是用户能理解并据此行动的解释；
                     // 一个空壳页面只会让人以为这次请求什么都没做
                     .andExpect(jsonPath("$.message").value(

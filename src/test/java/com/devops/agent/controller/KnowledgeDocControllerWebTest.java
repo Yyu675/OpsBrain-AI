@@ -544,7 +544,7 @@ class KnowledgeDocControllerWebTest {
             when(docService.findById(eq(999L), eq(true))).thenReturn(null);
             mockMvc.perform(get("/api/v1/knowledge/docs/999"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.code").value(40004));
+                    .andExpect(jsonPath("$.code").value(40400));
         }
 
         @Test
@@ -601,7 +601,7 @@ class KnowledgeDocControllerWebTest {
             when(docService.findVersion(7L, 99)).thenReturn(null);
             mockMvc.perform(get("/api/v1/knowledge/docs/7/versions/99"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.code").value(40004));
+                    .andExpect(jsonPath("$.code").value(40400));
         }
 
         @Test
@@ -663,7 +663,7 @@ class KnowledgeDocControllerWebTest {
             mockMvc.perform(get("/api/v1/knowledge/docs/7/compare")
                             .param("fromV", "2").param("toV", "9"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.code").value(40004));
+                    .andExpect(jsonPath("$.code").value(40400));
         }
     }
 

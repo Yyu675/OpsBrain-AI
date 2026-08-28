@@ -259,7 +259,7 @@ class ApprovalControllerWebTest {
 
             mockMvc.perform(get("/api/v1/approvals/999"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.code").value(40004));
+                    .andExpect(jsonPath("$.code").value(40400));
         }
 
         @Test
@@ -365,7 +365,7 @@ class ApprovalControllerWebTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(Map.of("reason", "ok"))))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.code").value(40004));
+                    .andExpect(jsonPath("$.code").value(40400));
         }
 
         @Test
