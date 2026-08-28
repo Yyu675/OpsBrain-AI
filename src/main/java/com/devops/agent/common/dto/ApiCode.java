@@ -1,13 +1,30 @@
 package com.devops.agent.common.dto;
 
 /**
- * API 业务错误码表。
+ * API 业务错误码表 —— {@link com.devops.agent.common.error.BizError} 的取值别名。
+ *
+ * <h3>与 BizError 的关系（必读）</h3>
+ * <p>
+ * <b>{@code BizError} 枚举是唯一权威码表</b>，前端
+ * {@code constants/bizCode.ts} 与它一一对应，并由
+ * {@code bizCode.contract.test.ts} 跨端校验。
+ * </p>
+ * <p>
+ * 本类<b>不定义新码</b>，只为 {@code ApiResponse.error(int, String)}
+ * 这个接收裸 int 的签名提供有名字的取值。每个常量的值都必须
+ * 等于 {@code BizError} 里同语义项的 {@code code}，
+ * 由 {@code ApiCodeContractTest} 逐项比对。
+ * </p>
+ * <p>
+ * <b>新增错误码请先加到 {@code BizError}</b>（那里才有 HTTP 状态映射、
+ * 重试语义与前端文案的配套），再按需在本类加别名。
+ * </p>
  *
  * <h3>为什么要有这个类</h3>
  * <p>
  * {@link ApiResponse} 的 javadoc 一直写着「非 0 见错误码表」，
- * 但<b>这张表从来不存在</b>——33 处 {@code ApiResponse.error(40004, ...)}
- * 全是裸写的五位数字，散在 10 个控制器里。
+ * 但调用侧从来没用上——33 处 {@code ApiResponse.error(40400, ...)}
+ * 全是裸写的五位数字，散在 9 个文件里，与 {@code BizError} 各写各的。
  * </p>
  * <p>
  * 裸数字的代价不是「不好看」，是两件具体的事：
@@ -63,13 +80,28 @@ public final class ApiCode {
     public static final int BAD_REQUEST = 40001;
 
     /**
-     * 资源不存在。
+     * 资源不存在 —— 对应 {@code BizError.NOT_FOUND}。
      *
      * <p>与 {@link #BAD_REQUEST} 的分界：参数格式是对的，
      * 但指向的对象查不到（已删除、ID 写错、超过保留期）。
-     * 前端通常渲染空状态页而非错误弹窗。</p>
+     * 前端渲染空状态页而非错误弹窗。</p>
+     *
+     * <p><b>注意值是 40400 而非 40004。</b>40004 在 {@code BizError} 里
+     * 是 {@code STATE_CONFLICT}（当前状态不允许该操作，HTTP 409），
+     * 语义完全不同——它说的是「对象在，但现在不能这么操作」，
+     * 而这里说的是「对象根本不存在」。两者用错会让前端把
+     * 「已作废的工单不能改状态」渲染成「工单不存在」的空页面。</p>
      */
-    public static final int NOT_FOUND = 40004;
+    public static final int NOT_FOUND = 40400;
+
+    /**
+     * 当前状态不允许该操作 —— 对应 {@code BizError.STATE_CONFLICT}（HTTP 409）。
+     *
+     * <p>对象存在且参数合法，但它当前的状态不接受这个操作
+     * （如已作废的工单不能再变更状态）。前端应提示刷新查看最新状态，
+     * 而不是渲染成「不存在」。</p>
+     */
+    public static final int STATE_CONFLICT = 40004;
 
     /**
      * 端点已废弃。

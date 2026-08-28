@@ -132,6 +132,61 @@ class ApiCodeContractTest {
     }
 
     @Test
+    @DisplayName("每个 ApiCode 取值都能在 BizError 权威码表里找到")
+    void everyApiCodeExistsInBizError() throws IOException {
+        // BizError 才是唯一权威码表：它带 HTTP 状态映射、重试语义，
+        // 且前端 constants/bizCode.ts 与它一一对应、由 vitest 跨端校验。
+        // ApiCode 只是给 ApiResponse.error(int,...) 用的取值别名。
+        //
+        // 这条断言是上一轮缺失的那道闸：当时 ApiCode.NOT_FOUND 被定义成 40004，
+        // 而 40004 在 BizError 里是 STATE_CONFLICT（当前状态不允许该操作），
+        // 资源不存在其实是 40400。两套码表各写各的，后端测试全绿，
+        // 前端却会把「已作废的工单不能改状态」渲染成「工单不存在」的空页面。
+        Path bizError = MAIN.resolve("common/error/BizError.java");
+        String src = Files.readString(bizError, StandardCharsets.UTF_8);
+
+        Map<Integer, String> authoritative = new LinkedHashMap<>();
+        Matcher em = Pattern.compile("(?m)^\\s*([A-Z_]+)\\((\\d{5}),\\s*HttpStatus\\.")
+                .matcher(src);
+        while (em.find()) {
+            authoritative.put(Integer.parseInt(em.group(2)), em.group(1));
+        }
+
+        assertThat(authoritative)
+                .as("应当从 BizError 解析出错误码。为空说明枚举格式变了，"
+                        + "本断言形同虚设——请同步修正这里的正则")
+                .hasSizeGreaterThanOrEqualTo(15);
+
+        List<String> orphans = new ArrayList<>();
+        for (Field f : ApiCode.class.getDeclaredFields()) {
+            if (!Modifier.isStatic(f.getModifiers()) || f.getType() != int.class) {
+                continue;
+            }
+            int v;
+            try {
+                v = f.getInt(null);
+            } catch (IllegalAccessException e) {
+                orphans.add(f.getName() + " 不可读");
+                continue;
+            }
+            if (v == 0) {
+                continue;  // SUCCESS 不是错误码
+            }
+            if (!authoritative.containsKey(v)) {
+                orphans.add("ApiCode." + f.getName() + " = " + v
+                        + " 在 BizError 里没有对应项");
+            }
+        }
+
+        assertThat(orphans)
+                .as("ApiCode 不得定义 BizError 里没有的码。孤儿码会绕过前端的 "
+                        + "BIZ_ERRORS 文案表，用户只看到一句无意义的兜底提示，"
+                        + "而开发侧没有任何信号。新增错误码请先加到 BizError"
+                        + "（那里才有 HTTP 状态映射、重试语义与前端文案的配套）")
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("常量取值与前端已硬编码的数字保持一致（跨端契约）")
     void valuesMatchFrontendContract() {
         // 前端 api/types.ts 等处同样硬编码了这些数字。本轮只做后端重命名、
@@ -142,7 +197,9 @@ class ApiCodeContractTest {
         // 后端测试全绿，而前端 auth.ts 里判断 40100 的分支再也不会命中，
         // 登录失败会退化成通用错误提示。改数值必须前后端一起改
         assertThat(ApiCode.BAD_REQUEST).isEqualTo(40001);
-        assertThat(ApiCode.NOT_FOUND).isEqualTo(40004);
+        // 40400 而非 40004 —— 后者是 STATE_CONFLICT，语义完全不同
+        assertThat(ApiCode.NOT_FOUND).isEqualTo(40400);
+        assertThat(ApiCode.STATE_CONFLICT).isEqualTo(40004);
         assertThat(ApiCode.ENDPOINT_DEPRECATED).isEqualTo(40010);
         assertThat(ApiCode.LOGIN_FAILED).isEqualTo(40100);
         assertThat(ApiCode.UNAUTHORIZED).isEqualTo(40101);

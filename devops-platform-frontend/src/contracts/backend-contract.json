@@ -89,6 +89,12 @@
       "retry": "NEVER"
     },
     {
+      "name": "LOGIN_FAILED",
+      "code": 40100,
+      "httpStatus": 401,
+      "retry": "NEVER"
+    },
+    {
       "name": "NOT_LOGIN",
       "code": 40101,
       "httpStatus": 401,

@@ -1,4 +1,4 @@
-import { getBizError, isAutoRetryable } from '../constants/bizCode'
+import { getBizError, isAutoRetryable, BizCode } from '../constants/bizCode'
 
 // ==================== Sa-Token 鉴权 token 管理（方向三）====================
 // token 存 localStorage，每个请求由 httpRequest 自动附带 satoken 头。
@@ -201,21 +201,21 @@ export function toFriendlyError(e: unknown): FriendlyError {
       }
 
     case 'BIZ':
-      if (e.bizCode === 40001) {
+      if (e.bizCode === BizCode.PARAM_ERROR) {
         return {
           title: '参数校验失败',
           detail: e.message || '提交的数据不符合要求',
           hint: '请检查输入内容后重试'
         }
       }
-      if (e.bizCode === 40004) {
+      if (e.bizCode === BizCode.NOT_FOUND) {
         return {
           title: '数据不存在',
           detail: e.message || '请求的资源不存在或已被删除',
           hint: '请刷新列表获取最新数据'
         }
       }
-      if (e.bizCode === 40009) {
+      if (e.bizCode === BizCode.OPTIMISTIC_LOCK) {
         return {
           title: '数据已被修改',
           detail: e.message || '该记录已被他人修改，你的编辑基于旧版本',

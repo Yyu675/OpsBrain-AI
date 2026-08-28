@@ -8,6 +8,7 @@
 
 import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz, HttpError, httpRequest } from '../utils/http'
+import { BizCode } from '../constants/bizCode'
 import type {
   KnowledgeDocCreateRequest,
   KnowledgeDocUpdateRequest,
@@ -80,7 +81,7 @@ function unwrapDoc<T>(payload: unknown, errorPrefix: string, opts: { notFoundIsN
       if (e.bizCode === 40009) {
         throw new VersionConflictError(e.message || errorPrefix)
       }
-      if (e.bizCode === 40004 && opts.notFoundIsNotFound) {
+      if (e.bizCode === BizCode.NOT_FOUND && opts.notFoundIsNotFound) {
         throw new NotFoundDocError(e.message || errorPrefix)
       }
     }

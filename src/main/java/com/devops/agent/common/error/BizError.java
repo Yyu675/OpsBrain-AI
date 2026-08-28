@@ -51,6 +51,11 @@ public enum BizError {
     ENDPOINT_DEPRECATED(40010, HttpStatus.GONE, Retry.NEVER, "端点已废弃"),
     DUPLICATE_CONTENT(40021, HttpStatus.CONFLICT, Retry.NEVER, "内容重复"),
 
+    // 登录失败与「登录已失效」必须分开：前者用户还在登录页，应原地显示
+    // 「用户名或密码错误」；后者是会话过期，前端要跳转登录页。
+    // 合并成一个码会让登录页在密码输错时执行一次无意义的跳转，
+    // 且把用户已填的用户名清空
+    LOGIN_FAILED(40100, HttpStatus.UNAUTHORIZED, Retry.NEVER, "用户名或密码错误"),
     NOT_LOGIN(40101, HttpStatus.UNAUTHORIZED, Retry.NEVER, "未登录或登录已失效，请重新登录"),
     WEBHOOK_UNAUTHORIZED(40104, HttpStatus.UNAUTHORIZED, Retry.NEVER, "Webhook 鉴权失败"),
     NO_PERMISSION(40103, HttpStatus.FORBIDDEN, Retry.NEVER, "权限不足"),

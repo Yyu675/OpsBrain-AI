@@ -40,6 +40,9 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
   40009: { title: '数据已被他人修改', hint: '请刷新页面查看最新内容后再提交', retry: 'CLIENT' },
   40010: { title: '接口已废弃', hint: '请升级客户端或联系管理员', retry: 'NEVER' },
   40021: { title: '内容重复', hint: '知识库中已存在高度相似的文档', retry: 'NEVER' },
+  // 登录失败与登录失效分列：前者用户还在登录页，提示改密码即可；
+  // 后者是会话过期，需要跳转登录页。合并会让密码输错时也执行跳转
+  40100: { title: '用户名或密码错误', hint: '请检查后重新输入', retry: 'NEVER' },
   40101: { title: '登录已失效', hint: '请重新登录', retry: 'NEVER' },
   40103: { title: '权限不足', hint: '如需访问请联系管理员开通', retry: 'NEVER' },
   40104: { title: 'Webhook 鉴权失败', hint: '请检查 X-Webhook-Token 配置', retry: 'NEVER' },
@@ -60,6 +63,40 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
   50211: { title: '模型服务繁忙', hint: '上游限流中，请稍后重试', retry: 'BACKOFF' },
   50212: { title: '内容被模型安全策略拦截', hint: '请调整表述后重新提问', retry: 'NEVER' },
 }
+
+/**
+ * 具名业务码。
+ *
+ * 各 api 模块此前直接裸写 `e.bizCode === 40004` 判断「资源不存在」，
+ * 而 40004 的真实语义是 **STATE_CONFLICT（当前状态不允许该操作）**，
+ * 资源不存在是 40400。两者一个是「对象在但现在不能这么操作」、
+ * 一个是「对象根本不存在」，混用会让「已作废的工单不能改状态」
+ * 被渲染成「工单不存在」的空页面——用户以为数据丢了。
+ *
+ * 裸数字看不出这层区别，故一律走常量。
+ */
+export const BizCode = {
+  /** 参数不合法 */
+  PARAM_ERROR: 40001,
+  /** 当前状态不允许该操作（HTTP 409）——不是「不存在」 */
+  STATE_CONFLICT: 40004,
+  /** 数据已被他人修改（乐观锁冲突） */
+  OPTIMISTIC_LOCK: 40009,
+  /** 接口已废弃 */
+  ENDPOINT_DEPRECATED: 40010,
+  /** 内容重复 */
+  DUPLICATE_CONTENT: 40021,
+  /** 用户名或密码错误——用户还在登录页，原地提示即可 */
+  LOGIN_FAILED: 40100,
+  /** 未登录或登录已失效——需跳转登录页 */
+  NOT_LOGIN: 40101,
+  /** 权限不足——跳转登录页解决不了，重新登录还是同一个账号 */
+  NO_PERMISSION: 40103,
+  /** 资源不存在 */
+  NOT_FOUND: 40400,
+  /** 服务内部异常 */
+  INTERNAL_ERROR: 50001,
+} as const
 
 /** 查表；未知码返回 undefined，由调用方兜底 */
 export function getBizError(code: number | undefined): BizErrorMeta | undefined {

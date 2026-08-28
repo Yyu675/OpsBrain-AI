@@ -6,6 +6,7 @@
 import { API_ENDPOINTS } from '../../config/api'
 import { http, unwrapBiz, HttpError } from '../../utils/http'
 import { getStatusLabel, getPriorityLabel } from '../../constants/ticket'
+import { BizCode } from '../../constants/bizCode'
 import { parseDate } from '../../utils/time'
 import {
   convertBackendTicketToFrontend,
@@ -95,7 +96,7 @@ export async function fetchTicketByTraceId(traceId: string): Promise<FrontendTic
     const data = unwrapBiz<BackendTicket>(payload, '查询工单失败')
     return convertBackendTicketToFrontend(data)
   } catch (e) {
-    if (e instanceof HttpError && (e.status === 404 || e.bizCode === 40004)) {
+    if (e instanceof HttpError && (e.status === 404 || e.bizCode === BizCode.NOT_FOUND)) {
       return null
     }
     throw e instanceof Error ? e : new Error('查询工单失败')
@@ -617,7 +618,7 @@ export async function fetchTicketById(id: string): Promise<FrontendTicket | null
     const data = unwrapBiz<BackendTicket>(payload, '查询工单失败')
     return convertBackendTicketToFrontend(data)
   } catch (e) {
-    if (e instanceof HttpError && (e.status === 404 || e.bizCode === 40004)) {
+    if (e instanceof HttpError && (e.status === 404 || e.bizCode === BizCode.NOT_FOUND)) {
       return null
     }
     throw e instanceof Error ? e : new Error('查询工单失败')

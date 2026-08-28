@@ -8,6 +8,7 @@
 
 import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz, HttpError } from '../utils/http'
+import { BizCode } from '../constants/bizCode'
 import type { Alert, AlertsResponse } from './types'
 
 export interface AlertQuery {
@@ -47,7 +48,7 @@ export async function fetchAlertById(id: number | string): Promise<Alert | null>
     const payload = await http.get<unknown>(API_ENDPOINTS.ALERTS_BY_ID(Number(id)))
     return unwrapBiz<Alert>(payload, '查询告警详情失败')
   } catch (e) {
-    if (e instanceof HttpError && (e.status === 404 || e.bizCode === 40004)) {
+    if (e instanceof HttpError && (e.status === 404 || e.bizCode === BizCode.NOT_FOUND)) {
       return null
     }
     throw e instanceof Error ? e : new Error('查询告警详情失败')
