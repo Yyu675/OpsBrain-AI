@@ -105,7 +105,7 @@ public final class ApiCode {
      * 与 {@link #UNAUTHORIZED} 的分界很重要：跳转登录页解决不了这个问题，
      * 重新登录还是同一个账号。前端应显示「无权限」而非踢去登录。</p>
      */
-    public static final int FORBIDDEN = 40103;
+    public static final int FORBIDDEN = 40101;
 
     // ==================== 5xxxx：服务端侧 ====================
 
