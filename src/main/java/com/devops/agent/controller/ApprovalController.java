@@ -107,7 +107,7 @@ public class ApprovalController {
             return ApiResponse.success(result, msg);
         } catch (ApprovalService.ApprovalException e) {
             // 不存在 / 已被他人处理
-            int code = e.getMessage() != null && e.getMessage().contains("不存在") ? ApiCode.NOT_FOUND : ApiCode.APPROVAL_ALREADY_DECIDED;
+            int code = e.getMessage() != null && e.getMessage().contains("不存在") ? 40400 : 40102;
             return ApiResponse.error(code, e.getMessage());
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 批准失败 | id={}", id, e);
