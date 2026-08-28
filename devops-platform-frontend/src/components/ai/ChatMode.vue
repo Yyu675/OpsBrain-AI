@@ -150,7 +150,13 @@ const runStream = async (query: string) => {
           // 重试就能好。丢掉 code 等于把这个信息藏起来，
           // 用户多半以为服务坏了就走了
           const view = toStreamError(data.code, data.message)
-          chat.finishStreaming(`❌ ${view.text}`)
+          // 保留已流式输出的内容，与 onClose / stopGeneration 两条收尾路径一致。
+          // 此前直接覆盖：模型已经答了半页，中途报错就被一句错误提示整个抹掉，
+          // 而那半页往往已经有用（诊断思路、前半段命令），用户还没来得及复制
+          const partial = chat.streamingMessage?.content ?? ''
+          chat.finishStreaming(
+            partial ? `${partial}\n\n---\n\n❌ ${view.text}` : `❌ ${view.text}`
+          )
           if (view.retryable) {
             notify.warning(`${view.title}，可重试`)
           } else {

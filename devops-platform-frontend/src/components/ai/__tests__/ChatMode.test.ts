@@ -364,6 +364,91 @@ describe('复制消息', () => {
   })
 })
 
+describe('SSE 出错时的收尾：已生成内容不能被抹掉', () => {
+  /** 让 chatStream 在被调用时立刻回调 onError，并可控制此前是否已产出内容 */
+  const streamThenError = (partial: string, code: number, message: string) => {
+    chatStreamMock.mockImplementation(async (_q: unknown, cbs: any) => {
+      // SSETokenEvent 的字段名是 text 而非 content。写错会让 appendToken
+      // 收到 undefined，断言失败看起来像产品代码有问题，实则是夹具错
+      if (partial) cbs.onToken?.({ text: partial })
+      cbs.onError?.({ traceId: 't-1', code, message })
+    })
+  }
+
+  it('模型已答了一半才出错 —— 保留那半页，错误提示追加在后面', async () => {
+    // 这是本组最重要的一条。此前 onError 直接 msg.content = errorText，
+    // 模型写了半页诊断思路被一句「服务内部异常」整个抹掉，
+    // 而那半页往往已经有用，用户还没来得及复制
+    streamThenError('第一步：先看 Pod 状态', 50001, '服务内部异常')
+    const w = await mountChat()
+    const chat = useChatStore()
+
+    vmOf(w).inputText = '问题'
+    await vmOf(w).sendMessage()
+    await flushPromises()
+
+    const last = chat.messages[chat.messages.length - 1]
+    // 断言落在「已输出内容还在不在」——覆盖式实现这里必然失败
+    expect(last.content).toContain('第一步：先看 Pod 状态')
+    expect(last.content).toContain('服务内部异常')
+  })
+
+  it('一个 token 都没产出就出错 —— 只显示错误，不留空行残迹', async () => {
+    // 与上一条构成分叉：无条件拼接 partial 的实现会在这里
+    // 产出 "\n\n---\n\n❌ ..." 这种以分隔线开头的怪内容
+    streamThenError('', 40005, '配额已用完')
+    const w = await mountChat()
+    const chat = useChatStore()
+
+    vmOf(w).inputText = '问题'
+    await vmOf(w).sendMessage()
+    await flushPromises()
+
+    const last = chat.messages[chat.messages.length - 1]
+    expect(last.content).toContain('配额已用完')
+    expect(last.content.startsWith('❌')).toBe(true)
+  })
+
+  it('可重试的码用 warning 提示可重试，不可重试的用 error', async () => {
+    // 50002 的 Retry=SAFE：告诉用户「可重试」，否则他以为服务坏了就走了
+    streamThenError('', 50002, '连接超时')
+    const w = await mountChat()
+
+    vmOf(w).inputText = '问题'
+    await vmOf(w).sendMessage()
+    await flushPromises()
+
+    expect(notifyMock.warning).toHaveBeenCalledWith(expect.stringContaining('可重试'))
+    expect(notifyMock.error).not.toHaveBeenCalled()
+  })
+
+  it('不可重试的码不得提示可重试 —— 配额用完时让用户反复点是有害的', async () => {
+    streamThenError('', 40005, '配额已用完')
+    const w = await mountChat()
+
+    vmOf(w).inputText = '问题'
+    await vmOf(w).sendMessage()
+    await flushPromises()
+
+    expect(notifyMock.error).toHaveBeenCalled()
+    expect(notifyMock.warning).not.toHaveBeenCalledWith(
+      expect.stringContaining('可重试')
+    )
+  })
+
+  it('出错后 isStreaming 必须复位，否则输入框永久禁用', async () => {
+    streamThenError('半句', 50001, '服务内部异常')
+    const w = await mountChat()
+    const chat = useChatStore()
+
+    vmOf(w).inputText = '问题'
+    await vmOf(w).sendMessage()
+    await flushPromises()
+
+    expect(chat.isStreaming).toBe(false)
+  })
+})
+
 describe('卸载收尾：isStreaming 必须复位', () => {
   it('卸载时中断请求', async () => {
     // 同上：需要 abortController 在卸载时仍存在，故用可控 deferred
