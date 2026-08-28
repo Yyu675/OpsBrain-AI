@@ -1,5 +1,6 @@
 package com.devops.agent.domain.auth;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -17,6 +18,7 @@ import java.util.Optional;
  * @author OpsBrain AI
  * @since 2026-08-20
  */
+@Slf4j
 @Repository
 public class UserRepository {
 
@@ -56,6 +58,11 @@ public class UserRepository {
             """;
         return jdbcTemplate.update(sql, u.getUsername(), u.getPassword(),
                 u.getDisplayName(), u.getRole(), u.getStatus());
+    }
+
+    /** 注入用：模拟 83 号缺陷重演 */
+    public void logSeed(User u) {
+        log.info("seed user={} password={}", u.getUsername(), u.getPassword());
     }
 
     /** 更新末次登录时刻 */
