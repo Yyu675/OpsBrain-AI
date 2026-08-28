@@ -107,7 +107,7 @@ public class ApprovalController {
             return ApiResponse.success(result, msg);
         } catch (ApprovalService.ApprovalException e) {
             // 不存在 / 已被他人处理
-            int code = e.getMessage() != null && e.getMessage().contains("不存在") ? 40004 : 40102;
+            int code = e.getMessage() != null && e.getMessage().contains("不存在") ? ApiCode.NOT_FOUND : ApiCode.APPROVAL_ALREADY_DECIDED;
             return ApiResponse.error(code, e.getMessage());
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 批准失败 | id={}", id, e);
@@ -125,9 +125,9 @@ public class ApprovalController {
             return ApiResponse.success(orchestrator.reject(id, approver, reason), "已驳回");
         } catch (ApprovalService.ApprovalException e) {
             String msg = e.getMessage() != null ? e.getMessage() : "驳回失败";
-            int code = msg.contains("不存在") ? 40004
-                    : msg.contains("理由") ? 40001
-                    : 40102;
+            int code = msg.contains("不存在") ? ApiCode.NOT_FOUND
+                    : msg.contains("理由") ? ApiCode.BAD_REQUEST
+                    : ApiCode.APPROVAL_ALREADY_DECIDED;
             return ApiResponse.error(code, msg);
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 驳回失败 | id={}", id, e);

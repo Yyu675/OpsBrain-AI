@@ -84,7 +84,7 @@ public class KnowledgeDocController {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("duplicateDocId", e.getDuplicateDocId());
             data.put("duplicateTitle", e.getDuplicateTitle());
-            return ApiResponse.<Object>error(40021, e.getMessage(), data);
+            return ApiResponse.<Object>error(ApiCode.DUPLICATE_CONTENT, e.getMessage(), data);
         } catch (IllegalArgumentException e) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {

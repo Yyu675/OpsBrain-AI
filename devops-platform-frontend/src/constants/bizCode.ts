@@ -37,6 +37,7 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
     hint: '请刷新查看最新状态——例如已作废的工单不能再变更状态',
     retry: 'NEVER'
   },
+  40005: { title: '请求超出配额限制', hint: '本周期配额已用完，请联系管理员调整额度', retry: 'NEVER' },
   40009: { title: '数据已被他人修改', hint: '请刷新页面查看最新内容后再提交', retry: 'CLIENT' },
   40010: { title: '接口已废弃', hint: '请升级客户端或联系管理员', retry: 'NEVER' },
   40021: { title: '内容重复', hint: '知识库中已存在高度相似的文档', retry: 'NEVER' },
@@ -44,6 +45,7 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
   // 后者是会话过期，需要跳转登录页。合并会让密码输错时也执行跳转
   40100: { title: '用户名或密码错误', hint: '请检查后重新输入', retry: 'NEVER' },
   40101: { title: '登录已失效', hint: '请重新登录', retry: 'NEVER' },
+  40102: { title: '该审批单已被处理', hint: '请刷新查看最新决策', retry: 'NEVER' },
   40103: { title: '权限不足', hint: '如需访问请联系管理员开通', retry: 'NEVER' },
   40104: { title: 'Webhook 鉴权失败', hint: '请检查 X-Webhook-Token 配置', retry: 'NEVER' },
   40301: { title: '操作被拦截', hint: '该操作存在安全风险', retry: 'NEVER' },
@@ -78,6 +80,8 @@ export const BIZ_ERRORS: Record<number, BizErrorMeta> = {
 export const BizCode = {
   /** 参数不合法 */
   PARAM_ERROR: 40001,
+  /** 请求超出配额限制 */
+  QUOTA_EXCEEDED: 40005,
   /** 当前状态不允许该操作（HTTP 409）——不是「不存在」 */
   STATE_CONFLICT: 40004,
   /** 数据已被他人修改（乐观锁冲突） */
@@ -90,6 +94,8 @@ export const BizCode = {
   LOGIN_FAILED: 40100,
   /** 未登录或登录已失效——需跳转登录页 */
   NOT_LOGIN: 40101,
+  /** 审批单已被他人处理 */
+  APPROVAL_ALREADY_DECIDED: 40102,
   /** 权限不足——跳转登录页解决不了，重新登录还是同一个账号 */
   NO_PERMISSION: 40103,
   /** 资源不存在 */

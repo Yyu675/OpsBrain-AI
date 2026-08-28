@@ -114,6 +114,14 @@ public final class ApiCode {
     public static final int ENDPOINT_DEPRECATED = 40010;
 
     /**
+     * 审批单已被他人处理 —— 对应 {@code BizError.APPROVAL_ALREADY_DECIDED}。
+     *
+     * <p>与 {@link #STATE_CONFLICT} 分开：前端要提示「刷新查看最新决策」，
+     * 而不是笼统的「当前状态不允许该操作」。</p>
+     */
+    public static final int APPROVAL_ALREADY_DECIDED = 40102;
+
+    /**
      * 登录失败。
      *
      * <p>用户名或密码错误。与 {@link #UNAUTHORIZED} 的分界：
@@ -139,7 +147,35 @@ public final class ApiCode {
      */
     public static final int FORBIDDEN = 40103;
 
+    /** 提示词注入拦截 —— {@code BizError.PROMPT_INJECTION} */
+    public static final int PROMPT_INJECTION = 40003;
+
+    /** 请求超出配额限制 —— {@code BizError.QUOTA_EXCEEDED} */
+    public static final int QUOTA_EXCEEDED = 40005;
+
+    /** 问题过长，超出上下文窗口 —— {@code BizError.BUDGET_EXCEEDED} */
+    public static final int BUDGET_EXCEEDED = 40006;
+
+    /** 数据已被他人修改（乐观锁冲突）—— {@code BizError.OPTIMISTIC_LOCK} */
+    public static final int OPTIMISTIC_LOCK = 40009;
+
+    /** 内容重复 —— {@code BizError.DUPLICATE_CONTENT} */
+    public static final int DUPLICATE_CONTENT = 40021;
+
+    /** Webhook 鉴权失败 —— {@code BizError.WEBHOOK_UNAUTHORIZED} */
+    public static final int WEBHOOK_UNAUTHORIZED = 40104;
+
+    /** 操作被安全策略拦截 —— {@code BizError.SECURITY_BLOCKED} */
+    public static final int SECURITY_BLOCKED = 40301;
+
+    /** 请求过于频繁 —— {@code BizError.RATE_LIMITED} */
+    public static final int RATE_LIMITED = 42901;
+
     // ==================== 5xxxx：服务端侧 ====================
+
+    /** SSE 连接异常 —— {@code BizError.SSE_CONNECTION_ERROR} */
+    public static final int SSE_CONNECTION_ERROR = 50002;
+
 
     /**
      * 服务端异常。

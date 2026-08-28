@@ -1,5 +1,7 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.common.dto.ApiCode;
+
 import com.devops.agent.application.DevOpsAgentService;
 import com.devops.agent.common.web.ClientIpResolver;
 import com.devops.agent.domain.biz.service.AgentLogService;
@@ -207,7 +209,7 @@ public class DevOpsChatController {
         if (query == null || query.isBlank()) {
             log.warn("⚠️ [ChatController] 空查询 | traceId={} | method={}", traceId, method);
             recordAudit(traceId, query, "输入为空", "REJECTED_SECURITY");
-            sendErrorEvent(emitter, traceId, 40001, "输入不能为空");
+            sendErrorEvent(emitter, traceId, ApiCode.BAD_REQUEST, "输入不能为空");
             emitter.complete();
             return emitter;
         }
@@ -227,7 +229,7 @@ public class DevOpsChatController {
             recordAudit(traceId, query, "触发限流", "REJECTED_RATE_LIMIT");
             // 用 SSE error 事件而非 HTTP 429：响应此刻已是 text/event-stream，
             // 前端走的是 SSE 解析器，改用状态码它收不到可读提示，只会看到连接异常。
-            sendErrorEvent(emitter, traceId, 42901,
+            sendErrorEvent(emitter, traceId, ApiCode.RATE_LIMITED,
                     "提问过于频繁，请稍后再试（每 " + (chatRateWindowMs / 1000) + " 秒最多 "
                             + chatRateLimit + " 次）");
             emitter.complete();
@@ -268,7 +270,7 @@ public class DevOpsChatController {
             cancelHeartbeat(heartbeatRef);
             agentService.cancelStream(traceId);
             try {
-                sendErrorEvent(emitter, traceId, 50002, "连接超时");
+                sendErrorEvent(emitter, traceId, ApiCode.SSE_CONNECTION_ERROR, "连接超时");
                 emitter.complete();
             } catch (Exception e) {
                 log.error("❌ [ChatController] 超时回调异常", e);
@@ -280,7 +282,7 @@ public class DevOpsChatController {
             cancelHeartbeat(heartbeatRef);
             agentService.cancelStream(traceId);
             try {
-                sendErrorEvent(emitter, traceId, 50001, "连接异常，请稍后重试或联系管理员");
+                sendErrorEvent(emitter, traceId, ApiCode.INTERNAL_ERROR, "连接异常，请稍后重试或联系管理员");
                 emitter.complete();
             } catch (Exception e) {
                 log.error("❌ [ChatController] 错误回调异常", e);

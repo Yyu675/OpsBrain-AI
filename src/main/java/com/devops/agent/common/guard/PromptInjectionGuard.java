@@ -1,5 +1,7 @@
 package com.devops.agent.common.guard;
 
+import com.devops.agent.common.dto.ApiCode;
+
 import com.devops.agent.common.exception.SecurityGuardException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -381,7 +383,7 @@ public class PromptInjectionGuard {
         if (result.isInjected()) {
             if ("CRITICAL".equals(result.getSeverity()) || "HIGH".equals(result.getSeverity())) {
                 throw new SecurityGuardException(
-                        40003,
+                        ApiCode.PROMPT_INJECTION,
                         String.format("检测到提示词注入攻击 [%s]: %s，已拦截",
                                 result.getSeverity(), String.join(", ", result.getMatchedPatterns()))
                 );

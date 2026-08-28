@@ -35,6 +35,9 @@ public enum BizError {
     // ==================== 4xx 客户端 ====================
     INVALID_PARAM(40001, HttpStatus.BAD_REQUEST, Retry.NEVER, "参数不合法"),
     PROMPT_INJECTION(40003, HttpStatus.FORBIDDEN, Retry.NEVER, "检测到提示词注入，请求已拦截"),
+    // 配额超限：SSE 主链路在预算检查失败时下发。此前是裸数字，
+    // 前端 bizCode.ts 没有它，用户看到的是通用兜底文案而非「配额已用完」
+    QUOTA_EXCEEDED(40005, HttpStatus.TOO_MANY_REQUESTS, Retry.NEVER, "请求超出配额限制"),
     BUDGET_EXCEEDED(40006, HttpStatus.BAD_REQUEST, Retry.NEVER, "问题过长，超出模型上下文窗口限制"),
 
     /**
@@ -57,6 +60,9 @@ public enum BizError {
     // 且把用户已填的用户名清空
     LOGIN_FAILED(40100, HttpStatus.UNAUTHORIZED, Retry.NEVER, "用户名或密码错误"),
     NOT_LOGIN(40101, HttpStatus.UNAUTHORIZED, Retry.NEVER, "未登录或登录已失效，请重新登录"),
+    // 审批单已被他人批准/驳回。与 STATE_CONFLICT 分开：前端要提示「刷新看最新决策」，
+    // 而不是笼统的「当前状态不允许该操作」
+    APPROVAL_ALREADY_DECIDED(40102, HttpStatus.CONFLICT, Retry.NEVER, "该审批单已被处理"),
     WEBHOOK_UNAUTHORIZED(40104, HttpStatus.UNAUTHORIZED, Retry.NEVER, "Webhook 鉴权失败"),
     NO_PERMISSION(40103, HttpStatus.FORBIDDEN, Retry.NEVER, "权限不足"),
     SECURITY_BLOCKED(40301, HttpStatus.FORBIDDEN, Retry.NEVER, "该操作存在安全风险，已被拦截"),

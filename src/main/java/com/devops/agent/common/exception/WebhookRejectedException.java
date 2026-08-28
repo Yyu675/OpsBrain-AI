@@ -1,5 +1,7 @@
 package com.devops.agent.common.exception;
 
+import com.devops.agent.common.dto.ApiCode;
+
 /**
  * Webhook 请求被拒绝（鉴权失败或触发限流）。
  *
@@ -35,7 +37,7 @@ public class WebhookRejectedException extends RuntimeException {
      * 应当让它在 Alertmanager 侧显式报错以便被发现。</p>
      */
     public static WebhookRejectedException unauthorized() {
-        return new WebhookRejectedException(40104, 401, 0, "Webhook 鉴权失败");
+        return new WebhookRejectedException(ApiCode.WEBHOOK_UNAUTHORIZED, 401, 0, "Webhook 鉴权失败");
     }
 
     /**
@@ -45,7 +47,7 @@ public class WebhookRejectedException extends RuntimeException {
      * 会让 Alertmanager 退避后重投，告警最终不丢。</p>
      */
     public static WebhookRejectedException rateLimited(int retryAfterSeconds) {
-        return new WebhookRejectedException(42901, 429, Math.max(1, retryAfterSeconds),
+        return new WebhookRejectedException(ApiCode.RATE_LIMITED, 429, Math.max(1, retryAfterSeconds),
                 "告警推送过于频繁，请退避后重试");
     }
 

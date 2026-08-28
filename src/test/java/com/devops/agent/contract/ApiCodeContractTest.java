@@ -48,17 +48,50 @@ class ApiCodeContractTest {
 
     private static final Path MAIN = Path.of("src/main/java/com/devops/agent");
 
-    /** {@code ApiResponse.error(数字字面量, ...)} —— 本轮消灭的写法 */
-    private static final Pattern LITERAL_ERROR = Pattern.compile(
-            "ApiResponse\\.error\\s*\\(\\s*(\\d+)");
+    /**
+     * 任何把五位业务码<b>写成字面量</b>的地方。
+     *
+     * <p>只匹配 {@code ApiResponse.error(数字} 是不够的——业务码还会以别的形式流动，
+     * 而这些形式一样会绕过 {@code BizError} 权威码表：</p>
+     * <ul>
+     *   <li>三元表达式：{@code int code = msg.contains("不存在") ? 40004 : 40102;}</li>
+     *   <li>SSE 事件：{@code sendErrorEvent(emitter, traceId, 40001, "...")}</li>
+     *   <li>异常构造：{@code new SecurityGuardException(40001, "...")}</li>
+     * </ul>
+     * <p>
+     * 本轮就是栽在这里：上一轮的替换脚本只认第一种形式，
+     * {@code ApprovalController} 里三元表达式中的 40004 被漏掉，
+     * 修了常量值却没修它，CI 报出 {@code expected:<40400> but was:<40004>}。
+     * </p>
+     * <p>
+     * 故这里匹配<b>裸露的五位数字</b>，再由白名单排除合法用途
+     * （{@code BizError} 枚举定义本身、HTTP 状态码等）。
+     * </p>
+     */
+    private static final Pattern LITERAL_CODE = Pattern.compile(
+            "(?<![\\w.])(4\\d{4}|5\\d{4})(?![\\w.])");
+
+    /**
+     * 允许出现五位数字字面量的文件。
+     *
+     * <p>{@code BizError} 是码表定义处，数字必须写在那里；
+     * {@code ApiCode} 是它的取值别名，同理。</p>
+     */
+    private static final List<String> LITERAL_ALLOWED_FILES = List.of(
+            "common/error/BizError.java",
+            "common/dto/ApiCode.java");
 
     @Test
-    @DisplayName("不得再用数字字面量调用 ApiResponse.error")
+    @DisplayName("业务码不得以数字字面量出现在业务代码里（含三元、SSE、异常构造）")
     void noLiteralErrorCodes() throws IOException {
         List<String> offenders = new ArrayList<>();
         int scannedFiles = 0;
 
         for (Path f : javaFiles()) {
+            String relative = rel(f).replace('\\', '/');
+            if (LITERAL_ALLOWED_FILES.contains(relative)) {
+                continue;
+            }
             // 剥注释：ApiCode 与本类的 javadoc 里都引用了
             // ApiResponse.error(40004, ...) 来说明成因，
             // 不剥会被自己的说明文字打中而永远失败
@@ -67,10 +100,11 @@ class ApiCodeContractTest {
                     Files.readString(f, StandardCharsets.UTF_8));
             scannedFiles++;
 
-            Matcher m = LITERAL_ERROR.matcher(code);
+            Matcher m = LITERAL_CODE.matcher(code);
             while (m.find()) {
-                offenders.add(rel(f) + " L" + lineOf(code, m.start())
-                        + " → ApiResponse.error(" + m.group(1) + ", ...)");
+                offenders.add(relative + " L" + lineOf(code, m.start())
+                        + " → 裸写业务码 " + m.group(1)
+                        + "：" + lineTextAt(code, m.start()));
             }
         }
 
@@ -80,11 +114,13 @@ class ApiCodeContractTest {
                 .isGreaterThan(100);
 
         assertThat(offenders)
-                .as("以下调用点直接写了错误码数字。请改用 ApiCode 常量——"
-                        + "裸数字没有唯一真相源，新增错误分支时只能靠翻别处代码猜该写哪个码；"
-                        + "猜错了前端会走进错误的处理分支"
-                        + "（如把「参数不合法」当成「资源不存在」，页面显示空状态而非错误提示）。"
-                        + "若确实需要新的码，请先在 ApiCode 里定义")
+                .as("以下位置把业务码写成了数字字面量。请改用 ApiCode 常量——"
+                        + "裸数字绕过 BizError 权威码表，前端 bizCode.ts 里可能根本没有它，"
+                        + "用户只看到一句无意义的兜底文案；"
+                        + "而且新增错误分支时只能靠翻别处代码猜该写哪个码，"
+                        + "猜错了前端会走进错误的处理分支。"
+                        + "注意业务码不只出现在 ApiResponse.error 的第一个参数上——"
+                        + "三元表达式、SSE 事件、异常构造同样会传码")
                 .isEmpty();
     }
 

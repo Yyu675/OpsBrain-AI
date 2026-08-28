@@ -1,5 +1,7 @@
 package com.devops.agent.application.impl;
 
+import com.devops.agent.common.dto.ApiCode;
+
 import cn.dev33.satoken.stp.StpUtil;
 
 import com.devops.agent.application.runtime.CostQuotaManager;
@@ -267,7 +269,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                             "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                             "REJECTED_BUDGET", "[]", "SYSTEM");
                     sendStartEvent(emitter, traceId, "budget_exceeded");
-                    sendErrorEvent(emitter, traceId, 40006, "问题过长，超出模型上下文窗口限制，请精简问题后重试");
+                    sendErrorEvent(emitter, traceId, ApiCode.BUDGET_EXCEEDED, "问题过长，超出模型上下文窗口限制，请精简问题后重试");
                     emitter.complete();
                     return;
                 }
@@ -348,7 +350,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                             routedModel, false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                             "REJECTED_QUOTA", "[]", "SYSTEM");
                     sendStartEvent(emitter, traceId, "quota_exceeded");
-                    sendErrorEvent(emitter, traceId, 40005, "请求超出配额限制: " + quotaCheck.getReason() + "，请稍后重试或联系管理员");
+                    sendErrorEvent(emitter, traceId, ApiCode.QUOTA_EXCEEDED, "请求超出配额限制: " + quotaCheck.getReason() + "，请稍后重试或联系管理员");
                     emitter.complete();
                     return;
                 }
@@ -411,7 +413,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 recordLogAsync(traceId, query, "系统异常: " + detail,
                         "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                         "FAILED_SYSTEM", "[]", "SYSTEM");
-                sendErrorEvent(emitter, traceId, 50001, "服务内部异常，请稍后重试或联系管理员");
+                sendErrorEvent(emitter, traceId, ApiCode.INTERNAL_ERROR, "服务内部异常，请稍后重试或联系管理员");
                 emitter.complete();
             } finally {
                 // 清理 ThreadLocal 防止内存泄漏与跨请求串号
@@ -752,7 +754,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                                     "异常：" + error.getMessage());
                         }
 
-                        sendErrorEvent(emitter, traceId, 50001, "Agent 执行失败，请稍后重试");
+                        sendErrorEvent(emitter, traceId, ApiCode.INTERNAL_ERROR, "Agent 执行失败，请稍后重试");
                         emitter.complete();
                     } finally {
                         done.completeExceptionally(error);

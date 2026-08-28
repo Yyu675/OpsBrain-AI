@@ -59,15 +59,21 @@
       "retry": "NEVER"
     },
     {
-      "name": "STATE_CONFLICT",
-      "code": 40004,
-      "httpStatus": 409,
+      "name": "QUOTA_EXCEEDED",
+      "code": 40005,
+      "httpStatus": 429,
       "retry": "NEVER"
     },
     {
       "name": "BUDGET_EXCEEDED",
       "code": 40006,
       "httpStatus": 400,
+      "retry": "NEVER"
+    },
+    {
+      "name": "STATE_CONFLICT",
+      "code": 40004,
+      "httpStatus": 409,
       "retry": "NEVER"
     },
     {
@@ -101,15 +107,21 @@
       "retry": "NEVER"
     },
     {
-      "name": "NO_PERMISSION",
-      "code": 40103,
-      "httpStatus": 403,
+      "name": "APPROVAL_ALREADY_DECIDED",
+      "code": 40102,
+      "httpStatus": 409,
       "retry": "NEVER"
     },
     {
       "name": "WEBHOOK_UNAUTHORIZED",
       "code": 40104,
       "httpStatus": 401,
+      "retry": "NEVER"
+    },
+    {
+      "name": "NO_PERMISSION",
+      "code": 40103,
+      "httpStatus": 403,
       "retry": "NEVER"
     },
     {

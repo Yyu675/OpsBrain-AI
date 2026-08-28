@@ -157,7 +157,10 @@ describe('toFriendlyError — 业务码', () => {
   })
 
   it('未列举的业务码带上码值，不吞掉后端信息', () => {
-    const r = toFriendlyError(new HttpError('配额超限', 200, 'BIZ', null, 40005))
+    // 用 40999 而非某个真实码：这条测的是「词表里没有的码」这个分支，
+    // 拿真实码当样本会在该码被补进词表后失效——40005 就发生过这事
+    // （补了「请求超出配额限制」文案后，本用例期望的兜底标题不再出现）
+    const r = toFriendlyError(new HttpError('配额超限', 200, 'BIZ', null, 40999))
     expect(r.title).toBe('操作失败')
     expect(r.detail).toBe('配额超限')
   })
