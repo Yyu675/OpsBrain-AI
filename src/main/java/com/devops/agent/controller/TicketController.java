@@ -126,7 +126,7 @@ public class TicketController {
         // 走 Service 以自动装填标签
         DevOpsTicket ticket = ticketService.getTicketWithTags(id);
         if (ticket == null) {
-            return ApiResponse.error(ApiCode.NOT_FOUND, "工单不存在");
+            return ApiResponse.error(40004, "工单不存在");
         }
 
         return ApiResponse.success(ticket);
