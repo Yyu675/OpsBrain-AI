@@ -176,9 +176,6 @@ public final class ApiCode {
     /** SSE 连接异常 —— {@code BizError.SSE_CONNECTION_ERROR} */
     public static final int SSE_CONNECTION_ERROR = 50002;
 
-    /** 注入用：BizError 里没有这个码 */
-    public static final int ORPHAN_TEST = 59999;
-
 
     /**
      * 服务端异常。
