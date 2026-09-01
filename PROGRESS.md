@@ -78,7 +78,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | T1 | 进度台账机制落地 | `PROGRESS.md`（本文件） | 机制文档，无需 CI | 2026-08-28 |
 | T2 | README 定位对齐 98 号结论 | `README.md` 重写 | 移除 L4/L5 与「千亿商业化」等无代码兜底的表述 | 2026-08-28 |
 | T3 | 前端技术栈优化方案 **v2** | `docs/08-benchmark/99-前端技术栈优化方案.md` | v1 假设不成立已推翻重写；含两个新发现的真缺陷 | 2026-08-28 |
-| **T5** | **F-5 知识库写权限分级守卫** | `KnowledgeWriteGuard.java`（新增）· 3 个控制器 15 处 · `GlobalExceptionHandler` 分支 · 2 个测试类（12+2 例） | 15/15 端点覆盖；扫描器双向自验；ECJ + 包路径 + 本地方法交叉核对通过 | 2026-08-31 |
+| **T5** | **F-5 知识库写权限分级守卫** | `KnowledgeWriteGuard.java`（新增）· 3 个控制器 15 处 · `GlobalExceptionHandler` 分支 · 2 个测试类（12+2 例） | 15/15 端点覆盖；**B1/B2 两项注入均命中**（B2 首次未命中，查出是窗口过宽的假测试，已修正后复验命中） | 2026-08-31 |
 | **T4** | **F-2 语法高亮语言包裁剪** | `src/vendor/codemirror-language-data-slim.ts`（新增）· `vite.config.ts`（alias）· `codemirrorLanguageSlim.test.ts`（28 例） | 产物 **4890→4324 KB**、文件 183→86、碎片 148→59；tsc/eslint/1784 例全绿；A1/A2/A3 三项注入各命中互补断言 | 2026-08-31 |
 
 ---

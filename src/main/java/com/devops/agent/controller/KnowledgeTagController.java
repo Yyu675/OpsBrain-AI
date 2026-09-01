@@ -55,7 +55,7 @@ public class KnowledgeTagController {
 
     @PostMapping("/{id}/merge")
     public ApiResponse<Object> merge(@PathVariable long id, @RequestBody MergeRequest request) {
-        writeGuard.requireEdit();
+        writeGuard.requireDestructive();
         try {
             return ApiResponse.success(tagService.merge(id, request.targetId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
