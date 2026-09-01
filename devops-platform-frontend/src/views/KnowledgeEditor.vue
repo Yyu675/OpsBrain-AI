@@ -32,6 +32,7 @@ import {
   renameHeadingIn,
   toPlainText,
   toVisualContent,
+  toMarkdownForStorage,
   type BlockCommand,
   type EditorDraftState,
   type TocItem,
@@ -605,13 +606,26 @@ const handleSave = async (publishAfterSave = false) => {
   }
   normalizeTags()
 
+  // 入库内容统一为 Markdown，与 sys_knowledge_doc.content 的 schema 契约一致
+  //（该列注释明写「Markdown 原文」）。
+  //
+  // 修复前这里直接提交 formData.content —— 用户停在哪个编辑模式就存哪个格式，
+  // visual 模式存的是 HTML。三处后果：
+  //  1. RAG 切片错乱：ParentChildDocumentSplitter 按 Markdown 标题层级切分，
+  //     拿到 HTML 时层级识别不可靠，切片边界跑偏 → 检索准确率下降；
+  //  2. 详情页渲染不可控：KnowledgeDetail 走 safeMarkdown（marked + DOMPurify），
+  //     HTML 内容经 Markdown 渲染器处理，结果取决于 marked 对裸 HTML 的宽容度；
+  //  3. content_hash 去重失效：同一篇文档用两种模式保存，哈希不同，
+  //     近重复检测认不出它们是同一篇。
+  const contentForStorage = toMarkdownForStorage(formData.value.content)
+
   const common = {
     title: formData.value.title.trim(),
     category: formData.value.category.trim(),
     categoryId: selectedCategoryId.value,
     summary: formData.value.summary.trim() || undefined,
     tags: formData.value.tags,
-    content: formData.value.content,
+    content: contentForStorage,
   }
 
   saving.value = true

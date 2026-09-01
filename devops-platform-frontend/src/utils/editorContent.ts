@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import TurndownService from 'turndown'
 
 import { SANITIZE_ALLOWED_ATTR, SANITIZE_ALLOWED_TAGS } from './htmlSanitizePolicy'
 
@@ -75,6 +76,49 @@ export const toVisualContent = async (content: string): Promise<string> => {
     ALLOWED_TAGS: [...ALLOWED_TAGS],
     ALLOWED_ATTR: [...ALLOWED_ATTR],
   })
+}
+
+/**
+ * 入库前把内容统一成 Markdown。
+ *
+ * ## 为什么必须统一
+ *
+ * 编辑器有 visual（富文本）与 markdown 两种模式，服务于不同用户
+ *（PRD 的目标用户里既有 SRE，也有业务方与合规审计员）。
+ * 但**存储只能有一种格式**——`sys_knowledge_doc.content` 的 schema
+ * 注释明写「Markdown 原文」。
+ *
+ * 修复前 `handleSave` 直接提交当前模式的内容，用户停在 visual 就存 HTML。
+ * 三处后果，且都没有任何报错：
+ *
+ * 1. **RAG 切片错乱** —— `ParentChildDocumentSplitter` 按 Markdown 标题层级
+ *    切分，拿到 HTML 时层级识别不可靠，切片边界跑偏，**检索准确率下降**；
+ * 2. **详情页渲染不可控** —— `KnowledgeDetail` 走 `safeMarkdown`
+ *    （marked + DOMPurify），HTML 内容经 Markdown 渲染器处理，
+ *    结果取决于 marked 对裸 HTML 的宽容度；
+ * 3. **`content_hash` 去重失效** —— 同一篇文档用两种模式保存哈希不同，
+ *    近重复检测认不出它们是同一篇。
+ *
+ * ## 幂等：已经是 Markdown 的原样返回
+ *
+ * 不能无条件跑 turndown。Markdown 原文里常含行内 HTML（如 `<br>`、
+ * 折叠块 `<details>`），对纯 Markdown 跑一遍 HTML→MD 转换会破坏它们，
+ * 也会让代码块里的内容被误解析。
+ *
+ * 判别沿用 `isHtmlContent`（内容以 `<` 开头）——与 `toVisualContent`
+ * 同一判据，两者必须一致，否则会出现「转过去再转回来内容变了」。
+ */
+export const toMarkdownForStorage = (content: string): string => {
+  if (!content.trim()) return content
+  if (!isHtmlContent(content)) return content
+
+  // 与 KnowledgeEditor 里的实例同配置：atx 标题（### 而非下划线），
+  // 围栏代码块（``` 而非缩进）—— 两者都更利于后端按标题层级切片
+  const turndown = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+  })
+  return turndown.turndown(content)
 }
 
 /**
