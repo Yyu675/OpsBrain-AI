@@ -136,9 +136,22 @@ class KnowledgeWriteGuardCoverageTest {
                     downgraded.add(e.getKey() + " → 找不到方法 " + method + "（被重命名？）");
                     continue;
                 }
-                // 取方法签名之后一小段，看用的是哪个守卫
+                // 只取「当前方法体」，不能按固定字符数截窗口。
+                //
+                // 首版用 from + 600 字符，结果 merge() 的窗口跨到了下一个方法
+                // delete() 的 requireDestructive() 上——把 merge 降级成 requireEdit
+                // 的注入没被抓住，CI 照常绿。这正是 85 号记过的
+                //「匹配范围过宽命中别处同名内容」。
+                //
+                // 改为从方法体的 '{' 起花括号配平，边界精确到方法本身。
                 int from = m.start();
-                String block = code.substring(from, Math.min(code.length(), from + 600));
+                int brace = code.indexOf('{', m.end() - 1);
+                int end = matchBrace(code, brace);
+                if (end < 0) {
+                    downgraded.add(e.getKey() + "#" + method + " 方法体括号不配平（扫描器需修正）");
+                    continue;
+                }
+                String block = code.substring(from, end + 1);
                 boolean ok = block.contains("requireDestructive()")
                         || Pattern.compile("@(?:[\\w.]+\\.)?SaCheckRole").matcher(block).find();
                 if (!ok) {
@@ -156,6 +169,31 @@ class KnowledgeWriteGuardCoverageTest {
     }
 
     // ==================== 辅助 ====================
+
+    /**
+     * 从 {@code open} 处的 '{' 起做花括号配平，返回配对的 '}' 下标。
+     *
+     * <p>用它划定方法体边界，而不是按固定字符数截窗口——
+     * 后者会跨到下一个方法上，让「本方法漏了守卫」被邻居的守卫掩盖。</p>
+     */
+    private static int matchBrace(String s, int open) {
+        if (open < 0) {
+            return -1;
+        }
+        int depth = 0;
+        for (int i = open; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
 
     /** 取块内第一个方法签名，让报错能直接看出是哪个端点 */
     private static String firstMethodSignature(String block) {
