@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.common.guard.KnowledgeWriteGuard;
 import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.controller.dto.KnowledgeDocDto;
@@ -29,9 +30,13 @@ import java.util.Map;
 public class KnowledgeDocController {
 
     private final KnowledgeDocService docService;
+    /** 知识库写权限守卫（F-5）：可逆操作 ADMIN+OPS，不可逆操作仅 ADMIN */
+    private final KnowledgeWriteGuard writeGuard;
 
-    public KnowledgeDocController(KnowledgeDocService docService) {
+    public KnowledgeDocController(KnowledgeDocService docService,
+                                  KnowledgeWriteGuard writeGuard) {
         this.docService = docService;
+        this.writeGuard = writeGuard;
     }
 
     // ==================== 创建 / 更新 ====================
@@ -47,6 +52,7 @@ public class KnowledgeDocController {
      */
     @PostMapping
     public ApiResponse<Object> create(@RequestBody KnowledgeDocDto.CreateRequest req) {
+        writeGuard.requireEdit();
         try {
             KnowledgeDoc doc = new KnowledgeDoc();
             doc.setTitle(req.title());
@@ -100,6 +106,7 @@ public class KnowledgeDocController {
     public ApiResponse<Object> update(
             @PathVariable Long id,
             @RequestBody KnowledgeDocDto.UpdateRequest req) {
+        writeGuard.requireEdit();
 
         KnowledgeDoc patch = new KnowledgeDoc();
         patch.setTitle(req.title());
@@ -132,6 +139,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/{id}/publish")
     public ApiResponse<Object> publish(@PathVariable Long id) {
+        writeGuard.requireEdit();
         KnowledgeDocService.IndexOutcome o = docService.publish(id, "SYSTEM");
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("id", id);
@@ -149,6 +157,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/{id}/deprecate")
     public ApiResponse<Object> deprecate(@PathVariable Long id,
+        writeGuard.requireDestructive();
                                         @RequestBody(required = false) Map<String, String> body) {
         String reason = body != null ? body.get("reason") : null;
         docService.deprecate(id, "SYSTEM", reason);
@@ -160,6 +169,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/{id}/restore")
     public ApiResponse<Object> restore(@PathVariable Long id,
+        writeGuard.requireEdit();
                                        @RequestBody Map<String, Object> body) {
         int version = ((Number) body.get("version")).intValue();
         KnowledgeDocService.SaveResult r = docService.restore(id, version, "SYSTEM");
@@ -337,6 +347,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/reindex/pending")
     public ApiResponse<Object> retryIndexing(@RequestParam(defaultValue = "20") int limit) {
+        writeGuard.requireDestructive();
         int succeeded = docService.retryFailedIndexing(limit);
         return ApiResponse.success(Map.of("retried", succeeded));
     }

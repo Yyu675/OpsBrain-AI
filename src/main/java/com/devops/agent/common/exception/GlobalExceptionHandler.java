@@ -6,6 +6,7 @@ import cn.dev33.satoken.exception.NotRoleException;
 import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.common.error.BizError;
+import com.devops.agent.common.guard.KnowledgeWriteGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -61,6 +62,25 @@ public class GlobalExceptionHandler {
      * 处理 Sa-Token 角色不足（方向 D：审批端点限 ADMIN）
      * <p>已登录但角色不够 → 403（区别于 401 未登录）。业务码 40103。</p>
      */
+    /**
+     * 知识库写权限不足（F-5）。
+     *
+     * <p>与 {@link NotRoleException} 分开处理：后者的 message 由 Sa-Token 生成
+     * （「无此角色：ADMIN」），说不清「为什么这个操作需要这个角色」。
+     * 而权限提示是用户唯一能看到的解释——它应该告诉人下一步做什么
+     * （如「该操作不可逆，需要 ADMIN 角色」）。</p>
+     *
+     * <p>码与 HTTP 状态与 NotRoleException 保持一致（40103 / 403），
+     * 前端 bizCode.ts 里 40103 已有文案「权限不足 · 如需访问请联系管理员开通」。</p>
+     */
+    @ExceptionHandler(KnowledgeWriteGuard.KnowledgeWriteForbiddenException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleKnowledgeWriteForbidden(
+            KnowledgeWriteGuard.KnowledgeWriteForbiddenException ex) {
+        log.warn("🚫 [GlobalException] 知识库写权限不足: {}", ex.getMessage());
+        return ApiResponse.error(ex.code(), ex.getMessage());
+    }
+
     @ExceptionHandler(NotRoleException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ApiResponse<Void> handleNotRoleException(NotRoleException ex) {

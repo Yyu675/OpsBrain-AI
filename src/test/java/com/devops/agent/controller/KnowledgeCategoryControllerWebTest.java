@@ -95,6 +95,17 @@ class KnowledgeCategoryControllerWebTest {
     @Autowired
     private org.springframework.web.context.WebApplicationContext context;
 
+    /**
+     * F-5 知识库写权限守卫。
+     *
+     * <p>必须 mock：它是 @Component，@WebMvcTest 切片不会加载它，
+     * 不 mock 会让整个上下文启动失败。mock 后默认放行（void 方法不抛异常），
+     * 既有用例的语义不变——它们测的是业务行为，不是权限。
+     * 权限本身由 KnowledgeWriteGuardTest 与 KnowledgeWritePermissionWebTest 覆盖。</p>
+     */
+    @MockitoBean
+    private com.devops.agent.common.guard.KnowledgeWriteGuard writeGuard;
+
     @MockitoBean
     private KnowledgeCategoryService service;
 
