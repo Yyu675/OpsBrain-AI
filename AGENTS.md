@@ -265,6 +265,52 @@ CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得�
 
 > 一句话判据：**断言必须落在「会被改错的那个值」上，且该值不能在到达断言前被任何一步归一化掉。**
 
+#### ECJ 输出过滤的两个坑（都实际漏过缺陷）
+
+**坑 1：错误描述行顶格，别用 `^\s+` 过滤。**
+
+ECJ 的输出格式是：
+
+```
+1. ERROR in /path/Foo.java (at line 160)
+	public ApiResponse<Object> deprecate(@PathVariable Long id,
+	                                     ^^^^
+Syntax error on token "(", invalid VariableDeclaratorId     ← 顶格！
+```
+
+源码回显行以 `\t` 开头，而**错误描述行顶格**。
+用 `grep -E "^\s+[A-Za-z].*(Syntax|expected)"` 会把真正的错误描述全滤掉，
+只留下源码回显——看起来「没有语法错误」。
+
+实测代价：给 15 个端点插入守卫调用时，脚本把语句插进了**跨行参数列表中间**，
+ECJ 明明报了 4 处 `Syntax error`，被我的过滤器滤成 0，推上去 CI 才红。
+
+**正确写法**：
+
+```bash
+# 只数错误描述行（顶格的 Syntax error）
+ECJ_ERRS=$($JH/bin/java -jar $ECJ -source 21 -encoding UTF-8 -proc:none -nowarn \
+  -d /tmp/out @/tmp/files.txt 2>&1 | grep -cE "^Syntax error")
+[ "$ECJ_ERRS" = "0" ] || echo "🔴 有 $ECJ_ERRS 处语法错误"
+```
+
+**坑 2：批量插入代码后，必须验证插入位置。**
+
+正则匹配「方法签名首行」时，参数列表换行的方法会被插到参数中间。
+批量改完后加一道结构自检，比事后看 CI 快得多：
+
+```bash
+# 守卫/日志等语句必须在方法体内 —— 前一行应以 { 结尾
+python3 -c "
+import glob
+for f in glob.glob('src/main/java/**/*.java', recursive=True):
+    lines = open(f).read().split('\n')
+    for i, l in enumerate(lines):
+        if 'writeGuard.require' in l and not lines[i-1].rstrip().endswith('{'):
+            print(f'{f}:{i+1} 插入位置异常')
+"
+```
+
 #### 本地 ECJ 自检的能力边界（别把它当编译器用）
 
 沙箱无 Maven，只能用 ECJ 做**语法**自检。它有一条硬伤：

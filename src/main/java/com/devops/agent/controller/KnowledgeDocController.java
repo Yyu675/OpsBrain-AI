@@ -157,8 +157,8 @@ public class KnowledgeDocController {
      */
     @PostMapping("/{id}/deprecate")
     public ApiResponse<Object> deprecate(@PathVariable Long id,
-        writeGuard.requireDestructive();
                                         @RequestBody(required = false) Map<String, String> body) {
+        writeGuard.requireDestructive();
         String reason = body != null ? body.get("reason") : null;
         docService.deprecate(id, "SYSTEM", reason);
         return ApiResponse.success(Map.of("id", id, "status", "DEPRECATED"));
@@ -169,8 +169,8 @@ public class KnowledgeDocController {
      */
     @PostMapping("/{id}/restore")
     public ApiResponse<Object> restore(@PathVariable Long id,
-        writeGuard.requireEdit();
                                        @RequestBody Map<String, Object> body) {
+        writeGuard.requireEdit();
         int version = ((Number) body.get("version")).intValue();
         KnowledgeDocService.SaveResult r = docService.restore(id, version, "SYSTEM");
         return ApiResponse.success(Map.of(
