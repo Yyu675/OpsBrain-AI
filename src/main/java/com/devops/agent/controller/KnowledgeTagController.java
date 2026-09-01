@@ -42,6 +42,7 @@ public class KnowledgeTagController {
 
     @PutMapping("/{id}")
     public ApiResponse<Object> rename(@PathVariable long id, @RequestBody TagRequest request) {
+        writeGuard.requireEdit();
         try {
             return ApiResponse.success(tagService.rename(id, request.name(), request.description(), request.color()));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -54,7 +55,7 @@ public class KnowledgeTagController {
 
     @PostMapping("/{id}/merge")
     public ApiResponse<Object> merge(@PathVariable long id, @RequestBody MergeRequest request) {
-        writeGuard.requireDestructive();
+        writeGuard.requireEdit();
         try {
             return ApiResponse.success(tagService.merge(id, request.targetId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
