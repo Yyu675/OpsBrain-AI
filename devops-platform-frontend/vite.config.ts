@@ -18,7 +18,20 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // md-editor-v3 内部引用 @codemirror/language-data —— CodeMirror 的全语言注册表，
+      // 含 136 个动态 import。Rollup 会把每个切成独立 chunk，实测产出 148 个碎片、
+      // 合计 630 KB，绝大多数是 z80/yacas/xquery/verilog/vbscript 这类
+      // 运维手册永远用不到的语言。
+      //
+      // 用别名换成精简注册表（只留运维实际会贴的语言），而不是 patch node_modules：
+      // 别名是构建期行为，升级依赖不会被覆盖，也不需要 postinstall 脚本。
+      //
+      // ⚠️ 去掉这行别名会让 630 KB 的碎片全部回来。
+      // 契约测试 codemirrorLanguageSlim.test.ts 守住这一点。
+      '@codemirror/language-data': fileURLToPath(
+        new URL('./src/vendor/codemirror-language-data-slim.ts', import.meta.url)
+      )
     }
   },
   // 开发服务器：监听 0.0.0.0 使局域网其他设备可通过本机 IP 访问；
