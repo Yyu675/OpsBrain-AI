@@ -42,7 +42,6 @@ public class KnowledgeTagController {
 
     @PutMapping("/{id}")
     public ApiResponse<Object> rename(@PathVariable long id, @RequestBody TagRequest request) {
-        writeGuard.requireEdit();
         try {
             return ApiResponse.success(tagService.rename(id, request.name(), request.description(), request.color()));
         } catch (IllegalArgumentException | IllegalStateException e) {
