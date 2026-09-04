@@ -110,23 +110,49 @@ export function useAlertNotifications() {
 
     ws.onclose = () => {
       ws = null
+      // 必须判 disposed：登出/卸载时 stop() 调 ws.close()，
+      // 浏览器仍会异步触发本回调。不判就会在已停止后又排一次重连，
+      // 而重连成功后 onclose 又会再排一次——形成永不停止的循环。
+      if (disposed) return
       scheduleReconnect()
     }
   }
 
-  /** 关闭连接并停止重连（登出 / 卸载时调用） */
+  /**
+   * 关闭连接并停止重连（登出 / 卸载时调用）。
+   *
+   * 解绑所有回调再 close 是关键：`ws.close()` 之后浏览器仍会异步派发
+   * onclose，此时闭包里的 `ws` 已被置 null，但回调本身还挂在旧实例上。
+   * 不解绑就依赖 onclose 里的 disposed 判断，一旦漏判就是无限重连——
+   * 登出后仍持续向后端发起 WS 握手，每次都被拒，日志刷屏且浪费连接数。
+   * 两道防线都留着：这里解绑，onclose 里也判 disposed。
+   */
   const stop = () => {
     disposed = true
     clearReconnectTimer()
     reconnectAttempt = 0
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      ws.close()
-    }
+    const socket = ws
     ws = null
+    if (socket) {
+      socket.onopen = null
+      socket.onmessage = null
+      socket.onerror = null
+      socket.onclose = null
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close()
+      }
+    }
   }
 
-  /** 拉取历史 + 建立连接（已登录时调用） */
+  /**
+   * 拉取历史 + 建立连接（已登录时调用）。
+   *
+   * 先 stop 再 start：watch 可能在已连接状态下再次触发（如 restoreSession
+   * 重复确立登录态），不先清理会留下一条没人引用的孤儿连接——
+   * 它仍在收消息、仍会 onclose 触发重连，且永远不会被 stop 掉。
+   */
   const start = () => {
+    stop()
     disposed = false
     void notifications.loadFromBackend()
     connect()

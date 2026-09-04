@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   Search, Plus, Layers, Server, Network, Database, Boxes, ShieldCheck,
   GitBranch, Folder, Clock, RefreshCw, List, LayoutGrid,
@@ -20,14 +20,13 @@ import {
 } from '@/api/knowledge'
 import type { KnowledgeCategoryEntity, KnowledgeTag } from '@/api/types'
 import { debounce } from '@/utils/persist'
-import EmptyState from '@/components/common/EmptyState.vue'
-import ApiErrorState from '@/components/common/ApiErrorState.vue'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 import CollapseToggle from '@/components/common/CollapseToggle.vue'
 import RailButton from '@/components/common/RailButton.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 const router = useRouter()
 const route = useRoute()
@@ -115,7 +114,7 @@ const createTag = async () => {
     await createKnowledgeTag({ name })
     newTagName.value = ''
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已创建')
+    notify.success('标签已创建')
   } catch (error) {
     handleServerError(error, { action: '创建标签' })
   }
@@ -130,7 +129,7 @@ const renameTag = async (tag: KnowledgeTag) => {
     })
     await updateKnowledgeTag(tag.id, { name: value.trim(), description: tag.description || undefined, color: tag.color || undefined })
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已重命名')
+    notify.success('标签已重命名')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '重命名标签' })
@@ -145,12 +144,12 @@ const mergeTag = async (tag: KnowledgeTag) => {
     })
     const target = managedTags.value.find(item => item.name.toLocaleLowerCase() === value.trim().toLocaleLowerCase())
     if (!target || target.id === tag.id) {
-      ElMessage.warning('未找到可合并的目标标签')
+      notify.warning('未找到可合并的目标标签')
       return
     }
     await mergeKnowledgeTag(tag.id, target.id)
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已合并')
+    notify.success('标签已合并')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '合并标签' })
@@ -166,7 +165,7 @@ const removeTag = async (tag: KnowledgeTag) => {
       })
       const replacement = managedTags.value.find(item => item.name.toLocaleLowerCase() === value.trim().toLocaleLowerCase())
       if (!replacement || replacement.id === tag.id) {
-        ElMessage.warning('未找到可替换的标签')
+        notify.warning('未找到可替换的标签')
         return
       }
       await deleteKnowledgeTag(tag.id, replacement.id)
@@ -177,7 +176,7 @@ const removeTag = async (tag: KnowledgeTag) => {
       await deleteKnowledgeTag(tag.id)
     }
     await Promise.all([loadManagedTags(), store.loadHotTags()])
-    ElMessage.success('标签已删除')
+    notify.success('标签已删除')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '删除标签' })
@@ -219,6 +218,25 @@ const syncUrl = debounce(() => {
 
 watch([appliedQuery, activeCategory, activeTag, activeStatus, activeSort, viewMode, () => store.currentPage], syncUrl)
 
+/**
+ * 卸载时**取消**尚未落定的 URL 同步。
+ *
+ * 上面的 `applySearch` 用的是 `flush()`（补执行），这里必须是 `cancel()`（丢弃）——
+ * 两者不能照抄，因为回调的性质完全不同：
+ *   - `applySearch` 的回调是 `reload()`，只动本组件的数据，卸载后执行最多白跑一次；
+ *   - `syncUrl` 的回调是 `router.replace({ query })`，它**以当前路由为基准**。
+ *
+ * 漏掉这行的实际后果：用户点了分类筛选，200ms 防抖还没到就点侧栏跳去工单列表，
+ * 定时器随后触发，把知识库的筛选参数写到了工单页的地址栏上——
+ * 地址栏变成 `/tickets?cat=K8S`，工单列表按一个它根本不认识的参数刷新，
+ * 或者干脆丢掉用户自己的筛选。
+ *
+ * 这个缺陷是靠「同一文件里两个防抖，一个有清理一个没有」的不一致发现的，
+ * 并由 `KnowledgeBase.urlsync.test.ts` 的卸载用例确认（修复前该用例报
+ * `router.replace` 在卸载后仍被调用）。
+ */
+onBeforeUnmount(() => syncUrl.cancel())
+
 const selectCategory = (name: string) => {
   activeCategory.value = activeCategory.value === name ? null : name
   reload()
@@ -238,7 +256,7 @@ const clearFilters = () => {
   appliedQuery.value = ''
   if (activeSort.value === 'RELEVANCE') activeSort.value = 'UPDATED_DESC'
   reload()
-  ElMessage.success('已清除筛选')
+  notify.success('已清除筛选')
 }
 
 const retrySidebarData = () => Promise.all([store.loadCategories(), store.loadHotTags()])
@@ -498,29 +516,31 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Loading（首屏） -->
-        <div v-if="store.loading && store.list.length === 0" class="load-state">
-          <div v-for="n in 5" :key="n" class="skeleton-row"></div>
-        </div>
+        <!--
+          四态统一（与 TicketList / AlertList / ApprovalCenter 共用）。
 
-        <!-- 加载失败 -->
-        <ApiErrorState
-          v-else-if="store.loadError"
+          此处一并退掉 EmptyState —— 项目里 AppEmpty 与 EmptyState 两套
+          空态组件并存，同一产品的「没有数据」长着两副面孔（圆角/内边距/
+          图标底色/按钮样式都不同）。统一到 AppEmpty，它多出 search /
+          network / permission / notfound 几种语义分型，能把「还没有数据」
+          与「筛选没命中」区分开——这两句话对用户的下一步动作完全不同。
+
+          原实现的错误分支也缺 length 判断：翻页失败会让整个文档列表消失。
+        -->
+        <DataStateBoundary
+          :loading="store.loading"
           :error="store.loadError"
+          :count="store.list.length"
+          :filtered="hasFilters"
+          empty-title="还没有文档"
+          empty-description="创建第一篇文档，沉淀团队的排障经验"
+          filtered-description="换个关键词或清空筛选试试"
+          empty-action-text="新增文档"
+          :skeleton-rows="5"
+          skeleton-height="72px"
           @retry="reload"
-        />
-
-        <!-- Empty State -->
-        <EmptyState
-          v-else-if="store.list.length === 0"
-          title="没有匹配的文档"
-          description="换个筛选条件，或创建第一篇文档"
-          :action-label="'新增文档'"
-          @action="openCreate"
-        />
-
-        <!-- Articles List -->
-        <template v-else>
+          @empty-action="openCreate"
+        >
           <div v-if="viewMode === 'list'" class="articles-list">
             <article
               v-for="doc in store.list"
@@ -598,7 +618,7 @@ onMounted(() => {
               </div>
             </article>
           </div>
-        </template>
+        </DataStateBoundary>
 
         <!-- Pagination -->
         <div v-if="store.totalPages > 1" class="pagination">
@@ -764,7 +784,7 @@ onMounted(() => {
   width: 18px;
   height: 1px;
   margin: 4px 0;
-  background: var(--color-border-light, #E5E7EB);
+  background: var(--color-border-light, var(--border-1));
   flex-shrink: 0;
 }
 
@@ -1040,31 +1060,10 @@ onMounted(() => {
 }
 
 /* ===== Load / Error ===== */
-.load-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 60px 24px;
-  text-align: center;
-  color: var(--color-text-tertiary);
-  font-size: var(--text-sm);
-}
-.skeleton-row {
-  width: 100%;
-  height: 72px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s infinite;
-  border-radius: 8px;
-}
-@keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
+/* 骨架与空态已收敛到 SkeletonRows / DataStateBoundary */
 
 .load-error {
-  color: var(--color-danger, #f56c6c);
+  color: var(--color-danger, var(--danger));
 }
 
 /* ===== Articles List ===== */
@@ -1129,7 +1128,7 @@ onMounted(() => {
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   color: #92400e;
-  background: #fef3c7;
+  background: var(--warning-subtle);
   font-size: 11px;
   font-weight: var(--weight-medium);
 }
@@ -1188,7 +1187,7 @@ onMounted(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--brand);
   color: #fff;
   font-size: 10px;
   font-weight: var(--weight-semibold);
@@ -1206,7 +1205,7 @@ onMounted(() => {
   border-radius: var(--radius-full);
 
   &.index-failed {
-    color: var(--color-danger, #f56c6c);
+    color: var(--color-danger, var(--danger));
     background: var(--state-error-bg);
   }
 }

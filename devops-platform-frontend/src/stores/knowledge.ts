@@ -1,3 +1,4 @@
+import { notify } from '@/utils/notify'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 // 只保留 clearPersisted：用于清理旧版本写入的本地 mock 文章缓存。
@@ -31,7 +32,6 @@ import type {
   KnowledgeDocUpdateRequest,
   KnowledgeVersionDiff,
 } from '@/api/types'
-import { ElMessage } from 'element-plus'
 
 // 仅用于清理旧版本遗留的 mock 缓存，不再写入
 const PERSIST_KEY = 'knowledge'
@@ -106,7 +106,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     } catch (e: unknown) {
       if (requestSequence !== listRequestSequence) return
       loadError.value = errorMessage(e, '加载文档列表失败')
-      ElMessage.error(loadError.value)
+      notify.error(loadError.value)
       throw e
     } finally {
       if (requestSequence === listRequestSequence) loading.value = false
@@ -301,7 +301,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       refreshList(),
       detail.value?.id === id ? loadDetail(id) : Promise.resolve(),
     ])
-    ElMessage.success('已恢复文档并重新发布')
+    notify.success('已恢复文档并重新发布')
     return result
   }
 
@@ -367,7 +367,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     } catch (e: unknown) {
       if (seq !== compareRequestSequence) return
       console.warn('[KnowledgeStore] 版本对比失败', e)
-      ElMessage.error(errorMessage(e, '版本对比失败'))
+      notify.error(errorMessage(e, '版本对比失败'))
     } finally {
       if (seq === compareRequestSequence) compareLoading.value = false
     }

@@ -1,0 +1,57 @@
+[
+  {
+    "scenario": "同源风暴：同一 Pod/IP 5 分钟内 1000 条同键告警 → 收敛为 1 个总事件（蓝图 §一.2 契约）",
+    "windowMinutes": 5,
+    "events": [
+      {"seq": 1, "alertName": "K8sPodCrashLooping", "service": "payment-service", "labels": {"instance": "10.0.3.21", "pod": "payment-service-6f9d8"}, "severity": "critical"},
+      {"seq": 2, "alertName": "K8sPodCrashLooping", "service": "payment-service", "labels": {"instance": "10.0.3.21", "pod": "payment-service-6f9d8"}, "severity": "critical"},
+      {"seq": 3, "alertName": "K8sPodCrashLooping", "service": "payment-service", "labels": {"instance": "10.0.3.21", "pod": "payment-service-6f9d8"}, "severity": "critical"}
+    ],
+    "expect": {"distinctKeys": 1, "ticketsCreated": 1, "occurrenceCount": 3}
+  },
+  {
+    "scenario": "跨键同源：同 Pod 不同 alertName（CrashLoop + OOM）→ 不同 dedupKey 各自建单（聚合维度=dedupKey）",
+    "windowMinutes": 5,
+    "events": [
+      {"seq": 1, "alertName": "K8sPodCrashLooping", "service": "payment-service", "labels": {"instance": "10.0.3.21", "pod": "payment-service-6f9d8"}, "severity": "critical"},
+      {"seq": 2, "alertName": "K8sPodOOMKilled", "service": "payment-service", "labels": {"instance": "10.0.3.21", "pod": "payment-service-6f9d8"}, "severity": "critical"}
+    ],
+    "expect": {"distinctKeys": 2, "ticketsCreated": 2, "occurrenceCount": 1}
+  },
+  {
+    "scenario": "跨源独立：不同服务不同告警 → 各自独立建单（L3 跨源不误并）",
+    "windowMinutes": 5,
+    "events": [
+      {"seq": 1, "alertName": "K8sPodCrashLooping", "service": "payment-service", "labels": {"instance": "10.0.3.21"}, "severity": "critical"},
+      {"seq": 2, "alertName": "MySQLReplicationLag", "service": "mysql-prod", "labels": {"instance": "10.0.1.5"}, "severity": "warning"}
+    ],
+    "expect": {"distinctKeys": 2, "ticketsCreated": 2, "occurrenceCount": 1}
+  },
+  {
+    "scenario": "severity 不参与去重键：同告警 severity 变化仍归并为同一事件（蓝图：排除 severity）",
+    "windowMinutes": 5,
+    "events": [
+      {"seq": 1, "alertName": "RedisMemoryHigh", "service": "redis-cache", "labels": {"instance": "10.0.2.9"}, "severity": "warning"},
+      {"seq": 2, "alertName": "RedisMemoryHigh", "service": "redis-cache", "labels": {"instance": "10.0.2.9"}, "severity": "critical"}
+    ],
+    "expect": {"distinctKeys": 1, "ticketsCreated": 1, "occurrenceCount": 2}
+  },
+  {
+    "scenario": "时间窗之外：同键告警间隔超过 5 分钟 → 新建事件（窗口边界）",
+    "windowMinutes": 5,
+    "events": [
+      {"seq": 1, "alertName": "DiskUsageHigh", "service": "k8s-node-03", "labels": {"instance": "10.0.3.11"}, "severity": "warning", "atMinutes": 0},
+      {"seq": 2, "alertName": "DiskUsageHigh", "service": "k8s-node-03", "labels": {"instance": "10.0.3.11"}, "severity": "warning", "atMinutes": 10}
+    ],
+    "expect": {"distinctKeys": 1, "ticketsCreated": 2, "occurrenceCount": 1}
+  },
+  {
+    "scenario": "标签顺序无关：labels 顺序不同但内容相同 → 同一 dedupKey（TreeMap 确定性）",
+    "windowMinutes": 5,
+    "events": [
+      {"seq": 1, "alertName": "CertExpiring", "service": "api.example.com", "labels": {"pod": "a", "instance": "10.0.0.1"}, "severity": "warning"},
+      {"seq": 2, "alertName": "CertExpiring", "service": "api.example.com", "labels": {"instance": "10.0.0.1", "pod": "a"}, "severity": "warning"}
+    ],
+    "expect": {"distinctKeys": 1, "ticketsCreated": 1, "occurrenceCount": 2}
+  }
+]

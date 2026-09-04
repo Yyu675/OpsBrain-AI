@@ -7,9 +7,9 @@
  * - 6.28：40006 预算超限 / 40005 配额超限 / 40004 实体不存在语义已分离，不得混用
  * - 6.29：异常消息分层——面向用户的提示不得直接透传后端原始消息细节
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HttpError, toFriendlyError, unwrapBiz } from '../http'
+import { HttpError, httpRequest, toFriendlyError, unwrapBiz } from '../http'
 
 describe('toFriendlyError — 非 HttpError', () => {
   it('普通 Error 取 message 作为详情并给出通用处置建议', () => {
@@ -89,25 +89,60 @@ describe('toFriendlyError — HTTP 状态码', () => {
 })
 
 describe('toFriendlyError — 业务码', () => {
-  it('40001 参数校验失败，引导检查输入', () => {
+  // ⚠️ 以下标题断言的来源是 constants/bizCode.ts 的 BIZ_ERRORS 词表，
+  // 不再是 toFriendlyError 内部的硬编码分支。
+  //
+  // 改动缘由：这张词表与后端 BizError 枚举一一对应（bizCode.contract.test.ts
+  // 校验一致性），但此前**没有任何生产代码在查它**——toFriendlyError 自己
+  // 硬编码了 40001/40004/40009/40021 四个码，其余 18 个落到通用兜底文案。
+  // 于是同一个错误码在项目里有两套文案，且词表那套才是与后端对齐的。
+  //
+  // 现在 toFriendlyError 优先查词表，这几条断言随之改为词表文案。
+
+  it('40001 用词表文案「参数不合法」，详情保留后端给的具体原因', () => {
     const r = toFriendlyError(new HttpError('标题至少 5 个字符', 200, 'BIZ', null, 40001))
-    expect(r.title).toBe('参数校验失败')
+    expect(r.title).toBe('参数不合法')
+    // 后端消息比标题具体得多（指明了是哪个字段、什么规则），必须原样保留
     expect(r.detail).toBe('标题至少 5 个字符')
   })
 
-  it('40004 数据不存在，引导刷新列表', () => {
-    const r = toFriendlyError(new HttpError('工单不存在', 200, 'BIZ', null, 40004))
-    expect(r.title).toBe('数据不存在')
+  it('40004 是「当前状态不允许该操作」，不是「数据不存在」', () => {
+    // 后端 BizError 里 40004 = STATE_CONFLICT，语义是「请求合法但当前状态不允许」
+    // （如对已作废工单改状态），资源不存在另有 40400 = NOT_FOUND。
+    // 此前前端把它显示成「数据不存在」，会让用户去刷新列表找一条其实还在的记录
+    const r = toFriendlyError(new HttpError('工单已作废，不能再变更状态', 200, 'BIZ', null, 40004))
+    expect(r.title).toBe('当前状态不允许该操作')
     expect(r.hint).toContain('刷新')
+    expect(r.detail).toBe('工单已作废，不能再变更状态')
   })
 
   it('40009 版本冲突，提示先看他人改了什么再重试 —— 直接重试会覆盖他人修改', () => {
     const r = toFriendlyError(
       new HttpError('该记录已被他人修改（你基于第 0 版编辑，当前已是第 1 版）', 200, 'BIZ', null, 40009)
     )
-    expect(r.title).toBe('数据已被修改')
+    expect(r.title).toBe('数据已被他人修改')
     expect(r.hint).toContain('刷新')
+    // 具体版本号必须留在详情里——它是用户判断「他人改了多少」的唯一线索
     expect(r.detail).toContain('第 0 版')
+  })
+
+  it('50020 监控数据源不可用：引导去接入管理，而不是「稍后重试」', () => {
+    // 这是本次修复最直接的受益场景。后端返回 50020 + HTTP 503，
+    // 修复前落到 503 的通用分支，提示「服务可能正在重启或过载，请稍后重试」——
+    // 而 50020 的 retry 语义是 NEVER，反复刷新永远不会好，
+    // 正确的下一步是去「接入管理」检查 Prometheus 连接
+    const r = toFriendlyError(
+      new HttpError('Prometheus 连接超时', 503, 'BIZ', null, 50020)
+    )
+    expect(r.title).toBe('监控数据源不可用')
+    expect(r.hint).toContain('接入管理')
+    expect(r.hint).not.toContain('稍后重试')
+  })
+
+  it('40103 权限不足：词表接管后不再落到通用兜底', () => {
+    const r = toFriendlyError(new HttpError('该操作需要 ADMIN 角色', 403, 'BIZ', null, 40103))
+    expect(r.title).toBe('权限不足')
+    expect(r.hint).toContain('管理员')
   })
 
   it('40009 与 40004 给出不同标题 —— 冲突数据仍在、不存在数据已消失，处置不同', () => {
@@ -122,14 +157,26 @@ describe('toFriendlyError — 业务码', () => {
   })
 
   it('未列举的业务码带上码值，不吞掉后端信息', () => {
-    const r = toFriendlyError(new HttpError('配额超限', 200, 'BIZ', null, 40005))
+    // 用 40999 而非某个真实码：这条测的是「词表里没有的码」这个分支，
+    // 拿真实码当样本会在该码被补进词表后失效——40005 就发生过这事
+    // （补了「请求超出配额限制」文案后，本用例期望的兜底标题不再出现）
+    const r = toFriendlyError(new HttpError('配额超限', 200, 'BIZ', null, 40999))
     expect(r.title).toBe('操作失败')
     expect(r.detail).toBe('配额超限')
   })
 
-  it('未列举业务码且无 message 时把码值放进详情，便于定位', () => {
+  it('词表内的码在后端没给 message 时，详情带上码值而不是复述标题', () => {
+    // 40006 在词表里（问题过长）。标题已显示在上方，
+    // 详情再复述一遍等于没有信息；带上码值才能让用户在反馈时说清是哪个错误
     const r = toFriendlyError(new HttpError('', 200, 'BIZ', null, 40006))
+    expect(r.title).toBe('问题过长')
     expect(r.detail).toContain('40006')
+  })
+
+  it('真正未列举的码（词表也没有）走通用兜底，把码值放进详情', () => {
+    const r = toFriendlyError(new HttpError('', 200, 'BIZ', null, 49999))
+    expect(r.title).toBe('操作失败')
+    expect(r.detail).toContain('49999')
   })
 })
 
@@ -201,5 +248,135 @@ describe('unwrapBiz', () => {
 
   it('data 为 null 但 code 为 0 时返回 null —— 「查询不到」是合法结果', () => {
     expect(unwrapBiz({ code: 0, message: 'ok', data: null }, 'fail')).toBeNull()
+  })
+})
+
+// ==========================================================================
+
+describe('重试决策遵循业务码的 retry 语义', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.useRealTimers()
+  })
+
+  /** 构造一个总是返回指定业务码错误的 fetch 桩，并记录调用次数 */
+  function stubFailing(status: number, bizCode: number) {
+    const calls = { n: 0 }
+    globalThis.fetch = vi.fn(async () => {
+      calls.n += 1
+      return new Response(
+        JSON.stringify({ code: bizCode, message: '桩错误', data: null }),
+        { status, headers: { 'content-type': 'application/json' } }
+      )
+    }) as unknown as typeof fetch
+    return calls
+  }
+
+  it('50020（retry=NEVER）即便 HTTP 503 也只请求一次', async () => {
+    // 这是本次修复的核心回归。修复前：503 在 RETRYABLE_STATUS 白名单里，
+    // 于是 Prometheus 没起时每次打开监控页都会静默发 3 次请求、
+    // 退避等待约 3 秒，最后仍然失败——用户白等，后端白扛，
+    // 而这个错误重试一万次也不会好。
+    const calls = stubFailing(503, 50020)
+
+    await expect(
+      httpRequest('/api/v1/metrics/overview', { retries: 2, retryDelay: 1 })
+    ).rejects.toMatchObject({ bizCode: 50020 })
+
+    expect(calls.n).toBe(1)
+  })
+
+  it('50001（retry=SAFE）仍然重试 —— 真正的瞬时故障不该放弃', async () => {
+    const calls = stubFailing(500, 50001)
+
+    await expect(
+      httpRequest('/api/v1/tickets', { retries: 2, retryDelay: 1 })
+    ).rejects.toMatchObject({ bizCode: 50001 })
+
+    // 首次 + 2 次重试
+    expect(calls.n).toBe(3)
+  })
+
+  it('40009（retry=CLIENT）不自动重试 —— 要不要覆盖他人修改得由用户决定', async () => {
+    const calls = stubFailing(409, 40009)
+
+    await expect(
+      httpRequest('/api/v1/tickets/T-1', { method: 'PUT', retries: 2, retryDelay: 1 })
+    ).rejects.toMatchObject({ bizCode: 40009 })
+
+    expect(calls.n).toBe(1)
+  })
+
+  it('无业务码的裸 503（如网关返回）仍按 HTTP 状态重试', async () => {
+    // 词表查不到时必须退回原有行为，否则会把真正该重试的网关抖动也放弃掉
+    const calls = { n: 0 }
+    globalThis.fetch = vi.fn(async () => {
+      calls.n += 1
+      return new Response('<html>502 Bad Gateway</html>', {
+        status: 503, headers: { 'content-type': 'text/html' }
+      })
+    }) as unknown as typeof fetch
+
+    await expect(
+      httpRequest('/api/v1/tickets', { retries: 2, retryDelay: 1 })
+    ).rejects.toBeTruthy()
+
+    expect(calls.n).toBe(3)
+  })
+})
+
+describe('契约 · http.ts 不得与词表并行维护错误码文案', () => {
+  /**
+   * 结构性断言：`toFriendlyError` 的 BIZ 分支里不许再出现按具体业务码分流的代码。
+   *
+   * 行为断言（上面那些 `40001 用词表文案…`）能验「现在的输出对不对」，
+   * 但验不出「有没有人又加了一段永远执行不到的分支」——
+   * 那段代码不影响输出，却会让后来者以为这个码要在两处维护。
+   *
+   * 实际发生过：删除前 http.ts 里有 40001/40400/40009/40021 四段分支，
+   * 而这四个码词表全都有，getBizError() 会先命中并 return，
+   * 四段全是死代码。更糟的是其中 40004 那段写着「数据不存在」，
+   * 与词表的「当前状态不允许该操作」互相矛盾 —— 读代码的人无从判断哪个是对的。
+   */
+  it('BIZ 分支里没有按具体业务码分流的判断', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, resolve } = await import('node:path')
+
+    const here = dirname(fileURLToPath(import.meta.url))
+    const src = readFileSync(resolve(here, '../http.ts'), 'utf-8')
+
+    // 剥注释：本文件与 http.ts 的注释里都引用了这些码来说明成因，
+    // 不剥会被自己的说明文字打中而永远失败
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => '\n'.repeat((m.match(/\n/g) || []).length))
+      .replace(/\/\/[^\n]*/g, '')
+
+    // 只看 case 'BIZ' 到下一个 case 之间，避免把 HTTP 状态码分支
+    // （e.status === 404 之类）误判为业务码分流
+    const bizStart = code.indexOf("case 'BIZ':")
+    expect(bizStart, "http.ts 里找不到 case 'BIZ' —— 结构变了，本断言需同步").toBeGreaterThan(0)
+    const bizEnd = code.indexOf('case ', bizStart + 10)
+    const bizBlock = code.slice(bizStart, bizEnd > 0 ? bizEnd : undefined)
+
+    const branches = bizBlock.match(/e\.bizCode\s*===/g) ?? []
+    expect(
+      branches,
+      'BIZ 分支里出现了按具体业务码分流的判断。这些码词表里若已有，' +
+        'getBizError() 会先命中并 return，新增的分支是死代码；' +
+        '词表里若没有，正确做法是把它加进 bizCode.ts（那里有跨端契约测试守着），' +
+        '而不是在这里开一个只有前端知道的分支'
+    ).toEqual([])
+  })
+
+  it('词表命中时不落到通用兜底 —— 证明查表确实在 switch 之前', () => {
+    // 与上一条互补：上一条防「加了死代码」，这条防「把查表挪到了 switch 后面」。
+    // 50020 只在词表里有，http.ts 从来没有为它写过分支，
+    // 若查表失效它会落到「操作失败」
+    const r = toFriendlyError(new HttpError('', 200, 'BIZ', null, 50020))
+    expect(r.title).toBe('监控数据源不可用')
+    expect(r.title).not.toBe('操作失败')
   })
 })

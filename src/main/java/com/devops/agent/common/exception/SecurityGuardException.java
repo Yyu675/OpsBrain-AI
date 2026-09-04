@@ -1,5 +1,7 @@
 package com.devops.agent.common.exception;
 
+import com.devops.agent.common.dto.ApiCode;
+
 /**
  * 安全门卫拦截异常 - Prompt 注入攻击被拦截时抛出
  *
@@ -12,7 +14,7 @@ public class SecurityGuardException extends RuntimeException {
 
     public SecurityGuardException(String message) {
         super(message);
-        this.code = 40301; // 输入安全拦截
+        this.code = ApiCode.SECURITY_BLOCKED; // 输入安全拦截
     }
 
     public SecurityGuardException(int code, String message) {
@@ -33,9 +35,9 @@ public class SecurityGuardException extends RuntimeException {
      */
     public String getUserMessage() {
         return switch (code) {
-            case 40001 -> "输入不合法，请检查后重新提问";
-            case 40003 -> "检测到提示词注入攻击，请求已拦截";
-            case 40301 -> "该操作存在安全风险，已被拦截";
+            case ApiCode.BAD_REQUEST -> "输入不合法，请检查后重新提问";
+            case ApiCode.PROMPT_INJECTION -> "检测到提示词注入攻击，请求已拦截";
+            case ApiCode.SECURITY_BLOCKED -> "该操作存在安全风险，已被拦截";
             default -> "请求包含安全风险，已被拦截";
         };
     }

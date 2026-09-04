@@ -4,12 +4,13 @@ import com.devops.agent.application.router.DevOpsAgentEngine;
 import com.devops.agent.application.runtime.AgentStateManager;
 import com.devops.agent.application.runtime.CostQuotaManager;
 import com.devops.agent.domain.tools.DevOpsTools;
+import com.devops.agent.infrastructure.cache.QuotaCounterStore;
+import com.devops.agent.infrastructure.cache.TtlChatMemoryStore;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
-import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -64,37 +65,112 @@ public class AgentEngineConfig {
     private int maxMessages;
 
     /**
+     * 对话窗口空闲多久后回收（分钟）。与 Redis 热记忆 TTL 对齐，
+     * 进程内窗口没有理由比热记忆活得更久。
+     */
+    @Value("${devops.ai.memory.hot-ttl-minutes:120}")
+    private long memoryTtlMinutes;
+
+    /**
+     * 进程内并发保留的会话窗口数上限。超出后按最后访问时间 LRU 淘汰，
+     * 用于防御 TTL 窗口内瞬时涌入大量会话（压测/爬虫）造成的内存尖峰。
+     */
+    @Value("${devops.ai.memory.max-sessions:5000}")
+    private int memoryMaxSessions;
+
+    /** 对话窗口清扫间隔（分钟） */
+    @Value("${devops.ai.memory.sweep-interval-minutes:5}")
+    private long memorySweepIntervalMinutes;
+
+    /**
+     * 会话状态存储 Bean（可插拔）
+     *
+     * <p>默认内存实现，适用于单实例部署。多实例部署需换成
+     * Redis 实现——{@code synchronized} 是进程内锁，跨实例不生效，
+     * 两个实例可同时通过同一会话的状态校验，
+     * 「需人工审批」可能被冲成「草稿就绪」（详见 {@code AgentSessionStore} 注释）。</p>
+     *
+     * <p>用 {@code @ConditionalOnMissingBean} 而非配置开关：
+     * 将来加 Redis 实现时只需让它以更高优先级注册，
+     * 无需在本类里维护一张 if-else 的实现表。</p>
+     */
+    /**
+     * Redis 会话状态存储（多实例部署时启用）
+     *
+     * <p>由 {@code devops.ai.session.store=redis} 显式开启。
+     * <b>不做「检测到 Redis 就自动启用」</b>：项目里 Redis 还承担缓存、
+     * 限流、幂等等用途，单实例部署同样连着 Redis，
+     * 自动启用会让单实例白白付出每次状态迁移的网络往返代价。
+     * 部署形态只有部署方知道，必须显式声明。</p>
+     *
+     * <p>{@code @ConditionalOnProperty} 先于下面的
+     * {@code @ConditionalOnMissingBean} 生效，故开启后内存实现不再注册。</p>
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "devops.ai.session.store", havingValue = "redis")
+    public com.devops.agent.application.runtime.AgentSessionStore redisAgentSessionStore(
+            org.springframework.data.redis.core.StringRedisTemplate redisTemplate,
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+            @Value("${devops.ai.session.ttl-minutes:60}") long sessionTtlMinutes) {
+        log.info("🚀 [AgentEngineConfig] 创建会话状态存储（Redis 实现，多实例适用）| TTL={}min",
+                sessionTtlMinutes);
+        return new com.devops.agent.application.runtime.RedisAgentSessionStore(
+                redisTemplate, objectMapper, java.time.Duration.ofMinutes(sessionTtlMinutes));
+    }
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(
+            com.devops.agent.application.runtime.AgentSessionStore.class)
+    public com.devops.agent.application.runtime.AgentSessionStore agentSessionStore() {
+        log.info("🚀 [AgentEngineConfig] 创建会话状态存储（内存实现，单实例适用）");
+        return new com.devops.agent.application.runtime.InMemoryAgentSessionStore();
+    }
+
+    /**
      * Agent 状态管理器 Bean (MVP-2)
      */
     @Bean
-    public AgentStateManager agentStateManager() {
-        log.info("🚀 [AgentEngineConfig] 创建 AgentStateManager");
-        return new AgentStateManager();
+    public AgentStateManager agentStateManager(
+            com.devops.agent.application.runtime.AgentSessionStore sessionStore) {
+        log.info("🚀 [AgentEngineConfig] 创建 AgentStateManager | backend={}", sessionStore.backend());
+        return new AgentStateManager(sessionStore);
     }
 
     /**
      * 成本/Token 配额管理器 Bean (MVP-7)
      */
     @Bean
-    public CostQuotaManager costQuotaManager() {
-        log.info("🚀 [AgentEngineConfig] 创建 CostQuotaManager");
-        return new CostQuotaManager();
+    public CostQuotaManager costQuotaManager(QuotaCounterStore quotaCounterStore) {
+        log.info("🚀 [AgentEngineConfig] 创建 CostQuotaManager（配额计数走 Redis）");
+        return new CostQuotaManager(quotaCounterStore);
     }
 
     /**
-     * ChatMemory 存储后端 - 内存存储（多轮记忆）
+     * ChatMemory 存储后端 - 带 TTL 与容量上限的内存存储（多轮记忆）
      * <p>
      * LangChain4j 按 memoryId（即 sessionId）隔离不同会话的对话历史。
-     * InMemoryChatMemoryStore 在进程内存中维护多个会话窗口，适用于单实例部署。
-     * 分布式部署时可替换为 Redis / PostgreSQL backed store。
+     * </p>
+     * <p>
+     * <b>A1 修复（2026-08-24）</b>：此前直接返回裸 {@code InMemoryChatMemoryStore}，
+     * 而它<b>只增不减</b>——没有任何 TTL/容量上限，且全项目无一处调用
+     * {@code deleteMessages()}。叠加 {@code DevOpsChatController} 在 sessionId 为空时
+     * 退化为 {@code sessionId = traceId}（每请求一个 UUID）的行为，
+     * <b>每次匿名单轮对话都会永久新增一个条目</b>，数周内必然 OOM。
+     * 现改为 {@link TtlChatMemoryStore} 装饰器，按最后访问时间驱逐。
+     * </p>
+     * <p>
+     * TTL 取值与热记忆对齐：{@code devops.ai.memory.hot-ttl-minutes}（默认 120 分钟）
+     * 是 Redis 热记忆的静默回收时长，进程内对话窗口没有理由比它活得更久。
      * </p>
      *
      * @return ChatMemoryStore Bean
      */
     @Bean
     public ChatMemoryStore chatMemoryStore() {
-        log.info("🚀 [AgentEngineConfig] 创建 InMemoryChatMemoryStore（多轮记忆后端）");
-        return new InMemoryChatMemoryStore();
+        log.info("🚀 [AgentEngineConfig] 创建 TtlChatMemoryStore（多轮记忆后端）| ttl={}min | maxEntries={}",
+                memoryTtlMinutes, memoryMaxSessions);
+        return new TtlChatMemoryStore(memoryTtlMinutes, memoryMaxSessions, memorySweepIntervalMinutes);
     }
 
     /**

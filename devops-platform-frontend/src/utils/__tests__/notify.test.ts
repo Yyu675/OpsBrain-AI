@@ -43,22 +43,37 @@ afterEach(() => {
 })
 
 describe('业务码映射（核心：不透传后端原始文案）', () => {
+  // 标题与 hint 现在来自 constants/bizCode.ts 的 BIZ_ERRORS 词表
+  // （与后端 BizError 枚举一一对应），不再是 toFriendlyError 里的硬编码分支。
+  // 详见 http.test.ts 中同一批断言的说明。
+
   it('40009 版本冲突给出「刷新后重新提交」的处置，而非只复述冲突描述', () => {
     handleServerError(
       new HttpError('该记录已被他人修改（你基于第 0 版编辑，当前已是第 1 版）', 200, 'BIZ', null, 40009)
     )
 
     const msg = lastMessage()
-    expect(msg).toContain('数据已被修改')
+    expect(msg).toContain('数据已被他人修改')
+    // 关键是给出处置动作——只说「冲突了」用户不知道该做什么
     expect(msg).toContain('刷新')
   })
 
-  it('40021 内容重复给出「修改内容后重试」', () => {
+  it('40021 内容重复说明「知识库已有高度相似文档」，而非只说重复', () => {
     handleServerError(new HttpError('内容与已有文档重复', 200, 'BIZ', null, 40021))
 
     const msg = lastMessage()
     expect(msg).toContain('内容重复')
-    expect(msg).toContain('修改内容')
+    // 词表的 hint 比原来的「修改内容后重试」更具体：
+    // 它告诉用户重复的判定依据是「高度相似」，用户才知道要改到什么程度
+    expect(msg).toContain('相似')
+  })
+
+  it('50020 监控数据源不可用引导去接入管理，不让用户反复刷新', () => {
+    handleServerError(new HttpError('Prometheus 连接超时', 503, 'BIZ', null, 50020))
+
+    const msg = lastMessage()
+    expect(msg).toContain('监控数据源不可用')
+    expect(msg).toContain('接入管理')
   })
 
   it('40004 数据不存在引导刷新列表', () => {

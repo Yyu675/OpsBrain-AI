@@ -118,7 +118,10 @@ class HybridRetrieverIntegrationTest {
         assertTrue(ingested.getChunksIngested() > 0, "前置条件：需先有数据入库");
 
         // 用知识库文档中确实存在的主题检索
-        List<String> results = retrieverService.retrieve("Pod CrashLoopBackOff 排查", 3);
+        // C1：检索now需显式传可见范围。系统范围 = 可见全部，
+        // 保持本测试原有语义（验证存储管道连通性，与权限无关）。
+        List<String> results = retrieverService.retrieve(
+                "Pod CrashLoopBackOff 排查", 3, KnowledgeScope.admin("TEST", null));
 
         assertNotNull(results, "检索不应返回 null");
 

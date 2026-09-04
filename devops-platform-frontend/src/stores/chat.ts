@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { loadPersisted, savePersisted, onPersistedChange } from '@/utils/persist'
+import { loadPersisted, savePersisted, clearPersisted, onPersistedChange } from '@/utils/persist'
 
 /**
  * AI 对话消息
@@ -248,10 +248,31 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
+  /**
+   * 消息 ID 生成器。
+   *
+   * ── 为什么不能只用 Date.now() ─────────────────────────────
+   * 原实现是 `user-${Date.now()}` / `assistant-${Date.now()}`。
+   * `Date.now()` 只有**毫秒**精度，而下面两种场景会在同一毫秒内
+   * 连续建两条消息：
+   *   1. 「重新生成」：removeMessage(旧回答) 紧接着 startAssistantMessage(新)；
+   *   2. 发送时 pushUserMessage 之后立刻 startAssistantMessage。
+   *
+   * ID 撞车的后果不是显示乱，而是**操作打在错的消息上**：
+   *   - `removeMessage(id)` 用 findIndex 取第一个匹配 → 删掉的可能是另一条；
+   *   - `streamingMessage` 同样按 id 查找 → token 会追加到旧消息上。
+   *
+   * 加一个进程内单调递增序号即可根治，且仍保留时间前缀便于排序与排查。
+   * （本问题由 ChatMode 的「重新生成」测试偶发失败暴露：
+   *   同一毫秒内新旧两条 assistant 消息 ID 相同，删除删错了对象。）
+   */
+  let msgSeq = 0
+  const nextMsgId = (role: 'user' | 'assistant') => `${role}-${Date.now()}-${++msgSeq}`
+
   /** 追加用户消息 */
   function pushUserMessage(content: string): ChatMessage {
     const msg: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: nextMsgId('user'),
       role: 'user',
       content,
       timestamp: now()
@@ -263,7 +284,7 @@ export const useChatStore = defineStore('chat', () => {
   /** 创建 AI 响应占位消息并标记为流式目标 */
   function startAssistantMessage(sourceQuery: string): ChatMessage {
     const msg: ChatMessage = {
-      id: `assistant-${Date.now()}`,
+      id: nextMsgId('assistant'),
       role: 'assistant',
       content: '',
       timestamp: now(),
@@ -330,6 +351,33 @@ export const useChatStore = defineStore('chat', () => {
     persist.flush()
   }
 
+  /**
+   * 清空**所有**会话桶并抹掉本地持久化（登出时调用）。
+   *
+   * 与 {@link clear} 的区别：clear 只重置当前激活会话，用于用户主动
+   * 「开启新对话」；本方法针对的是「换人了」。
+   *
+   * 为什么必须做：对话历史全量落在 localStorage 的 `chat-sessions` 里，
+   * 且**没有任何按用户隔离的键**。登出后不清，下一个在同一台机器登录的人
+   * 打开 AI 助手就能直接看到上一个人的完整问答记录——
+   * 其中包含 AI 从知识库检索出的原文引用（citations 字段随会话一起持久化），
+   * 而知识库本身是有可见性分级的（PUBLIC / 内部）。
+   * 这等于绕过后端刚做的权限域隔离，属于实打实的越权读取。
+   *
+   * 共享值守机、跨班交接同一终端在运维场景里非常普遍，不是极端假设。
+   */
+  function clearAll() {
+    buckets.value = {}
+    activeTicketKey.value = GLOBAL_KEY
+    streamingId.value = null
+    isStreaming.value = false
+    currentTraceId.value = ''
+    // 必须显式 clearPersisted 而非依赖 watch 写入空对象：
+    // persist 是 400ms 防抖的，登出后页面可能立刻跳转/刷新，
+    // 防抖回调来不及执行，磁盘上的旧会话就留下来了。
+    clearPersisted(PERSIST_KEY)
+  }
+
   return {
     // 状态
     messages,
@@ -354,6 +402,7 @@ export const useChatStore = defineStore('chat', () => {
     mergeMetadata,
     finishStreaming,
     removeMessage,
-    clear
+    clear,
+    clearAll
   }
 })

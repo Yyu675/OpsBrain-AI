@@ -1,13 +1,9 @@
 package com.devops.agent.application.runtime;
 
+import com.devops.agent.infrastructure.cache.QuotaCounterStore;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-
-import java.time.LocalDateTime;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 成本/Token 配额管理器
@@ -33,15 +29,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * </ul>
  * </p>
  *
- * <p><b>TODO(P2-鉴权)</b>：当前 userId 参数由调用方传入 sessionId 作为过渡（P1-4 修复），
- * 待真实登录鉴权落地后需替换为 userId：
- * <ol>
- *   <li>改所有 userId 形参类型为真实用户标识（非 traceId/sessionId）</li>
- *   <li>配额 key 从 sessionId 升级为 userId，实现跨会话/跨请求的日限额累计</li>
- *   <li>接入登录回调写入真实 user 后，{@link #preCheck} 与 {@link #recordUsage} 获取
- *       当前登录用户 ID 而非依赖调用方传入</li>
- * </ol>
- * </p>
+ * <p><b>存储（A3 修复，2026-08-24）</b>：用量计数已从进程内存迁至 Redis
+ * （{@link QuotaCounterStore}）。此前用 {@code ConcurrentHashMap} + {@code AtomicLong}
+ * 保存，存在三个致命问题：重启即清零（跑满额度重启就能接着烧钱）、
+ * 多实例各记各的（实际额度 = 配置值 × 实例数）、日重置依赖进程内时间戳。
+ * 现以「日期分区 key + 到当日 24 点的 TTL」实现自然日重置，无需显式重置逻辑。</p>
+ *
+ * <p>userId 由调用方传入，已由 {@code DevOpsAgentServiceImpl.resolveQuotaKey()}
+ * 解析为「优先真实 userId、回退 sessionId」。注意该解析<b>必须在请求线程完成</b>，
+ * 因为 Sa-Token 的登录上下文是 ThreadLocal，切到异步线程后取不到。</p>
  *
  * @author OpsBrain AI
  * @since 2026-08-08
@@ -81,19 +77,14 @@ public class CostQuotaManager {
     // ==================== 运行时状态 ====================
 
     /**
-     * 用户日度配额使用情况：userId -> UserQuotaUsage
+     * 配额计数器存储（Redis）。
+     * <p>由构造器注入，Bean 在 {@code AgentEngineConfig.costQuotaManager()} 装配。</p>
      */
-    private final Map<String, UserQuotaUsage> userQuotas = new ConcurrentHashMap<>();
+    private final QuotaCounterStore counters;
 
-    /**
-     * 系统日度总成本
-     */
-    private final AtomicLong systemDailyCostFen = new AtomicLong(0); // 存储为分，避免浮点精度问题
-
-    /**
-     * 最后重置时间
-     */
-    private volatile LocalDateTime lastResetTime = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0);
+    public CostQuotaManager(QuotaCounterStore counters) {
+        this.counters = counters;
+    }
 
     // ==================== 配额检查入口 ====================
 
@@ -106,42 +97,44 @@ public class CostQuotaManager {
      * @return 预检结果
      */
     public QuotaCheckResult preCheck(String userId, int estimatedTokens, ModelType modelType) {
-        // 1. 重置日度配额（跨天自动重置）
-        resetDailyIfNeeded();
+        // 无需再做 resetDailyIfNeeded()：计数器 key 含日期分区且 TTL 到当日 24 点，
+        // 跨天自然归零（A3）。
 
-        // 2. 单请求硬性上限检查
+        // 1. 单请求硬性上限检查
         if (estimatedTokens > maxTokensPerRequest) {
             return QuotaCheckResult.exceeded("单请求 Token 超限",
                     "estimatedTokens=" + estimatedTokens + " > maxTokensPerRequest=" + maxTokensPerRequest);
         }
 
-        // 3. 单请求成本上限检查
+        // 2. 单请求成本上限检查
         double estimatedCost = estimateCost(estimatedTokens, modelType);
+        long estimatedCostFen = toFen(estimatedCost);
         if (estimatedCost > maxCostPerRequest) {
             return QuotaCheckResult.exceeded("单请求成本超限",
                     "estimatedCost=¥" + String.format("%.4f", estimatedCost) + " > maxCostPerRequest=¥" + maxCostPerRequest);
         }
 
-        // 4. 用户日度配额检查
-        UserQuotaUsage usage = userQuotas.computeIfAbsent(userId, k -> new UserQuotaUsage());
-        if (usage.tokensUsed + estimatedTokens > userDailyTokenQuota) {
+        // 3. 用户日度配额检查（读 Redis，跨实例、跨重启一致）
+        long tokensUsed = counters.getUserTokens(userId);
+        long costFenUsed = counters.getUserCostFen(userId);
+        if (tokensUsed + estimatedTokens > userDailyTokenQuota) {
             return QuotaCheckResult.exceeded("用户日 Token 配额耗尽",
-                    "used=" + usage.tokensUsed + " + estimated=" + estimatedTokens + " > quota=" + userDailyTokenQuota);
+                    "used=" + tokensUsed + " + estimated=" + estimatedTokens + " > quota=" + userDailyTokenQuota);
         }
-        if (usage.costFen + (long)(estimatedCost * 100) > userDailyCostQuota * 100) {
+        if (costFenUsed + estimatedCostFen > toFen(userDailyCostQuota)) {
             return QuotaCheckResult.exceeded("用户日成本配额耗尽",
-                    "used=¥" + String.format("%.2f", usage.costFen / 100.0) + " > quota=¥" + userDailyCostQuota);
+                    "used=¥" + String.format("%.2f", costFenUsed / 100.0) + " > quota=¥" + userDailyCostQuota);
         }
 
-        // 5. 系统日度总成本检查
-        long systemCostFen = systemDailyCostFen.get();
-        if (systemCostFen + (long)(estimatedCost * 100) > systemDailyCostQuota * 100) {
+        // 4. 系统日度总成本检查（熔断）
+        long systemCostFen = counters.getSystemCostFen();
+        if (systemCostFen + estimatedCostFen > toFen(systemDailyCostQuota)) {
             return QuotaCheckResult.exceeded("系统日总成本配额耗尽（熔断）",
                     "systemUsed=¥" + String.format("%.2f", systemCostFen / 100.0) + " > quota=¥" + systemDailyCostQuota);
         }
 
-        // 6. 告警检查（使用率 > 80%）
-        checkAndWarn(userId, usage, estimatedTokens, estimatedCost);
+        // 5. 告警检查（使用率 > 阈值）
+        checkAndWarn(userId, tokensUsed, costFenUsed, systemCostFen, estimatedTokens, estimatedCostFen);
 
         return QuotaCheckResult.ok();
     }
@@ -150,41 +143,32 @@ public class CostQuotaManager {
      * 调用成功后记录实际消耗（扣减配额）
      */
     public void recordUsage(String userId, int actualTokens, double actualCost, ModelType modelType) {
-        resetDailyIfNeeded();
+        long costFen = toFen(actualCost);
+        counters.recordUsage(userId, actualTokens, costFen);
 
-        UserQuotaUsage usage = userQuotas.computeIfAbsent(userId, k -> new UserQuotaUsage());
-        usage.tokensUsed += actualTokens;
-        usage.costFen += (long)(actualCost * 100);
-        usage.requestCount++;
-
-        systemDailyCostFen.addAndGet((long)(actualCost * 100));
-
-        log.debug("💰 [Quota] 记录消耗 | user={} | tokens={} | cost=¥{} | model={} | userDailyTokens={}/{} | userDailyCost=¥{}/{} | systemDailyCost=¥{}/{}",
-                userId, actualTokens, String.format("%.4f", actualCost), modelType,
-                usage.tokensUsed, userDailyTokenQuota,
-                String.format("%.2f", usage.costFen / 100.0), userDailyCostQuota,
-                String.format("%.2f", systemDailyCostFen.get() / 100.0), systemDailyCostQuota);
+        if (log.isDebugEnabled()) {
+            log.debug("💰 [Quota] 记录消耗 | user={} | tokens={} | cost=¥{} | model={} | 当日累计 tokens={}/{} | cost=¥{}/{} | 系统=¥{}/{}",
+                    userId, actualTokens, String.format("%.4f", actualCost), modelType,
+                    counters.getUserTokens(userId), userDailyTokenQuota,
+                    String.format("%.2f", counters.getUserCostFen(userId) / 100.0), userDailyCostQuota,
+                    String.format("%.2f", counters.getSystemCostFen() / 100.0), systemDailyCostQuota);
+        }
     }
 
     /**
      * 获取用户当前配额使用情况（供前端看板展示）
      */
     public UserQuotaStatus getUserStatus(String userId) {
-        resetDailyIfNeeded();
-        UserQuotaUsage usage = userQuotas.get(userId);
-        if (usage == null) {
-            return new UserQuotaStatus(userId, 0, 0, 0, 0, 0, 0, 0, 0);
-        }
         return new UserQuotaStatus(
                 userId,
-                usage.tokensUsed,
+                counters.getUserTokens(userId),
                 userDailyTokenQuota,
-                usage.costFen,
-                (long)(userDailyCostQuota * 100),
-                usage.requestCount,
-                systemDailyCostFen.get(),
-                (long)(systemDailyCostQuota * 100),
-                calculateResetTimeSeconds()
+                counters.getUserCostFen(userId),
+                toFen(userDailyCostQuota),
+                (int) counters.getUserRequests(userId),
+                counters.getSystemCostFen(),
+                toFen(systemDailyCostQuota),
+                counters.resetInSeconds()
         );
     }
 
@@ -195,46 +179,43 @@ public class CostQuotaManager {
         return (tokens / 1000.0) * costPer1k;
     }
 
-    private void resetDailyIfNeeded() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime todayStart = now.withHour(0).withMinute(0).withSecond(0);
-        if (lastResetTime.isBefore(todayStart)) {
-            synchronized (this) {
-                if (lastResetTime.isBefore(todayStart)) {
-                    log.info("🔄 [Quota] 日度配额重置 | 重置前 systemCost=¥{} | userCount={}",
-                            String.format("%.2f", systemDailyCostFen.get() / 100.0), userQuotas.size());
-                    userQuotas.clear();
-                    systemDailyCostFen.set(0);
-                    lastResetTime = todayStart;
-                }
-            }
-        }
+    /**
+     * 元 → 分。集中一处转换，避免各调用点重复写 {@code (long)(x * 100)}。
+     * <p>用 {@link Math#round} 而非强制截断：{@code (long)(0.29 * 100)} 在
+     * 二进制浮点下等于 28，会让成本被系统性低估。</p>
+     */
+    private static long toFen(double yuan) {
+        return Math.round(yuan * 100);
     }
 
-    private void checkAndWarn(String userId, UserQuotaUsage usage, int estimatedTokens, double estimatedCost) {
-        double tokenUsageRate = (double)(usage.tokensUsed + estimatedTokens) / userDailyTokenQuota;
-        double costUsageRate = (double)(usage.costFen + (long)(estimatedCost * 100)) / (userDailyCostQuota * 100);
-        double systemUsageRate = (double)systemDailyCostFen.get() / (systemDailyCostQuota * 100);
+    /**
+     * 配额使用率告警。
+     * <p><b>修复</b>：原实现使用了 Python/Rust 风格的格式说明符占位符，
+     * 而 SLF4J 只认识 <code>&#123;&#125;</code>，不支持任何格式说明符。
+     * 结果是日志原样打印占位符文本且参数错位，等于告警从未真正生效。</p>
+     */
+    private void checkAndWarn(String userId, long tokensUsed, long costFenUsed, long systemCostFen,
+                              int estimatedTokens, long estimatedCostFen) {
+        double tokenUsageRate = safeRate(tokensUsed + estimatedTokens, userDailyTokenQuota);
+        double costUsageRate = safeRate(costFenUsed + estimatedCostFen, toFen(userDailyCostQuota));
+        double systemUsageRate = safeRate(systemCostFen, toFen(systemDailyCostQuota));
 
         if (tokenUsageRate > warnThreshold || costUsageRate > warnThreshold || systemUsageRate > warnThreshold) {
-            log.warn("⚠️ [Quota] 配额告警 | user={} | tokenUsage={:.1%} | costUsage={:.1%} | systemUsage={:.1%} | threshold={:.0%}",
-                    userId, tokenUsageRate, costUsageRate, systemUsageRate, warnThreshold);
+            log.warn("⚠️ [Quota] 配额告警 | user={} | tokenUsage={}% | costUsage={}% | systemUsage={}% | threshold={}%",
+                    userId,
+                    String.format("%.1f", tokenUsageRate * 100),
+                    String.format("%.1f", costUsageRate * 100),
+                    String.format("%.1f", systemUsageRate * 100),
+                    String.format("%.0f", warnThreshold * 100));
         }
     }
 
-    private long calculateResetTimeSeconds() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime tomorrowStart = now.plusDays(1).withHour(0).withMinute(0).withSecond(0);
-        return java.time.Duration.between(now, tomorrowStart).getSeconds();
+    /** 除零保护：配额配置为 0 时视为 0% 而非 NaN/Infinity */
+    private static double safeRate(long used, long quota) {
+        return quota > 0 ? (double) used / quota : 0.0;
     }
 
     // ==================== 内部数据类 ====================
-
-    private static class UserQuotaUsage {
-        long tokensUsed = 0;
-        long costFen = 0; // 存储为分
-        int requestCount = 0;
-    }
 
     public enum ModelType {
         TURBO, REASONER

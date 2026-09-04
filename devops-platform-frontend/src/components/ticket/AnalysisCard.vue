@@ -8,7 +8,7 @@
  * - 置信度标签
  * - 降级：未检测到结构时走全量 markdown 渲染
  */
-import { Sparkles, Copy, RefreshCw, Square, ThumbsUp, ThumbsDown } from 'lucide-vue-next'
+import { Sparkles, Copy, RefreshCw, Square, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-vue-next'
 import type { StructuredAnalysis } from '@/composables/useTicketAnalysis'
 
 defineProps<{
@@ -19,6 +19,8 @@ defineProps<{
   useStructuredRender: boolean
   confidenceClass: string
   citations: string[]
+  /** 引用标题对应的可跳转文档（与 citations 下标一一对应；null=知识库未命中，渲染纯文本） */
+  citationDocs?: Array<{ id: string | number; title: string } | null>
   cost: number
   renderMarkdown: (text: string) => string
   onCopyCommand: (cmd: string) => void
@@ -112,15 +114,28 @@ defineProps<{
       v-html="renderMarkdown(content)"
     ></div>
 
-    <!-- 引用文档 -->
+    <!-- 引用文档：citationDocs 命中知识库时渲染为可跳转链接，否则纯文本标题 -->
     <div v-if="citations.length" class="citations-section">
       <div class="citations-header">
         <span>引用文档（{{ citations.length }}）</span>
       </div>
       <div class="citations-list">
-        <div v-for="(cite, i) in citations" :key="i" class="citation-item">
-          <span>{{ cite }}</span>
-        </div>
+        <template v-for="(cite, i) in citations" :key="i">
+          <RouterLink
+            v-if="citationDocs?.[i]"
+            :to="`/knowledge/${citationDocs[i].id}`"
+            class="citation-item citation-link"
+            :title="`查看知识库文档：${citationDocs[i].title}`"
+          >
+            <span class="citation-dot" />
+            <span class="citation-text">{{ cite }}</span>
+            <ChevronRight :size="12" class="citation-arrow" />
+          </RouterLink>
+          <div v-else class="citation-item">
+            <span class="citation-dot" />
+            <span class="citation-text">{{ cite }}</span>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -165,8 +180,8 @@ defineProps<{
 
 <style scoped>
 .analysis-card {
-  border-left: 3px solid var(--color-primary, #409eff);
-  background: var(--color-primary-lighter, #E8F0FC);
+  border-left: 3px solid var(--color-primary, var(--brand));
+  background: var(--color-primary-lighter, var(--brand-subtle));
   border-radius: 0 8px 8px 0;
   padding: 12px 16px;
 }
@@ -177,93 +192,93 @@ defineProps<{
   margin-bottom: 8px;
   font-size: 0.8125rem;
 }
-.analysis-title { font-weight: 600; color: var(--color-primary, #409eff); }
-.analysis-status { font-size: 0.6875rem; color: var(--color-text-tertiary, #9ca3af); }
-.analysis-status.done { color: var(--state-success, #16A34A); }
+.analysis-title { font-weight: 600; color: var(--color-primary, var(--brand)); }
+.analysis-status { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); }
+.analysis-status.done { color: var(--state-success, var(--success)); }
 /* 存档用中性灰而非成功绿：它不是「刚完成」，只是「上次的结论」 */
-.analysis-status.archived { color: var(--color-text-tertiary, #9ca3af); cursor: help; }
+.analysis-status.archived { color: var(--color-text-tertiary, var(--text-3)); cursor: help; }
 
 .analysis-structured { display: flex; flex-direction: column; gap: 10px; }
 .structured-header {
   display: flex; align-items: center; justify-content: space-between;
-  font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary, #4B5563);
+  font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary, var(--text-2));
   margin-bottom: 4px;
 }
-.structured-hint { font-size: 0.625rem; color: var(--color-text-tertiary, #9ca3af); font-weight: 400; }
+.structured-hint { font-size: 0.625rem; color: var(--color-text-tertiary, var(--text-3)); font-weight: 400; }
 
 .reasons-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .reason-item { display: flex; gap: 8px; font-size: 0.8125rem; line-height: 1.5; }
 .reason-num {
   flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--color-primary, #409eff); color: #fff;
+  background: var(--color-primary, var(--brand)); color: #fff;
   font-size: 0.625rem; font-weight: 600;
   display: flex; align-items: center; justify-content: center;
 }
-.reason-text { color: var(--color-text-secondary, #4B5563); flex: 1; }
+.reason-text { color: var(--color-text-secondary, var(--text-2)); flex: 1; }
 
 .commands-list { display: flex; flex-direction: column; gap: 4px; }
 .command-item {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: #fff; border-radius: 4px; padding: 6px 10px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  background: var(--color-surface, var(--surface-1)); border-radius: 4px; padding: 6px 10px;
+  border: 1px solid var(--color-border-light, var(--border-1));
 }
-.command-code { font-family: monospace; font-size: 0.75rem; color: var(--color-primary, #409eff); flex: 1; overflow-x: auto; white-space: nowrap; }
+.command-code { font-family: monospace; font-size: 0.75rem; color: var(--color-primary, var(--brand)); flex: 1; overflow-x: auto; white-space: nowrap; }
 .command-copy {
   border: none; background: none; cursor: pointer; padding: 2px;
-  color: var(--color-text-tertiary, #9ca3af); border-radius: 3px;
+  color: var(--color-text-tertiary, var(--text-3)); border-radius: 3px;
 }
-.command-copy:hover { color: var(--color-primary, #409eff); background: var(--color-primary-lighter, #E8F0FC); }
+.command-copy:hover { color: var(--color-primary, var(--brand)); background: var(--color-primary-lighter, var(--brand-subtle)); }
 
 .confidence-tag { font-weight: 600; }
-.confidence-high { color: var(--state-success, #16A34A); }
-.confidence-mid { color: var(--state-warning, #D97706); }
-.confidence-low { color: var(--state-error, #DC2626); }
+.confidence-high { color: var(--state-success, var(--success)); }
+.confidence-mid { color: var(--state-warning, var(--warning)); }
+.confidence-low { color: var(--state-error, var(--danger)); }
 
 .confidence-bar {
   width: 100%; height: 4px; border-radius: 2px; overflow: hidden;
-  background: var(--color-bg-sunken, #EBEEF3);
+  background: var(--color-bg-sunken, var(--surface-2));
 }
 .confidence-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
-.confidence-fill.confidence-high { background: var(--state-success, #16A34A); }
-.confidence-fill.confidence-mid { background: var(--state-warning, #D97706); }
-.confidence-fill.confidence-low { background: var(--state-error, #DC2626); }
+.confidence-fill.confidence-high { background: var(--state-success, var(--success)); }
+.confidence-fill.confidence-mid { background: var(--state-warning, var(--warning)); }
+.confidence-fill.confidence-low { background: var(--state-error, var(--danger)); }
 
-.other-content { font-size: 0.8125rem; color: var(--color-text-tertiary, #9ca3af); }
-.analysis-content { font-size: 0.8125rem; line-height: 1.6; color: var(--color-text-secondary, #4B5563); }
+.other-content { font-size: 0.8125rem; color: var(--color-text-tertiary, var(--text-3)); }
+.analysis-content { font-size: 0.8125rem; line-height: 1.6; color: var(--color-text-secondary, var(--text-2)); }
 
 .citations-section { margin-top: 8px; }
-.citations-header { font-size: 0.6875rem; color: var(--color-text-tertiary, #9ca3af); margin-bottom: 4px; }
+.citations-header { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); margin-bottom: 4px; }
 .citations-list { display: flex; flex-direction: column; gap: 2px; }
-.citation-item { font-size: 0.6875rem; color: var(--color-primary, #409eff); }
+.citation-item { font-size: 0.6875rem; color: var(--color-primary, var(--brand)); }
 
 .analysis-actions {
   display: flex; align-items: center; gap: 8px;
   margin-top: 8px; padding-top: 8px;
   border-top: 1px solid rgba(64, 158, 255, 0.1);
 }
-.cost-tag { font-size: 0.625rem; color: var(--color-text-tertiary, #9ca3af); }
+.cost-tag { font-size: 0.625rem; color: var(--color-text-tertiary, var(--text-3)); }
 .analysis-btn {
   display: inline-flex; align-items: center; gap: 3px;
   border: none; background: none; cursor: pointer;
-  font-size: 0.6875rem; color: var(--color-text-tertiary, #9ca3af);
+  font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3));
   padding: 2px 4px; border-radius: 3px;
 }
-.analysis-btn:hover { color: var(--color-primary, #409eff); background: rgba(64, 158, 255, 0.08); }
+.analysis-btn:hover { color: var(--color-primary, var(--brand)); background: rgba(64, 158, 255, 0.08); }
 
 /* 反馈（策略 B：AI 准确率数据来源） */
-.feedback-label { font-size: 0.625rem; color: var(--color-text-tertiary, #9ca3af); }
+.feedback-label { font-size: 0.625rem; color: var(--color-text-tertiary, var(--text-3)); }
 .feedback-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--color-border-light, #E5E7EB); background: #fff; cursor: pointer;
-  color: var(--color-text-tertiary, #9ca3af);
+  border: 1px solid var(--color-border-light, var(--border-1)); background: var(--color-surface, var(--surface-1)); cursor: pointer;
+  color: var(--color-text-tertiary, var(--text-3));
   padding: 3px 6px; border-radius: 4px;
   transition: all 0.15s ease;
 }
-.feedback-btn:hover { color: var(--color-primary, #409eff); border-color: var(--color-primary-light, #79bbff); }
+.feedback-btn:hover { color: var(--color-primary, var(--brand)); border-color: var(--color-primary-light, #79bbff); }
 /* 选中态：有用绿 / 没用红，明确反映用户已评价 */
 .feedback-btn.active { color: #fff; }
 .feedback-btn.active:first-of-type,
-.feedback-btn.active[title="有用"] { background: var(--state-success, #16A34A); border-color: var(--state-success, #16A34A); }
+.feedback-btn.active[title="有用"] { background: var(--state-success, var(--success)); border-color: var(--state-success, var(--success)); }
 .feedback-btn.active[title="没用"] { background: #EF4444; border-color: #EF4444; }
-.action-divider { width: 1px; height: 12px; background: var(--color-border-light, #E5E7EB); }
+.action-divider { width: 1px; height: 12px; background: var(--color-border-light, var(--border-1)); }
 </style>

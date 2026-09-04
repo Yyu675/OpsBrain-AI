@@ -4,7 +4,7 @@ import com.devops.agent.domain.approval.ApprovalRequest;
 import com.devops.agent.domain.approval.ApprovalService;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
 import com.devops.agent.domain.biz.service.TicketService;
-import com.devops.agent.domain.notify.DingTalkNotifier;
+import com.devops.agent.domain.notify.Notifier;
 import com.devops.agent.domain.notify.NotifyMessage;
 import com.devops.agent.domain.tools.TicketDraft;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,16 +36,17 @@ public class ApprovalOrchestrator {
     private final ApprovalService approvalService;
     private final TicketService ticketService;
     private final ObjectMapper objectMapper;
-    private final DingTalkNotifier dingTalkNotifier;
+    /** 通知渠道：依赖接口而非具体厂商实现（可插拔） */
+    private final Notifier notifier;
 
     public ApprovalOrchestrator(ApprovalService approvalService,
                                 TicketService ticketService,
                                 ObjectMapper objectMapper,
-                                DingTalkNotifier dingTalkNotifier) {
+                                Notifier notifier) {
         this.approvalService = approvalService;
         this.ticketService = ticketService;
         this.objectMapper = objectMapper;
-        this.dingTalkNotifier = dingTalkNotifier;
+        this.notifier = notifier;
     }
 
     /**
@@ -85,7 +86,7 @@ public class ApprovalOrchestrator {
                     + "- **动作**：" + rejected.getActionType() + "\n"
                     + "- **审批人**：" + approver + "\n"
                     + "- **驳回理由**：" + reason + "\n";
-            dingTalkNotifier.send(NotifyMessage.normal(title, md));
+            notifier.send(NotifyMessage.normal(title, md));
         } catch (Exception e) {
             log.warn("⚠️ [ApprovalOrchestrator] 驳回通知失败（已忽略）| id={} | {}", id, e.getMessage());
         }
@@ -139,7 +140,7 @@ public class ApprovalOrchestrator {
                     + "- **审批人**：" + approver + "\n"
                     + "- **执行结果**：" + detail + "\n";
             // 执行失败需人工介入 → 强提醒
-            dingTalkNotifier.send(success
+            notifier.send(success
                     ? NotifyMessage.normal(title, md)
                     : NotifyMessage.urgent(title, md));
         } catch (Exception e) {

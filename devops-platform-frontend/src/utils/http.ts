@@ -1,3 +1,5 @@
+import { getBizError, isAutoRetryable } from '../constants/bizCode'
+
 // ==================== Sa-Token 鉴权 token 管理（方向三）====================
 // token 存 localStorage，每个请求由 httpRequest 自动附带 satoken 头。
 // 读写含 try-catch：隐私模式/禁用 localStorage 时降级为内存不崩（同 persist.ts 契约）。
@@ -117,11 +119,40 @@ export function toFriendlyError(e: unknown): FriendlyError {
 
   const path = shortenUrl(e.url)
 
+  // ── 优先查业务码词表 ────────────────────────────────────────────
+  // BIZ_ERRORS 与后端 BizError 枚举一一对应（有契约测试守着），
+  // 且带 hint 与 retry 语义。此前这张表虽然存在、虽然测试绿，
+  // 却**没有任何生产代码在查它**——下面的 switch 各自硬编码了
+  // 40001/40004/40009/40021 四个码，其余 18 个（含 50020 监控数据源不可用、
+  // 40103 权限不足、42901 限流）统统落到通用兜底文案。
+  //
+  // 最典型的后果：Prometheus 没起时后端返回 50020 + HTTP 503，
+  // 用户看到的却是「服务暂时不可用，可能正在重启或过载，请稍后重试」——
+  // 一句把他引向「等一等再刷新」的话，而这个错误的 retry 语义是 NEVER，
+  // 正确的下一步是去「接入管理」检查数据源连接。
+  //
+  // 放在 switch 之前：词表是前后端共同维护的单一真相，
+  // 它有的就以它为准；它没有的才退回按传输层特征分类。
+  const meta = getBizError(e.bizCode)
+  if (meta) {
+    return {
+      title: meta.title,
+      // 后端消息通常比词表标题更具体（含具体字段名、状态名），优先用它做详情。
+      // 后端没给 message 时带上码值而不是复述标题——
+      // 标题已经显示在上方，详情再说一遍等于没有信息；
+      // 而码值能让用户在反馈问题时说清是哪个错误，也便于对照后端日志
+      detail: e.message || `${meta.title}（错误码 ${e.bizCode}）`,
+      hint: meta.hint
+    }
+  }
+
   switch (e.code) {
     case 'TIMEOUT':
       return {
         title: '请求超时',
-        detail: `服务器在 15 秒内未响应${path ? `（${path}）` : ''}`,
+        // 用抛出方带来的实际时长，不写死 15 秒——各调用方可传自定义 timeout
+        // （如导出 CSV 用 60s），写死会让提示与真实等待时间对不上
+        detail: `${e.message || '服务器未在预期时间内响应'}${path ? `（${path}）` : ''}`,
         hint: '可能是后端服务未启动、数据库连接中断或网络不通。请检查后端服务状态和 Docker 容器是否正常运行'
       }
 
@@ -170,34 +201,16 @@ export function toFriendlyError(e: unknown): FriendlyError {
       }
 
     case 'BIZ':
-      if (e.bizCode === 40001) {
-        return {
-          title: '参数校验失败',
-          detail: e.message || '提交的数据不符合要求',
-          hint: '请检查输入内容后重试'
-        }
-      }
-      if (e.bizCode === 40004) {
-        return {
-          title: '数据不存在',
-          detail: e.message || '请求的资源不存在或已被删除',
-          hint: '请刷新列表获取最新数据'
-        }
-      }
-      if (e.bizCode === 40009) {
-        return {
-          title: '数据已被修改',
-          detail: e.message || '该记录已被他人修改，你的编辑基于旧版本',
-          hint: '请刷新页面获取最新数据后重新编辑'
-        }
-      }
-      if (e.bizCode === 40021) {
-        return {
-          title: '内容重复',
-          detail: e.message || '提交的内容与已有数据重复',
-          hint: '请修改内容后重试'
-        }
-      }
+      // 这里只剩「词表查不到」的兜底。
+      //
+      // 上方 getBizError() 已优先查表并 return，凡是词表里有的码都到不了这儿。
+      // 此前这个 case 里还硬编码了 40001/40400/40009/40021 四个分支，
+      // 而这四个码词表全都有 —— 也就是说它们是**四段永远执行不到的死代码**，
+      // 却让人误以为「这几个码要在两个地方维护」。
+      // 实际风险已经发生过：40004 在词表里是「当前状态不允许该操作」，
+      // 在这里却写成「数据不存在」，同一个码两套互相矛盾的文案。
+      //
+      // 删除时把它们措辞更好的部分回填进了词表（见 bizCode.ts 的 40400）。
       return {
         title: '操作失败',
         detail: e.message || `业务错误（码 ${e.bizCode}）`,
@@ -253,11 +266,37 @@ const RETRYABLE_STATUS = [408, 429, 500, 502, 503, 504]
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
+/**
+ * 超时中止的专用理由对象。
+ *
+ * 为什么不能用 `new Error('timeout')`：`AbortController.abort(reason)` 会让
+ * fetch **以该 reason 原样 reject**。普通 Error 的 `name` 是 `'Error'`，
+ * 于是 {@link isAbortError} 判不出来，超时最终被归类成 `NETWORK`——
+ * 用户看到的是「无法连接服务器，请确认后端服务已启动」，
+ * 而真相是服务连上了、只是 15 秒没返回。这两种故障的排查方向完全相反
+ * （一个查进程是否存活，一个查慢查询/线程池），提示给错会把人带偏。
+ *
+ * 用 `TimeoutError` 这个名字与 `AbortSignal.timeout()` 的标准行为对齐。
+ */
+const makeTimeoutReason = (): unknown => {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('请求超时', 'TimeoutError')
+  }
+  // 非浏览器环境（部分测试运行器）兜底：手工构造同名错误
+  const e = new Error('请求超时')
+  e.name = 'TimeoutError'
+  return e
+}
+
 const isAbortError = (e: unknown): boolean => {
   if (!e || typeof e !== 'object') return false
   const name = (e as { name?: string }).name
   return name === 'AbortError' || name === 'TimeoutError'
 }
+
+/** 是否为**超时**中止（区别于调用方主动 abort） */
+const isTimeoutError = (e: unknown): boolean =>
+  !!e && typeof e === 'object' && (e as { name?: string }).name === 'TimeoutError'
 
 const linkSignals = (
   external: AbortSignal | undefined,
@@ -304,7 +343,7 @@ export const httpRequest = async <T = unknown>(
 
   for (let attempt = 0; attempt <= effectiveRetries; attempt++) {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeout)
+    const timeoutId = setTimeout(() => controller.abort(makeTimeoutReason()), timeout)
     const unlink = linkSignals(externalSignal, controller)
 
     try {
@@ -315,15 +354,36 @@ export const httpRequest = async <T = unknown>(
       })
 
       if (!res.ok) {
-        if (retryOn.includes(res.status) && attempt < effectiveRetries) {
-          lastErr = new HttpError(`HTTP ${res.status}`, res.status, 'HTTP_STATUS')
+        // 先读 body 再决定是否重试。
+        //
+        // 此前顺序是反的：只看 HTTP 状态就重试，body 还没读。
+        // 后果是**业务码携带的 retry 语义完全失效**——后端在
+        // BizError 里为每个码标了 NEVER / SAFE / BACKOFF / CLIENT，
+        // 但前端在拿到这个码之前就已经重试完了。
+        //
+        // 最典型的是 50020（监控数据源不可用，retry=NEVER，HTTP 503）：
+        // 503 在 RETRYABLE_STATUS 白名单里，于是 Prometheus 没起时
+        // 每次打开监控页都会静默发 3 次请求、退避等待约 3 秒，
+        // 最后仍然失败。用户白等，后端白扛——而这个错误重试一万次也不会好。
+        let payload: unknown = null
+        try { payload = await res.json() } catch { /* body not json */ }
+        const bizCode = (payload as { code?: number })?.code
+
+        // 有业务码时以它的 retry 语义为准（词表与后端枚举一一对应）；
+        // 没有业务码（如网关返回的裸 502）才退回按 HTTP 状态判断
+        const retryable = bizCode !== undefined
+          ? isAutoRetryable(bizCode)
+          : retryOn.includes(res.status)
+
+        if (retryable && attempt < effectiveRetries) {
+          lastErr = new HttpError(`HTTP ${res.status}`, res.status, 'HTTP_STATUS',
+            payload, bizCode, url)
           await sleep(retryDelay * Math.pow(2, attempt))
           continue
         }
-        let payload: unknown = null
-        try { payload = await res.json() } catch { /* body not json */ }
-        // 401：未登录或登录失效，清 token 并通知 App 跳登录页
-        if (res.status === 401) {
+        // 401：未登录或登录失效，清 token 并通知 App 跳登录页。
+        // ⚠️ 临时开发开关（2026-08-26）：UI 预览默认不跳登录（VITE_ENABLE_AUTH_REDIRECT=1 可恢复）。
+        if (res.status === 401 && import.meta.env.VITE_ENABLE_AUTH_REDIRECT === '1') {
           handleUnauthorized()
         }
         throw new HttpError(
@@ -346,13 +406,32 @@ export const httpRequest = async <T = unknown>(
       lastErr = e
       if (externalSignal?.aborted) throw e
       if (isAbortError(e)) {
-        if (attempt < effectiveRetries) {
+        // 只有**超时**才值得重试。非超时的 AbortError 说明有人主动取消了
+        // （组件卸载、用户点「停止」），重试等于无视这个取消意图，
+        // 还会在页面已经销毁后继续打后端。
+        if (isTimeoutError(e) && attempt < effectiveRetries) {
           await sleep(retryDelay * Math.pow(2, attempt))
           continue
         }
-        throw new HttpError('请求超时，请检查网络', 0, 'TIMEOUT', undefined, undefined, url)
+        if (!isTimeoutError(e)) throw e
+        throw new HttpError(
+          `请求超时（${Math.round(timeout / 1000)} 秒未响应）`,
+          0, 'TIMEOUT', undefined, undefined, url
+        )
       }
-      if (e instanceof HttpError && !retryOn.includes(e.status)) throw e
+      // 这里是**第二条**重试路径：上面 !res.ok 分支抛出的 HttpError 会落到这个
+      // catch 里再判一次。此前它只看 retryOn.includes(e.status)，
+      // 于是上面刚按业务码判定「不该重试」而抛出的错误，
+      // 又会因为状态码在白名单里被重试一遍——两条路径的判据不一致，
+      // 修了上面一处并不生效（50020 实测仍发 3 次请求）。
+      //
+      // 统一判据：有业务码就以词表的 retry 语义为准，没有才看 HTTP 状态。
+      if (e instanceof HttpError) {
+        const retryable = e.bizCode !== undefined
+          ? isAutoRetryable(e.bizCode)
+          : retryOn.includes(e.status)
+        if (!retryable) throw e
+      }
       if (attempt < effectiveRetries) {
         await sleep(retryDelay * Math.pow(2, attempt))
         continue

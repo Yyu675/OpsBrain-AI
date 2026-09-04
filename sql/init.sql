@@ -31,8 +31,17 @@ CREATE TABLE IF NOT EXISTS sys_knowledge_chunk (
     expired_at       TIMESTAMP,                               -- 过期时间，NULL=永不过期
     status           VARCHAR(16) DEFAULT 'ACTIVE'  NOT NULL,  -- ACTIVE/DEPRECATED/ARCHIVED
     knowledge_source VARCHAR(32) DEFAULT 'UNKNOWN' NOT NULL,  -- OFFICIAL/SOP/TICKET/BLOG/UNKNOWN
+    -- C1 可见性（冗余自 sys_knowledge_doc，供检索 SQL 免 JOIN 过滤）。
+    -- 为什么冗余：检索走 HNSW 向量索引，若权限字段只在 doc 表，
+    -- 检索 SQL 必须 JOIN，而带 JOIN 的 ORDER BY embedding <=> ? 会让 PG
+    -- 放弃 HNSW 走全表扫描——几十万切片下从毫秒退化到秒级。
+    visibility       VARCHAR(16) DEFAULT 'PUBLIC'  NOT NULL,  -- PUBLIC/INTERNAL/RESTRICTED
+    owner_dept       VARCHAR(64),                             -- RESTRICTED 时的归属部门
     create_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    update_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    update_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- 取值约束：防止应用层写入拼写错误的档位（如 'Public'/'PRIVATE'），
+    -- 那会让该切片在所有权限比较中落到未知分支，行为不可预测
+    CONSTRAINT ck_chunk_visibility CHECK (visibility IN ('PUBLIC', 'INTERNAL', 'RESTRICTED'))
 );
 CREATE INDEX IF NOT EXISTS idx_chunk_doc_id       ON sys_knowledge_chunk (doc_id);
 CREATE INDEX IF NOT EXISTS idx_chunk_content_hash ON sys_knowledge_chunk (content_hash);
@@ -56,6 +65,14 @@ CREATE INDEX IF NOT EXISTS idx_chunk_effective_expired
     ON sys_knowledge_chunk (effective_at, expired_at);
 CREATE INDEX IF NOT EXISTS idx_chunk_source
     ON sys_knowledge_chunk (knowledge_source);
+
+-- C1 权限过滤索引：检索热路径的过滤条件是 (status, visibility)
+CREATE INDEX IF NOT EXISTS idx_chunk_status_visibility
+    ON sys_knowledge_chunk (status, visibility);
+-- 部分索引只覆盖受限切片，体积远小于全表索引（绝大多数是 PUBLIC）
+CREATE INDEX IF NOT EXISTS idx_chunk_owner_dept
+    ON sys_knowledge_chunk (owner_dept)
+    WHERE visibility = 'RESTRICTED';
 
 -- P2-21: content_tsv 全文检索触发器
 -- 此前 content_tsv 列存在但无触发器填充，始终为 NULL，
@@ -213,6 +230,52 @@ CREATE TABLE IF NOT EXISTS sys_agent_session_summary (
     update_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_summary_session      ON sys_agent_session_summary (session_id);
+
+-- ---------------------------------------------------------------------
+-- Table 6.1: sys_agent_conversation_turn - 对话原文（B-2 冷归档补全）
+-- ---------------------------------------------------------------------
+-- 为什么需要这张表
+--   三层记忆里，热层（Redis）存对话原文但 TTL 仅 120 分钟，
+--   而冷归档按天执行——归档时原文早已过期。于是冷归档只能存摘要，
+--   并在 JSON 里用 contentScope=SUMMARY_ONLY 如实标注。
+--   合规审计与模型评测取数都需要逐轮原文，摘要不够。
+--
+-- 为什么不延长 Redis TTL 代替本表
+--   对话原文体积远大于摘要（单轮可达数 KB，含日志/堆栈粘贴）。
+--   把保留期从 2 小时拉到 90 天，等于把 Redis 当主存储用——
+--   内存成本不可接受，且 Redis 无持久化保证时数据仍会丢。
+--
+-- 写入语义：旁路、幂等、不阻塞主流程
+--   由 AgentMemoryManager.recordCompletedTurn 在每轮结束后写入。
+--   失败只记日志——用户已经收到回答了，不能因为「存档」失败而报错。
+--   (session_id, turn_seq) 唯一：重放或重试不会写重。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_agent_conversation_turn (
+    id            BIGSERIAL PRIMARY KEY,
+    session_id    VARCHAR(64) NOT NULL,
+    trace_id      VARCHAR(64),
+    tenant_id     VARCHAR(64) DEFAULT 'default',
+    -- 轮次序号：从 1 递增。与 session_id 组成唯一键，保证重试幂等
+    turn_seq      INT         NOT NULL,
+    user_query    TEXT,
+    ai_answer     TEXT,
+    -- 工具调用结果（JSON 数组）。评测时需要它区分「模型自己答的」
+    -- 与「基于工具返回答的」——只看问答对无法判断
+    tool_results  TEXT,
+    tokens        INT              DEFAULT 0,
+    cost_rmb      DOUBLE PRECISION DEFAULT 0,
+    final_state   VARCHAR(32),
+    create_time   TIMESTAMP        DEFAULT CURRENT_TIMESTAMP
+);
+-- 幂等键：同一会话同一轮次只存一条
+CREATE UNIQUE INDEX IF NOT EXISTS uk_turn_session_seq
+    ON sys_agent_conversation_turn (session_id, turn_seq);
+-- 按会话回放：归档与审计都按 session 维度取全量
+CREATE INDEX IF NOT EXISTS idx_turn_session
+    ON sys_agent_conversation_turn (session_id, turn_seq);
+-- 按时间清理：保留期到期后批量删除
+CREATE INDEX IF NOT EXISTS idx_turn_create_time
+    ON sys_agent_conversation_turn (create_time);
 CREATE INDEX IF NOT EXISTS idx_summary_trace              ON sys_agent_session_summary (trace_id);
 CREATE INDEX IF NOT EXISTS idx_summary_tenant             ON sys_agent_session_summary (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_summary_create_time        ON sys_agent_session_summary (create_time);
@@ -335,8 +398,17 @@ CREATE TABLE IF NOT EXISTS sys_knowledge_doc (
     -- B-2 来源回链：由工单沉淀的文档反查源工单（L1.5 复盘知识沉淀）
     source_ticket_id BIGINT,                      -- 源工单 ID，非工单沉淀时为 NULL
     source_type      VARCHAR(32),                 -- 来源类型：TICKET/MANUAL/IMPORT 等
+    -- C1 可见性三档，越严格数值越大：
+    --   PUBLIC     全员可见（默认，兼容存量数据）
+    --   INTERNAL   登录用户可见
+    --   RESTRICTED 仅 owner_dept 内成员 + ADMIN 可见
+    -- 默认 PUBLIC 是刻意的向后兼容：若默认 RESTRICTED，升级后所有历史文档
+    -- 对所有人不可见，知识库瞬间「清空」，比权限过宽更像事故。
+    visibility       VARCHAR(16)  DEFAULT 'PUBLIC' NOT NULL,
+    owner_dept       VARCHAR(64),
     create_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    update_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    update_time      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_doc_visibility CHECK (visibility IN ('PUBLIC', 'INTERNAL', 'RESTRICTED'))
 );
 
 -- 来源回链索引：按源工单反查「此工单已沉淀为哪些知识」
@@ -352,6 +424,15 @@ CREATE INDEX IF NOT EXISTS idx_doc_index_status ON sys_knowledge_doc (index_stat
 CREATE INDEX IF NOT EXISTS idx_doc_simhash     ON sys_knowledge_doc (simhash);
 CREATE INDEX IF NOT EXISTS idx_doc_update_time ON sys_knowledge_doc (update_time DESC);
 CREATE INDEX IF NOT EXISTS idx_doc_title       ON sys_knowledge_doc (title);
+CREATE INDEX IF NOT EXISTS idx_doc_visibility  ON sys_knowledge_doc (visibility);
+
+-- 分类外键：category_id 指向 sys_knowledge_category。
+-- 建表时无法内联声明（sys_knowledge_category 在本表之后才创建），
+-- 故在分类表建好后用 DO 块补加，保持幂等。
+COMMENT ON COLUMN sys_knowledge_doc.visibility IS
+    'PUBLIC=全员可见 / INTERNAL=登录可见 / RESTRICTED=仅 owner_dept + ADMIN';
+COMMENT ON COLUMN sys_knowledge_chunk.visibility IS
+    '冗余自 sys_knowledge_doc，供检索 SQL 免 JOIN 过滤（保住 HNSW 索引）';
 
 -- ---------------------------------------------------------------------
 -- Table 10.1: sys_knowledge_category - 可独立维护的知识库目录分类
@@ -379,6 +460,27 @@ SELECT DISTINCT TRIM(d.category), 0
        SELECT 1 FROM sys_knowledge_category c
         WHERE LOWER(c.name) = LOWER(TRIM(d.category))
    );
+
+-- 回填文档的 category_id（把自由文本分类对应到分类表的行）
+UPDATE sys_knowledge_doc d
+   SET category_id = c.id
+  FROM sys_knowledge_category c
+ WHERE d.category_id IS NULL
+   AND d.category IS NOT NULL
+   AND LOWER(TRIM(d.category)) = LOWER(c.name);
+
+-- 文档 → 分类的外键。必须放在分类表创建之后，故用 DO 块补加。
+-- pg_constraint 判重使其可重复执行（ADD CONSTRAINT 无 IF NOT EXISTS 语法）。
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_knowledge_doc_category'
+    ) THEN
+        ALTER TABLE sys_knowledge_doc
+            ADD CONSTRAINT fk_knowledge_doc_category
+            FOREIGN KEY (category_id) REFERENCES sys_knowledge_category(id);
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- Table 11: sys_knowledge_doc_history - 历史版本（只存原文，不存向量）
@@ -427,6 +529,24 @@ CREATE TABLE IF NOT EXISTS sys_knowledge_tag (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_knowledge_tag_normalized
     ON sys_knowledge_tag (normalized_name);
+
+-- 兼容旧数据：把文档上已有的自由文本标签收进标签字典。
+-- 与上面分类的回填对称——升级前打在文档上的标签若不入字典，
+-- 标签管理页会看不到它们，用户会以为标签「丢了」而重新建一遍，
+-- 造成同义标签并存（"K8s" 与 "k8s"）。
+-- 按 LOWER(TRIM()) 分组归一，取字典序最小的原始写法作展示名。
+INSERT INTO sys_knowledge_tag (name, normalized_name)
+SELECT s.name, s.normalized_name
+  FROM (
+        SELECT MIN(TRIM(tag)) AS name, LOWER(TRIM(tag)) AS normalized_name
+          FROM sys_knowledge_doc_tag
+         WHERE TRIM(tag) <> ''
+         GROUP BY LOWER(TRIM(tag))
+       ) s
+ WHERE NOT EXISTS (
+       SELECT 1 FROM sys_knowledge_tag k
+        WHERE k.normalized_name = s.normalized_name
+   );
 
 -- ---------------------------------------------------------------------
 -- Table 13: sys_alert - 告警实体（L2 实时监测）
@@ -607,6 +727,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     password      VARCHAR(100) NOT NULL,                        -- BCrypt 哈希
     display_name  VARCHAR(64),
     role          VARCHAR(32)  NOT NULL DEFAULT 'OPS',          -- ADMIN/OPS
+    dept          VARCHAR(64),                                  -- C1 RESTRICTED 文档的可见性判定依据
     status        VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE',       -- ACTIVE/DISABLED
     last_login_at TIMESTAMP,
     create_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -646,6 +767,289 @@ CREATE INDEX IF NOT EXISTS idx_approval_status_time ON sys_approval_request (sta
 CREATE INDEX IF NOT EXISTS idx_approval_trace ON sys_approval_request (trace_id);
 CREATE INDEX IF NOT EXISTS idx_approval_pending_expire
     ON sys_approval_request (expires_at) WHERE status = 'PENDING';
+
+-- ---------------------------------------------------------------------
+-- Table 23: sys_operation_audit - 通用写操作审计（v25）
+-- ---------------------------------------------------------------------
+-- 补齐漂移：v25 迁移脚本已提交，但当时漏了同步到 init.sql，
+-- 导致「全新环境按 init.sql 建库」会缺这张表。
+-- 后果不显眼但要紧：审计写入失败已被 catch，业务照常，只是**悄悄没有审计记录**——
+-- 到 L3/L4 阶段这是合规问题，而且发现时往往已经需要查历史了。
+--
+-- action 用语言无关标识符（knowledge.doc.delete）而非中文描述：
+-- 中文会随文案调整而变，无法用于统计与告警规则。
+-- request_digest 只存摘要不存全文：审计表权限较宽，是最不该存敏感信息的地方。
+-- 不设外键到 sys_user：审计必须比用户活得久，否则删号即销毁证据。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_operation_audit (
+    id              BIGSERIAL PRIMARY KEY,
+    trace_id        VARCHAR(64),
+    actor_id        VARCHAR(64),                  -- SYSTEM 表示定时任务/AI 自动执行
+    actor_name      VARCHAR(64),
+    action          VARCHAR(64)  NOT NULL,        -- 语言无关标识，如 ticket.approve
+    target_type     VARCHAR(32),
+    target_id       VARCHAR(64),
+    http_method     VARCHAR(8),
+    http_path       VARCHAR(255),
+    status_code     INT,
+    success         BOOLEAN      NOT NULL DEFAULT TRUE,  -- HTTP 200 但 code!=0 仍算失败
+    biz_code        INT,
+    request_digest  VARCHAR(512),                 -- 脱敏 + 截断，禁止存全文
+    error_message   VARCHAR(512),
+    client_ip       VARCHAR(45),                  -- IPv6 最长 45 字符
+    user_agent      VARCHAR(255),
+    duration_ms     INT,
+    create_time     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_create_time ON sys_operation_audit (create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_actor_time  ON sys_operation_audit (actor_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_target      ON sys_operation_audit (target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_trace       ON sys_operation_audit (trace_id);
+-- 部分索引：失败是少数，索引体积远小于全表索引
+CREATE INDEX IF NOT EXISTS idx_audit_failures
+    ON sys_operation_audit (create_time DESC) WHERE success = FALSE;
+
+-- ---------------------------------------------------------------------
+-- Table 24: sys_risk_policy - 风险等级策略（v26，L3）
+-- ---------------------------------------------------------------------
+-- 四行固定记录，主键对应 ToolRiskLevel 枚举名。**不可增删只可改**：
+-- 等级由 Java 枚举定义，引擎只会产出这四个值之一；允许新建第五级，
+-- 它永远不会被命中——页面上看着有、实际是死配置，比没有更糟。
+--
+-- 存在的理由：这些约束此前散落在 @ToolMeta 注解与若干 if 里，
+-- 调整必须改代码 + 重新构建 + 重启。但安全边界的调整往往发生在故障当下
+-- （「先把自动重启关掉」），那时没人能等一次发布。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_risk_policy (
+    risk_level          VARCHAR(32)  PRIMARY KEY,  -- 对应 ToolRiskLevel 枚举名
+    display_name        VARCHAR(64)  NOT NULL,
+    description         VARCHAR(255),
+    approval_mode       VARCHAR(16)  NOT NULL DEFAULT 'SINGLE',  -- NONE/SINGLE/DUAL（四眼原则）
+    approval_timeout_minutes INT     NOT NULL DEFAULT 30,
+    auto_execute_allowed BOOLEAN     NOT NULL DEFAULT FALSE,
+    -- 爆炸半径双上限，取较小值：只配百分比会让大集群一次挂太多，
+    -- 只配绝对值又会让小集群过于保守
+    max_blast_radius_percent INT     NOT NULL DEFAULT 5,
+    max_blast_radius_count   INT     NOT NULL DEFAULT 1,
+    cooldown_seconds    INT          NOT NULL DEFAULT 60,   -- 蓝图 §三 的「等 60 秒校验心跳」
+    max_retries         INT          NOT NULL DEFAULT 0,
+    escalate_after_minutes   INT     NOT NULL DEFAULT 15,
+    escalate_target     VARCHAR(16)  NOT NULL DEFAULT 'TICKET',  -- NONE/TICKET/ONCALL
+    allowed_environments VARCHAR(128) NOT NULL DEFAULT 'dev',    -- 逗号分隔；空串=不允许任何环境
+    version             INT          NOT NULL DEFAULT 0,   -- 乐观锁，防安全策略被静默覆盖
+    updated_by          VARCHAR(64),
+    create_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 种子数据：默认刻意保守——新部署的系统应当「几乎什么都不自动做」，
+-- 由运维团队按自己的风险偏好逐步放开，而不是反过来。
+INSERT INTO sys_risk_policy (
+    risk_level, display_name, description,
+    approval_mode, approval_timeout_minutes,
+    auto_execute_allowed, max_blast_radius_percent, max_blast_radius_count,
+    cooldown_seconds, max_retries,
+    escalate_after_minutes, escalate_target, allowed_environments
+) VALUES
+    ('READ_ONLY', '只读查询', '无副作用，可安全重试降级',
+     'NONE', 30, TRUE, 100, 9999, 0, 3, 0, 'NONE', 'prod,staging,dev'),
+    ('DRAFT', '草稿生成', '不直接改状态，输出供人工审核',
+     'NONE', 30, TRUE, 100, 9999, 0, 2, 0, 'NONE', 'prod,staging,dev'),
+    ('CONTROLLED_WRITE', '受控写操作', '有副作用但可控，需幂等补偿',
+     'SINGLE', 30, FALSE, 20, 5, 60, 1, 15, 'TICKET', 'staging,dev'),
+    ('HIGH_RISK_EXECUTION', '高风险执行', '不可逆或难逆，必须审批人工确认',
+     'DUAL', 15, FALSE, 5, 1, 300, 0, 10, 'ONCALL', 'dev')
+ON CONFLICT (risk_level) DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- Table 25: sys_action_allowlist - 动作白名单（v26，L3）
+-- ---------------------------------------------------------------------
+-- **允许清单，不是禁止清单**：表里没有记录 = 不允许自动执行。
+-- 默认拒绝是安全配置的唯一正确默认值——漏配一条动作的后果应当是
+-- 「这个动作没自动跑」，而不是「它不受任何约束地跑了」。
+--
+-- 不建外键到 sys_risk_policy：引用完整性由 Service 层对着 Java 枚举校验，
+-- 比 DB 外键更严（DB 只能保证「策略表里有这行」，Service 能保证「枚举里有这个值」）。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_action_allowlist (
+    id                  BIGSERIAL    PRIMARY KEY,
+    action_key          VARCHAR(64)  NOT NULL,     -- 如 k8s.pod.restart，全局唯一
+    display_name        VARCHAR(64)  NOT NULL,
+    description         VARCHAR(255),
+    category            VARCHAR(32)  NOT NULL DEFAULT 'k8s',  -- k8s/host/cloud/database/script/notify
+    risk_level          VARCHAR(32)  NOT NULL,     -- 逻辑关联 sys_risk_policy.risk_level
+    target_pattern      VARCHAR(255),              -- 如 ns:prod/deploy:*；写操作必填
+    environments        VARCHAR(128) NOT NULL DEFAULT 'dev',   -- 与风险策略取交集
+    param_schema        JSONB,                     -- 执行前校验模型给出的参数
+    requires_approval   BOOLEAN,                   -- NULL=跟随策略；只能收紧不能放宽
+    max_blast_radius_count INT,                    -- NULL=跟随策略
+    enabled             BOOLEAN      NOT NULL DEFAULT FALSE,   -- 停用而非删除（审计引用 action_key）
+    version             INT          NOT NULL DEFAULT 0,
+    created_by          VARCHAR(64),
+    updated_by          VARCHAR(64),
+    create_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-- 唯一：同一动作两条配置时引擎该信哪条？让 DB 直接拒绝，
+-- 而不是靠应用层「取第一条」这种隐式规则
+CREATE UNIQUE INDEX IF NOT EXISTS uk_action_allowlist_key
+    ON sys_action_allowlist (action_key);
+CREATE INDEX IF NOT EXISTS idx_action_allowlist_category
+    ON sys_action_allowlist (category, risk_level);
+-- 引擎热路径的部分索引：从不查停用条目，索引体积可小一半
+CREATE INDEX IF NOT EXISTS idx_action_allowlist_enabled
+    ON sys_action_allowlist (action_key) WHERE enabled = TRUE;
+
+-- 种子数据：蓝图 §二/§三 点名的典型动作。
+-- 写操作一律 enabled=FALSE——装好就能自动重启生产 Pod 是不可接受的默认值。
+INSERT INTO sys_action_allowlist (
+    action_key, display_name, description, category, risk_level,
+    target_pattern, environments, param_schema, enabled
+) VALUES
+    ('k8s.pod.describe', '查看 Pod 详情', '读取 Pod 配置、事件与状态，用于诊断上下文补充',
+     'k8s', 'READ_ONLY', '*', 'prod,staging,dev',
+     '{"namespace":{"type":"string","required":true}}'::jsonb, TRUE),
+    ('k8s.logs.tail', '拉取容器日志', '读取最近 N 行容器日志，用于 RCA 归因',
+     'k8s', 'READ_ONLY', '*', 'prod,staging,dev',
+     '{"lines":{"type":"int","max":1000,"default":200}}'::jsonb, TRUE),
+    ('k8s.pod.restart', '优雅重启 Pod', '对应蓝图 P2/P3 场景的 rollout restart，需受爆炸半径约束',
+     'k8s', 'CONTROLLED_WRITE', 'ns:staging/*', 'staging,dev',
+     '{"gracePeriodSeconds":{"type":"int","max":120,"default":30}}'::jsonb, FALSE),
+    ('k8s.deploy.scale', '调整副本数', '扩缩容。缩容可能引发容量不足，受 max 参数约束',
+     'k8s', 'CONTROLLED_WRITE', 'ns:staging/*', 'staging,dev',
+     '{"replicas":{"type":"int","min":1,"max":10}}'::jsonb, FALSE),
+    ('host.log.rotate', '日志空间回收', '蓝图 P4 场景：logrotate 释放磁盘，无业务影响',
+     'host', 'CONTROLLED_WRITE', '*', 'staging,dev',
+     '{"olderThanDays":{"type":"int","min":1,"default":7}}'::jsonb, FALSE),
+    ('host.docker.prune', '清理废弃镜像', '蓝图 P4 场景：docker system prune 回收宿主机磁盘',
+     'host', 'CONTROLLED_WRITE', '*', 'dev',
+     '{"includeVolumes":{"type":"bool","default":false}}'::jsonb, FALSE),
+    ('k8s.rollout.undo', '回滚发布', '蓝图 §三 的自愈回滚触发器，影响面覆盖整个 Deployment',
+     'k8s', 'HIGH_RISK_EXECUTION', 'ns:staging/*', 'dev',
+     '{"toRevision":{"type":"int"}}'::jsonb, FALSE),
+    ('db.connection.kill', '终止数据库连接', '主库连接池打满时终止长事务，误杀会导致业务报错',
+     'database', 'HIGH_RISK_EXECUTION', '*', 'dev',
+     '{"minDurationSeconds":{"type":"int","min":60}}'::jsonb, FALSE),
+    ('cloud.securitygroup.block', '封禁攻击源 IP', 'SecOps 场景：写入安全组黑名单，误封会切断正常访问',
+     'cloud', 'HIGH_RISK_EXECUTION', '*', 'dev',
+     '{"durationHours":{"type":"int","max":24,"default":24}}'::jsonb, FALSE)
+ON CONFLICT (action_key) DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- Table 26: sys_automation_policy - 自动化策略（v27，L3）
+-- ---------------------------------------------------------------------
+-- 三张表的分工：
+--   sys_action_allowlist  —— 能不能做（允许清单）
+--   sys_risk_policy       —— 怎么做（审批、爆炸半径、升级）
+--   sys_automation_policy —— 什么时候做（本表：告警匹配规则）
+--
+-- 策略只引用 action_key，不内联动作定义。否则会出现「策略说能跑、
+-- 白名单说不能跑」的自相矛盾状态，而运维无法判断该信哪个。
+--
+-- dry_run 是一等公民且新建默认开启：自动化最危险的时刻是
+-- 「刚配好、还没人知道它会匹配到什么」，直接上线的策略若匹配范围写宽了，
+-- 第一次触发就是事故。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_automation_policy (
+    id                  BIGSERIAL    PRIMARY KEY,
+
+    -- 人可读的规则名，如「P3 Pod 崩溃自动重启」
+    name                VARCHAR(64)  NOT NULL,
+    description         VARCHAR(255),
+
+    -- ---- 匹配条件（全部留空=通配，但不允许全空，见 Service 校验）----
+    -- 告警级别，逗号分隔，如 'P2,P3'。对应 sys_alert.level
+    match_alert_levels  VARCHAR(64),
+    -- 业务模块，对应 sys_alert.module（K8S/MYSQL/NETWORK/...）
+    match_module        VARCHAR(32),
+    -- 服务名匹配模式，支持 * 通配，如 'order-*'。对应 sys_alert.service
+    match_service_pattern VARCHAR(128),
+    -- 告警规则名匹配模式，如 'PodCrashLoopBackOff'。对应 sys_alert.alert_name
+    match_alert_name_pattern VARCHAR(128),
+
+    -- ---- 命中后做什么 ----
+    -- 引用 sys_action_allowlist.action_key。不建外键：与 v26 同理，
+    -- 引用完整性由 Service 层校验（能同时校验「存在」与「已启用」，DB 外键只能查前者）
+    action_key          VARCHAR(64)  NOT NULL,
+    -- 传给动作的参数（JSONB），须满足白名单条目的 param_schema
+    action_params       JSONB,
+
+    -- 生效环境。必须是所引用动作允许环境的子集（Service 校验）
+    environment         VARCHAR(16)  NOT NULL DEFAULT 'dev',
+
+    -- ---- 执行控制 ----
+    -- 求值顺序，越小越先。同值时按 id 兜底保证确定性
+    priority            INT          NOT NULL DEFAULT 100,
+    -- 命中后是否停止求值后续策略
+    stop_on_match       BOOLEAN      NOT NULL DEFAULT TRUE,
+    -- 冷却期：同策略对同目标在此期间内不重复执行，防自动化风暴
+    cooldown_minutes    INT          NOT NULL DEFAULT 30,
+    -- 单次触发最多重试几次（超出则按风险策略升级）
+    max_executions_per_day INT       NOT NULL DEFAULT 10,
+
+    -- ---- 安全开关 ----
+    -- 演练模式：照常匹配与记录，但不真正执行。新建策略默认 TRUE
+    dry_run             BOOLEAN      NOT NULL DEFAULT TRUE,
+    enabled             BOOLEAN      NOT NULL DEFAULT FALSE,
+
+    version             INT          NOT NULL DEFAULT 0,
+    created_by          VARCHAR(64),
+    updated_by          VARCHAR(64),
+    create_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 策略名唯一：同名策略会让日志里「策略 X 已触发」无法定位是哪一条
+CREATE UNIQUE INDEX IF NOT EXISTS uk_automation_policy_name
+    ON sys_automation_policy (name);
+
+-- 引擎热路径：按 priority 顺序取启用的策略。
+-- 部分索引只覆盖启用项——引擎从不求值停用策略
+CREATE INDEX IF NOT EXISTS idx_automation_policy_eval
+    ON sys_automation_policy (priority, id) WHERE enabled = TRUE;
+
+-- 反查：「这个动作被哪些策略引用」。停用动作前必须能查到影响面
+CREATE INDEX IF NOT EXISTS idx_automation_policy_action
+    ON sys_automation_policy (action_key);
+
+COMMENT ON TABLE sys_automation_policy IS
+    'L3 自动化策略：告警匹配条件 → 白名单动作。能不能做看白名单，什么时候做看本表';
+COMMENT ON COLUMN sys_automation_policy.dry_run IS
+    '演练模式。新建默认 TRUE——直接上线的策略若匹配范围写宽了，第一次触发就是事故';
+COMMENT ON COLUMN sys_automation_policy.cooldown_minutes IS
+    '冷却期，防「重启→没起来→又告警→又重启」的自动化风暴';
+COMMENT ON COLUMN sys_automation_policy.priority IS
+    '求值顺序，越小越先。不定义顺序会依赖 DB 返回顺序，同一告警两次触发可能走不同分支';
+
+-- ---------------------------------------------------------------------
+-- 种子数据：对齐蓝图 §二 三档故障的典型策略
+-- ---------------------------------------------------------------------
+-- 全部 enabled=FALSE + dry_run=TRUE —— 装好就自动重启生产 Pod 是
+-- 不可接受的默认值。运维需先启用、观察演练日志、再关掉 dry_run。
+INSERT INTO sys_automation_policy (
+    name, description,
+    match_alert_levels, match_module, match_service_pattern, match_alert_name_pattern,
+    action_key, action_params, environment,
+    priority, stop_on_match, cooldown_minutes, dry_run, enabled
+) VALUES
+    ('P4 磁盘告警自动回收日志',
+     '蓝图 P4 全自治场景：/var/log 占用超阈值时自动 logrotate，不惊动人',
+     'P4', 'OTHER', '*', 'DiskSpaceLow',
+     'host.log.rotate', '{"olderThanDays":7}'::jsonb, 'dev',
+     10, TRUE, 60, TRUE, FALSE),
+
+    ('P3 Pod 崩溃自动重启',
+     '蓝图 P2/P3 半自动自愈：CrashLoopBackOff 时优雅重启，受爆炸半径约束',
+     'P3', 'K8S', '*', 'PodCrashLoopBackOff',
+     'k8s.pod.restart', '{"gracePeriodSeconds":30}'::jsonb, 'staging',
+     20, TRUE, 30, TRUE, FALSE),
+
+    ('P0/P1 数据库连接池打满',
+     '蓝图 P0/P1 人机协同：仅提议终止长事务，必须人工审批后才执行',
+     'P0,P1', 'MYSQL', '*', 'DBConnectionPoolExhausted',
+     'db.connection.kill', '{"minDurationSeconds":300}'::jsonb, 'dev',
+     5, TRUE, 15, TRUE, FALSE)
+ON CONFLICT (name) DO NOTHING;
 
 -- =====================================================================
 -- Data Migration: v10 孤儿切片清理

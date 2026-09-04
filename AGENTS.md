@@ -1,0 +1,591 @@
+# AGENTS.md — OpsBrain AI 项目开发约定
+
+> 本文件是本仓库的**硬约束清单**，人与 AI 助手共同遵守。
+> 只记录「本项目独有、违反就会出问题」的规则；通用编程常识不写在这里。
+> 决策背景见 `docs/09-decisions/`，进度见 `docs/06-implementation-progress/`。
+>
+> 前端另有专属规范：`devops-platform-frontend/AGENTS.md`。
+
+---
+
+## 一、项目概览
+
+OpsBrain AI（智维大脑）是企业级智能 DevOps 知识库与工单自动化 Agent 平台：
+运维人员用自然语言提问 → RAG 检索企业知识库 → LangChain4j Agent 调度工具 → 秒级给出方案并自动开工单。
+
+当前处于 **L1（被动问答）** 阶段，规划演进到 L5（全自动自愈）。
+
+### 技术栈
+
+| 层 | 技术 |
+| :-- | :-- |
+| 后端 | Java 21、Spring Boot 3.5.6、Spring MVC（SseEmitter）、Spring Data JPA + JdbcTemplate |
+| AI | LangChain4j 1.1.0（BOM 统一版本）、阿里云百炼 OpenAI 兼容协议 |
+| 存储 | PostgreSQL + **pgvector**（向量）、Redis 7（语义缓存/会话）、MinIO（附件） |
+| 鉴权 | Sa-Token（header `satoken`） |
+| 前端 | Vue 3.5、TypeScript、Vite 8、Element Plus、Pinia、TanStack Vue Query、ECharts |
+| 构建 | Maven（`./mvnw`）、npm |
+
+### 后端分层（六层单向依赖，不得反向）
+
+```
+controller/     HTTP 入口、DTO、参数校验、SSE 端点        → 只能调 application
+  ├── config/       WebConfig（CORS + Sa-Token 拦截器）
+  └── dto/          出参 DTO
+application/    用例编排、事务边界、Agent 调度            → 只能调 domain + infrastructure
+  ├── router/       DevOpsAgentEngine、DevOpsIntentRouter（大小模型分流）
+  ├── runtime/      ToolRuntimeManager、ApprovalOrchestrator、各类 Scheduler
+  ├── memory/       AgentMemoryManager
+  └── context/      ContextBudgetManager
+domain/         业务实体与领域服务                        → 不依赖 controller/application
+  ├── rag/          切片、索引、混合检索、知识库治理
+  ├── tools/        Agent 白名单工具、参数校验、风险等级
+  ├── biz/          工单、团队成员、AI 分析、复盘
+  ├── alert/        告警接入与推送
+  ├── approval/     审批
+  └── auth/         用户与权限
+infrastructure/ 外部依赖适配                              → 不 import application/domain 的用例类
+  ├── AiModelConfig / VectorStoreConfig / Mock*Model
+  ├── persistence/  JPA 实体与 Repository 实现
+  ├── cache/        SemanticCacheService、HotMemoryStore
+  ├── storage/      MinIO
+  └── websocket/    告警 WS 推送
+common/         跨层共享：ApiResponse、异常、Guard、TraceContext
+```
+
+**依赖方向铁律**：`controller → application → domain ← infrastructure`。
+`infrastructure` 可以实现 `domain` 定义的接口，但**不得 import `application` 包下任何类**。
+`domain` **不得 import Spring MVC / HttpServletRequest / SseEmitter**。
+
+---
+
+## 二、常用命令
+
+```bash
+# 后端
+./mvnw -B -ntp clean verify        # 编译 + 测试（提交前必跑）
+./mvnw -B -ntp spring-boot:run     # 本地启动（默认 dev profile，AI_MODE=MOCK）
+
+# 中间件（pgvector / redis / minio / prometheus / alertmanager / adminer）
+docker compose -f docker-compose.dev.yml up -d
+
+# 前端（在 devops-platform-frontend/ 下）
+npm ci
+npm run dev                        # 5173，已代理 /ai → localhost:8088（含 WS）
+npm run verify                     # typecheck + lint + test（提交前必跑）
+npm run knip                       # 死代码/死依赖检测
+
+# 开工自检
+./SOP_PreFlight_Check.sh
+```
+
+---
+
+## 三、后端约定
+
+### 3.1 统一响应契约（已冻结，不得擅改）
+
+所有**非 SSE** 接口必须返回 `common/dto/ApiResponse<T>`：
+`{ code, message, data, traceId, timestamp }`，`code == 0` 表示成功。
+
+- 新增业务错误码时，**必须**同步更新前端 `src/constants/bizCode.ts` 与 `utils/http.ts` 的 `toFriendlyError`，
+  否则前端只会显示一句无意义的兜底文案。已存在的码：`40009` 乐观锁冲突、`40021` 内容重复、
+  `40101` 未登录、`40103` 权限不足。
+- SSE 接口（`/api/v1/chat/stream`）**不用** `ApiResponse`；异常必须转成 `error` 事件下发，
+  **不得让异常冒泡到 `GlobalExceptionHandler`** —— SSE 响应头已提交，此时再写 JSON 只会让前端收到半截流。
+
+### 3.2 traceId 与日志
+
+- **禁止**在任何地方自行生成 traceId。唯一来源是 `common/context/TraceContext`，
+  由请求入口 Filter 写入 MDC，`ApiResponse` 与日志都从那里读。
+  > 历史坑：`ApiResponse.generateTraceId()` 曾用 `System.nanoTime()` 每次调用现算，
+  > 导致同一请求的响应体、错误响应、日志三处 traceId 互不相同，traceId 完全无法用于排障。
+- **凡是切线程的地方（`@Async`、`SseEmitter` 回调、`CompletableFuture`、各类 `Scheduler`）
+  必须显式传递 MDC**（用 `TaskDecorator` 或手工 `MDC.setContextMap`），否则异步日志丢 traceId。
+- 日志用 SLF4J，禁止 `System.out.println`。异常日志必须带上下文（工单号/文档 ID/会话 ID），
+  不要只打 `e.getMessage()`。
+
+### 3.3 向量维度铁律
+
+`devops.ai.vector.dimension`（当前 1536）是**全链路唯一真相**，同时约束三处：
+
+1. `init.sql` 中 `VECTOR(n)` 的列定义；
+2. `AiModelConfig` 传给 Embedding API 的 `dimensions`；
+3. `VectorStoreConfig` 建表/校验时使用的维度。
+
+**换 Embedding 模型必须同时改这三处并重建向量列**，否则写库那一刻才会炸（列类型不匹配），
+而且已入库的旧向量与新向量不可比，检索会静默返回垃圾结果。
+
+### 3.4 Agent 工具（`domain/tools`）
+
+- 工具只能通过**白名单**注册，新增工具必须声明 `ToolRiskLevel`。
+- **高风险工具（会改变线上状态的）一律走 `ApprovalOrchestrator` 人机协同，禁止直接执行。**
+  这是 L3/L4 自愈的安全底线，任何"临时先跑通"的绕过都不允许合入。
+- 工具参数必须过 `ToolParameterValidator`。LLM 生成的参数是**不可信输入**，
+  与用户输入同等对待——过 `SecurityInputGuard` / `PromptInjectionGuard`。
+- 工具失败必须归类到 `ToolFailureType`，由它决定是否重试；
+  **禁止在调用点用「判断异常消息字符串」的方式决定重试**。
+
+### 3.5 数据库
+
+- 主库是 **PostgreSQL + pgvector，不需要兼容其他数据库**。可以放心使用 PG 专有能力
+  （`tsvector`、`JSONB`、`ON CONFLICT`、数组类型）。
+- Schema 变更：**直接改 `sql/init.sql`，它是表结构的唯一真相源**。不再维护
+  `migration_vNN_*.sql` 增量文件。
+  - **为什么废除双写**：旧约定要求「新增迁移 + 同步 init.sql」，而这种双写
+    在实践中必然漂移——同一个事实写两处，漏一处不会有任何报错。
+    实际发生过两次：v25 的 `sys_operation_audit` 漏同步（审计写入失败被 catch，
+    业务照常跑，只是**悄悄没有审计记录**）；v24 的 `visibility`/`owner_dept`/`dept`
+    三张表五个列 + 三个索引 + 两个 CHECK 约束全部漏同步，
+    而 `docker-compose.dev.yml` 只挂 `init.sql` 不跑迁移——
+    也就是说**按 dev compose 建出来的库根本没有权限过滤所需的列**，
+    知识检索一查就报错。2026-08-27 已整合并逐项验证归零。
+  - init.sql 全程使用 `IF NOT EXISTS` / `DO $$ ... pg_constraint 判重`，
+    **幂等**，可对已有库重复执行来补齐缺失结构。
+  - 改完请自建一个空库跑一遍，确认 `psql -v ON_ERROR_STOP=1 -f sql/init.sql` 返回 0。
+  - 需要给已上线的库做变更时，把 DDL 写成幂等形式追加进 init.sql，
+    再对目标库执行一次该脚本即可；不要另开增量文件，否则漂移会重新长出来。
+- **安全类配置表（`sys_risk_policy` / `sys_action_allowlist`）的额外约束**：
+  - 校验一律只允许「收紧」方向。条目可以比全局策略更严，**绝不能更松**——
+    否则「调整全局策略」就失去了可预期的语义，得逐条去查有没有漏网的例外。
+  - 枚举解析失败必须回退到**最严格**的一档（见 `ApprovalMode.parseOrStrictest`）。
+    回退成宽松档时，一次数据脏值就能让高危动作变成免审批直接执行。
+  - 读不到策略时**拒绝而非放行**：读不到约束等于没有约束。
+- 涉及并发更新的实体（工单状态、知识文档）必须用**乐观锁 `@Version`**，
+  冲突时抛 `OptimisticLockException` → 业务码 `40009`，由前端提示用户刷新后重试。
+  **禁止用「先查后改」的方式规避乐观锁。**
+- 分页查询一律走服务端分页，**禁止 `findAll()` 后在内存里 filter/slice**。
+- **凡是在一个方法内写入两张及以上表，必须加 `@Transactional(rollbackFor = Exception.class)`。**
+  漏加不会报错，只会在失败时留下孤儿数据（如「工单已删但回复/标签仍在」），
+  且用户看到的是「操作成功」。
+  - 注意 Spring AOP **自调用失效**：同类内部方法调用不走代理，
+    被调方法上的 `@Transactional` 不生效。内部辅助方法不要单独标注，让它继承调用方事务。
+  - **对象存储（MinIO）不在事务内**，无法回滚。涉及「删库 + 删对象」时必须
+    **先删库后删对象**：删库失败可回滚（只多占存储），反序会留下
+    「记录在但文件没了」的死链。
+- **状态字段的变更必须走状态机校验**，只校验「值是否合法枚举」是不够的。
+  参考 `TicketEnums.Status.canTransition`：终态不可逆、同态幂等放行。
+  前端需用 `nextStatuses` 置灰非法选项——防呆优于事后报错。
+
+### 3.6 安全
+
+- **免鉴权端点是高危面**。当前白名单只有三个：`/api/v1/auth/**`、`/api/v1/health/**`、
+  `/api/v1/alerts/webhook`。**新增任何免鉴权端点都必须在 PR 说明里论证，并配套限流。**
+- CORS：生产 profile **不得**使用 `allowedOriginPatterns("*") + allowCredentials(true)`，
+  必须列举具体域名。dev profile 可放宽。
+- 用户输入与 LLM 输出**都要**过 `PromptInjectionGuard` / `SecurityInputGuard`。
+  LLM 返回的 Markdown 进前端前需确保前端会做 DOMPurify 净化（见前端 AGENTS.md）。
+- 附件上传必须过 `AttachmentSecurityGuard`；`spring.servlet.multipart.max-file-size`
+  与 `devops.storage.attachment.max-file-size` 必须保持一致（取小者生效，不一致会在 Tomcat 层直接拒绝，
+  业务代码根本收不到请求，报错信息会很迷惑）。
+- 禁止把密钥写进代码或 `application*.yml`，一律走环境变量（见 `.env.example`）。
+  日志中禁止打印 API Key、token、附件直链。`logResponses(true)` 只允许在本地临时开启。
+
+### 3.7 配置
+
+- 新增配置项一律走 `devops.*` 命名空间，并在 `application.yml` 里写默认值与**中文注释说明这个值为什么是这个数**。
+- 阈值类参数（相似度阈值、幻觉熔断分、检索权重）改动必须在 PR 说明里给出依据（评测集结果或线上数据），
+  **不接受"感觉这样好一点"**。
+- `devops.ai.mode` 有 `MOCK` / `REAL` 两态。**任何新增的 AI 相关 Bean 都必须同时提供 Mock 实现**，
+  否则 MOCK 模式启动会因缺 Bean 直接失败，破坏"开发期不烧额度"的前提。
+
+### 3.7.1 CI 与「后端从未编译」的教训（2026-08-25 已解除）
+
+后端一度有 189 个文件从未被编译过——沙箱无 JDK、Maven 镜像全不可达，
+CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得记住：
+
+- **孤儿 `catch`**：批量重构删 `try{` 时漏删 `catch` 链。这类错误静态
+  grep 查不出来，但语法检查一定能查出——不依赖任何外部 JAR。
+- **`maven-toolchains-plugin`**：要求 `~/.m2/toolchains.xml` 存在，
+  否则 validate 阶段直接失败，且报错指向 toolchain 而非真实原因。
+  已删除；编译目标版本单点由 `<java.version>` 决定，不要再引入第二处声明。
+- **被编译器拦下的越权**：`putCache` 漏传权限域。若当时改用不带 scope
+  的重载，代码能编译通过，但缓存会跨权限域共享。
+  **编译错误提示「缺少某个上下文参数」时，先想清楚那个参数为什么存在，
+  不要用一个「能过编译」的重载绕过去。**
+
+**CI 日志读取**：原始日志在 Azure blob，部分环境访问不到。
+`mvnw` 已内置：`GITHUB_ACTIONS=true` 时把 Maven `[ERROR]` 重放为
+`::error::`，经 annotations API 可读。改 `mvnw` 时不要破坏这段。
+
+### 3.8 后端测试
+
+- **`@WebMvcTest` 切片不实例化 `@Repository`**。若某个 `@Component`
+  （如 `OperationAuditInterceptor`）依赖仓储层，它会让整个
+  ApplicationContext 启动失败，表现为该测试类**所有用例一起 ERROR**，
+  报错还指向 NoSuchBeanDefinition。用 `excludeFilters` 排除即可。
+- **`addFilters = false` 是「全关」不是「按需关」**。它会连带关掉
+  `TraceIdFilter`，使 `ApiResponse.traceId` 恒为 null。若测试要断言
+  traceId，需 `@Import` 该 Filter 并用 `MockMvcBuilders.addFilters()`
+  单独织回。
+- **不要为了让测试变绿而删断言**。traceId 缺失在生产上意味着链路无法追踪，
+  断言是对的，该修的是测试装配。
+
+测试必须保护**真实行为、API 契约、数据一致性或回归路径**。
+
+- **禁止**只为提升覆盖率、只证明代码能跑、或锁死内部实现细节的测试。
+- **禁止**靠 `Thread.sleep`、随机输入、大循环、计时比较来"测试"。用确定性输入与精确断言。
+- **禁止** mock 被测类自身，也不要把生产逻辑抄一遍到测试里算期望值。
+- 优先写表驱动测试，输入与期望输出都写明。
+- 需要数据库/Redis/上下文状态时，在测试 fixture 里显式初始化，不依赖执行顺序。
+- 修 Bug **必须先写一个能稳定复现的失败用例**，再改代码让它变绿。
+- 涉及 Controller 契约的改动，要有 `@WebMvcTest` 覆盖状态码与响应体结构。
+- 清理测试时先合并重复场景；若旧测试间接覆盖了真实契约，用更小更直接的行为测试替换，不要直接删掉。
+
+### 3.9 新增测试必须做「注入-还原」验证（硬约束）
+
+写完测试后，**人为把它声称防住的那个缺陷注入产品代码，确认测试真的会红**，
+再还原。不做这一步，等于不知道自己写的是不是假测试。
+
+注入时的两条纪律：
+
+1. **注入项要针对该用例声称防住的缺陷**，不是随便改点什么让它变红；
+2. **注入器必须带唯一性断言**，否则会打偏到同名的另一处：
+   ```python
+   n = s.count(pattern)
+   assert n == 1, f'OCCURS {n} TIMES - ambiguous'
+   ```
+   实测拦下过两次：`applySlaDeadlines(ticket, ticket.getCreateTime())` 与
+   `ticket.setPriority(normalizedPriority)` 在 AI 建单与手动建单里各有一处，
+   直接 `replace(..., 1)` 会改到另一个方法上，验证结论完全不成立。
+
+#### 三类会让断言失效的陷阱（都是实际踩过的）
+
+| # | 陷阱 | 实例 | 表现 |
+|---|------|------|------|
+| 1 | **聚合/取整截断精度** | SLA 断言用 `Duration.toMinutes()` 比较差值 | 基准误用 `now()` 时只差几十微秒，整除后两者都是 30，CI 全绿 |
+| 2 | **断言落在调用次数而非参数值** | 批量重命名只验 `update` 被调用 2 次 | 写死版本号时照样调用 2 次，抓不到 |
+| 3 | **下游有无意的兜底，把错误状态转成了正确输出** | `Math.round(NaN)` 返回 **0** | 去掉除零保护后 `helpfulRate` 依然是 `0.0`，断言看不到中间的 NaN |
+
+第 3 类最隐蔽：前两类是「断言不够细」，这一类是**被测代码自身**
+把错误状态吞掉了，光读代码想不到，只有真注入一次才会暴露。
+破法是换一组**能让正确/错误实现给出不同答案**的输入
+（该例改用 `rated=0` 但 `helpful=3`，错误实现会得到 `Infinity`
+经取整放大成 `9.223372036854776E15`）。
+
+> 一句话判据：**断言必须落在「会被改错的那个值」上，且该值不能在到达断言前被任何一步归一化掉。**
+
+#### ECJ 输出过滤的两个坑（都实际漏过缺陷）
+
+**坑 1：错误描述行顶格，别用 `^\s+` 过滤。**
+
+ECJ 的输出格式是：
+
+```
+1. ERROR in /path/Foo.java (at line 160)
+	public ApiResponse<Object> deprecate(@PathVariable Long id,
+	                                     ^^^^
+Syntax error on token "(", invalid VariableDeclaratorId     ← 顶格！
+```
+
+源码回显行以 `\t` 开头，而**错误描述行顶格**。
+用 `grep -E "^\s+[A-Za-z].*(Syntax|expected)"` 会把真正的错误描述全滤掉，
+只留下源码回显——看起来「没有语法错误」。
+
+实测代价：给 15 个端点插入守卫调用时，脚本把语句插进了**跨行参数列表中间**，
+ECJ 明明报了 4 处 `Syntax error`，被我的过滤器滤成 0，推上去 CI 才红。
+
+**正确写法**：
+
+```bash
+# 只数错误描述行（顶格的 Syntax error）
+ECJ_ERRS=$($JH/bin/java -jar $ECJ -source 21 -encoding UTF-8 -proc:none -nowarn \
+  -d /tmp/out @/tmp/files.txt 2>&1 | grep -cE "^Syntax error")
+[ "$ECJ_ERRS" = "0" ] || echo "🔴 有 $ECJ_ERRS 处语法错误"
+```
+
+**坑 2：批量插入代码后，必须验证插入位置。**
+
+正则匹配「方法签名首行」时，参数列表换行的方法会被插到参数中间。
+批量改完后加一道结构自检，比事后看 CI 快得多：
+
+```bash
+# 守卫/日志等语句必须在方法体内 —— 前一行应以 { 结尾
+python3 -c "
+import glob
+for f in glob.glob('src/main/java/**/*.java', recursive=True):
+    lines = open(f).read().split('\n')
+    for i, l in enumerate(lines):
+        if 'writeGuard.require' in l and not lines[i-1].rstrip().endswith('{'):
+            print(f'{f}:{i+1} 插入位置异常')
+"
+```
+
+#### 本地 ECJ 自检的能力边界（别把它当编译器用）
+
+沙箱无 Maven，只能用 ECJ 做**语法**自检。它有一条硬伤：
+缺少 junit / mockito / assertj / lombok 等 jar 时，
+**「包路径写错」与「jar 缺失」都报成 `cannot be resolved to a type`**，
+两者混在同一堆噪音里无法区分。
+
+实测代价：`TicketQuery` 在 `domain.biz.repository`，我按直觉写成
+`domain.biz.entity`，ECJ 自检「0 语法错误」，CI 上直接编译失败。
+
+可行的补救是**逐个校验 import 而非依赖 ECJ**：
+
+```bash
+for imp in $(grep "^import " <测试文件> | sed 's/^import \(static \)\?//;s/;$//'); do
+  case "$imp" in
+    com.devops.*) p=$(echo "$imp" | sed 's|\.|/|g')
+      [ -f "src/main/java/${p}.java" ] || echo "  [缺失] $imp";;
+  esac
+done
+```
+
+另外两条：
+- **同包的类不需要 import**——写了反而暴露路径判断错误；
+- 用到某个测试注解（如 `@ParameterizedTest`）前，先 grep 项目里
+  有没有先例，确认依赖真的在 classpath 上。
+
+#### CI 注解上限
+
+GitHub check-runs 的 annotations **最多只返回 3 条失败**。
+一次注入多个缺陷时，只能看到前 3 条，剩下的无从确认。
+要么**一次只注入 ≤3 个**，要么**逐个注入各推一次 CI**。
+「CI 红了」不等于「每一条都被抓到」。
+
+---
+
+## 四、前端约定（摘要）
+
+完整规范见 `devops-platform-frontend/AGENTS.md`。此处只列跨端相关的：
+
+- 前端**禁止硬编码 `localhost` 或后端端口**。开发期走 Vite proxy（`/ai` → `:8088`，含 WebSocket），
+  代码里一律用相对路径。
+- 服务端数据一律走 TanStack Query，`queryKey` **必须**取自 `src/config/queryKeys.ts`，
+  禁止在组件里手写字符串数组——写操作后的 `invalidateQueries` key 对不上会静默失效不了，
+  表现为"改完数据列表没更新"，极难排查。
+- 后端新增/变更业务码时，前端 `toFriendlyError` 必须同步。
+- **列表页的「加载/失败/空/内容」四态一律用 `DataStateBoundary`**，禁止再手写
+  四分支 v-if 链。此前五个列表页各写一份，已漂移出三处缺陷（漏 length 判断导致
+  改筛选时内容闪断、刷新失败清空列表）。骨架统一用 `SkeletonRows`，
+  禁止硬编码色值——暗色主题下会闪白。
+- **会写库的异步动作必须防重入**，用 `useAsyncAction` 而非新建 `ref(false)`。
+  忘写 finally 会让按钮永久禁用，比不加防护更糟。
+- 空态只用 `AppEmpty`（`EmptyState` 已删除）。区分 `filtered` 与否——
+  「还没有数据」和「筛选没命中」对应的用户下一步动作完全不同。
+- **状态流转类控件必须由 `canTransitionStatus` 驱动**，禁止手写
+  `status === 'x' || status === 'y'`。二者曾漂移出 8 处不一致，
+  其中「已解决/已关闭 → 重新打开」被误禁用，导致故障复发只能新建工单、
+  MTTR 统计失真。新增状态相关 UI 时同步在 `ticketStatus.ui.test.ts` 加断言。
+- **禁止 `toISOString()`**（已加 eslint 规则）。它返回 UTC，而后端时间字段
+  约定是「服务器本地时间 +08:00 不带后缀」，写入即差 8 小时。
+  需要「与后端同格式的当前时刻」用 `@/utils/time` 的 `nowAsBackendTime()`。
+- **Vite 代理 key 用正则而非字符串**：字符串是前缀匹配，`'/ai'` 会吞掉
+  前端路由 `/ai-chat`。现为 `'^/ai(/.*)?$'`。改代理配置后务必逐路由实测。
+- WebSocket 停止时**必须先解绑回调再 close**。close 是异步的，
+  在途消息仍会触发 onmessage——登出后会把上一个用户的数据写进新会话。
+- **SSE 必须处理 `onClose`**。`fetchEventSource` 在服务端关流时是**正常 resolve**，
+  不抛错、不进 catch、不触发 onError。只在 complete/error 里复位「生成中」状态
+  会导致断流后对话框永久卡死（输入框禁用、停止按钮点了没反应）。
+- **站内跳转路径一律经 `safeInternalPath`**。`startsWith('/')` 挡不住
+  `/\evil.com` 与 `/\t/evil.com`（反斜杠按正斜杠解析、控制字符被剥离后重解析）。
+- **表单长度约束禁止用 `maxlength` 静默截断**，改软上限 + 提交前拦截。
+  数值须与后端 `@Size` 对齐，并在 `fieldLimits.contract.test.ts` 登记。
+- **前后端共享约束一律走契约导出**，不再手工镜像。后端 `ContractExportTest`
+  反射导出 `src/contracts/backend-contract.json`，前端测试消费它。
+  改了状态机 / `@Size` / `BizError` 后须重跑该测试并提交 JSON 变更。
+- **登出必须清理所有数据载体**，不只是持久化那一层。当前已覆盖：
+  localStorage（token/身份/对话）、内存 store（通知列表）、
+  **TanStack Query 缓存**（`queryClient.clear()`，gcTime 5 分钟内会被
+  下一个登录者先读到）。新增任何跨会话存活的数据载体时，
+  同步在 `useSessionCleanup` 登记。
+- **多 Tab 共用筛选 ref 时，切 Tab 必须清掉对方专属的筛选**。
+  否则请求仍携带它、而当前 Tab 的 `hasFilters` 不算它 →
+  「清除筛选」按钮不显示，用户看到被隐形过滤的列表且无从清除。
+- **`chatStream` 必须提供 `onClose`**（已加 eslint 规则强制）。
+  该缺陷在项目里出现过三次，均因新增调用点时照抄旧写法。
+- **禁止直接读 `X-Forwarded-For` 或 `getRemoteAddr()`**，一律走
+  `ClientIpResolver`。XFF 客户端可伪造：无条件信任会让限流被绕过
+  （每次换值＝换限流键）、审计 IP 可伪造。只有 remoteAddr 属于
+  `devops.security.trusted-proxies` 时才采信，且取**最后一段**
+  （左侧是客户端可写的部分）。
+- **禁止 `new Date(<后端时间字段>)`**，一律用 `@/utils/time` 的 `parseDate`。
+  后端 `LocalDateTime` 序列化后不带时区，`new Date(str)` 按浏览器时区解析，
+  跨时区下相对时间可差 12 小时，而绝对时间显示却正常——肉眼几乎发现不了。
+  已加 eslint `no-restricted-syntax` 强制（无参 `new Date()` 不受限）。
+- **登出时必须清除含业务内容的本地持久化**。`chat-sessions` 不按用户隔离，
+  其 `citations` 存的是知识库原文；不清 = 下一个登录者越权读到内部文档。
+  新增此类持久化时，同步在 `useSessionCleanup` 登记。
+
+---
+
+## 五、协作与提交
+
+- **提交前必须本地跑通**：后端 `./mvnw -B -ntp verify`，前端 `npm run verify`。
+  未看到通过结果不得声称完成。
+- 提交信息用 `type(scope): 描述`（`feat` / `fix` / `refactor` / `docs` / `test` / `chore`），
+  描述用中文，说清"改了什么"和"为什么这样改有效"。
+- **一个 PR 只做一件事**，不夹带无关改动。
+- 改动涉及本文件所述约束时，**同步更新本文件**。
+- 重大技术决策写入 `docs/09-decisions/`（一个决策一个 ADR 文件：状态 / 背景 / 决策 / 后果），
+  不要再往 `CLAUDE.md` 里堆。
+- AI 生成的代码**必须经人工阅读与本地验证**后才能提交；不接受未经验证的批量产出。
+
+---
+
+## 六、当前已知技术债（改到附近时顺手还）
+
+| 项 | 位置 | 约束 |
+| :-- | :-- | :-- |
+| 超大 SFC | `TicketDetail.vue`(2655) `TicketList.vue`(2552) `KnowledgeEditor.vue`(1970) 等 | 修改这些文件时**不得让行数净增长**，至少拆出一个子组件或 composable |
+| 后端无 Controller 测试 | `src/test/` | 新增/修改 Controller 必须补 `@WebMvcTest` |
+| 无 CI | 仓库根 | 见 `docs/08-benchmark/01-new-api对标分析与借鉴优化建议.md` §5.2 |
+| 无 Dockerfile | 仓库根 | 同上 §5.3 |
+| traceId 未接 MDC | `TraceContext` / `ApiResponse` | 见 §3.2，优先修 |
+| 无 API 限流 | 全局 | `/chat/stream` 与 `/alerts/webhook` 优先 |
+| 文档写 deepseek 实际用 qwen | README / CLAUDE.md / `AiModelConfig` | 改文档或做 Provider 抽象，二选一，不要放着不管 |
+
+---
+
+## 更新日志
+
+- **2026-08-26**（十五）：**TicketDetail 拆分 4/5 步**（`docs/08-benchmark/22`）。
+  抽出 `useTicketActions`（让「哪个动作有防重入」一眼可查）与
+  `TicketTimeline.vue`（带走 236 行专属样式）。2735 → **2026 行（-26%）**。
+  过程中删模板时多删了一个 `</div>`，**vue-tsc 只报「变量未使用」这类
+  误导性症状**，是 74 例组件测试报 `Element is missing end tag` 才定位到病因——
+  类型检查看到症状，测试指向病因。
+- **2026-08-25**（十四）：**TicketDetail 安全网就位并开始拆分**（`docs/08-benchmark/21`）。
+  补齐三批共 74 例组件测试（派生逻辑 / 写操作防重入 / 表单校验），
+  随后抽出 `useTicketClosure` 与 `useTicketAttachments`，
+  **两次抽取后 74 例测试均零改动通过**——这正是先补测试再拆的意义。
+  2735 → 2578 行；另配 38 例 composable 直接单测。前端 1028 → 1066。
+  过程中两次分清「桩失真」与「产品缺陷」：遇到测试报错就改产品，方向是反的。
+- **2026-08-25**（十三）：**L2 阶段 B 收官 + TicketDetail 补测试**（`docs/08-benchmark/20`）。
+  实时监控 / 趋势分析 / 接入管理三页全部落地，占位路由 14 → 8 条；
+  TicketDetail 从零测试到 26 例，**测试当场抓出 `reply.author.charAt(0)`
+  在 author 为 null 时导致整条时间线渲染崩溃**（后端 DTO 该字段可为 null）。
+  贯穿三页的不变式：**null 不能伪装成 0**——「CPU 0%」与「取不到 CPU」
+  是完全不同的两件事，趋势图用 0 会画出假的「跌到底」。前端测试 882 → 980。
+- **2026-08-25**（十二）：**阶段 B 启动 + 冗余清理**（`docs/08-benchmark/19`）。
+  Prometheus 集成 B1+B2（`PrometheusClient` / `MetricsCatalog` / 5 个端点），
+  **关键取舍：代理查询不自建 TSDB**；补 `AutomationGovernanceController`
+  契约测试 24 例（Controller 覆盖 1/18 → 2/18）；
+  清理 docs 冗余（个人材料移出版本库 + 删对话残留，累计 -6408 行）。
+  新增 `BizError.METRICS_UNAVAILABLE(50020)`，前端契约测试当场抓出不一致。
+- **2026-08-25**（十一）：**CI 首次绿灯**（`docs/08-benchmark/18`）。
+  用户启用工作流后后端首次真实编译，共修 8 个真实缺陷：
+  孤儿 catch 语法错误、`maven-toolchains-plugin` 要求不存在的 toolchains.xml、
+  record 组件与静态工厂重名、**语义缓存漏传权限域（被编译器拦下的越权）**、
+  **TtlChatMemoryStore TTL=0 永不回收（生产缺陷）** 等。
+  后端 **310 测试首次全绿**；顺带清理重复的 CI 文件与 1 处前端死代码。
+  另：`mvnw` 在 CI 下会把 Maven 错误重放为 `::error::` 注解——
+  CI 原始日志在 Azure blob，部分环境访问不到，这是唯一可靠的回传通道。
+- **2026-08-25**（十）：**L3 配置层收官**（`docs/08-benchmark/17`）。
+  第三个占位路由替换为真实实现：**自动化策略**（告警匹配 → 白名单动作）。
+  新增 `migration_v27`（`sys_automation_policy`）、`AutomationPolicy` 领域模型
+  （通配匹配 + 四条件「与」语义）、9 个策略端点、**匹配预演**端点。
+  三张表分工定型：白名单=能不能做、风险策略=怎么做、自动化策略=什么时候做。
+  同时补齐 CI 启用指引 `ci/如何启用CI.md`。测试 847 → **882**。
+- **2026-08-25**（九）：**L3 配置层全栈落地**（`docs/08-benchmark/16`）。
+  两个占位路由替换为真实实现：**风险等级配置** + **动作白名单**。
+  新增 `migration_v26`（`sys_risk_policy` 四行固定记录 + `sys_action_allowlist` 允许清单）、
+  `AutomationGovernanceService`（跨表校验：条目只能收紧不能放宽）、
+  `AutomationGovernanceController`（10 个端点，限 ADMIN）。
+  顺手补齐 `init.sql` 漏同步的 v25 `sys_operation_audit`（全新环境会缺表，
+  表现是「审计悄悄没记录」）。测试 790 → **847**。
+- **2026-08-24**（八）：前后端联合排查（`docs/08-benchmark/13`）。
+  后端修 X-Forwarded-For 无条件信任致**限流被绕过 + 审计 IP 可伪造**
+  （新增 `ClientIpResolver` 统一入口 + `trusted-proxies` 配置）；
+  前端横向扫全部 5 个 `chatStream` 调用点，补齐第 3、4 处 SSE 断流卡死，
+  并加 lint 规则终结该缺陷类。前端测试 782 → 790。
+- **2026-08-24**（七）：新增模块自查（`docs/08-benchmark/12`）。修复 3 类缺陷：
+  使用日志切 Tab 筛选残留致隐形过滤、越界页码产出矛盾区间文案（影响三页）、
+  **登出后 Query 缓存残留致下一个登录者先看到上一个人的数据**。
+  其中 2 个是上一轮自己引入/漏掉的。测试 762 → 782。
+- **2026-08-24**（六）：推进测试与契约自动化（`docs/08-benchmark/11`）。
+  新增 TicketList 首批组件测试（17 例，为拆分 SFC 建安全网）、
+  前后端契约导出机制（后端反射导出 JSON + 前端 14 例消费，消除手工镜像）。
+  含 new-api 页面移植可行性分析：技术栈完全不同（React vs Vue）不能直接复制，
+  但「使用日志」值得做——后端两张审计表数据已就绪、路由已占位。
+  测试 717 → 748。
+- **2026-08-24**（五）：鉴权与对话链路排查（`docs/08-benchmark/10`）。修复 3 类缺陷：
+  SSE 断流致对话框永久卡死、开放重定向校验可被反斜杠绕过、
+  表单 maxlength 静默截断粘贴的堆栈。测试 675 → 717。含下一步推进规划。
+- **2026-08-24**（四）：分模块逐项排查（`docs/08-benchmark/09`）。修复 5 类缺陷：
+  工单 UI 绕过状态机致 8 处流转判定错误（重开被完全阻断）、乐观更新写 UTC 致
+  时间倒流 8 小时、登出后在途 WS 消息泄漏他人告警、知识库版本冲突后用户被困住、
+  Vite 代理吞掉 /ai-chat 路由致刷新白屏。测试 652 → 675。
+- **2026-08-24**（三）：展示效果与兜底机制统一（`docs/08-benchmark/08`）。
+  新增 `DataStateBoundary` / `SkeletonRows` / `useAsyncAction` 三个基础件，
+  删除重复的 `EmptyState`。修复 6 处缺陷：三处状态机漂移导致的内容闪断/列表被清空、
+  暗色骨架闪白、事件订阅被并行请求失败带崩、三个写活动流的动作可重复提交。
+  测试 627 → 652。
+- **2026-08-24**（二）：前端全方位深度核查（`docs/08-benchmark/07`）。修复 4 类缺陷：
+  登出后对话历史残留致知识库越权读取（P0）、超时误报为网络故障（P1）、
+  时区解析残留点（P1）、持久化静默失效 + readIds 无界增长（P2）。
+  测试 604 → 627。
+- **2026-08-24**：初版。从 3206 行的 `CLAUDE.md` 中提炼硬约束，参考 new-api 的 AGENTS.md 组织方式。
+
+---
+
+## 附录：缺陷登记与修复进度（2026-08-24）
+
+详情见 `docs/08-benchmark/02-技术债审查与推进路线规划.md`。
+
+### 已修复（阶段 A/B）
+
+| 级别 | 缺陷 | 修复方式 |
+| :-- | :-- | :-- |
+| P0 | `InMemoryChatMemoryStore` 无驱逐路径，持续泄漏至 OOM | 新增 `TtlChatMemoryStore`（TTL + LRU 兜底） |
+| P0 | SSE 60s 超时 < reasoner 模型 120s，复杂推理必然超时 | 超时配置化并对齐层级，加 15s 心跳帧 |
+| P0 | `CostQuotaManager` 单机内存态，重启清零、多实例失效 | 迁至 Redis（日期分区 key + TTL 自然日重置） |
+| P0 | traceId 每次现算、未接 MDC，日志无法关联 | `TraceContext` 改 MDC 承载 + `TraceIdFilter` |
+| P1 | `mvnw`/`mvnw.cmd` 未提交，仓库无法开箱构建 | 补齐 3.3.4 wrapper + `.gitattributes` |
+| P1 | 告警 webhook 免鉴权且无限流 | `WebhookGuard`（共享密钥 + 滑动窗口限流） |
+| P1 | 生产 CORS `*` + allowCredentials | 改 `CORS_ALLOWED_ORIGINS` 白名单 |
+| P2 | 元→分用 `(long)(x*100)` 截断，成本系统性低估 | 改 `Math.round` |
+| P2 | 5 处日志用 `{:.1%}` 格式符，SLF4J 不支持，告警从未生效 | 全部改为标准 `{}` 占位 |
+| P1 | 知识库无可见性字段，检索层无权限过滤 | v24 迁移 + `KnowledgeScope` 贯穿检索 SQL |
+| P1 | 语义缓存 key 不含权限维度，可跨用户泄漏 | 缓存键按权限域分区（`cacheScopeKey`） |
+| P1 | `@Transactional` 写在 Controller 层 | 下沉至 `KnowledgeTagService` |
+| P1 | `/chat/stream` 无限流（最贵端点，脚本可打爆额度） | 滑动窗口限流，按 userId 20 次/分钟 |
+| P1 | 写操作无统一审计（L3/L4 合规前置） | v25 `sys_operation_audit` + 拦截器 |
+| P2 | 错误码是散落的魔法数字，前后端各自硬编码 | `BizError` 枚举 + 前端 `bizCode.ts` + **契约测试交叉校验** |
+| P2 | 前端无暗色/无主题能力，639 处硬编码色值 | 四轴令牌 + 桥接层（存量零改动获得暗色） |
+| P0 | **工单域 6 张表写操作零事务**，deleteTicket 中途失败留孤儿数据 | 14 个多表写方法加 `@Transactional` |
+| P1 | 工单状态机缺失，CLOSED 可回 PENDING、VOID 可复活 | `TicketEnums.Status.canTransition` + 前端置灰 + 契约测试 |
+| P1 | 迁移漏执行会静默损坏功能（缺 visibility 列→检索全挂，却表现为「知识库暂不可用」） | `SchemaGuard` 启动期自检，生产可设 `SCHEMA_FAIL_FAST=true` |
+| P2 | Controller 78 处 `catch` 样板、错误码映射靠 27 份拷贝维持一致 | 收敛到 `GlobalExceptionHandler` + `BizError`，删 58 处 |
+| P2 | Bean Validation 零使用 | 三个关键端点加 `@Valid`（含免鉴权的 login，防 BCrypt DoS）|
+| P2 | 145 处裸 `ElMessage` 绕过冷却去重 | 全量迁移 `notify` + lint 规则防回潮 |
+| P2 | 6 处线程池无界队列、无优雅停机 | `ManagedExecutors` 统一工厂，按失败代价选拒绝策略 |
+| P2 | 639 处硬编码色值，暗色下露白 | 465 处替换为语义令牌（-76%）|
+| P2 | 工单表单无分组 | 按填写心智分三组 |
+| P1 | **跨时区时间解析错误**：后端 LocalDateTime 无时区后缀，前端按浏览器时区解析，相对时间/时长可差 12 小时（绝对时间显示却正常，极难察觉） | `parseDate` 补服务器时区 +08:00 |
+| P1 | **Markdown 缓存键碰撞**：key 用「内容长度」，同长度不同内容返回过期 HTML（运维文档改数字看不到新值） | 内部附加 FNV-1a 内容指纹 |
+| P1 | 首屏 JS 2169 KB（`manualChunks` 兜底块把懒加载路由的编辑器焊进首屏） | 移除兜底块，545 KB（-75%）|
+| P2 | URL 筛选状态三处实现不一致（TicketList 只读不写、AlertList 完全没有） | `useUrlFilters` 统一实现，已接入 AlertList |
+| — | 无 CI / 无 Dockerfile | 见 `ci/README.md`、`Dockerfile`、`docker-compose.yml` |
+
+### 待修复
+
+| 级别 | 缺陷 | 位置 | 计划 |
+| :-- | :-- | :-- | :-- |
+| P2 | Controller 测试仅覆盖 TicketController（12 用例），其余 15 个 Controller 无契约保护 | `src/test/` | 按需扩展 |
+| P2 | AI 对话链路的知识检索恒为「仅 PUBLIC」：工具跑在模型回调线程，取不到 `AgentKnowledgeScopeHolder`。这是<b>刻意的保守失败</b>（宁可少给不可越权），但也意味着 ADMIN 在对话里同样查不到受限文档。需改为每请求构建 AiService 或用 LangChain4j 工具上下文透传 | `AgentKnowledgeScopeHolder` | 阶段 D |
+| P2 | 文档权限变更后必须重建其切片，否则切片上的冗余 `visibility` 会滞后造成越权 | `KnowledgeDocService` | 阶段 C 收尾 |
+| ~~P2~~ | ~~`TicketList` 的 URL 状态各自实现~~ **已统一到 `useUrlFilters`**（`3319c07`）。剩 `KnowledgeBase`（自写一套）与 `AlertList`（完全没有） | 前端 | 按需 |
+| P2 | 前端 knip 存量：24 未用导出 + 57 未用类型。其中 `broadcastPersistChange` 是**真死代码**——`onPersistedChange` 有消费方但从无人调用广播端，意味着跨标签页同步实际只走 `storage` 事件，BroadcastChannel 路径形同虚设，需确认是否为遗漏 | 前端 | 阶段 D |
+| ~~P2~~ | ~~构建产物 `vendor` chunk 达 2.9MB~~ **已修**：首屏 2169KB → 545KB（`9cc3eaa`）。`vendor-echarts` 570KB 经实测已是按需引入的下限（core 本身占 293KB），不再优化 | `vite.config.ts` | 完成 |
+| P2 | 两套富文本编辑器并存（wangEditor + md-editor-v3） | `package.json` | 阶段 D |
+
+### 🔴 头号阻塞：CI 未启用，2543 行后端代码从未编译
+
+`ci/github-actions-ci.yml` 已就绪但因 GitHub App 权限限制无法由 AI 推送到
+`.github/workflows/`。**启用只需 30 秒**：
+
+```bash
+git mv ci/github-actions-ci.yml .github/workflows/ci.yml && git commit && git push
+```
+
+在此之前不建议继续叠加新功能——40 个文件的改动一次性编译，错误会更难定位。
+详见 `docs/08-benchmark/05-项目阶段评估与风险清单.md`。
+
+### ⚠️ 本轮后端改动尚未编译验证
+
+开发沙箱内无 JDK 且 Maven Central 不可达，后端改动仅经过静态校验
+（结构、导入、依赖签名对照上游源码）与算法等价验证。
+**首次 CI 运行是它们的第一次真实编译**，需留意编译错误。
+前端改动已在本地实跑验证（typecheck / lint / 563 tests / build 全通过）。

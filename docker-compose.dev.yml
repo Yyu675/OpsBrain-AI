@@ -42,7 +42,14 @@ services:
       - "25432:5432"          # 宿主机 25432 → 容器 5432
     volumes:
       - devops_pg_data:/var/lib/postgresql/data
-      # init.sql 仅在数据卷为空（首次初始化）时自动执行
+      # init.sql 是表结构的唯一真相源（幂等全量脚本）。
+      #
+      # ⚠️ 仅在数据卷为空（首次初始化）时自动执行。改了 init.sql 后
+      #    对已有的卷不会生效——要么 `docker compose down -v` 重建，
+      #    要么手工执行一次：
+      #      docker compose -f docker-compose.dev.yml exec -T postgres \
+      #        psql -U devops -d devops_knowledge_db < sql/init.sql
+      #    （脚本幂等，可安全重复执行；启动期 SchemaGuard 会检出结构缺失）
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U devops -d devops_knowledge_db"]

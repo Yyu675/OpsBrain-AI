@@ -266,4 +266,53 @@ public class KnowledgeDocDto {
             default -> indexStatus;
         };
     }
+
+    // ==================== 分页响应 DTO（P0-2 第二步）====================
+
+    /**
+     * 知识文档分页列表响应。
+     *
+     * <p>对应 {@code GET /api/v1/knowledge/docs}。</p>
+     *
+     * <h3>字段名与工单列表不同，这是刻意保留的</h3>
+     * <p>
+     * 本响应用 {@code content}/{@code totalElements}/{@code currentPage}/{@code pageSize}，
+     * 而工单列表用 {@code tickets}/{@code total}/{@code page}/{@code size}。
+     * 两套命名不一致<b>看起来该统一，但不能改</b>——
+     * 前端 {@code stores/knowledge.ts} 逐字段读取这四个键
+     * （{@code result.content} / {@code result.totalElements} …），
+     * 改名不会有任何编译错误，只会让知识库列表<b>渲染成空</b>。
+     * </p>
+     * <p>
+     * 统一命名要前后端一起改并同时发版，属于独立的破坏性变更，
+     * 不应混在「Map 换 record」这类零行为改动里做。
+     * </p>
+     *
+     * @param content       当前页文档（已转为 {@link ListItem}，不含正文）
+     * @param totalElements 符合筛选条件的总数
+     * @param totalPages    总页数，由 {@code totalElements} 与 {@code pageSize} 推导
+     * @param currentPage   生效页码（已钳制）
+     * @param pageSize      生效每页大小（已钳制，上限 200）
+     */
+    public record DocPage(
+            List<ListItem> content,
+            long totalElements,
+            int totalPages,
+            int currentPage,
+            int pageSize
+    ) {
+        /**
+         * 由查询结果构造，总页数在此统一推导。
+         *
+         * <p>与 {@code TicketDto.TicketPage.of} 同一口径：
+         * {@code Math.ceil} 的整数除法陷阱只在一处写对。</p>
+         */
+        public static DocPage of(List<ListItem> content, long totalElements,
+                                 int currentPage, int pageSize) {
+            // pageSize 由调用方钳制为 ≥1，此处不兜底：
+            // 真为 0 应当暴露为除零异常，而不是静默给出错误页数
+            int totalPages = (int) Math.ceil((double) totalElements / pageSize);
+            return new DocPage(content, totalElements, totalPages, currentPage, pageSize);
+        }
+    }
 }

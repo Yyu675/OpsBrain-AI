@@ -13,11 +13,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  broadcastPersistChange,
   clearBackup,
   clearPersisted,
   debounce,
   getBackup,
   loadPersisted,
+  onPersistedChange,
+  onPersistWriteFailure,
   readBackupPayload,
   savePersisted,
 } from '../persist'
@@ -215,6 +218,72 @@ describe('localStorage 不可用时的降级', () => {
     expect(() => savePersisted('settings', { n: 1 }, 1)).not.toThrow()
   })
 
+  /**
+   * 「不外抛」不等于「可以静默」。
+   *
+   * 原实现是空 catch，用户调好的列宽 / 主题 / 已读状态会看似保存成功、
+   * 刷新后复原，控制台也没有线索。必须让上层有机会提示。
+   */
+  it('写入失败会通知订阅者，并标出是否为配额超限', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+
+    const seen: Array<{ key: string; quotaExceeded: boolean }> = []
+    const off = onPersistWriteFailure(({ key, quotaExceeded }) => seen.push({ key, quotaExceeded }))
+
+    savePersisted('col-widths', { id: 120 }, 1)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0].key).toBe('col-widths')
+    expect(seen[0].quotaExceeded).toBe(true)
+
+    off()
+  })
+
+  it('非配额类失败（如隐私模式 SecurityError）标记 quotaExceeded=false —— 两者提示策略不同', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+
+    const seen: boolean[] = []
+    const off = onPersistWriteFailure(({ quotaExceeded }) => seen.push(quotaExceeded))
+
+    savePersisted('settings', { n: 1 }, 1)
+
+    expect(seen).toEqual([false])
+    off()
+  })
+
+  it('取消订阅后不再收到通知', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+
+    const fn = vi.fn()
+    const off = onPersistWriteFailure(fn)
+    off()
+
+    savePersisted('settings', { n: 1 }, 1)
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('订阅者自身抛错不影响其他订阅者 —— 一个消费方的 bug 不该拖垮持久化层', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+
+    const good = vi.fn()
+    const offBad = onPersistWriteFailure(() => { throw new Error('consumer bug') })
+    const offGood = onPersistWriteFailure(good)
+
+    expect(() => savePersisted('settings', { n: 1 }, 1)).not.toThrow()
+    expect(good).toHaveBeenCalledTimes(1)
+
+    offBad()
+    offGood()
+  })
+
   it('getItem 抛错时 loadPersisted 返回 null 而非崩溃', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new DOMException('denied', 'SecurityError')
@@ -312,5 +381,136 @@ describe('debounce', () => {
     d.flush()
 
     expect(fn).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * 跨标签页同步（`onPersistedChange` / `broadcastPersistChange`）。
+ *
+ * 这一对是 `scan_export_coverage.py`（本轮新增）报出来的未覆盖导出。
+ * 上面 34 例把持久化本身测得很扎实，却完全没碰这两个——
+ * 而它们有真实消费方：`stores/chat.ts` 靠 `onPersistedChange`
+ * 在其他标签页改动会话后拉取最新数据。
+ *
+ * ── 要守的两条契约 ────────────────────────────────────────────
+ * 1. **自己发的消息自己不处理**。`broadcastPersistChange` 会带上
+ *    `origin: TAB_ID`，接收端见到自己的 TAB_ID 必须跳过。
+ *    漏了这一步，本标签页保存 → 自己收到通知 → 重新 load →
+ *    覆盖掉自己刚写的内存态，正在输入的内容会被回滚。
+ *
+ * 2. **退订必须真的断开**。`onPersistedChange` 返回退订函数，
+ *    组件卸载后若仍在监听，回调里读的是已销毁的 store，
+ *    表现为「切走了还在后台改数据」。
+ *
+ * ── 关于 BroadcastChannel 的可测性 ────────────────────────────
+ * jsdom 从 22 起内置 BroadcastChannel，但**同一进程内的两个实例
+ * 不会互相投递**（浏览器里是跨 tab 才投递）。所以这里不去模拟
+ * 「另一个 tab」，而是直接触发 `storage` 事件——那是同一套 listeners
+ * 集合的另一条入口，且 storage 事件在 jsdom 里可以手工派发。
+ */
+describe('跨标签页同步', () => {
+  const PREFIX = '__store__:'
+
+  /** 手工派发一个 storage 事件，模拟「另一个标签页改了某个键」 */
+  const fireStorage = (key: string | null) => {
+    window.dispatchEvent(new StorageEvent('storage', { key }))
+  }
+
+  it('订阅后，其他标签页改动会触发回调并带上去前缀的键名', () => {
+    const seen: string[] = []
+    const off = onPersistedChange((k) => seen.push(k))
+
+    fireStorage(PREFIX + 'chat-sessions')
+
+    // 回调拿到的应是业务键名，不带 __store__: 前缀——
+    // 消费方（chat store）是拿它和自己的 PERSIST_KEY 直接比对的
+    expect(seen).toEqual(['chat-sessions'])
+    off()
+  })
+
+  it('非本库的键不触发回调', () => {
+    // localStorage 是同源共享的，别的库（甚至浏览器插件）也会写。
+    // 不做前缀过滤的话，任何无关写入都会让 chat store 白重载一次
+    const fn = vi.fn()
+    const off = onPersistedChange(fn)
+
+    fireStorage('some-other-lib-key')
+    fireStorage(null)
+
+    expect(fn).not.toHaveBeenCalled()
+    off()
+  })
+
+  it('退订后不再收到通知', () => {
+    const fn = vi.fn()
+    const off = onPersistedChange(fn)
+
+    fireStorage(PREFIX + 'k1')
+    expect(fn).toHaveBeenCalledTimes(1)
+
+    off()
+    fireStorage(PREFIX + 'k2')
+
+    // 仍是 1：退订之后那次不该再进来
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it('多个订阅者互不影响，退订其一不影响其二', () => {
+    const a = vi.fn()
+    const b = vi.fn()
+    const offA = onPersistedChange(a)
+    const offB = onPersistedChange(b)
+
+    fireStorage(PREFIX + 'k')
+    expect(a).toHaveBeenCalledTimes(1)
+    expect(b).toHaveBeenCalledTimes(1)
+
+    offA()
+    fireStorage(PREFIX + 'k')
+
+    expect(a).toHaveBeenCalledTimes(1)
+    expect(b).toHaveBeenCalledTimes(2)
+    offB()
+  })
+
+  it('某个订阅者抛异常时，其余订阅者仍被通知', () => {
+    // 实现里每个回调都包了 try/catch（注释写的是 "consumer bug"）。
+    // 不包的话，一个组件的回调出错会让所有其他组件都收不到同步——
+    // 而这类错误在生产上极难定位：坏的是 A，症状出在 B
+    const boom = vi.fn(() => { throw new Error('consumer bug') })
+    const ok = vi.fn()
+    const off1 = onPersistedChange(boom)
+    const off2 = onPersistedChange(ok)
+
+    expect(() => fireStorage(PREFIX + 'k')).not.toThrow()
+    expect(boom).toHaveBeenCalled()
+    expect(ok).toHaveBeenCalled()
+
+    off1()
+    off2()
+  })
+
+  it('broadcastPersistChange 不会触发本标签页自己的订阅者', () => {
+    // 自己发自己收的话：保存 → 收到通知 → 重新 load →
+    // 覆盖掉刚写进内存的值，用户正在输入的内容被回滚
+    const fn = vi.fn()
+    const off = onPersistedChange(fn)
+
+    broadcastPersistChange('chat-sessions')
+
+    expect(fn).not.toHaveBeenCalled()
+    off()
+  })
+
+  it('BroadcastChannel 不可用时 broadcast 静默降级，不抛异常', () => {
+    // 老浏览器 / 某些隐私模式下没有 BroadcastChannel。
+    // 此时跨 tab 同步能力退化（靠 storage 事件兜底），但不能崩
+    const original = globalThis.BroadcastChannel
+    // @ts-expect-error 故意置空以模拟环境缺失
+    delete globalThis.BroadcastChannel
+
+    expect(() => broadcastPersistChange('k')).not.toThrow()
+
+    globalThis.BroadcastChannel = original
   })
 })

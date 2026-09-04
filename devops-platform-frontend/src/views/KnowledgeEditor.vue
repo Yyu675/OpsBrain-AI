@@ -1,20 +1,42 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { marked } from 'marked'
+import { ElMessageBox } from 'element-plus'
 import TurndownService from 'turndown'
-import DOMPurify from 'dompurify'
 import {
-  Save, Send, Upload, Sparkles, Settings2, FileText, Plus,
-  Pencil, Trash2, BookOpen, Eye, Code2, ChevronDown, Lightbulb,
+  Save, Send, Upload, Settings2, FileText, Plus,
+  BookOpen, Eye, Code2, ChevronDown, Lightbulb,
   Table2, Minus, Heading2, Heading3, SquareTerminal, Wrench,
   ListChecks, TriangleAlert, BookTemplate, MoreHorizontal,
   ListTree,
 } from 'lucide-vue-next'
+import DocOutlinePanel from '@/components/knowledge/DocOutlinePanel.vue'
+import DocPropertiesPanel from '@/components/knowledge/DocPropertiesPanel.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { useDirtyGuard } from '@/composables/useDirtyGuard'
 import { saveDraft, loadDraft, clearDraft } from '@/utils/draftStorage'
+// 内容处理逻辑已抽到 utils/editorContent（有 32 例单测），
+// 组件只负责编排。见该文件头部说明。
+import {
+  appendHeading,
+  appendMarkdownBlock,
+  findCategoryIdByName,
+  extractToc,
+  hasMeaningfulContent,
+  hasTag,
+  HTML_BLOCKS,
+  MAX_TAGS,
+  normalizeDraftState,
+  normalizeTagList,
+  removeHeadingIn,
+  renameHeadingIn,
+  toPlainText,
+  toVisualContent,
+  toMarkdownForStorage,
+  type BlockCommand,
+  type EditorDraftState,
+  type TocItem,
+} from '@/utils/editorContent'
 import {
   createKnowledgeCategory,
   DuplicateContentError,
@@ -36,8 +58,7 @@ import RailButton from '@/components/common/RailButton.vue'
 import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { useMediaQuery } from '@/composables/useMediaQuery'
-import KnowledgeRichEditor from '@/components/knowledge/KnowledgeRichEditor.vue'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,6 +67,19 @@ const MdEditor = defineAsyncComponent(async () => {
   await import('md-editor-v3/lib/style.css')
   return (await import('md-editor-v3')).MdEditor
 })
+
+/**
+ * 富文本编辑器同样异步加载。
+ *
+ * 此前它是静态 import —— 静态依赖会被提升进入口图，
+ * 导致 wangEditor（约 977KB / gzip 327KB）在**每个页面**首屏都被下载，
+ * 哪怕用户从不编辑文档。路由本身是 lazy 的，但静态 import 让 lazy 失效。
+ *
+ * 改为 defineAsyncComponent 后，只有真正切到富文本模式才拉取。
+ */
+const KnowledgeRichEditor = defineAsyncComponent(
+  () => import('@/components/knowledge/KnowledgeRichEditor.vue')
+)
 
 // ==================== 路由 / ID 归一 ====================
 
@@ -69,19 +103,9 @@ const emptyForm = () => ({
 })
 const formData = ref(emptyForm())
 type EditorForm = ReturnType<typeof emptyForm>
-interface EditorDraftState {
-  form: EditorForm
-  baseVersion: number | null
-  publishOnCreate: boolean
-  changeReason: string
-  editorMode: 'visual' | 'markdown'
-}
 /** 右侧面板 Tab */
 const activeSideTab = ref<'settings' | 'toc'>('toc')
-/** 编辑时从内容提取的文章大纲项 */
-interface TocItem { id: string; text: string; level: 2 | 3; lineIndex?: number; elementIndex?: number }
 interface RichEditorExpose { insertHtml: (html: string) => void; focus: () => void }
-type BlockCommand = 'h2' | 'h3' | 'callout' | 'code' | 'table' | 'divider'
 type StarterTemplateKey = 'blank' | 'troubleshooting' | 'runbook' | 'postmortem'
 
 const tocItems = ref<TocItem[]>([])
@@ -162,27 +186,9 @@ const starterTemplates = [
   },
 ] satisfies Array<{ key: StarterTemplateKey; label: string; icon: typeof FileText; content: string }>
 
-// 标签上限对齐后端 MAX_TAGS_PER_DOC
-const MAX_TAGS = 20
 
-const categoryLabel = (category: KnowledgeCategoryEntity) => {
-  const names: string[] = [category.name]
-  const seen = new Set<number>([category.id])
-  let parentId = category.parentId
-  while (parentId != null && !seen.has(parentId)) {
-    const parent = directoryCategories.value.find(item => item.id === parentId)
-    if (!parent) break
-    names.unshift(parent.name)
-    seen.add(parent.id)
-    parentId = parent.parentId
-  }
-  return names.join(' / ')
-}
-
-const selectedCategoryId = computed<number | null>(() => {
-  const selected = directoryCategories.value.find(item => item.name === formData.value.category)
-  return selected?.id ?? null
-})
+const selectedCategoryId = computed<number | null>(() =>
+  findCategoryIdByName(formData.value.category, directoryCategories.value))
 
 // ==================== 离开保护 / 草稿 ====================
 
@@ -234,17 +240,6 @@ const currentDraftState = (): EditorDraftState => ({
 
 const saveCurrentDraft = () => saveDraft(draftKey.value, currentDraftState())
 
-const normalizeDraftState = (raw: EditorDraftState | EditorForm): EditorDraftState => {
-  if ('form' in raw) return raw
-  return {
-    form: raw,
-    baseVersion: null,
-    publishOnCreate: false,
-    changeReason: '',
-    editorMode: 'visual',
-  }
-}
-
 const startAutoSave = () => {
   if (autoSaveTimer) clearInterval(autoSaveTimer)
   autoSaveTimer = window.setInterval(() => {
@@ -256,25 +251,6 @@ const startAutoSave = () => {
 
 const syncEditorViewport = () => {
   editorPreview.value = window.innerWidth > 760
-}
-
-const isHtmlContent = (content: string) => /^\s*</.test(content)
-
-const toVisualContent = async (content: string) => {
-  if (!content.trim()) return '<p><br></p>'
-  const html = isHtmlContent(content) ? content : String(await marked(content))
-  // 净化后送入编辑器，防止恶意文档在编辑态执行脚本
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['p','br','strong','em','u','s','del','code','pre','a','img','blockquote','hr','span','div','figure','figcaption','table','thead','tbody','tfoot','tr','th','td','h1','h2','h3','h4','h5','h6','ul','ol','li'],
-    ALLOWED_ATTR: ['href','target','rel','class','src','alt','title','data-language']
-  })
-}
-
-const hasMeaningfulContent = (content: string) => {
-  if (!isHtmlContent(content)) return !!content.trim()
-  const parsed = new DOMParser().parseFromString(content, 'text/html')
-  return !!parsed.body.textContent?.replace(/\u200B/g, '').trim()
-    || !!parsed.body.querySelector('img,table,pre,hr')
 }
 
 const showStarter = computed(() =>
@@ -304,31 +280,13 @@ const switchEditorMode = async (mode: 'visual' | 'markdown') => {
 }
 
 const insertBlock = async (command: BlockCommand) => {
-  const htmlBlocks: Record<BlockCommand, string> = {
-    h2: '<h2>二级标题</h2><p><br></p>',
-    h3: '<h3>三级标题</h3><p><br></p>',
-    callout: '<blockquote><p><br></p></blockquote><p><br></p>',
-    code: '<pre><code><br></code></pre><p><br></p>',
-    table: '<table><tbody><tr><th>字段</th><th>说明</th></tr><tr><td><br></td><td><br></td></tr></tbody></table><p><br></p>',
-    divider: '<hr><p><br></p>',
-  }
-  const markdownBlocks: Record<BlockCommand, string> = {
-    h2: '## 二级标题\n\n',
-    h3: '### 三级标题\n\n',
-    callout: '> 提示内容\n\n',
-    code: '```text\n\n```\n\n',
-    table: '| 字段 | 说明 |\n| --- | --- |\n|  |  |\n\n',
-    divider: '---\n\n',
-  }
-
   starterDismissed.value = true
   if (editorMode.value === 'visual') {
     await nextTick()
-    richEditorRef.value?.insertHtml(htmlBlocks[command])
+    richEditorRef.value?.insertHtml(HTML_BLOCKS[command])
     return
   }
-  const prefix = formData.value.content.trimEnd()
-  formData.value.content = `${prefix}${prefix ? '\n\n' : ''}${markdownBlocks[command]}`
+  formData.value.content = appendMarkdownBlock(formData.value.content, command)
 }
 
 // ==================== 加载 ====================
@@ -379,7 +337,7 @@ const loadDoc = async () => {
       publishOnCreate.value = draft.publishOnCreate
       changeReason.value = draft.changeReason
       editorMode.value = draft.editorMode
-      ElMessage.info('已恢复草稿')
+      notify.info('已恢复草稿')
       isDirty.value = true
     }
     if (editorMode.value === 'visual') {
@@ -389,7 +347,7 @@ const loadDoc = async () => {
   }
 
   if (Number.isNaN(id.value)) {
-    ElMessage.error('无效的文档 ID')
+    notify.error('无效的文档 ID')
     router.replace('/knowledge')
     return
   }
@@ -404,13 +362,13 @@ const loadDoc = async () => {
     // notFound 跳回列表，error 由页面的三态区渲染重试入口
     if (!d) {
       if (store.detailStatus === 'notFound') {
-        ElMessage.error('文档不存在或已被删除')
+        notify.error('文档不存在或已被删除')
         router.replace('/knowledge')
       }
       return
     }
     if (d.status === 'DEPRECATED' || d.status === 'ARCHIVED') {
-      ElMessage.warning('已废弃或已归档文档需要先恢复才能编辑')
+      notify.warning('已废弃或已归档文档需要先恢复才能编辑')
       router.replace(`/knowledge/${docId}`)
       return
     }
@@ -499,21 +457,7 @@ let tocTimer: number | null = null
 watch(() => formData.value.content, () => {
   if (tocTimer) clearTimeout(tocTimer)
   tocTimer = window.setTimeout(() => {
-    const heads: TocItem[] = []
-    if (isHtmlContent(formData.value.content)) {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      parsed.body.querySelectorAll('h2,h3').forEach((heading, elementIndex) => {
-        const level = heading.tagName.toLowerCase() === 'h3' ? 3 : 2
-        heads.push({ id: `h-${elementIndex}`, text: heading.textContent?.trim() || `章节 ${elementIndex + 1}`, level, elementIndex })
-      })
-    } else {
-      const lines = formData.value.content.split('\n')
-      lines.forEach((line, lineIndex) => {
-        const match = /^(##|###)\s+(.+)/.exec(line)
-        if (match) heads.push({ id: `h-${heads.length}`, text: match[2].trim(), level: match[1].length as 2 | 3, lineIndex })
-      })
-    }
-    tocItems.value = heads
+    tocItems.value = extractToc(formData.value.content)
   }, 500)
 })
 
@@ -539,26 +483,19 @@ onBeforeUnmount(() => {
 const addTag = (tag: string) => {
   const t = tag.trim()
   if (!t) return
-  if (formData.value.tags.some(item => item.trim().toLocaleLowerCase() === t.toLocaleLowerCase())) {
-    ElMessage.warning('标签已存在')
+  if (hasTag(formData.value.tags, t)) {
+    notify.warning('标签已存在')
     return
   }
   if (formData.value.tags.length >= MAX_TAGS) {
-    ElMessage.warning(`最多添加 ${MAX_TAGS} 个标签`)
+    notify.warning(`最多添加 ${MAX_TAGS} 个标签`)
     return
   }
   formData.value.tags.push(t)
 }
 
 const normalizeTags = () => {
-  const seen = new Set<string>()
-  formData.value.tags = formData.value.tags
-    .map(tag => tag.trim())
-    .filter(tag => {
-      const normalized = tag.toLocaleLowerCase()
-      return !!tag && !seen.has(normalized) && seen.add(normalized)
-    })
-    .slice(0, MAX_TAGS)
+  formData.value.tags = normalizeTagList(formData.value.tags)
 }
 
 const createCategoryFromSettings = async () => {
@@ -571,7 +508,7 @@ const createCategoryFromSettings = async () => {
     const created = await createKnowledgeCategory({ name: value.trim(), parentId: null })
     await loadCategoriesAndTags()
     formData.value.category = created.name
-    ElMessage.success('分类已创建')
+    notify.success('分类已创建')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     handleServerError(error, { action: '创建分类' })
@@ -581,23 +518,16 @@ const createCategoryFromSettings = async () => {
 /** 自动生成摘要（去除 Markdown 标记，取前 150 字） */
 const generateSummary = () => {
   if (!hasMeaningfulContent(formData.value.content)) {
-    ElMessage.warning('请先输入文档内容')
+    notify.warning('请先输入文档内容')
     return
   }
-  const source = isHtmlContent(formData.value.content)
-    ? new DOMParser().parseFromString(formData.value.content, 'text/html').body.textContent ?? ''
-    : formData.value.content
-  const text = source.replace(/[#*`>\-[\]()!]/g, '')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 150)
+  const text = toPlainText(formData.value.content).slice(0, 150)
   if (!text) {
-    ElMessage.warning('内容格式不正确，无法生成摘要')
+    notify.warning('内容格式不正确，无法生成摘要')
     return
   }
   formData.value.summary = text
-  ElMessage.success('已生成摘要')
+  notify.success('已生成摘要')
 }
 
 // ==================== 导入 .md ====================
@@ -612,13 +542,13 @@ const handleImportMd = () => {
     const file = (e.target as HTMLInputElement).files?.[0]
     if (!file) return
     if (file.size > MAX_IMPORT_SIZE) {
-      ElMessage.error(`文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），最大支持 5MB`)
+      notify.error(`文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），最大支持 5MB`)
       return
     }
     const text = await file.text()
     formData.value.content = editorMode.value === 'visual' ? await toVisualContent(text) : text
     if (!formData.value.title.trim()) formData.value.title = file.name.replace(/\.(md|markdown)$/i, '')
-    ElMessage.success(`已导入 ${file.name}`)
+    notify.success(`已导入 ${file.name}`)
   }
   input.click()
 }
@@ -627,19 +557,19 @@ const handleImportMd = () => {
 
 const handleSaveDraft = () => {
   if (!saveCurrentDraft()) {
-    ElMessage.error('本机暂存失败，请检查浏览器存储空间')
+    notify.error('本机暂存失败，请检查浏览器存储空间')
     return
   }
   draftSavedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  ElMessage.success('已暂存到本机浏览器')
+  notify.success('已暂存到本机浏览器')
 }
 
 const showSaveOutcome = async (saved: KnowledgeDocSaveResult, successMessage: string) => {
   const indexFailed = saved.indexStatus === 'FAILED' || saved.indexOutcome?.status === 'FAILED'
   if (indexFailed) {
-    ElMessage.warning('文档已保存，但向量化失败，可在详情页重试')
+    notify.warning('文档已保存，但向量化失败，可在详情页重试')
   } else {
-    ElMessage.success(successMessage)
+    notify.success(successMessage)
   }
   if (saved.nearDuplicates?.length) {
     const titles = saved.nearDuplicates.slice(0, 5).map(item => `《${item.title}》`).join('、')
@@ -664,11 +594,11 @@ const handleEditorMenu = async (command: 'mode' | 'import' | 'draft') => {
 
 const handleSave = async (publishAfterSave = false) => {
   if (!formData.value.title.trim()) {
-    ElMessage.warning('请输入标题')
+    notify.warning('请输入标题')
     return
   }
   if (!hasMeaningfulContent(formData.value.content)) {
-    ElMessage.warning('请输入内容')
+    notify.warning('请输入内容')
     return
   }
   if (formData.value.tags.length > MAX_TAGS) {
@@ -676,13 +606,26 @@ const handleSave = async (publishAfterSave = false) => {
   }
   normalizeTags()
 
+  // 入库内容统一为 Markdown，与 sys_knowledge_doc.content 的 schema 契约一致
+  //（该列注释明写「Markdown 原文」）。
+  //
+  // 修复前这里直接提交 formData.content —— 用户停在哪个编辑模式就存哪个格式，
+  // visual 模式存的是 HTML。三处后果：
+  //  1. RAG 切片错乱：ParentChildDocumentSplitter 按 Markdown 标题层级切分，
+  //     拿到 HTML 时层级识别不可靠，切片边界跑偏 → 检索准确率下降；
+  //  2. 详情页渲染不可控：KnowledgeDetail 走 safeMarkdown（marked + DOMPurify），
+  //     HTML 内容经 Markdown 渲染器处理，结果取决于 marked 对裸 HTML 的宽容度；
+  //  3. content_hash 去重失效：同一篇文档用两种模式保存，哈希不同，
+  //     近重复检测认不出它们是同一篇。
+  const contentForStorage = toMarkdownForStorage(formData.value.content)
+
   const common = {
     title: formData.value.title.trim(),
     category: formData.value.category.trim(),
     categoryId: selectedCategoryId.value,
     summary: formData.value.summary.trim() || undefined,
     tags: formData.value.tags,
-    content: formData.value.content,
+    content: contentForStorage,
   }
 
   saving.value = true
@@ -708,9 +651,9 @@ const handleSave = async (publishAfterSave = false) => {
       if (publishAfterSave) {
         const published = await store.publishDoc(docId)
         if (published.indexStatus === 'FAILED') {
-          ElMessage.warning('草稿已发布，但向量化失败，可在详情页重试')
+          notify.warning('草稿已发布，但向量化失败，可在详情页重试')
         } else {
-          ElMessage.success('文档已保存并发布')
+          notify.success('文档已保存并发布')
         }
       } else {
         await showSaveOutcome(saved, '文档已更新')
@@ -738,8 +681,39 @@ const handleSave = async (publishAfterSave = false) => {
         // 用户选择留在本页，继续编辑
       }
     } else if (e instanceof VersionConflictError) {
-      // 禁止自动覆盖：提示刷新让用户看到最新内容后再提交（6.11）
-      ElMessage.error('该文档已被他人修改，请刷新查看最新内容后重新提交')
+      /*
+       * 版本冲突：禁止自动覆盖（6.11），但**不能只甩一句「请刷新」就完事**。
+       *
+       * 原实现弹的是纯文本 toast，用户面临的处境是：
+       *   - 页面上没有任何「刷新」入口，只能按 F5
+       *   - 而按 F5 会把自己刚写的内容全部丢掉（编辑器里的是未落库的）
+       *   - 草稿虽然在 sessionStorage 里，但它的 baseVersion 已过期，
+       *     恢复时又会触发一次「草稿版本冲突」弹窗
+       * 结果就是用户被困住：既不敢刷新，也提交不上去。
+       *
+       * 改为给出明确的两条出路，并**在刷新前先把当前内容存进草稿**——
+       * 这样无论选哪条，用户写的字都不会凭空消失。
+       */
+      saveCurrentDraft()
+      try {
+        await ElMessageBox.confirm(
+          '该文档已被他人修改，你的编辑基于旧版本。\n\n' +
+          '你的内容已暂存到本机草稿。是否载入最新版本？' +
+          '载入后可对照草稿手动合并，避免覆盖他人的改动。',
+          '版本冲突',
+          {
+            type: 'warning',
+            confirmButtonText: '载入最新版本',
+            cancelButtonText: '留在本页继续编辑',
+            distinguishCancelAndClose: true,
+          }
+        )
+        // 重新拉取详情：currentVersion 与表单都会被刷新为服务器最新值
+        await loadDoc()
+        notify.info('已载入最新版本，你的原内容保留在本机草稿中')
+      } catch {
+        // 留在本页：保持现状，用户可自行复制内容后再决定
+      }
     } else {
       handleServerError(e, { action: '保存文档' })
     }
@@ -769,7 +743,7 @@ const scrollEditorToHeading = async (item: { text: string }) => {
       return
     }
   }
-  ElMessage.info('当前目录标题尚未渲染')
+  notify.info('当前目录标题尚未渲染')
 }
 
 const insertHeading = async () => {
@@ -779,16 +753,8 @@ const insertHeading = async () => {
       inputPattern: /\S+/,
       inputErrorMessage: '请输入标题名称',
     })
-    if (editorMode.value === 'visual') {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      const heading = parsed.createElement('h2')
-      heading.textContent = value.trim()
-      parsed.body.append(heading, parsed.createElement('p'))
-      formData.value.content = parsed.body.innerHTML
-    } else {
-      const prefix = formData.value.content.trimEnd()
-      formData.value.content = `${prefix}${prefix ? '\n\n' : ''}## ${value.trim()}\n\n`
-    }
+    formData.value.content = appendHeading(
+      formData.value.content, value, editorMode.value === 'visual')
   } catch {
     // 用户取消
   }
@@ -801,16 +767,8 @@ const renameHeading = async (item: TocItem) => {
       inputPattern: /\S+/,
       inputErrorMessage: '请输入标题名称',
     })
-    if (editorMode.value === 'visual' && item.elementIndex !== undefined) {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      const heading = parsed.body.querySelectorAll('h2,h3')[item.elementIndex]
-      if (heading) heading.textContent = value.trim()
-      formData.value.content = parsed.body.innerHTML
-    } else if (item.lineIndex !== undefined) {
-      const lines = formData.value.content.split('\n')
-      lines[item.lineIndex] = `${'#'.repeat(item.level)} ${value.trim()}`
-      formData.value.content = lines.join('\n')
-    }
+    formData.value.content = renameHeadingIn(
+      formData.value.content, item, value, editorMode.value === 'visual')
   } catch {
     // 用户取消
   }
@@ -823,15 +781,8 @@ const removeHeading = async (item: TocItem) => {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
-    if (editorMode.value === 'visual' && item.elementIndex !== undefined) {
-      const parsed = new DOMParser().parseFromString(formData.value.content, 'text/html')
-      parsed.body.querySelectorAll('h2,h3')[item.elementIndex]?.remove()
-      formData.value.content = parsed.body.innerHTML
-    } else if (item.lineIndex !== undefined) {
-      const lines = formData.value.content.split('\n')
-      lines.splice(item.lineIndex, 1)
-      formData.value.content = lines.join('\n')
-    }
+    formData.value.content = removeHeadingIn(
+      formData.value.content, item, editorMode.value === 'visual')
   } catch {
     // 用户取消
   }
@@ -1093,139 +1044,37 @@ const primaryLabel = computed(() =>
           >属性</button>
         </div>
 
-        <!-- 设置 Tab -->
+        <!-- 设置 Tab（文档属性面板已抽成子组件） -->
         <template v-if="activeSideTab === 'settings'">
-          <div class="ce-side-head">
-            <Settings2 :size="15" />
-            <span>文档属性</span>
-          </div>
-
-          <div class="ce-side-group">
-            <label class="ce-side-label">文档分类</label>
-            <div class="ce-category-control">
-              <el-select v-model="formData.category" filterable clearable placeholder="选择目录分类">
-                <el-option v-for="cat in directoryCategories" :key="cat.id" :label="categoryLabel(cat)" :value="cat.name" />
-              </el-select>
-              <button type="button" title="新建分类" @click="createCategoryFromSettings"><Plus :size="15" /></button>
-            </div>
-          </div>
-
-          <div class="ce-side-group">
-            <label class="ce-side-label">标签（最多 {{ MAX_TAGS }} 个）</label>
-            <el-select
-              v-model="formData.tags"
-              multiple
-              filterable
-              allow-create
-              default-first-option
-              :multiple-limit="MAX_TAGS"
-              @change="normalizeTags"
-              placeholder="输入标签后回车"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="tag in managedTags"
-                :key="tag.id"
-                :label="tag.name"
-                :value="tag.name"
-              />
-            </el-select>
-            <div v-if="store.hotTags.length" class="ce-hot-tags">
-              <span class="ce-hot-title">热门：</span>
-              <button
-                v-for="ht in store.hotTags.slice(0, 8)"
-                :key="ht.tag"
-                type="button"
-                class="ce-hot-tag"
-                :disabled="formData.tags.includes(ht.tag) || formData.tags.length >= MAX_TAGS"
-                @click="addTag(ht.tag)"
-              >
-                {{ ht.tag }}
-              </button>
-            </div>
-          </div>
-
-          <div class="ce-side-group">
-            <label class="ce-side-label">摘要（可选）</label>
-            <textarea
-              v-model="formData.summary"
-              class="ce-excerpt-input"
-              placeholder="简要描述文档内容"
-              rows="4"
-              maxlength="200"
-            ></textarea>
-            <div class="ce-excerpt-footer">
-              <span class="ce-excerpt-count">
-                {{ formData.summary.length }}/200 · 留空将自动提取前 150 字
-              </span>
-              <button
-                v-if="formData.content.trim()"
-                class="ce-auto-excerpt"
-                type="button"
-                @click="generateSummary"
-              >
-                <Sparkles :size="13" />
-                <span>自动生成</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="ce-side-group">
-            <!-- 新建：发布开关 -->
-            <div v-if="isNew" class="ce-publish-block">
-              <div class="ce-publish-head">
-                <span class="ce-publish-title">保存后立即发布</span>
-                <el-switch v-model="publishOnChange" />
-              </div>
-              <p class="ce-publish-desc">发布后触发向量化，可被 AI 检索；关闭则仅存草稿</p>
-            </div>
-            <!-- 编辑：版本信息 + 变更说明 -->
-            <div v-else class="ce-publish-block">
-              <div class="ce-publish-head">
-                <span class="ce-publish-title">
-                  当前版本 v{{ currentVersion }}
-                  <span v-if="store.detail?.status === 'DRAFT'" class="ce-draft-tag">草稿</span>
-                </span>
-              </div>
-              <p class="ce-publish-desc">保存后版本号 +1；状态为草稿时可在详情页发布</p>
-              <el-input
-                v-model="changeReason"
-                maxlength="100"
-                placeholder="变更说明（可选，将记入版本历史）"
-                style="width: 100%"
-              />
-            </div>
-          </div>
+          <DocPropertiesPanel
+            v-model:category="formData.category"
+            v-model:tags="formData.tags"
+            v-model:summary="formData.summary"
+            v-model:publish-on-create="publishOnChange"
+            v-model:change-reason="changeReason"
+            :categories="directoryCategories"
+            :managed-tags="managedTags"
+            :hot-tags="store.hotTags"
+            :is-new="isNew"
+            :current-version="currentVersion"
+            :is-draft="store.detail?.status === 'DRAFT'"
+            :has-content="!!formData.content.trim()"
+            @create-category="createCategoryFromSettings"
+            @generate-summary="generateSummary"
+            @add-tag="addTag"
+            @normalize-tags="normalizeTags"
+          />
         </template>
 
-        <!-- 目录 Tab -->
+        <!-- 目录 Tab（大纲面板已抽成子组件） -->
         <template v-if="activeSideTab === 'toc'">
-          <div class="ce-side-head">
-            <FileText :size="15" />
-            <span>文章大纲</span>
-            <button class="ce-side-head-action" type="button" title="新增二级标题" @click="insertHeading">
-              <Plus :size="15" />
-            </button>
-          </div>
-          <div v-if="tocItems.length" class="ce-toc-list">
-            <div
-              v-for="item in tocItems"
-              :key="item.id"
-              class="ce-toc-row"
-            >
-              <button
-                class="ce-toc-item"
-                :class="{ 'level-three': item.level === 3 }"
-                type="button"
-                @click="scrollEditorToHeading(item)"
-              >{{ item.text }}</button>
-              <button type="button" title="重命名标题" @click="renameHeading(item)"><Pencil :size="13" /></button>
-              <button type="button" title="删除标题" @click="removeHeading(item)"><Trash2 :size="13" /></button>
-            </div>
-          </div>
-          <button v-else class="ce-toc-empty ce-toc-empty-action" type="button" @click="insertHeading">
-            <Plus :size="14" /> 添加第一个二级标题
-          </button>
+          <DocOutlinePanel
+            :items="tocItems"
+            @insert="insertHeading"
+            @rename="renameHeading"
+            @remove="removeHeading"
+            @scroll-to="scrollEditorToHeading"
+          />
         </template>
       </aside>
       </template>
@@ -1331,7 +1180,7 @@ const primaryLabel = computed(() =>
   box-shadow: 0 0 0 3px var(--state-success-bg);
 }
 .ce-save-dot--dirty {
-  background: var(--state-warning, #e6a23c);
+  background: var(--state-warning, var(--warning));
   box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.15);
 }
 
@@ -1593,23 +1442,8 @@ const primaryLabel = computed(() =>
   color: var(--color-primary);
 }
 
-.ce-category-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 6px;
-}
 
-.ce-category-control > button {
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
-  color: var(--color-text-secondary);
-}
 
-.ce-category-control > button:hover { border-color: var(--color-primary-light); color: var(--color-primary); }
 
 /* 右侧设置面板 */
 /* 宽度由 CollapsiblePanel 的 width prop 控制，此处只管内部呈现 */
@@ -1667,200 +1501,29 @@ const primaryLabel = computed(() =>
   }
 }
 
-.ce-toc-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 
-.ce-toc-item {
-  flex: 1;
-  min-width: 0;
-  display: block;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  text-decoration: none;
-  padding: 6px 8px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
 
-  &:hover {
-    color: var(--color-primary);
-    background: var(--color-bg);
-  }
-}
 
-.ce-toc-item.level-three {
-  padding-left: 22px;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-}
 
-.ce-toc-row { display: flex; align-items: center; gap: 2px; border-radius: 4px; }
-.ce-toc-row > button:not(.ce-toc-item) { width: 25px; height: 25px; display: none; align-items: center; justify-content: center; color: var(--color-text-tertiary); border-radius: 4px; }
-.ce-toc-row:hover { background: var(--color-bg); }
-.ce-toc-row:hover > button { display: inline-flex; }
-.ce-toc-row > button:not(.ce-toc-item):hover { color: var(--color-primary); background: var(--color-primary-lighter); }
-
-.ce-toc-empty {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  padding: 4px 10px;
-}
 
 .ce-toc-empty-action { display: flex; align-items: center; gap: 6px; border: 1px dashed var(--color-border); border-radius: 5px; padding: 9px 10px; }
 .ce-toc-empty-action:hover { border-color: var(--color-primary-light); color: var(--color-primary); }
 
-.ce-side-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--color-border-light);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
-}
 
-.ce-side-head-action { width: 26px; height: 26px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--color-text-tertiary); }
-.ce-side-head-action:hover { color: var(--color-primary); background: var(--color-primary-lighter); }
 
-.ce-side-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
 
-.ce-side-label {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-tertiary);
-}
 
-.ce-hot-tags {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-}
 
-.ce-hot-title {
-  color: var(--color-text-tertiary);
-}
 
-.ce-hot-tag {
-  padding: 3px 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-full);
-  background: var(--color-surface-hover);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  transition: all 0.15s ease;
 
-  &:hover:not(:disabled) {
-    border-color: var(--color-primary-light);
-    color: var(--color-primary);
-  }
 
-  &:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-}
 
-.ce-excerpt-input {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  font-family: inherit;
-  line-height: 1.5;
-  resize: none;
-  box-sizing: border-box;
-  transition: border-color 0.15s ease;
 
-  &:focus {
-    border-color: var(--color-primary-light);
-  }
-}
 
-.ce-excerpt-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
 
-.ce-excerpt-count {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  line-height: 1.4;
-}
 
-.ce-auto-excerpt {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-bg-elevated);
-  color: var(--color-primary);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  transition: all 0.15s ease;
 
-  &:hover {
-    border-color: var(--color-primary-light);
-    background: var(--color-primary-lighter);
-  }
-}
 
-.ce-publish-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ce-publish-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.ce-publish-title {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
-}
-
-.ce-publish-desc {
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  color: var(--color-text-tertiary);
-}
-
-.ce-draft-tag {
-  margin-left: 6px;
-  padding: 1px 8px;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-normal);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
-  border-radius: var(--radius-full);
-}
 
 /* ==================== md-editor 纸面化 ==================== */
 

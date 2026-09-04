@@ -1,0 +1,37 @@
+# 构建上下文裁剪。
+# 不排除的话，docker build 会把 node_modules（数百 MB）与 target/ 一起
+# 打包发给 daemon，构建慢且可能把宿主机的陈旧产物带进镜像。
+
+# 依赖与构建产物
+**/node_modules
+**/dist
+target/
+*.jar
+
+# 版本控制与 IDE
+.git
+.gitignore
+.idea
+.vscode
+*.iml
+
+# 环境与密钥（绝不能进镜像）
+.env
+.env.*
+!.env.example
+
+# 文档与本地脚本
+docs/
+*.md
+!README.md
+log/
+logs/
+
+# 测试与覆盖率产物
+coverage/
+**/.vitest
+**/__pycache__
+
+# 本地开发编排（生产镜像用不到）
+docker-compose.dev.yml
+monitoring/

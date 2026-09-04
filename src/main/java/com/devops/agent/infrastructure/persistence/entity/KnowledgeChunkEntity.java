@@ -174,6 +174,28 @@ public class KnowledgeChunkEntity {
     private String knowledgeSource = "UNKNOWN";
 
     /**
+     * 可见性（C1）：PUBLIC / INTERNAL / RESTRICTED。
+     * <p>
+     * <b>冗余自所属文档</b>。之所以在切片上再存一份，是因为检索走
+     * {@code sys_knowledge_chunk} 的 HNSW 向量索引——若权限字段只在文档表，
+     * 检索 SQL 必须 JOIN 才能过滤，而带 JOIN 的
+     * {@code ORDER BY embedding <=> ?} 会让 PG 放弃 HNSW 走全表扫描。
+     * </p>
+     * <p>代价是写入需同步：文档权限变更后必须重刷其切片，
+     * 否则会出现「文档已设为受限但切片仍可被检索到」的越权。</p>
+     */
+    @Builder.Default
+    @Column(name = "visibility", length = 16, nullable = false)
+    private String visibility = "PUBLIC";
+
+    /**
+     * 归属部门（C1）：仅在 {@code visibility=RESTRICTED} 时用于判定可见性。
+     * 同样冗余自所属文档。
+     */
+    @Column(name = "owner_dept", length = 64)
+    private String ownerDept;
+
+    /**
      * 创建时间
      */
     @Column(name = "create_time", nullable = false, updatable = false)

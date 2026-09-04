@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",
+    // 测试跑在 Node 上，需要 node 全局与内置模块类型
+    // （契约测试要读后端 Java 源码做交叉校验）。
+    // 单独一份配置而不是往 tsconfig.app.json 里加 "node"——
+    // 那会让浏览器侧业务代码也能引用 fs/path 而不报错，
+    // 这类误用要到运行时才炸。
+    "types": ["vite/client", "node", "vitest/globals"]
+  },
+  "include": [
+    "src/**/__tests__/**/*.ts",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/test-setup.ts",
+    "src/test-utils/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

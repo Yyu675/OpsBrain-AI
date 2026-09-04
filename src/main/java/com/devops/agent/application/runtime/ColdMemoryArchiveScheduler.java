@@ -77,12 +77,16 @@ public class ColdMemoryArchiveScheduler {
 
     private static final DateTimeFormatter PATH_DATE = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
+    private final com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository turnRepository;
+
     public ColdMemoryArchiveScheduler(SessionSummaryRepository summaryRepository,
                                       MinioClient minioClient,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository turnRepository) {
         this.summaryRepository = summaryRepository;
         this.minioClient = minioClient;
         this.objectMapper = objectMapper;
+        this.turnRepository = turnRepository;
     }
 
     /**
@@ -160,10 +164,25 @@ public class ColdMemoryArchiveScheduler {
      */
     private String archiveOne(SessionSummary s) throws Exception {
         Map<String, Object> payload = new LinkedHashMap<>();
-        // contentScope 显式声明归档边界：防止日后有人拿它当完整对话记录用
-        payload.put("contentScope", "SUMMARY_ONLY");
-        payload.put("contentScopeNote",
-                "仅含温记忆摘要与关键事实；不含逐轮对话原文（热记忆 TTL 120 分钟，归档时已过期）");
+
+        // B-2 补全：带上逐轮对话原文（来自 sys_agent_conversation_turn）。
+        //
+        // 此前这里恒为 SUMMARY_ONLY，根因是热记忆 TTL 仅 120 分钟、
+        // 归档按天执行，原文早已过期。现在原文由 AgentMemoryManager
+        // 每轮旁路转写到库里，归档时可直接取。
+        List<Map<String, Object>> turns = turnRepository.findBySession(s.getSessionId());
+
+        // contentScope 必须**据实**反映这一份归档的真实内容，不能写死。
+        //
+        // 存量会话（本次改动之前产生的）没有原文记录，取出来就是空列表；
+        // 若一律标 FULL_TRANSCRIPT，使用者会以为「这个会话只聊了 0 轮」，
+        // 而实际是原文从未被记录过——这比老老实实标 SUMMARY_ONLY 更误导。
+        boolean hasTranscript = !turns.isEmpty();
+        payload.put("contentScope", hasTranscript ? "FULL_TRANSCRIPT" : "SUMMARY_ONLY");
+        payload.put("contentScopeNote", hasTranscript
+                ? "含温记忆摘要、关键事实与逐轮对话原文（原文超 32K 字符的字段已截断并标注）"
+                : "仅含温记忆摘要与关键事实；该会话无原文记录"
+                        + "（多为 B-2 原文转写上线前产生的存量会话）");
         payload.put("archivedAt", LocalDateTime.now().toString());
         payload.put("sessionId", s.getSessionId());
         payload.put("traceId", s.getTraceId());
@@ -177,6 +196,10 @@ public class ColdMemoryArchiveScheduler {
         payload.put("relatedTickets", s.getRelatedTickets());
         payload.put("createTime", s.getCreateTime() != null ? s.getCreateTime().toString() : null);
         payload.put("updateTime", s.getUpdateTime() != null ? s.getUpdateTime().toString() : null);
+        // 逐轮原文放在最后：摘要字段在前便于人工快速浏览，
+        // 原文体积大，放前面会让文件头部难以阅读
+        payload.put("transcriptTurnCount", turns.size());
+        payload.put("transcript", turns);
 
         byte[] json = objectMapper.writeValueAsBytes(payload);
 

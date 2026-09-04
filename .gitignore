@@ -41,6 +41,10 @@ build/
 devops-platform-frontend/node_modules/
 devops-platform-frontend/dist/
 devops-platform-frontend/dist-ssr/
+# 测试覆盖率报告：每次 `npm run test:coverage` 都会重新生成的产物。
+# 此前 43 个 HTML 文件（852KB）被提交进版本库——它们随每次测试变动，
+# 会让 diff 里塞满与代码无关的噪音，review 时真正的改动被淹没。
+devops-platform-frontend/coverage/
 
 ### 日志与运行期产物 ###
 log/
@@ -74,3 +78,13 @@ career/
 ### 截图/临时资源 ###
 design-knowledge.png
 knowledge-current.png
+
+### 个人材料（面试/简历/他项目方案）——不属于本项目，不进版本库 ###
+# 这些文件此前躺在 docs/ 根目录，会进每一次 clone，
+# 也会让新人误以为是项目文档。已移入 docs/99-personal/ 并在此忽略。
+# 本地保留可继续使用，只是不再推送。
+docs/99-personal/
+
+# Python 字节码缓存（scan_*.py 被 run_audit.py import 时生成）
+__pycache__/
+*.pyc

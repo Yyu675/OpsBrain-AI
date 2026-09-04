@@ -5,6 +5,16 @@ spring:
   profiles:
     active: ${spring_profiles_active:dev}
 
+  # ==================== 异步请求超时（A2 修复）====================
+  # SSE（SseEmitter）走 Spring MVC 异步请求通道，受此值约束。
+  # 超时层级必须满足：MVC async > SSE emitter > 模型总超时，
+  # 否则内层还在正常工作，外层已经把连接掐断。
+  # 此前未配置，默认值随容器而定（Tomcat 常见 30s 或不限），
+  # 与 SSE 的 60s、reasoner 模型的 120s 三者互不协调。
+  mvc:
+    async:
+      request-timeout: ${MVC_ASYNC_TIMEOUT_MS:180000}
+
   # 数据源配置（由 profile 具体化）
   datasource:
     driver-class-name: org.postgresql.Driver
@@ -18,6 +28,16 @@ server:
   port: 8088
   servlet:
     context-path: /ai
+
+# ==================== 日志（A5：全链路 traceId）====================
+# %X{traceId} 从 MDC 读取，由 TraceIdFilter 在请求入口写入。
+# 没有它，日志里就无法把一次请求的所有行串起来——这是排障效率的地基。
+# 未经 Filter 的线程（定时任务/异步回调）若未用 TraceContext.wrap 搬运 MDC，
+# 此处会打印为空，属预期行为，可据此发现遗漏的跨线程传递点。
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n"
 
 spring.servlet.multipart:
   # 单文件与单请求上限。与 devops.storage.attachment.max-file-size 保持一致，
@@ -50,9 +70,86 @@ sa-token:
 
 # ==================== OpsBrain AI 自定义配置 ====================
 devops:
+  # ==================== Schema 自检 ====================
+  schema:
+    # 启动后校验关键列/表是否存在（迁移是否漏执行）。
+    # 本项目迁移靠人工按序执行、无版本表，"部署了新 JAR 但漏跑迁移"
+    # 是很难查的故障：缺 visibility 列会让知识检索整体报错，
+    # 而错误表象是「知识库暂不可用」，排查方向容易跑偏。
+    #
+    # 默认只告警不阻断（开发环境常只跑了部分迁移）。
+    # 生产建议置 true，让漏迁移在部署时立即暴露。
+    fail-fast: ${SCHEMA_FAIL_FAST:false}
+
+  # ==================== 审计（C5）====================
+  audit:
+    # 通用写操作审计总开关。仅拦 POST/PUT/PATCH/DELETE，
+    # 读操作量级高一到两个数量级且无审计价值，一律跳过。
+    # 关闭仅用于极端性能排查——L3/L4 阶段 AI 自动执行动作时，
+    # 审计是合规底线，不是可选项。
+    enabled: ${AUDIT_ENABLED:true}
+
+  # ==================== 安全（A6/D3）====================
+  security:
+    # 鉴权总开关。**默认 true，生产环境绝不可关闭**。
+    #
+    # 关闭后 /api/** 与 /actuator/** 全部免登录，且因为 Sa-Token 上下文里
+    # 没有会话，@SaCheckRole 的**角色判定也会一并失效**——
+    # 不是「少了一层登录」，是整条鉴权链被摘除。
+    #
+    # 提供这个开关是为了替代一种更糟的做法：直接注释掉 WebConfig 里的
+    # 拦截器注册（2026-08-26 发生过）。注释没有开关语义、review 时不显眼、
+    # 忘了恢复就随代码进生产。走配置至少做到：生产默认安全、
+    # 意图写在 yml 里可审计、关闭时启动日志打醒目 ERROR、
+    # 集成测试仍走真实鉴权链。
+    #
+    # 本地免登录预览用法：AUTH_ENABLED=false ./mvnw spring-boot:run
+    auth-enabled: ${AUTH_ENABLED:true}
+
+    cors:
+      # 允许跨域的来源，逗号分隔。默认 * 仅供本地开发。
+      # ⚠️ 生产必须显式列举，例如：
+      #   CORS_ALLOWED_ORIGINS=https://ops.example.com,https://admin.example.com
+      # 因为本项目 allowCredentials=true，* 等价于「任意站点可携带用户凭证调用本站 API」。
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
+    # 受信任的反向代理地址前缀，逗号分隔。**默认空 = 不信任任何 X-Forwarded-For**。
+    #
+    # 为什么默认空：XFF 是客户端可任意伪造的请求头。无条件信任它会导致
+    #   ① 限流被绕过（每次换一个伪造 IP，限流键就换一个，计数永远不到阈值）；
+    #   ② 审计表里的来源 IP 可被写成任意值，事后追溯指向无辜机器。
+    # 直连部署时留空即可，行为等同于只用 TCP 层 remoteAddr（无法伪造）。
+    #
+    # 部署在 Nginx / K8s Ingress 之后时，配置为**代理的出口地址前缀**，例如：
+    #   TRUSTED_PROXIES=10.,127.0.0.1
+    # 只有当 remoteAddr 匹配这些前缀时，才会采信 XFF（并取最后一段——
+    # 左侧是客户端可伪造的部分，右侧由每一跳代理追加）。
+    trusted-proxies: ${TRUSTED_PROXIES:}
+
   ai:
     # 双模开关：MOCK（开发期不调 API）/ REAL（生产模式）
     mode: ${AI_MODE:MOCK}
+
+    # ==================== Agent 会话状态存储 ====================
+    # memory（默认）：进程内 ConcurrentHashMap + synchronized 互斥。
+    #   单实例部署用这个——不付 Redis 往返代价。
+    # redis：跨实例共享 + SET NX 分布式锁。
+    #   ⚠️ 多实例部署必须切到 redis。synchronized 是进程内锁，
+    #   多实例下两个实例可同时通过同一会话的状态校验，后写覆盖先写——
+    #   状态机里的 WAITING_APPROVAL 是高风险工单的审批闸门，
+    #   被冲掉后审批就被绕过，而且没有任何报错。
+    #
+    # 不做「检测到 Redis 就自动启用」：项目里 Redis 还承担缓存/限流/幂等，
+    # 单实例部署同样连着 Redis，自动启用会白白付出每次状态迁移的网络往返。
+    # 部署形态只有部署方知道，必须显式声明。
+    #
+    # 当前生效的后端会打进启动日志（backend=memory / redis），
+    # 「多实例却用着 memory」是一类典型配置事故，而它在单实例测试时看不出来。
+    session:
+      store: ${AGENT_SESSION_STORE:memory}
+      # 会话在 Redis 中的存活时长。需大于单次对话的最长耗时，
+      # 又不宜过长——过长会让已结束的会话长期占用内存。
+      ttl-minutes: ${AGENT_SESSION_TTL_MINUTES:60}
 
     # 阿里云百炼配置（Real 模式生效）
     alibaba:
@@ -85,6 +182,36 @@ devops:
     # 幻觉防护 L4 相似度熔断
     hallucination:
       min-similarity-score: 0.73
+
+    # ==================== SSE 流式推送（A2 修复）====================
+    # 超时层级铁律（不得倒挂）：
+    #   spring.mvc.async.request-timeout (180s)
+    #     > devops.ai.sse.timeout-ms      (150s)
+    #       > reasoner 模型总超时          (120s = alibaba.timeout * 2)
+    #         > turbo 模型超时             (60s  = alibaba.timeout)
+    #
+    # 此前 SseEmitter 硬编码 60s，而 reasoner 模型允许跑 120s，
+    # 导致「复杂堆栈分析」这一核心场景必然在 60s 被前端判超时，
+    # 而后端模型仍在计费运行。改配置项后三层对齐。
+    # ==================== 对话限流（C4）====================
+    # /chat/stream 是全项目最贵的端点：一次请求 = 一次真实 LLM 调用，
+    # 耗时数十秒、按 token 计费、占用一个异步线程直到结束。
+    # 无限流时一段循环脚本即可打爆额度、连接池与 Tomcat 异步容量。
+    #
+    # 20 次/分钟：正常人工提问远低于此（一次对话通常要读几十秒回答），
+    # 而脚本刷接口会立刻触顶。限流按 userId 而非 IP——
+    # 企业内网同一出口 NAT 后按 IP 会让一人刷爆全组。
+    chat:
+      rate-limit: ${CHAT_RATE_LIMIT:20}
+      rate-window-ms: 60000
+
+    sse:
+      # SSE 连接总超时（毫秒）。必须 > 最慢模型的总超时（reasoner 120s）。
+      timeout-ms: ${SSE_TIMEOUT_MS:150000}
+      # 心跳间隔（毫秒）。长时间无数据时，Nginx/网关等中间代理可能
+      # 按空闲超时主动断连（常见默认 60s）。定期发送 SSE 注释帧
+      # （": heartbeat"）保活，该帧不触发前端 onmessage，无副作用。
+      heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:15000}
 
     # 文档索引配置（DocumentIndexer 读取）
     index:
@@ -171,11 +298,48 @@ devops:
       # 配置化而非硬编码：运维需按业务低峰调整，验证时需临时提频。
       archive-cron: ${MEMORY_ARCHIVE_CRON:0 23 4 * * *}
 
+      # ---- 对话原文保留期清理（B-2 收尾）----
+      # sys_agent_conversation_turn 存逐轮原文（用户常粘贴整段日志/堆栈），
+      # 体积比摘要大一到两个数量级，不清理会成为库里最大的表。
+      turn-retention:
+        # 默认开启（与归档默认关闭相反）：清理只依赖数据库无外部前置，
+        # 而不清理的后果会持续恶化。关闭它应是一次有意识的决定。
+        enabled: ${MEMORY_TURN_RETENTION_ENABLED:true}
+        # 保留天数。必须明显长于 archive-after-days(90)——原文要等会话被
+        # 冷归档、写进归档 JSON 之后才能删。配置短于「归档保留期+7 天安全余量」
+        # 时程序会自动抬升并 WARN，不会真的提前删除。
+        retention-days: 180
+        # 单批删除上限，防长事务锁表
+        batch-size: 500
+        # 单轮执行最大批数：500×20=10000 条/轮，够消化日常增量；
+        # 达上限时如实 WARN 报告积压，下一轮继续
+        max-batches-per-run: 20
+        # 每日 04:47，排在冷归档 04:23 之后——必须先归档再清理
+        cron: ${MEMORY_TURN_RETENTION_CRON:0 47 4 * * *}
+
   # ==================== 告警接入（L2 实时监测） ====================
   alert:
     # 告警接收总开关。关闭后 AlertWebhookController 仍返回 200 但跳过处理。
     # 用于运维期临时禁入，不改变 Prometheus 重试行为（非 200 会重试）。
     enabled: true
+
+    # ==================== Webhook 端点防护（A6）====================
+    # /api/v1/alerts/webhook 在鉴权白名单内（Alertmanager 带不了 Sa-Token），
+    # 却直接写库并可触发自动建单，因此必须单独加固。
+    webhook:
+      # 共享密钥。请求需带 X-Webhook-Token 头且与此值一致。
+      # 留空 = 不校验（向后兼容既有 alertmanager.yml），仅打一次告警日志。
+      # ⚠️ 生产环境必须通过 ALERT_WEBHOOK_SECRET 设置，否则任何人都能灌入伪造告警。
+      # 配置后需同步在 monitoring/alertmanager.yml 的 webhook_configs 加：
+      #   http_config:
+      #     authorization: { type: Bearer, credentials: <secret> }
+      #   —— 或用 Alertmanager 支持的自定义 header 方式传 X-Webhook-Token。
+      secret: ${ALERT_WEBHOOK_SECRET:}
+      # 单来源 IP 在窗口内允许的最大推送次数；<=0 关闭限流。
+      # 300/分钟 是按「一次较大规模故障的告警量」留的余量：
+      # 正常业务远低于此，而告警风暴（网络分区可产生上万条）会被挡住。
+      rate-limit: ${ALERT_WEBHOOK_RATE_LIMIT:300}
+      rate-window-ms: 60000
     # 自动建单开关。关闭后告警仍入库并去重，但不触发自动建单（Single Writer 契约 6.10）。
     # 适合告警风暴时保护工单系统，风暴过后可手动补单。
     auto-ticket-enabled: true
@@ -234,3 +398,60 @@ devops:
       # 漏一个即成上传后门。
       allowed-extensions: log,txt,json,yaml,yml,xml,csv,md,conf,ini,properties,png,jpg,jpeg,gif,webp,pdf,zip,gz,tar,tgz
 
+
+  # ================= L2 指标数据源（Prometheus）=================
+  # 关键取舍：代理查询，不自建时序存储。
+  # 运维场景下 Prometheus 已是事实标准、用户本来就有；再存一份会出现
+  # 「两套数据对不上，以哪个为准」的无解问题，且副本必然滞后于源。
+  metrics:
+    prometheus:
+      # 默认对齐 docker-compose.dev.yml 的宿主机映射端口（容器内 9090 → 宿主 29090）
+      base-url: ${PROMETHEUS_BASE_URL:http://localhost:29090}
+      # 页面同步等待，超时必须短：一条写错的高基数 PromQL 可能跑几十秒，
+      # 不设超时会占满 Web 线程池，让监控页把主站一起拖垮
+      timeout-ms: ${PROMETHEUS_TIMEOUT_MS:5000}
+      # 关掉后 /api/v1/metrics/** 会返回 50020（数据源不可用），
+      # 而不是让页面卡在加载中——没有 Prometheus 的部署应显式关掉
+      enabled: ${PROMETHEUS_ENABLED:true}
+
+# ================= 自身可观测性（P2，2026-08-26 新增）=================
+# 系统监控别人的前提是先能监控自己：
+# - /actuator/health：K8s 探针 + 部署健康检查（含 DeepSeek/向量库可达性，见
+#   infrastructure/health 下自定义 HealthIndicator——这两个挂了系统表面正常、AI 全废）
+# - /actuator/prometheus：自身指标（工具调用耗时/失败率、Saga 补偿成功率、LLM 成本与 token）
+# - ⚠️ 安全：/actuator/** 不在 /api/** 下，WebConfig 必须显式加鉴权（见 WebConfig 注释）
+# ============================================================
+# API 文档（springdoc-openapi，P0-2）
+# ============================================================
+# 默认开启，便于开发与联调；生产由 application-prod.yml 关闭（见该文件）。
+#
+# ⚠️ 安全说明：Sa-Token 拦截器只管 /api/**，而 springdoc 的两个路径
+# （/v3/api-docs、/swagger-ui/**）不在其下 —— 也就是说它们**不受登录校验保护**。
+# 这是刻意接受的：开发环境需要免登录查文档；生产环境靠 enabled=false 整体关闭，
+# 比「放着端点再加鉴权」少一个出错面。
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /swagger-ui.html
+    # 按标签字母序排列，避免每次生成顺序漂移导致 diff 噪音
+    tags-sorter: alpha
+    operations-sorter: alpha
+  # 只扫业务包，排除 actuator 等框架端点
+  packages-to-scan: com.devops.agent.controller
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: opsbrain-ai

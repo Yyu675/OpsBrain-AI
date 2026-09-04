@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { Monitor, Bell, User, Settings, LogOut, LogIn, CheckCheck } from 'lucide-vue-next'
 import ProfileDialog from '@/components/common/ProfileDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
@@ -110,7 +111,7 @@ const readNotification = (n: AppNotification) => {
 
 const markAllRead = () => {
   notificationsStore.markAllRead()
-  ElMessage.success('已全部标记为已读')
+  notify.success('已全部标记为已读')
 }
 
 const goProfile = () => {
@@ -134,7 +135,7 @@ const doLogout = async () => {
     // 方向三：调用 app.signOut() 清登录态（后端 Sa-Token 失效 token + 清本地 token）。
     // signOut 为 async（含后端 logout 调用），await 后再跳登录页确保 token 已清。
     await app.signOut()
-    ElMessage.success('已退出登录')
+    notify.success('已退出登录')
     router.push('/login')
   } catch {
     // cancel

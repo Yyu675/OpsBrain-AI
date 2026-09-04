@@ -6,6 +6,8 @@
 import { API_ENDPOINTS } from '../../config/api'
 import { http, unwrapBiz, HttpError } from '../../utils/http'
 import { getStatusLabel, getPriorityLabel } from '../../constants/ticket'
+import { BizCode } from '../../constants/bizCode'
+import { parseDate } from '../../utils/time'
 import {
   convertBackendTicketToFrontend,
   mapFrontendPriorityToBackend,
@@ -94,7 +96,7 @@ export async function fetchTicketByTraceId(traceId: string): Promise<FrontendTic
     const data = unwrapBiz<BackendTicket>(payload, '查询工单失败')
     return convertBackendTicketToFrontend(data)
   } catch (e) {
-    if (e instanceof HttpError && (e.status === 404 || e.bizCode === 40004)) {
+    if (e instanceof HttpError && (e.status === 404 || e.bizCode === BizCode.NOT_FOUND)) {
       return null
     }
     throw e instanceof Error ? e : new Error('查询工单失败')
@@ -229,8 +231,12 @@ interface BackendActivity {
  */
 function toTimeLabel(iso: string): string {
   if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso.slice(11, 16)
+  // 必须走 parseDate：后端回复/活动流的 createTime 是 Java LocalDateTime，
+  // 形如 `2026-08-24T10:30:00` 不带时区。`new Date(该字符串)` 按**浏览器本地时区**解析，
+  // 服务器 Asia/Shanghai 而用户在 America/New_York 时会整体偏 12 小时——
+  // 表现为「今天上午的回复」被标成昨天的 MM-DD，且同一条工单里的回复顺序看起来错乱。
+  const d = parseDate(iso)
+  if (!d) return iso.slice(11, 16)
   const now = new Date()
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
@@ -612,7 +618,7 @@ export async function fetchTicketById(id: string): Promise<FrontendTicket | null
     const data = unwrapBiz<BackendTicket>(payload, '查询工单失败')
     return convertBackendTicketToFrontend(data)
   } catch (e) {
-    if (e instanceof HttpError && (e.status === 404 || e.bizCode === 40004)) {
+    if (e instanceof HttpError && (e.status === 404 || e.bizCode === BizCode.NOT_FOUND)) {
       return null
     }
     throw e instanceof Error ? e : new Error('查询工单失败')

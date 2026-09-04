@@ -13,16 +13,15 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
+import { SANITIZE_ALLOWED_ATTR, SANITIZE_ALLOWED_TAGS } from './htmlSanitizePolicy'
+
 marked.setOptions({ breaks: true, gfm: true })
 
-const ALLOWED_TAGS = [
-  'p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'blockquote',
-  'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'a', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'hr', 'span',
-  'img', 'div', 'figure', 'figcaption'
-]
-
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'class', 'src', 'alt', 'title', 'data-language']
+// 白名单来自 htmlSanitizePolicy（全项目唯一真相）。
+// 此前这里自带一份，缺 <u>/<s>——编辑器存得进、这里渲染时被剥掉，
+// 用户看到的是「排版发布后就没了」，且没有任何报错。
+const ALLOWED_TAGS = [...SANITIZE_ALLOWED_TAGS]
+const ALLOWED_ATTR = [...SANITIZE_ALLOWED_ATTR]
 
 // DOMPurify hook: 给所有 target=_blank 的 a 标签强制补 rel
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
@@ -36,16 +35,40 @@ const renderCache = new Map<string, string>()
 const MAX_CACHE_SIZE = 200
 
 /**
+ * 内容指纹（FNV-1a 32 位）。
+ *
+ * 为什么需要：调用方传的 cacheKey 形如 `doc-42-{length}`，
+ * **长度相同但内容不同的两次渲染会撞 key**，导致返回上一次的 HTML。
+ * 这不是理论问题——运维文档把「主从延迟 30 秒」改成「90 秒」长度不变，
+ * 用户看到的仍是旧值，而这种数字在运维手册里是要照着执行的。
+ *
+ * 用非加密哈希足够：这里只需要「内容变了 key 就变」，
+ * 不涉及安全对抗，FNV-1a 比 SHA 快一个数量级且无需异步。
+ */
+function fingerprint(text: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    // FNV 质数乘法，用移位实现避免大整数溢出
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0
+  }
+  return h.toString(36)
+}
+
+/**
  * 安全渲染 Markdown/HTML 为可用的 HTML
  *
  * @param raw 原始内容（Markdown 或 HTML）
- * @param cacheKey 可选缓存键，传入时同键复用结果（用于流式消息按 id+length 缓存）
+ * @param cacheKey 可选缓存键前缀。**内部会附加内容指纹**，
+ *                 故调用方无需（也不应）自行拼接长度来区分版本
  * @returns DOMPurify 净化后的 HTML 字串
  */
 export function safeMarkdown(raw: string, cacheKey?: string): string {
   if (!raw) return ''
 
-  const key = cacheKey ?? raw
+  // 始终把内容指纹并入 key：调用方给的前缀只用于分组（区分不同文档/消息），
+  // 真正保证「内容变则缓存失效」的是指纹
+  const key = cacheKey ? `${cacheKey}#${fingerprint(raw)}` : raw
   const cached = renderCache.get(key)
   if (cached !== undefined) return cached
 

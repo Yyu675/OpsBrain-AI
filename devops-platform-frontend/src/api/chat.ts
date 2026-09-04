@@ -23,6 +23,15 @@ export interface ChatStreamCallbacks {
   onToken?: (data: SSETokenEvent) => void
   onComplete?: (data: SSECompleteEvent) => void
   onError?: (data: SSEErrorEvent) => void
+  /**
+   * 流关闭时触发（无论是否收到过 complete）。
+   *
+   * **必须提供兜底**：服务端在未发 complete 就关流时（超时切断、网关 502、
+   * Nginx proxy_read_timeout 到期），fetchEventSource 会**正常 resolve**——
+   * 不抛错、不进 catch、不触发 onError。调用方若只在 complete/error 里
+   * 复位「生成中」状态，就会永远停在生成中，输入框禁用、对话框卡死。
+   */
+  onClose?: () => void
 }
 
 /**
@@ -105,10 +114,27 @@ export async function chatStream(
     async onopen(response) {
       if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
         return // 连接成功
-      } else {
-        // 非 200 或非 SSE 响应
-        throw new Error(`SSE连接失败: ${response.status} ${response.statusText}`)
       }
+
+      // 非 SSE 响应：多半是请求在进入流式链路**之前**就被拒了
+      // （参数校验失败 / 限流 / 未登录）。这类响应是 ApiResponse JSON，
+      // 里面有可读的 message —— 原实现只抛「SSE连接失败: 400」，
+      // 把「提问超过 1500 字」这种用户能自己解决的问题变成了无从下手的报错。
+      let detail = `${response.status} ${response.statusText}`
+      try {
+        const body = await response.clone().json()
+        if (body?.message) {
+          detail = body.message
+        }
+      } catch {
+        // 响应体非 JSON（如网关返回的 HTML 错误页），保留状态码描述
+      }
+      throw new Error(detail)
+    },
+
+    // 流关闭：转交调用方收尾（见 onClose 的契约说明）
+    onclose() {
+      callbacks.onClose?.()
     },
 
     // 处理错误（throw 阻止无限重连）

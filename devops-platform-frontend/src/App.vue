@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bot } from 'lucide-vue-next'
@@ -6,11 +7,13 @@ import AppErrorBoundary from '@/components/common/AppErrorBoundary.vue'
 import NetworkBanner from '@/components/common/NetworkBanner.vue'
 import AppNavbar from '@/components/common/AppNavbar.vue'
 import HotkeysDialog from '@/components/common/HotkeysDialog.vue'
-import { ElMessageBox, ElMessage } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { useIdleTimer } from '@/composables/useIdleTimer'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { useAlertNotifications } from '@/composables/useAlertNotifications'
+import { useSessionCleanup } from '@/composables/useSessionCleanup'
 import { useAppStore } from '@/stores/app'
+import { safeInternalPath } from '@/utils/safeRedirect'
 
 const router = useRouter()
 const route = useRoute()
@@ -18,6 +21,11 @@ const app = useAppStore()
 
 // 全局告警通知：连接 /ws/alerts，收到 NEW 告警时推入通知 store
 useAlertNotifications()
+
+// 登出时清掉上一个用户的 AI 对话历史（含知识库引用原文）。
+// 挂在根组件是刻意的：登出有四条路径，逐个加清理必漏一条——
+// 监听登录态这个状态事实才能全覆盖。详见该 composable 的文件头。
+useSessionCleanup()
 
 const compactBodyClass = computed(() => app.settings.compactTable ? 'compact-tables' : '')
 
@@ -54,7 +62,7 @@ useIdleTimer({
       .then(() => {
         warnCloseFn = null
         if (closed) return
-        ElMessage.success('已延长会话')
+        notify.success('已延长会话')
       })
       .catch(() => {
         warnCloseFn = null
@@ -66,7 +74,7 @@ useIdleTimer({
     warnCloseFn?.()
     warnCloseFn = null
     if (!app.isAuthenticated) return
-    ElMessage.warning('长时间未操作，已自动退出登录')
+    notify.warning('长时间未操作，已自动退出登录')
     app.signOut().finally(() => router.push('/login'))
   },
   onActive() {
@@ -94,7 +102,9 @@ const onUnauthorized = (e: Event) => {
 
   if (route.meta?.public) return
 
-  router.push({ name: 'login', query: from ? { redirect: from } : {} })
+  // from 来自 http 层读取的 window.location，同样经校验后再作为 redirect 传递，
+  // 避免把一个可控值原样塞进 query 供登录页回跳
+  router.push({ name: 'login', query: from ? { redirect: safeInternalPath(from) } : {} })
 }
 
 onMounted(() => {
@@ -150,7 +160,7 @@ useHotkeys([
   height: 52px;
   border-radius: 50%;
   border: none;
-  background: var(--el-color-primary, #409eff);
+  background: var(--el-color-primary, var(--brand));
   color: #fff;
   cursor: pointer;
   display: flex;

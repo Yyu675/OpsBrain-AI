@@ -1,10 +1,16 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.common.exception.WebhookRejectedException;
+import com.devops.agent.common.web.WebhookGuard;
 import com.devops.agent.domain.alert.DTO.AlertmanagerWebhook;
 import com.devops.agent.domain.alert.service.AlertService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,13 +39,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class AlertWebhookController {
 
     private final AlertService alertService;
+    private final WebhookGuard webhookGuard;
 
     /** 告警接收总开关（application.yml devops.alert.enabled）。关闭后仍返回 200 但跳过处理 */
     @Value("${devops.alert.enabled:true}")
     private boolean alertEnabled;
 
-    public AlertWebhookController(AlertService alertService) {
+    public AlertWebhookController(AlertService alertService, WebhookGuard webhookGuard) {
         this.alertService = alertService;
+        this.webhookGuard = webhookGuard;
     }
 
     /**
@@ -51,7 +59,14 @@ public class AlertWebhookController {
      * </p>
      */
     @PostMapping
-    public ApiResponse<String> receiveWebhook(@RequestBody AlertmanagerWebhook webhook) {
+    public ApiResponse<String> receiveWebhook(@RequestBody AlertmanagerWebhook webhook,
+                                              HttpServletRequest request) {
+        // A6：本端点在鉴权白名单内（Alertmanager 无法带 Sa-Token）且直接写库、可触发建单，
+        // 因此必须自行做共享密钥校验 + 来源限流。校验失败抛 WebhookRejectedException，
+        // 由本类的 @ExceptionHandler 映射为 401/429（而非统一 403）——
+        // Alertmanager 依据状态码决定是否退避重试，状态码必须语义正确。
+        webhookGuard.verify(request);
+
         // 告警接收总开关（devops.alert.enabled）：关闭时仍返回 200 但跳过处理——
         // Prometheus 对非 200 会重试，若直接返回错误会在关闭期间造成告警反复推送
         if (!alertEnabled) {
@@ -71,5 +86,27 @@ public class AlertWebhookController {
         alertService.processWebhook(webhook);
 
         return ApiResponse.success("ok");
+    }
+
+    /**
+     * 局部异常处理：webhook 拒绝 → 语义正确的状态码。
+     * <p>
+     * 为什么<b>不</b>交给 {@code GlobalExceptionHandler}：那里把
+     * {@code SecurityGuardException} 统一映射为 403，而对机器客户端来说
+     * 403 是个含糊的信号。Alertmanager 需要区分：
+     * <ul>
+     *   <li><b>401</b> 密钥不对 —— 配置问题，重试无意义，应显式报错让人发现；</li>
+     *   <li><b>429 + Retry-After</b> 太快了 —— 退避后重投，<b>告警不丢</b>。</li>
+     * </ul>
+     * 局部 handler 的作用域仅限本 Controller，不影响其它端点的既有行为。
+     * </p>
+     */
+    @ExceptionHandler(WebhookRejectedException.class)
+    public ResponseEntity<ApiResponse<String>> handleRejected(WebhookRejectedException ex) {
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(ex.getHttpStatus());
+        if (ex.getRetryAfterSeconds() > 0) {
+            builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()));
+        }
+        return builder.body(ApiResponse.error(ex.getCode(), ex.getMessage()));
     }
 }

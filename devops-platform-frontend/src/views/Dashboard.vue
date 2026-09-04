@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseDate } from '@/utils/time'
 import { computed, ref } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import {
@@ -54,7 +55,10 @@ const trend = trendQuery.data
 const lastUpdated = computed(() => {
   const ts = overviewQuery.dataUpdatedAt.value
   if (!ts) return ''
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  // 走 parseDate：趋势图 X 轴若按浏览器时区解析，
+  // 跨时区用户看到的时间点会整体平移
+  const d = parseDate(ts)
+  return d ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : String(ts)
 })
 
 /** 刷新：四个查询一并重拉。refetch 会绕过 staleTime */
@@ -347,17 +351,17 @@ const rootCauseTop = computed(() =>
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: 8px;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   cursor: pointer;
   font-size: 0.875rem;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary, var(--text-2));
   transition: border-color 0.15s, color 0.15s;
 }
 .refresh-btn:hover:not(:disabled) {
-  border-color: var(--el-color-primary, #409eff);
-  color: var(--el-color-primary, #409eff);
+  border-color: var(--el-color-primary, var(--brand));
+  color: var(--el-color-primary, var(--brand));
 }
 .refresh-btn:disabled {
   opacity: 0.6;
@@ -371,7 +375,7 @@ const rootCauseTop = computed(() =>
 }
 .last-updated {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 
 .loading-state,
@@ -388,7 +392,7 @@ const rootCauseTop = computed(() =>
   text-align: center;
   padding: 16px;
   margin-bottom: 16px;
-  background: var(--color-bg-sunken, #f1f5f9);
+  background: var(--color-bg-sunken, var(--surface-2));
   border-radius: var(--radius-md, 8px);
   color: var(--color-text-tertiary, #94a3b8);
   font-size: 13px;
@@ -402,7 +406,7 @@ const rootCauseTop = computed(() =>
 }
 
 .kpi-card {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -422,7 +426,7 @@ const rootCauseTop = computed(() =>
 .kpi-value {
   font-size: 32px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   margin-bottom: 8px;
 }
 
@@ -444,7 +448,7 @@ const rootCauseTop = computed(() =>
 }
 
 .data-panel {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -453,7 +457,7 @@ const rootCauseTop = computed(() =>
 .panel-header h3 {
   font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   margin: 0 0 16px 0;
 }
 
@@ -461,7 +465,7 @@ const rootCauseTop = computed(() =>
   display: block;
   margin: -10px 0 12px 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-3);
 }
 
 .panel-body {
@@ -489,24 +493,24 @@ const rootCauseTop = computed(() =>
 
 .model-name {
   font-weight: 500;
-  color: #1f2937;
+  color: var(--text-1);
 }
 
 .model-count {
-  color: #6b7280;
+  color: var(--text-2);
 }
 
 .model-bar {
   grid-column: 1 / 2;
   height: 8px;
-  background: #e5e7eb;
+  background: var(--border-1);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .model-fill {
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  background: linear-gradient(90deg, var(--brand), #8b5cf6);
   transition: width 0.3s;
 }
 
@@ -515,11 +519,11 @@ const rootCauseTop = computed(() =>
   text-align: right;
   font-size: 14px;
   font-weight: 500;
-  color: #1f2937;
+  color: var(--text-1);
 }
 
 .stats-footer {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 16px 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -529,12 +533,12 @@ const rootCauseTop = computed(() =>
 .stats-footer p {
   margin: 0;
   font-size: 14px;
-  color: #6b7280;
+  color: var(--text-2);
 }
 
 /* ===== B5 闭环度量 ===== */
 .closure-section {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 20px 24px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
@@ -544,7 +548,7 @@ const rootCauseTop = computed(() =>
 .section-heading {
   font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   margin: 0 0 16px 0;
 }
 
@@ -573,14 +577,14 @@ const rootCauseTop = computed(() =>
 
 .closure-kpi-label {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-2);
   margin-bottom: 4px;
 }
 
 .closure-kpi-value {
   font-size: 20px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   font-variant-numeric: tabular-nums;
 }
 
@@ -600,28 +604,28 @@ const rootCauseTop = computed(() =>
 .stage-label {
   width: 80px;
   font-size: 13px;
-  color: #4b5563;
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
 .stage-bar {
   flex: 1;
   height: 8px;
-  background: #E5E7EB;
+  background: var(--border-1);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .stage-fill {
   height: 100%;
-  background: var(--color-primary, #3B82F6);
+  background: var(--color-primary, var(--brand));
   border-radius: 4px;
   transition: width 0.3s ease;
 }
 
 .stage-count {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-3);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -631,7 +635,7 @@ const rootCauseTop = computed(() =>
 .sub-heading {
   font-size: 14px;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--text-2);
   margin: 0 0 8px 0;
 }
 
@@ -646,11 +650,11 @@ const rootCauseTop = computed(() =>
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: #F3F4F6;
+  background: var(--surface-2);
   border-radius: 999px;
   font-size: 13px;
 }
 
-.rc-label { color: #4b5563; }
-.rc-count { font-weight: 600; color: #1f2937; font-variant-numeric: tabular-nums; }
+.rc-label { color: var(--text-2); }
+.rc-count { font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
 </style>

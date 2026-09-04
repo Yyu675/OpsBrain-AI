@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   Share2,
   History,
@@ -31,7 +31,8 @@ import CollapseToggle from '@/components/common/CollapseToggle.vue'
 import RailButton from '@/components/common/RailButton.vue'
 import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
-import { handleServerError } from '@/utils/notify'
+import { useDocOutline } from '@/composables/useDocOutline'
+import { notify, handleServerError } from '@/utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,10 +76,10 @@ watch(
       safeHtml.value = ''
       return
     }
-    safeHtml.value = safeMarkdown(raw, `doc-${doc.value?.id ?? 'unknown'}-${raw.length}`)
+    safeHtml.value = safeMarkdown(raw, `doc-${doc.value?.id ?? 'unknown'}`)
     await nextTick()
-    decorateArticleContent()
-    buildToc()
+    // 一个入口同时做「代码块语言标注」与「构建目录」，避免漏掉其中一步
+    refreshAfterRender()
   },
   { immediate: true }
 )
@@ -132,63 +133,21 @@ watch(docId, () => {
 
 // ==================== 文章大纲（TOC + scroll spy） ====================
 
-interface TocItem { id: string; text: string; level: 2 | 3 }
-const toc = ref<TocItem[]>([])
-const activeToc = ref<string>('')
-/** h2/h3 元素引用，供 scroll spy 计算当前阅读章节 */
-const tocEls = ref<HTMLElement[]>([])
 /** 文章内容容器 ref，替代全局 querySelector */
 const articleContentRef = ref<HTMLElement | null>(null)
 
-const decorateArticleContent = () => {
-  const contentEl = articleContentRef.value
-  if (!contentEl) return
-  contentEl.querySelectorAll('pre').forEach(pre => {
-    const code = pre.querySelector('code')
-    const lang = Array.from(code?.classList ?? [])
-      .find(name => name.startsWith('language-'))
-      ?.slice('language-'.length)
-    pre.setAttribute('data-language', (lang || 'TEXT').toUpperCase())
-  })
-}
-
-const buildToc = () => {
-  const contentEl = articleContentRef.value
-  if (!contentEl) return
-  const heads = contentEl.querySelectorAll('h2,h3')
-  const items: TocItem[] = []
-  heads.forEach((h, idx) => {
-    const id = `toc-${idx}`
-    h.setAttribute('id', id)
-    items.push({
-      id,
-      text: h.textContent || `章节 ${idx + 1}`,
-      level: h.tagName.toLowerCase() === 'h3' ? 3 : 2,
-    })
-  })
-  toc.value = items
-  tocEls.value = Array.from(heads) as HTMLElement[]
-  activeToc.value = items[0]?.id || ''
-  updateActiveToc()
-}
-
-/** scroll spy：取最后一个处于视口上方（含 96px 视差偏移）的章节并高亮 */
-const updateActiveToc = () => {
-  const top = (mainContainer.value?.getBoundingClientRect().top ?? 0) + 96
-  let current = toc.value[0]?.id || ''
-  for (const el of tocEls.value) {
-    if (el.getBoundingClientRect().top <= top) current = el.id
-  }
-  activeToc.value = current
-}
-
-const scrollToToc = (id: string) => {
-  const el = document.getElementById(id)
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    activeToc.value = id
-  }
-}
+/**
+ * 目录 / scroll spy / 章节跳转 / 代码块语言标注。
+ *
+ * 抽成 useDocOutline 的理由：这四件事都必须在 v-html 把 Markdown 渲染成
+ * 真实 DOM **之后**才能执行，且共享同一个正文容器 ref——是一组内聚单元。
+ * 它们失效时全都不报错（目录变空、点了没反应、高亮对不上），
+ * 详见 composable 文件头注释。
+ */
+const {
+  toc, activeToc,
+  updateActiveToc, scrollToToc, refreshAfterRender,
+} = useDocOutline({ articleContentRef, mainContainer })
 
 // ==================== 格式化 ====================
 
@@ -200,14 +159,14 @@ const fmtDateTime = (s?: string | null) => (s ? s.replace('T', ' ').slice(0, 16)
 const shareArticle = async () => {
   const url = window.location.href
   const ok = await copyText(url)
-  if (ok) ElMessage.success('文档链接已复制')
-  else ElMessage.warning('复制失败，请手动复制链接')
+  if (ok) notify.success('文档链接已复制')
+  else notify.warning('复制失败，请手动复制链接')
 }
 
 const openEdit = () => {
   if (!doc.value) return
   if (doc.value.status === 'DEPRECATED' || doc.value.status === 'ARCHIVED') {
-    ElMessage.warning('请先恢复文档再编辑')
+    notify.warning('请先恢复文档再编辑')
     return
   }
   router.push(`/knowledge/editor/${doc.value.id}`)
@@ -230,9 +189,9 @@ const publishDoc = async () => {
     actionLoading.value = 'publish'
     const result = await store.publishDoc(d.id)
     if (result.indexStatus === 'FAILED') {
-      ElMessage.warning('文档已发布，但向量化失败，请重试')
+      notify.warning('文档已发布，但向量化失败，请重试')
     } else {
-      ElMessage.success('已发布并完成向量化')
+      notify.success('已发布并完成向量化')
     }
     await load()
   } catch (e) {
@@ -250,9 +209,9 @@ const retryIndex = async () => {
     actionLoading.value = 'reindex'
     const result = await store.publishDoc(d.id)
     if (result.indexStatus === 'FAILED') {
-      ElMessage.error(`向量化仍失败：${result.indexError || '请查看服务日志'}`)
+      notify.error(`向量化仍失败：${result.indexError || '请查看服务日志'}`)
     } else {
-      ElMessage.success('向量化已恢复')
+      notify.success('向量化已恢复')
     }
     await load()
   } catch (e) {
@@ -346,7 +305,7 @@ const purgeDoc = async () => {
   try {
     actionLoading.value = 'purge'
     await store.purgeDoc(d.id, reason)
-    ElMessage.success('文档已彻底删除')
+    notify.success('文档已彻底删除')
     router.push('/knowledge')
   } catch (e) {
     handleServerError(e, { action: '物理删除' })
@@ -387,7 +346,7 @@ const rollbackVersion = async (version: number) => {
   restoringVersion.value = version
   try {
     await store.restoreVersion(d.id, version)
-    ElMessage.success(`已回滚到 v${version}`)
+    notify.success(`已回滚到 v${version}`)
     await Promise.all([load(), store.loadVersions(d.id)])
   } catch (e) {
     handleServerError(e, { action: '回滚版本' })
@@ -1000,12 +959,12 @@ const compareAction = async (version: number) => {
   background: var(--color-bg-sunken);
 
   &.index-ok {
-    color: #0369a1;
-    background: #e0f2fe;
+    color: var(--info);
+    background: var(--info-subtle);
   }
 
   &.index-failed {
-    color: var(--state-error, #f56c6c);
+    color: var(--state-error, var(--danger));
     background: var(--state-error-bg, #fef0f0);
   }
 }
@@ -1021,12 +980,12 @@ const compareAction = async (version: number) => {
   font-size: 0.8125rem;
 }
 .index-error-icon {
-  color: var(--state-error, #f56c6c);
+  color: var(--state-error, var(--danger));
   flex-shrink: 0;
   margin-top: 1px;
 }
 .index-error-text {
-  color: var(--state-error, #f56c6c);
+  color: var(--state-error, var(--danger));
   word-break: break-word;
 }
 
@@ -1655,15 +1614,15 @@ const compareAction = async (version: number) => {
 }
 
 .diff-line-delete {
-  background: #fef2f2;
-  color: #dc2626;
-  border-left: 3px solid #dc2626;
+  background: var(--danger-subtle);
+  color: var(--danger);
+  border-left: 3px solid var(--danger);
 }
 
 .diff-line-insert {
-  background: #f0fdf4;
-  color: #16a34a;
-  border-left: 3px solid #16a34a;
+  background: var(--success-subtle);
+  color: var(--success);
+  border-left: 3px solid var(--success);
 }
 
 .diff-marker {

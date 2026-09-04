@@ -78,7 +78,7 @@ const displayTitle = computed(() => props.title || friendly.value.title)
   padding: 48px 24px;
   text-align: center;
   background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, #e2e8f0);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
 }
 
@@ -92,8 +92,8 @@ const displayTitle = computed(() => props.title || friendly.value.title)
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #FEF2F2;
-  color: #DC2626;
+  background: var(--danger-subtle);
+  color: var(--danger);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -148,17 +148,17 @@ const displayTitle = computed(() => props.title || friendly.value.title)
   align-items: center;
   gap: 6px;
   padding: 6px 16px;
-  border: 1px solid var(--color-primary, #3b82f6);
+  border: 1px solid var(--color-primary, var(--brand));
   border-radius: var(--radius-md, 8px);
   background: var(--color-surface, #fff);
-  color: var(--color-primary, #3b82f6);
+  color: var(--color-primary, var(--brand));
   font-size: var(--text-sm, 0.875rem);
   font-family: var(--font-body, inherit);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-primary, #3b82f6);
+    background: var(--color-primary, var(--brand));
     color: white;
   }
 }

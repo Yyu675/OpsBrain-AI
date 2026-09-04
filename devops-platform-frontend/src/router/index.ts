@@ -1,10 +1,12 @@
+import { notify } from '@/utils/notify'
 import { createRouter, createWebHistory, type RouteComponent } from 'vue-router'
 import { defineAsyncComponent, h, defineComponent, type Component } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import AppSkeleton from '@/components/common/AppSkeleton.vue'
 import NotFound from '@/views/NotFound.vue'
 import { useAppStore, type Role } from '@/stores/app'
 import { getAuthToken } from '@/utils/http'
+import { safeInternalPath } from '@/utils/safeRedirect'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -95,12 +97,25 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: lazy(() => import('../views/Dashboard.vue'), 'Dashboard', 'dashboard'), meta: { title: '运维大屏' } },
     { path: '/help', name: 'help', component: lazy(() => import('../views/HelpCenter.vue'), 'HelpCenter', 'list'), meta: { title: '帮助中心' } },
     {
-      path: '/monitoring', name: 'monitoring', component: lazy(() => import('../views/FutureCapability.vue'), 'Monitoring', 'dashboard'),
-      meta: { title: '实时监控', stage: 'L2', hiddenFromNavigation: true, description: '汇聚告警、指标与服务健康状态，形成面向运维值守的实时态势视图。', capabilities: ['实时指标总览', '服务健康拓扑', '告警流转状态', '值守大盘'] }
+      // 占位页已替换为真实实现（L2 阶段 B）。数据来自后端代理的 Prometheus 查询。
+      path: '/monitoring', name: 'monitoring',
+      component: lazy(() => import('../views/Monitoring.vue'), 'Monitoring', 'dashboard'),
+      meta: {
+        title: '实时监控', stage: 'L2',
+        description: '主机资源与抓取目标的实时态势，数据直接来自 Prometheus。',
+        capabilities: ['实时指标总览', '多实例明细', '迷你趋势', '掉线目标提醒']
+      }
     },
     {
-      path: '/trends', name: 'trends', component: lazy(() => import('../views/FutureCapability.vue'), 'Trends', 'dashboard'),
-      meta: { title: '趋势分析', stage: 'L2', hiddenFromNavigation: true, description: '基于历史指标与事件数据识别趋势、异常模式和容量风险。', capabilities: ['趋势对比', '异常检测', '容量预测', '影响分析'] }
+      // 占位页已替换为真实实现（L2 阶段 B）。
+      // 与实时监控的分工：那页回答「现在怎么样」，本页回答「怎么变成这样的」。
+      path: '/trends', name: 'trends',
+      component: lazy(() => import('../views/Trends.vue'), 'Trends', 'dashboard'),
+      meta: {
+        title: '趋势分析', stage: 'L2',
+        description: '指标在时间轴上的变化，用于容量评估与故障回溯。',
+        capabilities: ['多时间范围', '多实例对比', '区间极值与均值', '可分享链接']
+      }
     },
     {
       path: '/alerts', name: 'alerts', component: lazy(() => import('../views/AlertList.vue'), 'AlertList', 'list'),
@@ -111,24 +126,54 @@ const router = createRouter({
       meta: { title: '告警事件详情', stage: 'L2', hiddenFromNavigation: true, description: '呈现单个告警的时间线、影响范围、证据与处置上下文。', capabilities: ['事件时间线', '指标与日志证据', '影响范围', '处置记录'] }
     },
     {
-      path: '/integrations', name: 'integrations', component: lazy(() => import('../views/FutureCapability.vue'), 'Integrations', 'dashboard'),
-      meta: { title: '接入管理', stage: 'L2', hiddenFromNavigation: true, description: '集中管理监控、容器与云平台数据源的连接和健康状态。', capabilities: ['Prometheus 接入', 'Kubernetes 集群', '云平台账号', '连接健康检查'] }
+      // 占位页已替换为真实实现（L2 阶段 B）。
+      // 它是「实时监控 / 趋势分析」两页的出口：那两页依赖 Prometheus，
+      // 数据源没配好时用户需要一个地方看「到底哪没通」，故先于那两页落地。
+      path: '/integrations', name: 'integrations',
+      component: lazy(() => import('../views/Integrations.vue'), 'Integrations', 'list'),
+      meta: {
+        title: '接入管理', stage: 'L2',
+        description: '查看监控数据源的连接与健康状态，不通时给出排查路径。',
+        capabilities: ['Prometheus 连接', '健康探测', '延迟观测', '可查询指标目录']
+      }
     },
     {
       path: '/approvals', name: 'approvals', component: lazy(() => import('../views/ApprovalCenter.vue'), 'ApprovalCenter', 'dashboard'),
       meta: { title: '人机协同审批中心', stage: 'L3', roles: ['admin'], description: '对中高风险自动化建议执行分级审批并保留完整决策依据。', capabilities: ['待审批队列', 'AI 决策依据', '风险校验', '审批记录'] }
     },
     {
-      path: '/automation/policies', name: 'automation-policies', component: lazy(() => import('../views/FutureCapability.vue'), 'AutomationPolicies', 'dashboard'),
-      meta: { title: '自动化策略', stage: 'L3', hiddenFromNavigation: true, description: '配置告警到动作的匹配条件、审批要求与执行边界。', capabilities: ['触发条件', '动作编排', '审批规则', '生效范围'] }
+      // 占位页已替换为真实实现（L3 配置层，migration_v27）。
+      // 三张表分工：白名单=能不能做、风险策略=怎么做、本页=什么时候做。
+      // roles: admin —— 与另两个治理页一致，后端 @SaCheckRole("ADMIN") 兜底。
+      path: '/automation/policies', name: 'automation-policies',
+      component: lazy(() => import('../views/AutomationPolicies.vue'), 'AutomationPolicies', 'list'),
+      meta: {
+        title: '自动化策略', stage: 'L3', roles: ['admin'],
+        description: '配置告警到动作的匹配条件、执行控制与演练开关。',
+        capabilities: ['触发条件', '动作绑定', '演练模式', '匹配预演']
+      }
     },
     {
-      path: '/automation/action-allowlist', name: 'action-allowlist', component: lazy(() => import('../views/FutureCapability.vue'), 'ActionAllowlist', 'dashboard'),
-      meta: { title: '动作白名单', stage: 'L3', hiddenFromNavigation: true, description: '维护自动化引擎允许调用的动作及参数约束。', capabilities: ['动作注册', '参数约束', '环境范围', '版本管理'] }
+      // 占位页已替换为真实实现（L3 配置层，migration_v26）。
+      // roles: admin —— 这里配置的是「AI 能不能自动动生产系统」的边界，
+      // 后端 AutomationGovernanceController 有 @SaCheckRole("ADMIN") 兜底，
+      // 此处只是提前拦截改善体验。
+      path: '/automation/action-allowlist', name: 'action-allowlist',
+      component: lazy(() => import('../views/ActionAllowlist.vue'), 'ActionAllowlist', 'list'),
+      meta: {
+        title: '动作白名单', stage: 'L3', roles: ['admin'],
+        description: '自动化引擎允许调用的动作清单。未登记的动作一律不允许自动执行。',
+        capabilities: ['动作注册', '参数约束', '环境范围', '模拟校验']
+      }
     },
     {
-      path: '/automation/risk-levels', name: 'risk-levels', component: lazy(() => import('../views/FutureCapability.vue'), 'RiskLevels', 'dashboard'),
-      meta: { title: '风险等级配置', stage: 'L3', hiddenFromNavigation: true, description: '统一定义风险分级、审批门槛、执行限制和升级路径。', capabilities: ['风险矩阵', '审批门槛', '执行限制', '升级策略'] }
+      path: '/automation/risk-levels', name: 'risk-levels',
+      component: lazy(() => import('../views/RiskLevels.vue'), 'RiskLevels', 'dashboard'),
+      meta: {
+        title: '风险等级配置', stage: 'L3', roles: ['admin'],
+        description: '定义每个风险等级的审批门槛、执行限制与升级路径。',
+        capabilities: ['审批门槛', '爆炸半径控制', '升级策略', '生效环境']
+      }
     },
     {
       path: '/self-healing/tasks', name: 'healing-tasks', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingTasks', 'dashboard'),
@@ -151,18 +196,52 @@ const router = createRouter({
       meta: { title: '回滚详情', stage: 'L4', hiddenFromNavigation: true, description: '展示回滚计划、执行步骤、恢复点与最终状态。', capabilities: ['回滚计划', '恢复点', '执行日志', '结果确认'] }
     },
     {
-      path: '/governance/audit-logs', name: 'audit-logs', component: lazy(() => import('../views/FutureCapability.vue'), 'AuditLogs', 'dashboard'),
-      meta: { title: '审计日志', stage: 'L4', hiddenFromNavigation: true, description: '记录自动化决策、审批、执行和配置变更的完整证据链。', capabilities: ['操作审计', '决策审计', '配置变更', '证据导出'] }
+      // 占位页已替换为真实实现：后端 sys_operation_audit 与 sys_agent_call_log
+      // 两张表一直在写，此前前端没有任何入口能看，查「谁改了这张工单」只能连数据库。
+      // roles: admin —— 审计含操作者/IP/AI 问答内容，是高敏数据；
+      // 后端 AuditLogController 有 @SaCheckRole("ADMIN") 兜底，此处只是提前拦截改善体验。
+      path: '/governance/audit-logs', name: 'audit-logs',
+      component: lazy(() => import('../views/AuditLogs.vue'), 'AuditLogs', 'list'),
+      meta: {
+        title: '使用日志', stage: 'L4', roles: ['admin'],
+        description: 'AI 调用与系统写操作的完整审计记录，可按 traceId 下钻完整链路。',
+        capabilities: ['AI 调用日志', '操作审计', 'traceId 链路下钻', '成本与耗时统计']
+      }
     },
     {
-      path: '/governance/saga-compensation', name: 'saga-compensation', component: lazy(() => import('../views/FutureCapability.vue'), 'SagaCompensation', 'dashboard'),
-      meta: { title: 'Saga 补偿中心', stage: 'L4', hiddenFromNavigation: true, description: '管理跨步骤自动化流程的失败补偿与一致性恢复。', capabilities: ['失败事务', '补偿步骤', '重试策略', '一致性状态'] }
+      path: '/governance/saga-compensation', name: 'saga-compensation', component: lazy(() => import('../views/SagaCompensation.vue'), 'SagaCompensation', 'dashboard'),
+      meta: { title: 'Saga 补偿中心', stage: 'L4', roles: ['admin'], description: '管理跨步骤自动化流程的失败补偿与一致性恢复。', capabilities: ['失败事务', '补偿步骤', '重试策略', '一致性状态'] }
     },
     {
-      path: '/governance/manual-intervention', name: 'manual-intervention', component: lazy(() => import('../views/FutureCapability.vue'), 'ManualIntervention', 'dashboard'),
-      meta: { title: '人工介入中心', stage: 'L4', hiddenFromNavigation: true, description: '集中处理自动化无法安全闭环的异常任务与升级请求。', capabilities: ['介入队列', '上下文快照', '接管操作', '恢复自动化'] }
+      path: '/governance/manual-intervention', name: 'manual-intervention', component: lazy(() => import('../views/ManualIntervention.vue'), 'ManualIntervention', 'dashboard'),
+      meta: { title: '人工介入中心', stage: 'L4', roles: ['admin'], description: '集中处理自动化无法安全闭环的异常任务与升级请求。', capabilities: ['介入队列', '上下文快照', '接管操作', '恢复自动化'] }
     },
     { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
+    {
+      // 设计系统展示页：四个主题轴的可视化验收入口。
+      // public 是刻意的——它不含任何业务数据，且需要能在未登录时演示。
+      path: '/design-system', name: 'design-system',
+      component: lazy(() => import('../views/DesignSystem.vue'), 'DesignSystem', 'detail'),
+      meta: { title: '设计系统', public: true, hiddenFromNavigation: true }
+    },
+    /*
+     * 仅开发环境：审计日志页的视觉预览入口。
+     *
+     * 真实路由 /governance/audit-logs 需要 admin 且依赖后端接口，
+     * 前端做视觉走查时后端未必在跑、也不一定有管理员账号。
+     * 这条 public 路由只在 DEV 下注册——`import.meta.env.DEV` 在生产构建时
+     * 为字面量 false，整个数组项会被 Vite 静态移除，不会出现在产物里。
+     *
+     * 它指向同一个组件，靠 ?demo=1 走内置演示数据，不碰任何真实接口。
+     */
+    ...(import.meta.env.DEV
+      ? [{
+          path: '/preview/audit-logs',
+          name: 'audit-logs-preview',
+          component: lazy(() => import('../views/AuditLogs.vue'), 'AuditLogsPreview', 'list'),
+          meta: { title: '使用日志（预览）', public: true, hiddenFromNavigation: true }
+        }]
+      : []),
     { path: '/403', name: 'forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权访问', public: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFound, meta: { title: '页面未找到', public: true } }
   ],
@@ -216,6 +295,14 @@ const promptLogin = async (targetTitle: string): Promise<boolean> => {
 router.beforeEach(async (to, from) => {
   const app = useAppStore()
   const meta = to.meta || {}
+
+  // ====================================================================
+  // ⚠️ 临时开发开关（2026-08-26）：UI 预览跳过登录鉴权（VITE_SKIP_AUTH=1，
+  // 由 dev server 启动环境变量注入）。对外交付前移除该开关恢复登录拦截。
+  // ====================================================================
+  if (import.meta.env.VITE_SKIP_AUTH === '1') {
+    return true
+  }
 
   // 公开路由（首页、登录页、错误页）直接放行——访客默认落在首页而非登录页
   if (meta.public) {
@@ -287,8 +374,13 @@ router.onError((err, to) => {
   ) {
     if (reloadInFlight) return
     reloadInFlight = true
-    ElMessage.warning('资源加载失败，正在重新加载...')
-    setTimeout(() => window.location.assign(to.fullPath), 400)
+    notify.warning('资源加载失败，正在重新加载...')
+    // 必须经 safeInternalPath：这是全站唯一一处真实的浏览器导航
+    // （vue-router 走 pushState 受同源限制，location.assign 不受）。
+    // to.fullPath 源自用户可控的地址栏，直接 assign 等于把兜底重载
+    // 变成开放重定向的出口。
+    const safePath = safeInternalPath(to.fullPath)
+    setTimeout(() => window.location.assign(safePath), 400)
   }
 })
 

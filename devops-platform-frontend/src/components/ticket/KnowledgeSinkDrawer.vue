@@ -16,14 +16,16 @@
  *   - 加载 / 失败 / 空三态严格区分（6.18 契约）
  *   - 发布成功后只发事件，刷新策略由父组件决定（6.17 契约）
  */
+import { notify, handleServerError } from '@/utils/notify'
+import { toStreamError } from '@/constants/bizCode'
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   BookPlus, RefreshCw, Square, Send, AlertCircle,
   CheckCircle, Loader, Sparkles
 } from 'lucide-vue-next'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+
+import { safeMarkdown } from '@/utils/safeMarkdown'
 import { chatStream } from '@/api/chat'
 import {
   createKnowledgeDoc,
@@ -101,19 +103,19 @@ const publishing = ref(false)
 
 // ==================== Markdown 渲染（DOMPurify 白名单，前端 CLAUDE.md 第 12 项）====================
 
-marked.setOptions({ breaks: true, gfm: true })
-
+// 白名单来自 htmlSanitizePolicy（全项目唯一真相）。
+// 此前这里自带一份最严格的（26 标签 / 4 属性），比编辑器少 7 个标签、
+// 少 src/alt——同一篇文档在这里预览时图片与表尾直接消失，
+// 用户会以为是 AI 整理时把内容弄丢了。
+// 走统一入口 safeMarkdown，不自行组合 marked + DOMPurify。
+//
+// 净化配置（允许哪些标签/属性、给 a[target=_blank] 补 rel）集中在
+// safeMarkdown.ts 一处才能保证一致。自行组合的地方一旦漏配某项，
+// 就成了绕过全局策略的 XSS 缺口，而它看起来「也净化了」——
+// safeMarkdown.ts 的注释本就写明禁止自行调用，此处此前是个例外。
 const renderMarkdown = (text: string): string => {
   if (!text) return ''
-  const raw = marked.parse(text) as string
-  return DOMPurify.sanitize(raw, {
-    ALLOWED_TAGS: [
-      'p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'blockquote',
-      'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'span',
-    ],
-    ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
-  })
+  return safeMarkdown(text)
 }
 
 // ==================== 构建工单上下文（供 AI 整理）====================
@@ -185,8 +187,33 @@ const generateDraft = async () => {
           streaming.value = false
         },
         onError: (data: SSEErrorEvent) => {
-          formContent.value += `\n\n❌ ${data.message || 'AI 整理失败，请稍后重试或手动编写'}`
+          // 同 ChatMode：查表拿到 hint 与重试语义，而不是只回显 message
+          const view = toStreamError(data.code, data.message, 'AI 整理失败，请稍后重试或手动编写')
+          formContent.value += `\n\n❌ ${view.text}`
           loadState.value = 'error'
+          streaming.value = false
+        },
+
+        /**
+         * 服务端未发 complete 就关流时的兜底。
+         *
+         * fetchEventSource 此时**正常 resolve**——不抛错、不进 catch、
+         * 不触发 onError。只在 complete/error 里复位 streaming 的话，
+         * 抽屉会卡在「生成中」：停止按钮一直转、「发布并入库」永远禁用
+         * （canPublish 判 !streaming），用户既发布不了也重新生成不了。
+         *
+         * 与 ChatMode / useTicketAnalysis 是同一缺陷，本轮横向排查全部
+         * chatStream 调用点时发现的第三处。
+         */
+        onClose: () => {
+          if (!streaming.value) return   // 已由 complete/error 正常收尾
+          if (formContent.value.trim()) {
+            formContent.value += '\n\n_（连接已中断，以上为已生成内容，可手动补充后发布）_'
+            loadState.value = 'done'
+          } else {
+            formContent.value = '❌ 连接意外中断，未生成内容，请重试或手动编写'
+            loadState.value = 'error'
+          }
           streaming.value = false
         },
       },
@@ -255,7 +282,7 @@ const loadSuggestions = async () => {
 /** 标签输入上限 20（对齐后端 MAX_TAGS_PER_DOC） */
 const onTagChange = (val: string[]) => {
   if (val.length > 20) {
-    ElMessage.warning('最多 20 个标签')
+    notify.warning('最多 20 个标签')
     formTags.value = val.slice(0, 20)
   }
 }
@@ -271,11 +298,11 @@ const canPublish = computed(() => {
 
 const handlePublish = async () => {
   if (!formTitle.value.trim()) {
-    ElMessage.warning('请填写文档标题')
+    notify.warning('请填写文档标题')
     return
   }
   if (!formContent.value.trim()) {
-    ElMessage.warning('文档正文不能为空')
+    notify.warning('文档正文不能为空')
     return
   }
 
@@ -297,7 +324,7 @@ const handlePublish = async () => {
 
     // 近似重复告警（不阻断）
     if (result.nearDuplicates?.length) {
-      ElMessage.warning(
+      notify.warning(
         `检测到 ${result.nearDuplicates.length} 篇近似文档，已发布但仍建议复核去重`
       )
     }
@@ -314,7 +341,7 @@ const handlePublish = async () => {
     } else if (indexStatus === 'SKIPPED') {
       msg += '，未建立索引'
     }
-    ElMessage.success({ message: msg, duration: 6000 })
+    notify.success(msg, { duration: 6000 })
 
     emit('published', result.id, formTitle.value.trim())
     closeDrawer()
@@ -343,8 +370,10 @@ const handlePublish = async () => {
         // 用户选择留在此页，不做处理
       }
     } else {
-      const err = error as Error
-      ElMessage.error(err?.message || '发布失败，请稍后重试')
+      // 走 handleServerError 而非裸 notify.error：后者直接透传后端原始 message，
+      // 丢掉业务码映射。40009（他人已修改）会显示成一句干巴巴的技术描述，
+      // 却不告诉用户「请刷新后重试」；40005 配额超限与 500 也无从区分。
+      handleServerError(error, { action: '沉淀为知识' })
     }
   } finally {
     publishing.value = false
@@ -385,6 +414,13 @@ watch(
 onBeforeUnmount(() => {
   if (abortController) {
     abortController.abort()
+    abortController = null
+  }
+  // 只 abort 不够：abort 走 catch 分支，而组件已卸载、那段 catch 未必执行完。
+  // 显式收尾，与 onClose 兜底同一目的（三个 chatStream 调用点统一处理）
+  if (streaming.value) {
+    streaming.value = false
+    loadState.value = formContent.value.trim() ? 'done' : 'idle'
   }
 })
 </script>
@@ -828,7 +864,7 @@ onBeforeUnmount(() => {
       display: block;
       padding: 0;
       background: transparent;
-      color: #E2E8F0;
+      color: var(--border-1);
       font-size: 11px;
       line-height: 1.5;
     }

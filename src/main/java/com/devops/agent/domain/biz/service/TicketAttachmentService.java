@@ -12,6 +12,9 @@ import io.minio.http.Method;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -142,13 +145,29 @@ public class TicketAttachmentService {
         } catch (Exception e) {
             // 元数据写库失败：回滚已上传的对象，避免孤儿数据
             log.error("❌ [Attachment] 元数据入库失败，回滚已上传对象 | key={}", objectKey);
-            silentRemoveObject(objectKey);
+            silentRemoveObject(bucket, objectKey);
             throw new IllegalStateException("附件元数据保存失败: " + e.getMessage(), e);
         }
 
         // 8. 活动流留痕
-        ticketService.recordActivity(ticketId, "primary", "上传附件",
-                originalName + "（" + meta.getSizeText() + "）", meta.getUploader(), false);
+        //
+        // ⚠️ 刻意不让活动流失败连累上传结果。
+        //
+        // 此前这行是裸调用：activityRepository.insert 抛异常时整个 upload 抛出，
+        // Controller 返回失败。但此刻文件<b>已经躺在 MinIO、元数据也已经落库</b>——
+        // 用户看到「上传失败」，刷新页面附件却好端端在列表里；
+        // 于是他重传一次，被查重逻辑拦下报「该文件已上传过」，
+        // 陷入「说失败又说重复」的死结，只能找运维。
+        //
+        // 活动流是留痕，不是上传成功的必要条件。这里降级为告警：
+        // 主链路（对象 + 元数据）已经一致，缺一条活动记录不影响用户拿到文件。
+        try {
+            ticketService.recordActivity(ticketId, "primary", "上传附件",
+                    originalName + "（" + meta.getSizeText() + "）", meta.getUploader(), false);
+        } catch (Exception e) {
+            log.warn("⚠️ [Attachment] 附件已上传成功，但活动流留痕失败 | ticketId={} | id={} | {}",
+                    ticketId, meta.getId(), e.getMessage());
+        }
 
         return meta;
     }
@@ -212,6 +231,19 @@ public class TicketAttachmentService {
      *
      * @return 被删除的附件元数据
      */
+    // 事务：附件元数据 + 工单活动流两张表，须整体回滚。
+    //
+    // ⚠️ 对象存储删除**不在事务保护范围内**——
+    // MinIO 没有事务，一旦删掉就无法随数据库回滚一起恢复。
+    // 因此对象删除通过 removeObjectAfterCommit 挂到「事务提交之后」执行：
+    //   - 事务中任一步失败 → 回滚，回调不触发，对象原封不动，数据一致；
+    //   - 提交成功但删对象失败 → 留下孤儿对象，由存储侧生命周期策略回收，
+    //     用户视角是正确的（附件已消失）。
+    // 早期实现是在事务<b>中间</b>同步删对象，看似也是「先删库后删对象」，
+    // 但后面的 recordActivity 一旦抛异常，删库被回滚而对象已经没了，
+    // 留下「记录还在但文件已没」的死链，用户点下载报 404——
+    // 那正是本注释想要避免的不一致。顺序对了，时机不对，一样不成立。
+    @Transactional(rollbackFor = Exception.class)
     public TicketAttachment delete(Long attachmentId) {
         TicketAttachment meta = attachmentRepository.findById(attachmentId);
         if (meta == null) {
@@ -223,10 +255,22 @@ public class TicketAttachmentService {
             throw new IllegalStateException("附件删除失败: " + attachmentId);
         }
 
-        silentRemoveObject(meta.getObjectKey());
-
         ticketService.recordActivity(meta.getTicketId(), "gray", "删除附件",
                 meta.getOriginalName(), "当前用户", false);
+
+        // 对象删除推迟到「事务提交之后」，而不是在事务中间就动手。
+        //
+        // 原先的顺序是 deleteById → removeObject → recordActivity，
+        // 这恰恰破坏了本方法注释所声称的一致性保证：
+        // recordActivity 写活动流表若失败，@Transactional(rollbackFor=Exception.class)
+        // 会把 deleteById <b>回滚</b>——元数据完好如初回到库里，
+        // 可 MinIO 里的对象<b>已经删掉且无法随事务回滚恢复</b>。
+        // 用户刷新后附件仍在列表上，点下载得到 404，
+        // 正是注释里明确要避免的那种「记录还在但文件已没」的死链。
+        //
+        // 改为 afterCommit 后：事务里任何一步失败都不会碰对象存储，
+        // 只有库侧确定落盘了才去删文件。最坏情况退化为孤儿对象（用户无感知）。
+        removeObjectAfterCommit(meta.getBucket(), meta.getObjectKey());
 
         log.info("🗑️ [Attachment] 附件已删除 | id={} | ticketId={} | name={}",
                 attachmentId, meta.getTicketId(), meta.getOriginalName());
@@ -239,10 +283,14 @@ public class TicketAttachmentService {
      *
      * @return 清理的附件数
      */
+    // 事务同上：库先于对象存储，理由见 delete() 注释
+    @Transactional(rollbackFor = Exception.class)
     public int deleteAllByTicketId(String ticketId) {
         List<TicketAttachment> removed = attachmentRepository.deleteByTicketId(ticketId);
         for (TicketAttachment a : removed) {
-            silentRemoveObject(a.getObjectKey());
+            // 同 delete()：先确保库侧提交，再动不可回滚的对象存储。
+            // 且用每条记录自己的 bucket，而不是当前配置的 bucket——见 removeObjectAfterCommit 注释。
+            removeObjectAfterCommit(a.getBucket(), a.getObjectKey());
         }
         return removed.size();
     }
@@ -257,10 +305,46 @@ public class TicketAttachmentService {
      * 遗留的孤儿对象可由定时任务比对清理。
      * </p>
      */
-    private void silentRemoveObject(String objectKey) {
+    /**
+     * 事务提交成功后再删除对象；无事务时立即删除
+     * <p>
+     * 对象存储没有事务、删除不可撤销，因此它必须是整条链路的<b>最后一步</b>，
+     * 且只在数据库那边已经板上钉钉之后才执行。回滚时注册的回调不会触发，
+     * 对象自然原样保留。
+     * </p>
+     * <p>
+     * 无事务上下文（如被非事务方法直接调用）时退化为立即删除，
+     * 保持行为可预期，不会静默什么都不做。
+     * </p>
+     */
+    private void removeObjectAfterCommit(String objectBucket, String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            silentRemoveObject(objectBucket, objectKey);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                silentRemoveObject(objectBucket, objectKey);
+            }
+        });
+    }
+
+    private void silentRemoveObject(String objectBucket, String objectKey) {
+        // 用附件记录里存下的 bucket，而不是当前 @Value 注入的 bucket。
+        //
+        // bucket 名来自配置 devops.storage.minio.bucket，是会变的：
+        // 迁移存储、分环境改桶名、或历史数据本就写在旧桶里。
+        // 元数据表专门存了 bucket 列、presignDownloadUrl 也是用 meta.getBucket() 取的，
+        // 唯独删除路径写死当前配置——配置一改，删除就会打到<b>新桶里那个不存在的 key</b>，
+        // 而旧桶里的真实文件永远删不掉。
+        //
+        // 用户可见后果：附件从列表消失，文件却仍留在对象存储里；
+        // 若是按合规要求删除敏感文件，会得到「已删除」的假象，实际数据仍然可被访问。
+        String targetBucket = (objectBucket == null || objectBucket.isBlank()) ? bucket : objectBucket;
         try {
             minioClient.removeObject(RemoveObjectArgs.builder()
-                    .bucket(bucket)
+                    .bucket(targetBucket)
                     .object(objectKey)
                     .build());
             log.debug("🗑️ [Attachment] 对象已删除 | key={}", objectKey);

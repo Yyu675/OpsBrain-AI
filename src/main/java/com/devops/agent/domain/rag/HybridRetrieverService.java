@@ -39,12 +39,20 @@ import java.util.Map;
  *   <li>关键词检索可与向量检索在同一查询内加权融合</li>
  * </ul>
  *
+ * <h3>它是 {@link Retriever} 的 pgvector 实现</h3>
+ * <p>
+ * 上层（{@code DevOpsTools} 等）只依赖 {@link Retriever} 接口，
+ * 因此把向量库换成 Milvus / Qdrant 时只需新增一个实现类 + 改配置，
+ * RAG 上层一行不动。本类内部的 SQL、余弦距离算子、JdbcTemplate
+ * 都是 pgvector 专有细节，<b>不得泄漏到接口签名上</b>。
+ * </p>
+ *
  * @author OpsBrain AI
  * @since 2026-07-15
  */
 @Slf4j
 @Service
-public class HybridRetrieverService {
+public class HybridRetrieverService implements Retriever {
 
     /**
      * L4 相似度阈值（架构契约冻结）
@@ -72,6 +80,17 @@ public class HybridRetrieverService {
     private JdbcTemplate jdbcTemplate;
 
     /**
+     * 后端标识：本实现直查 pgvector。
+     *
+     * <p>灰度迁移到别的向量库时，两套实现会同时在线，
+     * 日志里没有这个标识就分不清一条结果来自哪套存储。</p>
+     */
+    @Override
+    public String backend() {
+        return "pgvector";
+    }
+
+    /**
      * 检索入口
      *
      * @param query 用户查询
@@ -82,8 +101,9 @@ public class HybridRetrieverService {
      *         不能引入 null。需区分「无文档」与「服务不可用」的调用方
      *         请使用 {@link #retrieveWithSource}
      */
-    public List<String> retrieve(String query, int topK) {
-        List<RetrievedChunk> chunks = retrieveWithSource(query, topK);
+    @Override
+    public List<String> retrieve(String query, int topK, KnowledgeScope scope) {
+        List<RetrievedChunk> chunks = retrieveWithSource(query, topK, scope);
         if (chunks == null) {
             return List.of();
         }
@@ -110,12 +130,20 @@ public class HybridRetrieverService {
      *         {@code DevOpsTools} 经 {@code ToolRuntimeManager} 执行，
      *         异常会触发重试（每次重试都是付费 embedding 调用）
      */
-    public List<RetrievedChunk> retrieveWithSource(String query, int topK) {
+    @Override
+    public List<RetrievedChunk> retrieveWithSource(String query, int topK, KnowledgeScope scope) {
         if (query == null || query.isBlank()) {
             return List.of();
         }
-        log.info("[HybridRetriever] 开始检索, query={}, topK={}, hybrid={}",
-                query, topK, hybridEnabled);
+        // C1：scope 不可为 null。宁可抛错也不默默按「全部可见」处理——
+        // 权限过滤一旦静默失效，越权是无声的，没有任何日志或报错能提示。
+        // 调用方若确实是系统内部任务，应显式传 KnowledgeScopeResolver.systemScope()。
+        if (scope == null) {
+            throw new IllegalArgumentException(
+                    "KnowledgeScope 不能为 null：检索必须携带明确的可见范围（系统任务请显式传 systemScope()）");
+        }
+        log.info("[HybridRetriever] 开始检索, query={}, topK={}, hybrid={}, scope={}",
+                query, topK, hybridEnabled, scope.describe());
 
         // 1. 向量化用户查询
         Embedding queryEmbedding;
@@ -137,8 +165,8 @@ public class HybridRetrieverService {
         List<Map<String, Object>> rows;
         try {
             rows = hybridEnabled
-                    ? searchHybrid(vectorLiteral, query, topK * 2)
-                    : searchByVector(vectorLiteral, topK * 2);
+                    ? searchHybrid(vectorLiteral, query, topK * 2, scope)
+                    : searchByVector(vectorLiteral, topK * 2, scope);
         } catch (Exception e) {
             // 与向量化失败同理：返回 null 显式标记链路故障，不得伪装成无文档
             log.error("[HybridRetriever] 检索执行失败，返回服务不可用信号: {}", e.getMessage());
@@ -223,7 +251,11 @@ public class HybridRetrieverService {
      * 真正生效——废弃或过期的文档不会进入检索结果。
      * </p>
      */
-    private List<Map<String, Object>> searchByVector(String vectorLiteral, int limit) {
+    private List<Map<String, Object>> searchByVector(String vectorLiteral, int limit, KnowledgeScope scope) {
+        // C1：权限谓词直接拼进 WHERE（谓词本身是常量串，部门名走占位参数，
+        // 不存在注入面）。之所以不 JOIN sys_knowledge_doc 取 visibility，
+        // 是因为带 JOIN 的 ORDER BY embedding <=> ? 会让 PG 放弃 HNSW 索引
+        // 走全表扫描——切片上量后从毫秒退化到秒级。故 chunk 表冗余了这两列。
         String sql = """
             SELECT id, content, parent_text, doc_title, section_header,
                    content_hash,
@@ -232,12 +264,23 @@ public class HybridRetrieverService {
              WHERE status = 'ACTIVE'
                AND (effective_at IS NULL OR effective_at <= CURRENT_TIMESTAMP)
                AND (expired_at   IS NULL OR expired_at   >  CURRENT_TIMESTAMP)
+               AND %s
                AND 1 - (embedding <=> ?::vector) >= ?
              ORDER BY embedding <=> ?::vector
              LIMIT ?
-            """;
-        return jdbcTemplate.queryForList(sql,
-                vectorLiteral, vectorLiteral, minScore, vectorLiteral, limit);
+            """.formatted(scope.toSqlPredicate());
+
+        // 参数顺序必须与 SQL 中占位符出现顺序严格一致：
+        // [1] SELECT 里的向量  → [2] 权限谓词的 dept(可能没有) → [3] 阈值比较的向量
+        // → [4] minScore → [5] ORDER BY 的向量 → [6] limit
+        List<Object> args = new ArrayList<>();
+        args.add(vectorLiteral);
+        args.addAll(java.util.Arrays.asList(scope.sqlParams()));
+        args.add(vectorLiteral);
+        args.add(minScore);
+        args.add(vectorLiteral);
+        args.add(limit);
+        return jdbcTemplate.queryForList(sql, args.toArray());
     }
 
     /**
@@ -252,7 +295,8 @@ public class HybridRetrieverService {
      * 贸然启用会让 35% 的权重变成噪音。
      * </p>
      */
-    private List<Map<String, Object>> searchHybrid(String vectorLiteral, String query, int limit) {
+    private List<Map<String, Object>> searchHybrid(String vectorLiteral, String query, int limit,
+                                                   KnowledgeScope scope) {
         String sql = """
             SELECT id, content, parent_text, doc_title, section_header,
                    content_hash,
@@ -263,14 +307,22 @@ public class HybridRetrieverService {
              WHERE status = 'ACTIVE'
                AND (effective_at IS NULL OR effective_at <= CURRENT_TIMESTAMP)
                AND (expired_at   IS NULL OR expired_at   >  CURRENT_TIMESTAMP)
+               AND %s
                AND 1 - (embedding <=> ?::vector) >= ?
              ORDER BY score DESC
              LIMIT ?
-            """;
-        return jdbcTemplate.queryForList(sql,
-                vectorWeight, vectorLiteral,
-                keywordWeight, query,
-                vectorLiteral, minScore, limit);
+            """.formatted(scope.toSqlPredicate());
+
+        List<Object> args = new ArrayList<>();
+        args.add(vectorWeight);
+        args.add(vectorLiteral);
+        args.add(keywordWeight);
+        args.add(query);
+        args.addAll(java.util.Arrays.asList(scope.sqlParams()));
+        args.add(vectorLiteral);
+        args.add(minScore);
+        args.add(limit);
+        return jdbcTemplate.queryForList(sql, args.toArray());
     }
 
     /**
@@ -293,6 +345,7 @@ public class HybridRetrieverService {
      * 统计当前可检索的切片数
      * <p>供健康检查与看板使用：区分「知识库为空」与「检索链路故障」。</p>
      */
+    @Override
     public long countRetrievable() {
         try {
             Long n = jdbcTemplate.queryForObject("""

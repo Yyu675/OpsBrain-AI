@@ -72,16 +72,7 @@ public class AlertController {
     @GetMapping("/{id}")
     public ApiResponse<Alert> getAlert(@PathVariable Long id) {
         log.info("[AlertController] 查询告警详情: id={}", id);
-        try {
-            return ApiResponse.success(alertQueryService.getAlert(id));
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("[AlertController] 查询告警详情失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询告警详情失败");
-        }
+        return ApiResponse.success(alertQueryService.getAlert(id));
     }
 
     /**
@@ -90,16 +81,7 @@ public class AlertController {
     @PostMapping("/{id}/acknowledge")
     public ApiResponse<Alert> acknowledge(@PathVariable Long id) {
         log.info("[AlertController] 确认告警: id={}", id);
-        try {
-            return ApiResponse.success(alertQueryService.acknowledge(id), "已确认");
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[AlertController] 确认告警失败 | id={}", id, e);
-            return ApiResponse.error(50001, "确认告警失败");
-        }
+        return ApiResponse.success(alertQueryService.acknowledge(id), "已确认");
     }
 
     /**
@@ -108,15 +90,6 @@ public class AlertController {
     @PostMapping("/{id}/resolve")
     public ApiResponse<Alert> resolve(@PathVariable Long id) {
         log.info("[AlertController] 标记告警恢复: id={}", id);
-        try {
-            return ApiResponse.success(alertQueryService.resolve(id), "已标记恢复");
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[AlertController] 标记告警恢复失败 | id={}", id, e);
-            return ApiResponse.error(50001, "标记恢复失败");
-        }
+        return ApiResponse.success(alertQueryService.resolve(id), "已标记恢复");
     }
 }

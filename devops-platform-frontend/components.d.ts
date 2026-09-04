@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentTraceDrawer: typeof import('./src/components/ai/AgentTraceDrawer.vue')['default']
     AlertStreamMode: typeof import('./src/components/ai/AlertStreamMode.vue')['default']
     AnalysisCard: typeof import('./src/components/ticket/AnalysisCard.vue')['default']
     AnalyticsMode: typeof import('./src/components/ai/AnalyticsMode.vue')['default']
@@ -26,6 +27,9 @@ declare module 'vue' {
     CollapsibleCard: typeof import('./src/components/common/CollapsibleCard.vue')['default']
     CollapsiblePanel: typeof import('./src/components/common/CollapsiblePanel.vue')['default']
     ComingSoonPanel: typeof import('./src/components/common/ComingSoonPanel.vue')['default']
+    DataStateBoundary: typeof import('./src/components/common/DataStateBoundary.vue')['default']
+    DocOutlinePanel: typeof import('./src/components/knowledge/DocOutlinePanel.vue')['default']
+    DocPropertiesPanel: typeof import('./src/components/knowledge/DocPropertiesPanel.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElDialog: typeof import('element-plus/es')['ElDialog']
     ElDrawer: typeof import('element-plus/es')['ElDrawer']
@@ -40,7 +44,6 @@ declare module 'vue' {
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
-    EmptyState: typeof import('./src/components/common/EmptyState.vue')['default']
     HotkeysDialog: typeof import('./src/components/common/HotkeysDialog.vue')['default']
     KnowledgeRichEditor: typeof import('./src/components/knowledge/KnowledgeRichEditor.vue')['default']
     KnowledgeSinkDrawer: typeof import('./src/components/ticket/KnowledgeSinkDrawer.vue')['default']
@@ -57,10 +60,19 @@ declare module 'vue' {
     SafeImage: typeof import('./src/components/common/SafeImage.vue')['default']
     ServerPagination: typeof import('./src/components/common/ServerPagination.vue')['default']
     SettingsDialog: typeof import('./src/components/common/SettingsDialog.vue')['default']
+    SkeletonRows: typeof import('./src/components/common/SkeletonRows.vue')['default']
     SlaRiskPanel: typeof import('./src/components/dashboard/SlaRiskPanel.vue')['default']
     SuggestionMode: typeof import('./src/components/ai/SuggestionMode.vue')['default']
+    ThemeSwitcher: typeof import('./src/components/common/ThemeSwitcher.vue')['default']
+    TicketActivityLog: typeof import('./src/components/ticket/TicketActivityLog.vue')['default']
+    TicketAttachmentPanel: typeof import('./src/components/ticket/TicketAttachmentPanel.vue')['default']
+    TicketCardGrid: typeof import('./src/components/ticket/TicketCardGrid.vue')['default']
     TicketFormDialog: typeof import('./src/components/ticket/TicketFormDialog.vue')['default']
     TicketInsights: typeof import('./src/components/ticket/TicketInsights.vue')['default']
+    TicketPropsPanel: typeof import('./src/components/ticket/TicketPropsPanel.vue')['default']
+    TicketTableView: typeof import('./src/components/ticket/TicketTableView.vue')['default']
+    TicketTagEditor: typeof import('./src/components/ticket/TicketTagEditor.vue')['default']
+    TicketTimeline: typeof import('./src/components/ticket/TicketTimeline.vue')['default']
     TrendChart: typeof import('./src/components/common/TrendChart.vue')['default']
   }
 }

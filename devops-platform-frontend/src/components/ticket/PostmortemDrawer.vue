@@ -185,7 +185,7 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
 .pm-section h4 {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-primary, #1f2937);
+  color: var(--color-text-primary, var(--text-1));
   margin: 0 0 10px 0;
 }
 
@@ -209,14 +209,14 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
   label {
     font-size: 13px;
     font-weight: 500;
-    color: var(--color-text-secondary, #4b5563);
+    color: var(--color-text-secondary, var(--text-2));
   }
 }
 
 .pm-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--color-border, #E5E7EB);
+  border: 1px solid var(--color-border, var(--border-1));
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
@@ -224,7 +224,7 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary, #1B4F9C);
+    border-color: var(--color-primary, var(--brand));
   }
 
   &:disabled {
@@ -256,21 +256,21 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
   font-size: 13px;
 }
 
-.pm-action-content { flex: 1; color: var(--color-text-primary, #1f2937); }
-.pm-action-owner { color: var(--color-text-secondary, #4b5563); font-size: 12px; }
-.pm-action-due { color: var(--color-text-tertiary, #9ca3af); font-size: 12px; }
+.pm-action-content { flex: 1; color: var(--color-text-primary, var(--text-1)); }
+.pm-action-owner { color: var(--color-text-secondary, var(--text-2)); font-size: 12px; }
+.pm-action-due { color: var(--color-text-tertiary, var(--text-3)); font-size: 12px; }
 
 .pm-action-status {
   padding: 2px 8px;
-  border: 1px solid var(--color-border, #E5E7EB);
+  border: 1px solid var(--color-border, var(--border-1));
   border-radius: 4px;
   font-size: 12px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
 }
 
 .pm-empty {
   text-align: center;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   font-size: 13px;
   padding: 16px;
 }
@@ -287,7 +287,7 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
 .pm-hint {
   margin: 6px 0 0;
   font-size: 12px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 
 .pm-btn-outline {
@@ -295,20 +295,20 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border, #D1D5DB);
+  border: 1px solid var(--color-border, var(--border-2));
   border-radius: var(--radius-md, 8px);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: white;
-  color: var(--color-text-secondary, #4B5563);
+  background: var(--color-surface, var(--surface-1));
+  color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s ease;
 
   &:hover:not(:disabled) {
-    border-color: var(--color-primary, #1B4F9C);
-    color: var(--color-primary, #1B4F9C);
+    border-color: var(--color-primary, var(--brand));
+    color: var(--color-primary, var(--brand));
   }
 
   &:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -319,7 +319,7 @@ const onStatusChange = (itemId: number | undefined, event: Event) => {
   background: none;
   padding: 0;
   font-size: 13px;
-  color: var(--color-primary, #3B82F6);
+  color: var(--color-primary, var(--brand));
   cursor: pointer;
 
   &:hover { text-decoration: underline; }
