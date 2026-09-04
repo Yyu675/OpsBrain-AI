@@ -307,7 +307,7 @@ public class KnowledgeDocDto {
          * <p>与 {@code TicketDto.TicketPage.of} 同一口径：
          * {@code Math.ceil} 的整数除法陷阱只在一处写对。</p>
          */
-        public static DocPage of(List<ListItem> content, long totalElements,
+        public static DocPage of(List<java.util.Map<String, Object>> content, long totalElements,
                                  int currentPage, int pageSize) {
             // pageSize 由调用方钳制为 ≥1，此处不兜底：
             // 真为 0 应当暴露为除零异常，而不是静默给出错误页数
