@@ -73,7 +73,7 @@ class TicketDtoContractTest {
             // 21 条 / 每页 10 → 3 页。用整数除法会得 2，最后 1 条永远翻不到
             TicketDto.TicketPage page =
                     TicketDto.TicketPage.of(List.of(), 21, 1, 10);
-            assertThat(page.totalPages())
+            assertThat(page.total_pages())
                     .as("21 条数据每页 10 条应为 3 页。整数除法会得 2，"
                             + "第 21 条工单用户永远看不到")
                     .isEqualTo(3);
@@ -83,7 +83,7 @@ class TicketDtoContractTest {
         @DisplayName("整除时不多出空页")
         void exactDivisionHasNoExtraPage() {
             // 与上一条构成分叉：无脑 +1 的实现会在这里得 3
-            assertThat(TicketDto.TicketPage.of(List.of(), 20, 1, 10).totalPages())
+            assertThat(TicketDto.TicketPage.of(List.of(), 20, 1, 10).total_pages())
                     .isEqualTo(2);
         }
 
@@ -92,7 +92,7 @@ class TicketDtoContractTest {
         void emptyResultHasZeroPages() {
             // 返回 1 会让前端分页器显示「第 1/1 页」，
             // 而列表是空的——用户以为数据加载失败
-            assertThat(TicketDto.TicketPage.of(List.of(), 0, 1, 10).totalPages())
+            assertThat(TicketDto.TicketPage.of(List.of(), 0, 1, 10).total_pages())
                     .isEqualTo(0);
         }
 
