@@ -1,5 +1,6 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.controller.dto.TicketDto;
 import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
@@ -68,7 +69,7 @@ public class TicketController {
      * @return 工单列表分页数据
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> getTickets(
+    public ApiResponse<TicketDto.TicketPage> getTickets(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String keyword,
@@ -103,14 +104,11 @@ public class TicketController {
         // 批量装填标签（一次查询，避免 N+1）
         ticketService.fillTags(tickets);
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("tickets", tickets);
-        result.put("total", total);
-        result.put("page", safePage);
-        result.put("size", safeSize);
-        result.put("totalPages", (int) Math.ceil((double) total / safeSize));
-
-        return ApiResponse.success(result);
+        // 用 record 而非 Map（P0-2 第二步）：
+        // Map 让 OpenAPI 只能生成 additionalProperties:true，前端拿不到类型；
+        // 且 map.put("totalPages", ...) 改成 "total_pages" 不会有任何编译信号，
+        // 只是前端悄悄读到 undefined。record 的字段改名会直接编译失败。
+        return ApiResponse.success(TicketDto.TicketPage.of(tickets, total, safePage, safeSize));
     }
 
     /**
