@@ -420,6 +420,28 @@ devops:
 #   infrastructure/health 下自定义 HealthIndicator——这两个挂了系统表面正常、AI 全废）
 # - /actuator/prometheus：自身指标（工具调用耗时/失败率、Saga 补偿成功率、LLM 成本与 token）
 # - ⚠️ 安全：/actuator/** 不在 /api/** 下，WebConfig 必须显式加鉴权（见 WebConfig 注释）
+# ============================================================
+# API 文档（springdoc-openapi，P0-2）
+# ============================================================
+# 默认开启，便于开发与联调；生产由 application-prod.yml 关闭（见该文件）。
+#
+# ⚠️ 安全说明：Sa-Token 拦截器只管 /api/**，而 springdoc 的两个路径
+# （/v3/api-docs、/swagger-ui/**）不在其下 —— 也就是说它们**不受登录校验保护**。
+# 这是刻意接受的：开发环境需要免登录查文档；生产环境靠 enabled=false 整体关闭，
+# 比「放着端点再加鉴权」少一个出错面。
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /swagger-ui.html
+    # 按标签字母序排列，避免每次生成顺序漂移导致 diff 噪音
+    tags-sorter: alpha
+    operations-sorter: alpha
+  # 只扫业务包，排除 actuator 等框架端点
+  packages-to-scan: com.devops.agent.controller
+
 management:
   endpoints:
     web:

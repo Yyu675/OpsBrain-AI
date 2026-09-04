@@ -47,6 +47,22 @@ devops:
     # 由部署方通过环境变量显式打开（docker-compose.yml 默认给 MOCK）。
     mode: ${AI_MODE:MOCK}
 
+# ============================================================
+# API 文档：生产环境整体关闭
+# ============================================================
+# 为什么必须关：Sa-Token 拦截器只管 /api/**，springdoc 的
+# /v3/api-docs 与 /swagger-ui/** 不在其下，线上开着等于**无鉴权暴露
+# 全部 130 个端点的结构、参数与示例**——对攻击者是一份现成的攻击面地图。
+#
+# 用 enabled=false 整体关闭，而不是「留着端点再加鉴权」：
+# 后者多一个可能配错的环节，而生产环境本就不需要在线看文档
+# （契约应在 CI 里导出成静态产物供前端消费）。
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 logging:
   level:
     root: INFO

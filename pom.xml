@@ -212,6 +212,29 @@
             <version>0.4</version>
         </dependency>
 
+        <!-- ================= API 文档（P0-2）=================
+             springdoc-openapi：从 Controller 反射生成 OpenAPI 3 契约。
+
+             为什么需要：130 个端点此前无机器可读契约，前后端靠人工维护 TS 类型
+             对齐，已因此出过 95 号那类事故（同一个错误码在两侧语义相反）。
+
+             版本 2.8.15 的选择依据（不是随手挑的最新版）：
+             - springdoc 官方版本表：Spring Boot [3.5.0, 4.0.0) 对应 2.8.15；
+             - 2.8.1~2.8.12 与 Spring Boot 3.5.x 有已知不兼容（社区实测报告）；
+             - 2.8.16 在「不使用 Spring Boot 自动配置」的应用上有启动失败问题
+               （springdoc#3288，已于 2026-07 修复）。本项目用标准
+               @SpringBootApplication，不属于该场景，但仍取官方基线版更稳。
+
+             ⚠️ 收益边界（前置调研，见 PROGRESS.md）：本项目 130 个端点里
+             70 个返回 Map<String,Object> 或 Object，OpenAPI 对这些只能生成
+             additionalProperties:true。本次接入先拿到 60 个强类型端点的契约，
+             Map 型端点需后续逐个换成 record DTO 才能产出有效 schema。 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.8.15</version>
+        </dependency>
+
         <!-- ================= 测试 ================= -->
         <!-- 经典命名：spring-boot-starter-test（含 JUnit 5、AssertJ、Mockito 等） -->
         <dependency>
