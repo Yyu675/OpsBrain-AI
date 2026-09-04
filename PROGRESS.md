@@ -78,6 +78,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | T1 | 进度台账机制落地 | `PROGRESS.md`（本文件） | 机制文档，无需 CI | 2026-08-28 |
 | T2 | README 定位对齐 98 号结论 | `README.md` 重写 | 移除 L4/L5 与「千亿商业化」等无代码兜底的表述 | 2026-08-28 |
 | T3 | 前端技术栈优化方案 **v2** | `docs/08-benchmark/99-前端技术栈优化方案.md` | v1 假设不成立已推翻重写；含两个新发现的真缺陷 | 2026-08-28 |
+| **T9** | **P0-2 第二步（知识库模块）：`list` 改用 record** | `KnowledgeDocDto.DocPage`（新增）· `KnowledgeDocController` 接入 · `KnowledgeDtoContractTest`（7 例） | ECJ 0 语法错误；额外锁住「两套分页命名不得顺手统一」 | 2026-08-31 |
 | **T8** | **P0-2 第二步（工单模块）：`getTickets` 改用 record** | `TicketDto.TicketPage`（新增）· `TicketController` 接入 · `TicketDtoContractTest`（6 例） | ECJ 0 语法错误；既有 WebTest 已断言 tickets/total/page 三个键，序列化有保障 | 2026-08-31 |
 | **T7** | **P0-2 第一步：接入 springdoc-openapi** | `pom.xml`（2.8.15）· `application.yml`/`-prod.yml` 配置 · `OpenApiExposureContractTest`（4 例） | 版本经官方版本表核对；prod 整体关闭并加契约锁死；解析器双向自验 | 2026-08-31 |
 | **T6** | **F-6 入库内容统一为 Markdown** | `editorContent.ts` 新增 `toMarkdownForStorage` · `KnowledgeEditor.vue` `handleSave` 接入 · `markdownStorage.test.ts`（10 例） | tsc/eslint/1794 例全绿；C1/C2 两项注入命中互补的两组（4 例 vs 3 例，无交集） | 2026-08-31 |
@@ -93,7 +94,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | # | 任务 | 为什么必须做 | 依赖 |
 |---|---|---|---|
 | P0-2 | ~~引入 **springdoc-openapi**~~ 第一步 | 🟡 待验收：依赖 2.8.15 + 三 profile 配置 + 暴露面契约 4 例 | 无 |
-| P0-2b | **Map → record DTO（按模块推进）** | 🟡 **工单模块列表端点已完成**；剩余按模块排期：知识库 → 告警/治理 | P0-2 |
+| P0-2b | **Map → record DTO（按模块推进）** | 🟡 **工单 + 知识库列表端点已完成**；剩余：告警/治理 → 工单余下 11 个 → 知识库余下（多为透传 service，需连带评估） | P0-2 |
 | — | ⚠️ **P0-2 的收益边界（前置调研已做）** | 实测 **70/130 端点返回 `Map<String,Object>` 或 `Object`**（50 + 20），OpenAPI 对这些**推断不出字段结构**，只会生成 `additionalProperties: true`。故 P0-2 需分两步：①先接入生成器，拿到 60 个强类型端点的契约；②再逐步把高价值端点的 `Map` 换成 record DTO。**不要期待接入即得 130 个完整契约** | — |
 | P0-1 | 引入 **Flyway** | 无版本、无回滚、多实例并发建表。**已出现症状**：两个 `SchemaInitializer` 在代码里建表，`init.sql` 已不是唯一真相源 | 无 |
 | P0-3 | 引入 **Testcontainers** | 集成测试依赖 CI service 容器，本地不可复现 | 无 |
@@ -154,6 +155,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 |---|---|
 | 2026-08-28 | 建立本台账；确认产品定位路线；登记 P0 四项与前端优化待决策项 |
 | 2026-08-28 | 收到四项决策：编辑器走方案 A、用户全为技术人员、语言包裁剪立即开做、P0 先做 OpenAPI。台账与待办已按决策重排 |
+| 2026-08-31 | P0-2 第二步·知识库模块：`list` 改 record。发现知识库与工单分页字段名不同（content/totalElements vs tickets/total），**刻意不统一**——前端两处 store 逐字段读取，统一属破坏性变更 |
 | 2026-08-31 | P0-2 第二步启动，按模块推进。工单模块先做 `getTickets`（前端消费最多）。`getStats` 本轮不动——它直接透传 service 的 Map，改动会牵到 service 层 |
 | 2026-08-31 | P0-2 第一步完成（转待验收）：接入 springdoc 2.8.15。生产环境整体关闭——Sa-Token 只管 /api/**，而 /v3/api-docs 不在其下，开着等于无鉴权公开 130 个端点结构 |
 | 2026-08-31 | F-6 入库格式统一完成（转待验收）。前置核查：存量种子文档全是 Markdown，**无 HTML 数据需迁移**，风险大幅低于预期 |

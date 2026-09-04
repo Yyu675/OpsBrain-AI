@@ -199,7 +199,7 @@ public class KnowledgeDocController {
      * 分页查询
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> list(
+    public ApiResponse<KnowledgeDocDto.DocPage> list(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status,
@@ -215,13 +215,12 @@ public class KnowledgeDocController {
                 safePage, safeSize, status, category, keyword, tag, sort);
         long total = docService.countByQuery(status, category, keyword, tag);
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("content", docs.stream().map(KnowledgeDocDto.ListItem::from).toList());
-        data.put("totalElements", total);
-        data.put("totalPages", (int) Math.ceil((double) total / safeSize));
-        data.put("currentPage", safePage);
-        data.put("pageSize", safeSize);
-        return ApiResponse.success(data);
+        // 用 record 而非 Map（P0-2 第二步）：Map 让 OpenAPI 只能生成
+        // additionalProperties:true，前端拿不到类型；且 data.put("totalElements", ...)
+        // 改个键名不会有编译信号，只会让列表悄悄渲染成空。
+        return ApiResponse.success(KnowledgeDocDto.DocPage.of(
+                docs.stream().map(KnowledgeDocDto.ListItem::from).toList(),
+                total, safePage, safeSize));
     }
 
     /**
