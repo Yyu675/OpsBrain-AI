@@ -78,6 +78,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | T1 | 进度台账机制落地 | `PROGRESS.md`（本文件） | 机制文档，无需 CI | 2026-08-28 |
 | T2 | README 定位对齐 98 号结论 | `README.md` 重写 | 移除 L4/L5 与「千亿商业化」等无代码兜底的表述 | 2026-08-28 |
 | T3 | 前端技术栈优化方案 **v2** | `docs/08-benchmark/99-前端技术栈优化方案.md` | v1 假设不成立已推翻重写；含两个新发现的真缺陷 | 2026-08-28 |
+| **T10** | **P0-2 收尾：OpenAPI 契约可消费性验证** | `OpenApiSchemaIntegrationTest`（6 例）· 导出 `target/openapi.json` | 验证前两轮 DTO 在 OpenAPI 里真的产出了具体字段，而非 additionalProperties | 2026-08-31 |
 | **T9** | **P0-2 第二步（知识库模块）：`list` 改用 record** | `KnowledgeDocDto.DocPage`（新增）· `KnowledgeDocController` 接入 · `KnowledgeDtoContractTest`（7 例） | ECJ 0 语法错误；额外锁住「两套分页命名不得顺手统一」 | 2026-08-31 |
 | **T8** | **P0-2 第二步（工单模块）：`getTickets` 改用 record** | `TicketDto.TicketPage`（新增）· `TicketController` 接入 · `TicketDtoContractTest`（6 例） | ECJ 0 语法错误；既有 WebTest 已断言 tickets/total/page 三个键，序列化有保障 | 2026-08-31 |
 | **T7** | **P0-2 第一步：接入 springdoc-openapi** | `pom.xml`（2.8.15）· `application.yml`/`-prod.yml` 配置 · `OpenApiExposureContractTest`（4 例） | 版本经官方版本表核对；prod 整体关闭并加契约锁死；解析器双向自验 | 2026-08-31 |
@@ -155,6 +156,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 |---|---|
 | 2026-08-28 | 建立本台账；确认产品定位路线；登记 P0 四项与前端优化待决策项 |
 | 2026-08-28 | 收到四项决策：编辑器走方案 A、用户全为技术人员、语言包裁剪立即开做、P0 先做 OpenAPI。台账与待办已按决策重排 |
+| 2026-08-31 | 插入 OpenAPI 可消费性验证：继续改 DTO 前先确认生成的 schema 前端能用，避免多模块返工 |
 | 2026-08-31 | P0-2 第二步·知识库模块：`list` 改 record。发现知识库与工单分页字段名不同（content/totalElements vs tickets/total），**刻意不统一**——前端两处 store 逐字段读取，统一属破坏性变更 |
 | 2026-08-31 | P0-2 第二步启动，按模块推进。工单模块先做 `getTickets`（前端消费最多）。`getStats` 本轮不动——它直接透传 service 的 Map，改动会牵到 service 层 |
 | 2026-08-31 | P0-2 第一步完成（转待验收）：接入 springdoc 2.8.15。生产环境整体关闭——Sa-Token 只管 /api/**，而 /v3/api-docs 不在其下，开着等于无鉴权公开 130 个端点结构 |
