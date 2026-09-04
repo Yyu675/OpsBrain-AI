@@ -58,7 +58,7 @@ public class TicketDto {
             long total,
             int page,
             int size,
-            int totalPages
+            int total_pages
     ) {
         /**
          * 由查询结果构造，总页数在此统一推导。
