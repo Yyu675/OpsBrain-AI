@@ -59,7 +59,7 @@ devops:
 # （契约应在 CI 里导出成静态产物供前端消费）。
 springdoc:
   api-docs:
-    enabled: true
+    enabled: false
   swagger-ui:
     enabled: false
 
