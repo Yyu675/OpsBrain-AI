@@ -219,7 +219,12 @@ public class KnowledgeDocController {
         // additionalProperties:true，前端拿不到类型；且 data.put("totalElements", ...)
         // 改个键名不会有编译信号，只会让列表悄悄渲染成空。
         return ApiResponse.success(KnowledgeDocDto.DocPage.of(
-                docs.stream().map(KnowledgeDocDto.ListItem::from).toList(),
+                docs.stream().map(d -> {
+                    java.util.Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", d.getId());
+                    m.put("title", d.getTitle());
+                    return m;
+                }).toList(),
                 total, safePage, safeSize));
     }
 

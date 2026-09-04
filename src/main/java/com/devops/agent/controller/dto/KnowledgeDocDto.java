@@ -295,7 +295,7 @@ public class KnowledgeDocDto {
      * @param pageSize      生效每页大小（已钳制，上限 200）
      */
     public record DocPage(
-            List<ListItem> content,
+            List<java.util.Map<String, Object>> content,
             long totalElements,
             int totalPages,
             int currentPage,
