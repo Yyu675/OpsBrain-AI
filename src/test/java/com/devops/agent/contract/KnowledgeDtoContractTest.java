@@ -102,9 +102,9 @@ class KnowledgeDtoContractTest {
             // controller 已钳制（page≥1、size≤200）。DTO 再调整会让响应回报的值
             // 与实际查询用的不一致，前端据此算偏移量就会错位
             KnowledgeDocDto.DocPage p = KnowledgeDocDto.DocPage.of(List.of(), 100, 3, 25);
-            assertThat(p.currentPage()).isEqualTo(3);
-            assertThat(p.pageSize()).isEqualTo(25);
-            assertThat(p.totalElements()).isEqualTo(100);
+            assertThat(p.page()).isEqualTo(3);
+            assertThat(p.size()).isEqualTo(25);
+            assertThat(p.total()).isEqualTo(100);
         }
     }
 

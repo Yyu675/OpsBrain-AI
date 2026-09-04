@@ -296,10 +296,10 @@ public class KnowledgeDocDto {
      */
     public record DocPage(
             List<ListItem> content,
-            long totalElements,
+            long total,
             int totalPages,
-            int currentPage,
-            int pageSize
+            int page,
+            int size
     ) {
         /**
          * 由查询结果构造，总页数在此统一推导。
