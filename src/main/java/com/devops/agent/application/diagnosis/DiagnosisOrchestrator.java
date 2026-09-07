@@ -201,8 +201,14 @@ public class DiagnosisOrchestrator {
         try {
             Long sessionId = sessionRepository.createIfAbsent(traceId, alertId, "diagnosis-engine");
             if (sessionId != null) {
-                sessionRepository.complete(sessionId, ticketId,
+                int rows = sessionRepository.complete(sessionId, ticketId,
                         String.valueOf(aggregated.sufficiency()), summary);
+                if (rows == 0) {
+                    // 守卫拦下：会话已被并发收尾（或进了 ERROR）。不重复消费，
+                    // 但必须留痕——否则「结论没落库」这种事只能翻 DB 发现
+                    log.warn("⚠️ [Diagnosis] 完成态守卫拦截：会话已是终态，"
+                            + "本次 complete 未生效 | sessionId={} traceId={}", sessionId, traceId);
+                }
             }
             // 2-1.5 工单 AI 分析区回填（§6.1 验收第 1 条的最后一个环）。
             // 置信度为按充分性映射的启发值（S2-2 才做真实校准）：
@@ -268,9 +274,14 @@ public class DiagnosisOrchestrator {
         try {
             Long sessionId = sessionRepository.createIfAbsent(traceId, alertId, "diagnosis-engine");
             if (sessionId != null) {
-                sessionRepository.fail(sessionId,
+                int rows = sessionRepository.fail(sessionId,
                         errorMessage == null ? "<unknown>" :
                                 errorMessage.substring(0, Math.min(255, errorMessage.length())));
+                if (rows == 0) {
+                    // 通常是「COMPLETED 后又有尾部异常」——成功结论优先，记录警示即可
+                    log.warn("⚠️ [Diagnosis] 失败态守卫拦截：会话已是终态，"
+                            + "本次 fail 未覆盖既有结论 | sessionId={} traceId={}", sessionId, traceId);
+                }
             }
         } catch (Exception ex) {
             log.warn("⚠️ [Diagnosis] 会话失败态落库失败 traceId={} why={}", traceId, ex.getMessage());

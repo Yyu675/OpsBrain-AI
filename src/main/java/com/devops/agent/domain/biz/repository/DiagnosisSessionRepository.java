@@ -55,25 +55,33 @@ public class DiagnosisSessionRepository {
         return id == null ? -1 : id;
     }
 
-    /** 完成态更新：状态 + 充分性 + 结论、回填工单 id。 */
-    public void complete(Long id, String ticketId, String sufficiency, String summary) {
+    /**
+     * 完成态更新：状态 + 充分性 + 结论、回填工单 id。
+     * <p>前置状态守卫：仅 {@code RUNNING -> COMPLETED}；并发重跑只落一次
+     * （0 行 = 「已有别人收尾」），ERROR 终态也不会被覆盖。</p>
+     */
+    public int complete(Long id, String ticketId, String sufficiency, String summary) {
         String sql = """
                 UPDATE sys_diagnosis_session
                 SET status = 'COMPLETED', ticket_id = ?, sufficiency = ?,
                     summary = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = ? AND status = 'RUNNING'
                 """;
-        jdbcTemplate.update(sql, ticketId, sufficiency, summary, id);
+        return jdbcTemplate.update(sql, ticketId, sufficiency, summary, id);
     }
 
-    /** 示意：诊断推理阶段因异常要放弃会话。供调用方在失败分支补齐终态。 */
-    public void fail(Long id, String errorMessage) {
+    /**
+     * 示意：诊断推理阶段因异常要放弃会话。供调用方在失败分支补齐终态。
+     * <p>前置状态守卫：仅 {@code RUNNING -> ERROR}——已 COMPLETED 的结论
+     * 优先于迟到的失败信号（尾部异常不抹掉已落库的成功）。</p>
+     */
+    public int fail(Long id, String errorMessage) {
         String sql = """
                 UPDATE sys_diagnosis_session
                 SET status = 'ERROR', error_message = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+                WHERE id = ? AND status = 'RUNNING'
                 """;
-        jdbcTemplate.update(sql, errorMessage, id);
+        return jdbcTemplate.update(sql, errorMessage, id);
     }
 
     /** 按 trace_id 取会话（诊断详情 API：证据链回放的入口）。 */
