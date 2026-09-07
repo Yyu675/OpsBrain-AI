@@ -128,7 +128,7 @@ public class AlertWebSocketNotifier {
                 }
             } catch (IOException | IllegalStateException e) {
                 log.warn("⚠️ [AlertWS] 推送失败 | sessionId={} | type={} | error={}",
-                        session.getId(), event.getType(), e.getMessage());
+                        session.getId(), typeHint, e.getMessage());
             }
         }
     }
