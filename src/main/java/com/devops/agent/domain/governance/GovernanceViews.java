@@ -177,7 +177,7 @@ public class GovernanceViews {
      * @param blastRadiusCount  生效爆炸半径（条目与策略取小）
      * @param cooldownSeconds   观察窗口秒数
      */
-    // G-2 注入探针：NON_NULL 被移除（应让 deny 的 null 字段泄漏进报文）
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record EvaluateResult(
             String actionKey,
             String environment,
@@ -242,7 +242,7 @@ public class GovernanceViews {
         /** 前序「命中即停」截断：引擎不会求值到本条 */
         public static SimulatedRow skipped(AutomationPolicy p, String reason) {
             return new SimulatedRow(p.getId(), p.getName(), p.getPriority(), p.getActionKey(),
-                    p.isDryRun(), true, true, reason, null, null); // G-3 注入探针：matched 误标 true
+                    p.isDryRun(), false, true, reason, null, null);
         }
 
         /** 求值了但条件/环境不符 */
