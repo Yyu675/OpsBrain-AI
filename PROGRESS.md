@@ -78,6 +78,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | T11（P0-2b 告警/治理 record） | **收尾后转路线图阶段 0** | 用户选择；代码+测试已 CI 绿，只差注入-还原验证 |
 | D-01 Flyway 基线方案 | **按路线图推荐采纳 B**（单基线） | 用户未表态时代理按文档推荐执行并告知可反悔；动手前发现路线图「25 个迁移文件」前提已失效（8-27 并入 init.sql），B 形态降为基线搬家+删代码侧双写 |
 | ci.yml 收尾（psql 步骤→flyway validate） | **需用户配合** | 机器人无 workflows 权限；两选：Arena 重连 GitHub 或按报告 100 §五手工应用 |
+| 0-2.6 Redis/MinIO 容器化 | **均不做**（S0-2） | Redis：lettuce 懒连接+链路不触碰+init 仅内存 Map；MinIO：链路不涉及。需要时按同基类补 |
+| Testcontainers 容器模式与注入方式 | singleton + `@DynamicPropertySource`（不用 `@Testcontainers`/`@ServiceConnection`） | 每类一器拖垮 CI；显式三行连接信息胜过隐式自动装配（详见基类 javadoc 与报告 101 §四） |
 | P0-2b 剩余 Map 端点（工单余下 11 个 + 知识库余下） | **暂停挂账**：随阶段 0「前端类型手写」债项（路线图 §10.1）按需补改，不盲目全改 | 用户选择；路线图未给它排期，阶段 0 是主线 |
 | 报告编号 100~114 | 归路线图阶段任务；非路线图任务不占编号 | 路线图 §11.2 |
 
@@ -87,7 +89,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| T13 | **S0-2：Testcontainers 集成测试**（路线图 §4.2） | `AbstractIntegrationTest`（singleton `pgvector/pgvector:pg16` + `@DynamicPropertySource`）+ `HybridRetrieverIntegrationTest` 迁入 + 新增 `FlywayMigrationIntegrationTest`（空库全量迁移第二重证据）；Redis/MinIO 按 0-2.6 评估后跳过（决策记录） | 2026-09-07 |
+| — | 暂无（T13/S0-2 已转待验收；下一轮启动 S0-3 Resilience4j） | | |
 
 ---
 
@@ -95,6 +97,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 产出 | 验证情况 | 完成于 |
 |---|---|---|---|---|
+| **T13** | **S0-2：Testcontainers 集成测试**（路线图 §4.2） | `AbstractIntegrationTest`（singleton pgvector/pgvector:pg16 + `@DynamicPropertySource`）· `HybridRetrieverIntegrationTest` 迁入容器 · `FlywayMigrationIntegrationTest`（27 表 + history 直证）· **修复真缺陷**：`MockEmbeddingModel` 硬编码 1536 绕过配置 → 构造器注入 + `MockEmbeddingModelTest` · 报告 `docs/08-benchmark/101` | CI 绿（34105259493 首拉镜像、34106765448 复验）；**J1 探针三程**：①仅注入维度 512 竟绿——红线死在 MOCK 硬编码里；②修复+保留注入红在 INSERT 维度不匹配（34106451311）——红线接通；③还原即绿。验收 #1（docker-only 全通）如实记缺口：其余 13 个 @SpringBootTest 类未迁，登记 S0-2b | 2026-09-07 |
 | **T12** | **S0-1：Flyway 迁移版本化**（路线图 §4.1，方案 B 变体落地） | `V1__baseline.sql`（init.sql 迁入，SQL 零改动）· flyway 依赖 + baseline-on-migrate + validate-on-migrate · 删除代码侧双写建表（2 个 SchemaInitializer + 2 个 ensureSchema）· `FlywayMigrationContractTest`（5 道闸）· compose/脚本/README/AGENTS §3.5 改写 · 报告 `docs/08-benchmark/100` | CI 绿（b240de4→34102402282）；**K1/K2 注入各命中预期**：K1 sql 目录 DDL→唯一一条注解精确点名契约测试；K2 坏 V2→全部上下文拒载，还原次轮直接转绿=PG 事务回滚无残留。⚠️ **验收 #3/#4 挂账**：机器人无 workflows 权限改不了 ci.yml，需用户重连 GitHub 或手工应用 ci 改动（报告 §五已备好文案） | 2026-09-07 |
 | **T11** | **P0-2b 第三步（告警/治理模块）：9+1 个 Map 端点改 record** | `AlertDto.AlertPage`（新增）· `GovernanceViews`（13 个 record，新增）· 告警 service 拆 find/count · 治理 repo/service 一并强类型化 · `AlertDtoContractTest`（6 例）+ `GovernanceDtoContractTest`（17 例）· OpenAPI 可消费性断言 +3 例 | CI 绿（7d179c4）；**G-1/G-2/G-3 三项注入各命中预期用例**：整除截断→totalPagesRoundsUp+defaultPaging；丢 NON_NULL→denyOmitsConstraintFields；skipped 误标 matched→skippedIsNotUnmatched。首轮漏改 3 处 Map 桩被 CI 编译拦下已补（注解上限 3 条的教训应验） | 2026-09-07 |
 | T1 | 进度台账机制落地 | `PROGRESS.md`（本文件） | 机制文档，无需 CI | 2026-08-28 |
@@ -117,9 +120,10 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | # | 任务 | 前置 | 估期* | 状态 |
 |---|---|---|---|---|
 | S0-1 | ~~**Flyway 迁移版本化**~~（D-01 由代理按路线图推荐采纳方案 B；落地形态=基线搬家+托管接入，历史迁移文件早已不存在） | — | 3d | 🟡 **待验收**（收尾挂账见下方挂起区） |
-| S0-2 | **Testcontainers 集成测试**（§4.2：pgvector 容器 + `AbstractIntegrationTest`，本地离线可跑） | — | 3d | 📋（建议紧随 S0-1：阶段 1 取证工具依赖它） |
+| S0-2 | ~~**Testcontainers 集成测试**~~（0-2.6 评估：Redis/MinIO 均不做容器化；全量 docker-only 验收留 S0-2b） | — | 3d | 🟡 **待验收** |
 | S0-3 | **Resilience4j 熔断降级**（§4.3：按数据源客户端配实例；与 ToolRuntimeManager 分工=数据源级 vs 工具级） | — | 3d | 📋 |
 | S0-4 | **评测跑通与基线记录**（§4.4：CI 独立 eval job + 基线数字写入报告 102） | S0-2 | 2d | 📋 |
+| S0-2b | 其余 13 个 `@SpringBootTest` 类迁入 Testcontainers 基座（验收 §4.2 #1 转 ✅ 的条件） | S0-2 | — | 📋 挂后续（阶段 1 前视时间择批迁；每类先查 Redis/调度器惰性） |
 
 \* 估期沿用路线图 §14（全职节奏）。**后续阶段（S1 取证 → S2 诊断 → S3 自愈 → S4 度量 → S5 加固）见路线图 §14，阶段内启动时再逐条登记。**
 
@@ -199,3 +203,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | 2026-09-07 | **收到《OpsBrain_AI_生产级落地路线图.md》并确认为任务总索引**（用户上传直挂，以 fast-forward 合入工作分支）。两项决策：T11 收尾后转阶段 0；P0-2b 剩余端点暂停挂账（恢复条件=阶段 0 做 TS 类型生成时按需补）。待办区按路线图阶段 0 重排，S1~S5 启动时再逐条登记，避免双写漂移 |
 | 2026-09-07 | T11 完成（转待验收）：告警/治理 Map → record。教训两条：①首轮只换了带断言的 Map 桩，漏改 3 处被 CI 编译拦下（注解上限 3 条恰好放过同类遗漏——全文件 grep 确认归零再推）；②注入验证分两个探针推，是尊重「注解最多回 3 条」的既有教训 |
 | 2026-09-07 | T12（S0-1）完成（转待验收）：Flyway 迁移版本化。**教训/新知**：①动手前核查证伪了路线图「25 个手写迁移文件」的前提（已于 8-27 并入 init.sql），方案 B 因此降级为「搬家+删双写」；②真正的双真相源不是两份文件，而是**代码侧 ensureSchema 与 init.sql 内容逐字重复**——单文件基线只消灭了第一副本；③机器人无 workflows 权限改 ci.yml → 用无 DDL 的 psql 过渡桩保住 CI 绿，验收 #3/#4 挂账到用户补权 |
+| 2026-09-07 | T13（S0-2）完成（转待验收）：Testcontainers 基座 + 检索链路迁入。**本轮最大收获记在 J1 探针**：路线图要求「维度 512 注入应变红」，实测竟绿——`MockEmbeddingModel` 硬编码 1536 绕过配置，MOCK 路径的维度红线是死的（CI 只有 MOCK 模式，等于从不校验维度一致性）。修复为永久代码（构造器注入），红线经「修复+注入红 / 还原绿」验证接通。另：J1b 首推因字段名漏改编译红，「沙箱无 JDK 改后必 grep 全引用」第四次应验 |
