@@ -289,7 +289,8 @@ class AutomationGovernanceControllerWebTest {
         @DisplayName("列表：enabled=false 必须传到 Service，而不是被当成空值丢掉")
         void passesEnabledFalseAsFilter() throws Exception {
             when(service.listActions(any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(Map.of("items", List.of(), "total", 0L));
+                    .thenReturn(new GovernanceViews.ActionPage(
+                            List.of(), 0L, 1, 20, 1));
 
             mockMvc.perform(get("/api/v1/governance/actions").param("enabled", "false"))
                     .andExpect(status().isOk());
@@ -302,7 +303,8 @@ class AutomationGovernanceControllerWebTest {
         @DisplayName("列表：不传 enabled 时 Service 收到 null（表示不限）")
         void omittedEnabledBecomesNull() throws Exception {
             when(service.listActions(any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(Map.of("items", List.of(), "total", 0L));
+                    .thenReturn(new GovernanceViews.ActionPage(
+                            List.of(), 0L, 1, 20, 1));
 
             mockMvc.perform(get("/api/v1/governance/actions"))
                     .andExpect(status().isOk());
@@ -580,7 +582,7 @@ class AutomationGovernanceControllerWebTest {
         @Test
         @DisplayName("成功响应恒有 code/message/traceId/timestamp 四字段")
         void successEnvelopeShape() throws Exception {
-            when(service.actionStats()).thenReturn(Map.of("total", 9));
+            when(service.actionStats()).thenReturn(new GovernanceViews.ActionStats(9L, 0L, 0L, 0L));
 
             mockMvc.perform(get("/api/v1/governance/actions/stats"))
                     .andExpect(status().isOk())
