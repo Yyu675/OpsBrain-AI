@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 /** S2-1 诊断编排器单元测试。验证四态判定、traceId 唯一真相、异步不阻塞。 */
@@ -54,6 +55,8 @@ class DiagnosisOrchestratorTest {
     private DiagnosisSessionRepository sessionRepository;
     @Mock
     private AgentStateManager stateManager;
+    @Mock
+    private com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService;
 
     private DiagnosisOrchestrator orchestrator;
     private String traceId;
@@ -76,7 +79,8 @@ class DiagnosisOrchestratorTest {
                         Map.of("patternCount", 3, "level", "ERROR"), "ref", null, Instant.now()));
         orchestrator = new DiagnosisOrchestrator(
                 metricsCollector, changesCollector, logsCollector,
-                catalog, evidenceRepository, sessionRepository, stateManager);
+                catalog, evidenceRepository, sessionRepository, stateManager,
+                aiAnalysisService);
     }
 
     @AfterEach
@@ -112,6 +116,9 @@ class DiagnosisOrchestratorTest {
         // 状态机 DRAFT_READY 被点醒。
         verify(stateManager).transition(eq(AgentState.DRAFT_READY),
                 eq(AgentStateTransition.TriggerType.DRAFT_GENERATED), anyString());
+        // 2-1.5：SUFFICIENT 时结论回填工单 AI 分析区（conf 启发值 80）
+        verify(aiAnalysisService).save(eq("TK-001"), contains("证据充分"),
+                isNull(), isNull(), isNull(), eq(80), isNull());
     }
 
     @Test

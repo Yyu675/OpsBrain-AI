@@ -68,6 +68,8 @@ public class DiagnosisOrchestrator {
     private final DiagnosisEvidenceRepository evidenceRepository;
     private final DiagnosisSessionRepository sessionRepository;
     private final AgentStateManager stateManager;
+    /** 2-1.5：诊断结果回填工单 AI 分析区。 */
+    private final com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService;
 
     public DiagnosisOrchestrator(MetricsEvidenceCollector metricsCollector,
                                  ChangesEvidenceCollector changesCollector,
@@ -75,7 +77,8 @@ public class DiagnosisOrchestrator {
                                  MetricsQueryCatalog catalog,
                                  DiagnosisEvidenceRepository evidenceRepository,
                                  DiagnosisSessionRepository sessionRepository,
-                                 AgentStateManager stateManager) {
+                                 AgentStateManager stateManager,
+                                 com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService) {
         this.metricsCollector = metricsCollector;
         this.changesCollector = changesCollector;
         this.logsCollector = logsCollector;
@@ -83,6 +86,7 @@ public class DiagnosisOrchestrator {
         this.evidenceRepository = evidenceRepository;
         this.sessionRepository = sessionRepository;
         this.stateManager = stateManager;
+        this.aiAnalysisService = aiAnalysisService;
         this.pool = new ThreadPoolExecutor(
                 CORE, MAX, 30, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(QUEUE),
@@ -174,6 +178,27 @@ public class DiagnosisOrchestrator {
             if (sessionId != null) {
                 sessionRepository.complete(sessionId, ticketId,
                         String.valueOf(aggregated.sufficiency()), summary);
+            }
+            // 2-1.5 工单 AI 分析区回填（§6.1 验收第 1 条的最后一个环）。
+            // 置信度为按充分性映射的启发值（S2-2 才做真实校准）：
+            //   SUFFICIENT=80 / WEAK=60 / INSUFFICIENT=20（转人工信号而不是自信度）
+            if (ticketId != null && !ticketId.isBlank()) {
+                int conf = switch (aggregated.sufficiency()) {
+                    case SUFFICIENT -> 80;
+                    case WEAK -> 60;
+                    case INSUFFICIENT -> 20;
+                };
+                try {
+                    aiAnalysisService.save(ticketId,
+                            summary + "\n\n（证据回放:traceId=" + traceId + "）",
+                            null, null, null, conf, null);
+                    log.info("🩺 [Diagnosis] 诊断结论已回填工单 | ticketId={} | sufficiency={} | conf={}",
+                            ticketId, aggregated.sufficiency(), conf);
+                } catch (Exception ex) {
+                    // 回填失败不反噬诊断主流程（同样是附属增值一族）
+                    log.warn("⚠️ [Diagnosis] 工单 AI 分析回填失败 | ticketId={} | why={}",
+                            ticketId, ex.getMessage());
+                }
             }
             AgentState finalState = aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
                     ? AgentState.FAILED : AgentState.DRAFT_READY;

@@ -389,6 +389,9 @@ devops:
     # 用于运维期临时禁入，不改变 Prometheus 重试行为（非 200 会重试）。
     enabled: true
 
+    # S2-1：自动诊断开关（新告警建单后异步触发证据聚合诊断编排）
+    auto-diagnose-enabled: true
+
     # ==================== Webhook 端点防护（A6）====================
     # /api/v1/alerts/webhook 在鉴权白名单内（Alertmanager 带不了 Sa-Token），
     # 却直接写库并可触发自动建单，因此必须单独加固。
