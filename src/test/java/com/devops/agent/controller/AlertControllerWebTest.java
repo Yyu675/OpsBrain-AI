@@ -19,10 +19,9 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -113,14 +112,16 @@ class AlertControllerWebTest {
         return a;
     }
 
-    private static Map<String, Object> page(List<Alert> alerts, int total, int page, int size) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("alerts", alerts);
-        m.put("total", total);
-        m.put("page", page);
-        m.put("size", size);
-        m.put("totalPages", (int) Math.ceil((double) total / size));
-        return m;
+    /**
+     * 桩住「列表 + 计数」两个调用——P0-2b 后控制器把它们拆开调用，
+     * 再组装成 AlertPage（见 AlertDto 的说明：装配在控制器层）。
+     * any() 匹配含 null 的任意筛选值，入参透传由调用处的 verify 钉住。
+     */
+    private void stubAlerts(List<Alert> alerts, long total) {
+        when(alertQueryService.findAlerts(any(), any(), anyInt(), anyInt()))
+                .thenReturn(alerts);
+        when(alertQueryService.countAlerts(any(), any()))
+                .thenReturn(total);
     }
 
     // ==================================================================
@@ -132,8 +133,7 @@ class AlertControllerWebTest {
         @Test
         @DisplayName("默认第 1 页 10 条，不筛状态与级别")
         void defaultPaging() throws Exception {
-            when(alertQueryService.listAlerts(isNull(), isNull(), eq(1), eq(10)))
-                    .thenReturn(page(List.of(alert(1L, "P1", "FIRING")), 1, 1, 10));
+            stubAlerts(List.of(alert(1L, "P1", "FIRING")), 1L);
 
             mockMvc.perform(get("/api/v1/alerts"))
                     .andExpect(status().isOk())
@@ -145,14 +145,15 @@ class AlertControllerWebTest {
                     .andExpect(jsonPath("$.data.alerts[0].alertName").value("HighCpuUsage"))
                     .andExpect(jsonPath("$.traceId").exists());
 
-            verify(alertQueryService).listAlerts(isNull(), isNull(), eq(1), eq(10));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), eq(1), eq(10));
+            // 总数必须与列表同条件统计，否则页码与实际数据矛盾
+            verify(alertQueryService).countAlerts(isNull(), isNull());
         }
 
         @Test
         @DisplayName("状态与级别筛选原样透传给 Service")
         void passesFilters() throws Exception {
-            when(alertQueryService.listAlerts(eq("FIRING"), eq("P0"), anyInt(), anyInt()))
-                    .thenReturn(page(List.of(), 0, 1, 10));
+            stubAlerts(List.of(), 0L);
 
             mockMvc.perform(get("/api/v1/alerts")
                             .param("status", "FIRING")
@@ -160,14 +161,14 @@ class AlertControllerWebTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.alerts").isEmpty());
 
-            verify(alertQueryService).listAlerts(eq("FIRING"), eq("P0"), eq(1), eq(10));
+            verify(alertQueryService).findAlerts(eq("FIRING"), eq("P0"), eq(1), eq(10));
+            verify(alertQueryService).countAlerts(eq("FIRING"), eq("P0"));
         }
 
         @Test
         @DisplayName("page<1 被夹到 1 —— 否则 SQL 的 OFFSET 会变成负数")
         void clampsPageLowerBound() throws Exception {
-            when(alertQueryService.listAlerts(isNull(), isNull(), eq(1), eq(10)))
-                    .thenReturn(page(List.of(), 0, 1, 10));
+            stubAlerts(List.of(), 0L);
 
             mockMvc.perform(get("/api/v1/alerts").param("page", "0"))
                     .andExpect(status().isOk());
@@ -175,23 +176,21 @@ class AlertControllerWebTest {
                     .andExpect(status().isOk());
 
             verify(alertQueryService, org.mockito.Mockito.times(2))
-                    .listAlerts(isNull(), isNull(), eq(1), eq(10));
+                    .findAlerts(isNull(), isNull(), eq(1), eq(10));
         }
 
         @Test
         @DisplayName("size 夹到 [1, 200] —— 上限防的是一次把整张告警表拉进内存")
         void clampsSize() throws Exception {
-            when(alertQueryService.listAlerts(isNull(), isNull(), eq(1), eq(200)))
-                    .thenReturn(page(List.of(), 0, 1, 200));
+            stubAlerts(List.of(), 0L);
+
             mockMvc.perform(get("/api/v1/alerts").param("size", "100000"))
                     .andExpect(status().isOk());
-            verify(alertQueryService).listAlerts(isNull(), isNull(), eq(1), eq(200));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), eq(1), eq(200));
 
-            when(alertQueryService.listAlerts(isNull(), isNull(), eq(1), eq(1)))
-                    .thenReturn(page(List.of(), 0, 1, 1));
             mockMvc.perform(get("/api/v1/alerts").param("size", "0"))
                     .andExpect(status().isOk());
-            verify(alertQueryService).listAlerts(isNull(), isNull(), eq(1), eq(1));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), eq(1), eq(1));
         }
 
         @Test

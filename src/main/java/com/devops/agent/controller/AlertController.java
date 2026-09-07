@@ -1,6 +1,7 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.controller.dto.AlertDto;
 import com.devops.agent.domain.alert.entity.Alert;
 import com.devops.agent.domain.alert.service.AlertQueryService;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Map;
+import java.util.List;
 
 /**
  * 告警列表与处置接口（L2 实时监测 Stage 3）
@@ -47,7 +48,7 @@ public class AlertController {
      * @param level  级别筛选（P0~P4，可选）
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> listAlerts(
+    public ApiResponse<AlertDto.AlertPage> listAlerts(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status,
@@ -60,8 +61,14 @@ public class AlertController {
         log.info("[AlertController] 查询告警列表: page={}, size={}, status={}, level={}",
                 safePage, safeSize, status, level);
 
-        Map<String, Object> result = alertQueryService.listAlerts(status, level, safePage, safeSize);
-        return ApiResponse.success(result);
+        List<Alert> alerts = alertQueryService.findAlerts(status, level, safePage, safeSize);
+        // 总数必须按同一条件统计，否则页码与实际数据矛盾
+        long total = alertQueryService.countAlerts(status, level);
+
+        // 用 record 而非 Map（P0-2b 第三步）：Map 让 OpenAPI 只能生成
+        // additionalProperties:true，前端拿不到类型；且 map.put("totalPages", ...)
+        // 改个键名不会有编译信号，只是前端悄悄拿到 undefined。
+        return ApiResponse.success(AlertDto.AlertPage.of(alerts, total, safePage, safeSize));
     }
 
     /**

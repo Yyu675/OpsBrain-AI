@@ -67,7 +67,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| — | 暂无 | | |
+| T11 | P0-2b 第三步：告警/治理模块 Map → record | 告警 `listAlerts`（含 service 拆分为 find/count 两调用）+ 治理 9 个 Map 端点（含 repo/service 层一起强类型化）；产出 `AlertDto.AlertPage`、`GovernanceViews`（13 个 record）、2 个契约测试类、OpenAPI 可消费性断言扩展 | 2026-09-07 |
 
 ---
 
