@@ -83,6 +83,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | Resilience4j 0-3.5 范围（LLM 防护） | **embedding 限流落地；chat 流式 RateLimiter 与 TimeLimiter 不上** | 流式 TokenStream 在 Bean 层既不能 TimeLimit 也不宜 RateLimit 打断；端点级 HTTP 超时已存在（LlmEndpointSpec.timeout）。恢复条件：阶段 1 出现统一调用网关时收口 |
 | Resilience4j 实例槽 logs/cmdb | **本轮不配** | 两个客户端尚不存在（S1-2/S1-3 随工具落地时接挂），凭空配槽只会产生无人消费的配置 |
 | resilience4j 依赖版本 | **显式钉 starter+annotations 同 2.4.0** | BOM 3.5.6 不托管该构件系（CI 实证）；注解构件不被 starter 传递（CI 实证）；版本经 central 目录核对，冲突回退 2.3.0 |
+| llm 限流模式（S0-3 校正） | **配速（60/s + 10s 等待上限）**，放弃零等待 | S0-4 实测：零等待把顺序批量摄取的突发拒绝，文档落 INDEX_FAILED，评测报「向量化失败」，未命中清单被污染——批量负载要配速不要拒绝（报告 102 §三）；交互单发嵌入典型等待 <1s，10s 是失控任务的最后防线 |
+| MOCK 口径 RAG 覆盖层的判据 | **定为连通性 100% 红线**，语义覆盖率不在 MOCK 下声明 | mock 向量跨文本近似正交：默认 minScore 下≈0（假低）、minScore=0 下恒 100%（假高），两端都不是覆盖数字；语义判据归 EVAL_LLM 手动 job（报告 102 §一/§三） |
 | P0-2b 剩余 Map 端点（工单余下 11 个 + 知识库余下） | **暂停挂账**：随阶段 0「前端类型手写」债项（路线图 §10.1）按需补改，不盲目全改 | 用户选择；路线图未给它排期，阶段 0 是主线 |
 | 报告编号 100~114 | 归路线图阶段任务；非路线图任务不占编号 | 路线图 §11.2 |
 
@@ -92,7 +94,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| T15 | **S0-4：评测跑通与基线记录**（路线图 §4.4，报告 102） | RAG 覆盖层迁 Testcontainers + 种库前置（ingestAllLocalDocuments）+ 基线数字经注解通道捕获（artifact 受限不可下载）+ 阈值按实测基线落定；CI eval job 与 artifact 上传 steps 备好 diff 随报告挂账（workflows 权限） | 2026-09-07 |
+| — | 暂无（T15/S0-4 已转待验收；阶段 0 全部完成，下轮启动 S1-1 指标取证工具 queryServiceMetrics） |  |  |
 
 ---
 
@@ -100,6 +102,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 产出 | 验证情况 | 完成于 |
 |---|---|---|---|---|
+| **T15** | **S0-4：评测跑通与基线记录**（路线图 §4.4） | `AgentEvaluationTest` 迁 `AbstractIntegrationTest` + 种库前置（ingestAllLocalDocuments）· **S0-3 校正**：llm 限流零等待 → 配速（60/s、10s 上限；摄取批量突发被拒是假阴性制造者）· `RateLimitedEmbeddingModel` javadoc 校订 · 三层口径基线 + 缺口分类 · 报告 `docs/08-benchmark/102`（含 eval/eval-llm 双 job diff） | 三程捕获轮全录：34115435905（注解 ~250 字节截断，得通道教训）→ 34115837596（56%「基线」实为限流拒绝伪造，主评测 ERROR 撞破）→ 34116296014（修复后连通性 100%）→ 定版 34116951105 绿。**判断**：契约层 100%/100% 真基线；EVAL_RAG 层定连通性红线；语义覆盖率 MOCK 不可度量，留空拒伪造，归 EVAL_LLM 手动 job 首跑回填。⚠️ eval job/artifact/README 评测行三项挂账（workflows 权限 + 验收纪律）；S0-4b/c 入挂起区 | 2026-09-07 |
 | **T14** | **S0-3：Resilience4j 熔断降级**（路线图 §4.3） | `prometheus` 熔断实例（@CircuitBreaker×3 + 显式 fallback 语义：真失败透传、熔断打开译为 MetricsUnavailableException、未启用升为子类排出统计）· `RateLimitedEmbeddingModel`（llm 30/s 零等待，REAL/MOCK 同裹）· `MetricsIntegrationDisabledException`/`LlmRateLimitedException` · AGENTS 3.7.5 分工硬约束 · 8 测试（熔断四态+共享实例×5、限流×3，MockWebServer 计数证「不再打网络」） | CI 三程收敛后绿（主 34112089678 / 还原 34112704933）；**J2 探针单注解精确命中**：阈值 1% 注入→唯一红 belowFailureThresholdStaysClosedAndKeepsCalling。⚠️ 三处外部库实相与记忆不符全部经 CI 暴露并以源码核对修正（BOM 不托管 resilience4j、starter 不传注解构件、注解无 ignoreExceptions 属性+RL 类名 2.x 去后缀）；0-3.5 如实记缺口：chat 流式与 TimeLimiter 未上（恢复条件=阶段 1 网关层），logs/cmdb 实例槽随 S1 客户端落地 | 2026-09-07 |
 | **T13** | **S0-2：Testcontainers 集成测试**（路线图 §4.2） | `AbstractIntegrationTest`（singleton pgvector/pgvector:pg16 + `@DynamicPropertySource`）· `HybridRetrieverIntegrationTest` 迁入容器 · `FlywayMigrationIntegrationTest`（27 表 + history 直证）· **修复真缺陷**：`MockEmbeddingModel` 硬编码 1536 绕过配置 → 构造器注入 + `MockEmbeddingModelTest` · 报告 `docs/08-benchmark/101` | CI 绿（34105259493 首拉镜像、34106765448 复验）；**J1 探针三程**：①仅注入维度 512 竟绿——红线死在 MOCK 硬编码里；②修复+保留注入红在 INSERT 维度不匹配（34106451311）——红线接通；③还原即绿。验收 #1（docker-only 全通）如实记缺口：其余 13 个 @SpringBootTest 类未迁，登记 S0-2b | 2026-09-07 |
 | **T12** | **S0-1：Flyway 迁移版本化**（路线图 §4.1，方案 B 变体落地） | `V1__baseline.sql`（init.sql 迁入，SQL 零改动）· flyway 依赖 + baseline-on-migrate + validate-on-migrate · 删除代码侧双写建表（2 个 SchemaInitializer + 2 个 ensureSchema）· `FlywayMigrationContractTest`（5 道闸）· compose/脚本/README/AGENTS §3.5 改写 · 报告 `docs/08-benchmark/100` | CI 绿（b240de4→34102402282）；**K1/K2 注入各命中预期**：K1 sql 目录 DDL→唯一一条注解精确点名契约测试；K2 坏 V2→全部上下文拒载，还原次轮直接转绿=PG 事务回滚无残留。⚠️ **验收 #3/#4 挂账**：机器人无 workflows 权限改不了 ci.yml，需用户重连 GitHub 或手工应用 ci 改动（报告 §五已备好文案） | 2026-09-07 |
@@ -126,7 +129,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | S0-1 | ~~**Flyway 迁移版本化**~~（D-01 由代理按路线图推荐采纳方案 B；落地形态=基线搬家+托管接入，历史迁移文件早已不存在） | — | 3d | 🟡 **待验收**（收尾挂账见下方挂起区） |
 | S0-2 | ~~**Testcontainers 集成测试**~~（0-2.6 评估：Redis/MinIO 均不做容器化；全量 docker-only 验收留 S0-2b） | — | 3d | 🟡 **待验收** |
 | S0-3 | ~~**Resilience4j 熔断降级**~~（0-3.5 范围缺口与恢复条件见待验收区 T14；logs/cmdb 槽随 S1 落地） | — | 3d | 🟡 **待验收** |
-| S0-4 | **评测跑通与基线记录**（§4.4：CI 独立 eval job + 基线数字写入报告 102） | S0-2 | 2d | 📋 |
+| S0-4 | ~~**评测跑通与基线记录**~~（报告 102 已产；eval job/artifact/README 行三项随 workflows 权限挂账；语义覆盖率待首次 REAL 手动运行回填） | S0-2 | 2d | 🟡 **待验收** |
 | S0-2b | 其余 13 个 `@SpringBootTest` 类迁入 Testcontainers 基座（验收 §4.2 #1 转 ✅ 的条件） | S0-2 | — | 📋 挂后续（阶段 1 前视时间择批迁；每类先查 Redis/调度器惰性） |
 
 \* 估期沿用路线图 §14（全职节奏）。**后续阶段（S1 取证 → S2 诊断 → S3 自愈 → S4 度量 → S5 加固）见路线图 §14，阶段内启动时再逐条登记。**
@@ -138,6 +141,9 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | # | 任务 | 挂起原因 | 恢复条件 |
 |---|---|---|---|
 | S0-1 收尾 | ci.yml：删「初始化数据库 Schema」psql 步骤 + 增 `flyway validate` 步骤 + 删除 `sql/init.sql` 兼容桩（验收 #1 纯空库 Flyway、#3/#4 一并收口） | GitHub App 无 **workflows** 权限，推送含 workflow 变更被拒（历史 workflow 变更均由用户账号推送） | 用户在 Arena 重连 GitHub / 或按报告 100 §五手工应用（两处文案已备好） |
+| S0-4 收尾 | ci.yml：新增 `eval`（EVAL_RAG=true）/`eval-llm`（workflow_dispatch + secrets.ALIBABA_API_KEY）双 job + 评测报告 artifact 上传；README 补评测行（验收后） | 同上 workflows 权限缺口；README 更新有验收门 | 同上；diff 已备于报告 102 §五，可与 S0-1 收尾同批应用 |
+| S0-4b | 知识库文档补充：40 条正例话题（MySQL/Redis/Docker/JVM/Nginx/Prometheus/CI/CD 等，id 清单在报告 102 §四）无内置文档对应 | 内容工作、非代码；补齐前 REAL 覆盖率天然受限 | 与阶段 4 评测迭代（S4-1）或内容专项一起做 |
+| S0-4c | SLB 内置文档无评测正例（文档-评测不对齐） | 补 2~3 条 SLB 提问进 eval_dataset.json，或文档侧标注暂无覆盖 | 随下次评测集修订一并处理 |
 | P0-2b 剩余 | Map → record：工单余下 11 个端点 + 知识库余下（多为透传 service，需连带评估） | 路线图未排期；已完成工单/知识库/告警/治理四个模块的高价值端点，是 P1-4 TS 类型生成的最小够用面 | 阶段 0 做「自动生成 TS 类型」（路线图 §10.1 债项）时，按实际需要的端点逐个补 |
 | — | ⚠️ **P0-2 的收益边界（前置调研已做，挂起后仍有效）** | 实测 70/130 端点返回 `Map`/`Object`，OpenAPI 只能生成 `additionalProperties: true`。恢复时按模块逐个改，**不要期待一次性全量** | — |
 
@@ -209,3 +215,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | 2026-09-07 | T12（S0-1）完成（转待验收）：Flyway 迁移版本化。**教训/新知**：①动手前核查证伪了路线图「25 个手写迁移文件」的前提（已于 8-27 并入 init.sql），方案 B 因此降级为「搬家+删双写」；②真正的双真相源不是两份文件，而是**代码侧 ensureSchema 与 init.sql 内容逐字重复**——单文件基线只消灭了第一副本；③机器人无 workflows 权限改 ci.yml → 用无 DDL 的 psql 过渡桩保住 CI 绿，验收 #3/#4 挂账到用户补权 |
 | 2026-09-07 | T13（S0-2）完成（转待验收）：Testcontainers 基座 + 检索链路迁入。**本轮最大收获记在 J1 探针**：路线图要求「维度 512 注入应变红」，实测竟绿——`MockEmbeddingModel` 硬编码 1536 绕过配置，MOCK 路径的维度红线是死的（CI 只有 MOCK 模式，等于从不校验维度一致性）。修复为永久代码（构造器注入），红线经「修复+注入红 / 还原绿」验证接通。另：J1b 首推因字段名漏改编译红，「沙箱无 JDK 改后必 grep 全引用」第四次应验 |
 | 2026-09-07 | T14（S0-3）完成（转待验收）：Resilience4j 熔断 + LLM 限流。**本轮教训独占一栏**：对外部库 API 面，三处记忆全部失真（BOM 托管范围、starter 传递链、注解属性面+类名去后缀），每一轮都以 CI 编译红为代价换来源码核对——今后凡引用未验证过的第三方 API，先官方源码/目录核对再写代码（呼应既有「拒绝使用未验证 API」教训） |
+| 2026-09-07 | T15（S0-4）完成（转待验收）：评测基线与口径收束，**阶段 0 四项全部落地**。**元教训**：①判据与度量模型必须同口径（0.73 语义门槛拿 MOCK 向量去比是无效测量）；②「56% 未命中」差点落成假基线——数字必须先问来历再落纸（实为限流拒绝伪造，被 ERROR 注解撞破）；③受限网络下注解通道（~250 字节截断）关键数字必须置消息首行；④评测第一天就抓住一个生产缺陷（S0-3 限流零等待），路线图「评测先行」自我应验 |
