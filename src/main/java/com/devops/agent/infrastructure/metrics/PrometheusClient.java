@@ -307,6 +307,10 @@ public class PrometheusClient {
                 // 网关错误页/代理劫持时，没有它几小时起步——此举为取证刚需，非调试残留。
                 String bodyPreview = resp.body() == null ? "<null>"
                         : resp.body().substring(0, Math.min(120, resp.body().length()));
+                // 探针（诊断期保留）：异常原始身份 + 精确失败列号——抓哑弹元凶。
+                System.out.println("[PROM-PARSE-PROBE] causeClass=" + parseError.getClass().getName()
+                        + " msg=" + String.valueOf(parseError.getMessage()).replaceAll("[\n\r]", " ")
+                        + " bodyLen=" + (resp.body() == null ? -1 : resp.body().length()));
                 throw new MetricsUnavailableException(
                         "Prometheus 返回了非 JSON 响应（HTTP " + resp.statusCode()
                                 + "），可能 base-url 指向了错误的服务；响应体头部="
