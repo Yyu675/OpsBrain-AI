@@ -1,0 +1,278 @@
+package com.devops.agent.domain.healing;
+
+import com.devops.agent.domain.approval.ApprovalService;
+import com.devops.agent.domain.diagnosis.Hypothesis;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * 自愈编排器（S3-1 批次 2）：治理门裁决 → 演算 → （审批）→ 执行 → 台账。
+ * <p>
+ * 三条路径（全部留痕，无一绕过台账）：
+ * <ul>
+ *   <li><b>AUTO_EXECUTE</b>：dryRun 通过 → 直接执行 → 一行终态
+ *       （SUCCEEDED/FAILED 带快照与撤销凭据）；</li>
+ *   <li><b>REQUIRES_APPROVAL</b>：dryRun 通过 → 创建审批单（payload 可重放）
+ *       → 一行 PENDING_APPROVAL；批准后由 {@link #executeApproved} 续走
+ *       → markFinished 回填终态 → 回写审批单执行结果；</li>
+ *   <li><b>DENIED / NO_EXECUTOR</b>：立即一行 REJECTED，reason 落 error 列——
+ *       拒绝也是审计事实，不是「没发生」。</li>
+ * </ul>
+ * </p>
+ * <p>
+ * 本类只管「该不该、做没做、做成没」。<b>怎么拍快照、怎么撤销</b>
+ * （错误率监控联动 + undo 触发）是批次 3 回滚触发器的职责。
+ * </p>
+ */
+@Service
+public class HealingOrchestrator {
+
+    private static final Logger log = LoggerFactory.getLogger(HealingOrchestrator.class);
+
+    private final HealingGate gate;
+    private final ExecutorRegistry registry;
+    private final HealingExecutionRepository repository;
+    private final ApprovalService approvalService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public HealingOrchestrator(HealingGate gate,
+                               ExecutorRegistry registry,
+                               HealingExecutionRepository repository,
+                               ApprovalService approvalService) {
+        this.gate = gate;
+        this.registry = registry;
+        this.repository = repository;
+        this.approvalService = approvalService;
+    }
+
+    /**
+     * 对入站动作走完整一条编排路径（响应 API 的同步出口）。
+     *
+     * @return 本次编排的终局视图——无论是自动直执行、进了审批还是被拒
+     */
+    public HealingOutcome handle(HealingAction action) {
+        // 1. 门裁决（唯一准入裁决点）
+        HealingGate.GateDecision decision = gate.decide(action);
+        log.info("[Healing] 门裁决 | action={} | type={} | reason={}",
+                action.actionKey(), decision.type(), decision.reason());
+
+        if (decision.type() == HealingGate.DecisionType.DENIED
+                || decision.type() == HealingGate.DecisionType.NO_EXECUTOR) {
+            long id = repository.insert(toDraft(action, decision, null, null,
+                    HealingExecution.Status.REJECTED, null, null, null, null));
+            return HealingOutcome.terminal(id, decision, HealingExecution.Status.REJECTED,
+                    decision.reason(), null);
+        }
+
+        // 2. 演算（审批单/执行计划的事实依据）
+        Optional<ActionExecutor> executorOpt = registry.locate(action.actionKey());
+        if (executorOpt.isEmpty()) {          // 竞态防御：门刚查过，此处双保险
+            long id = repository.insert(toDraft(action, decision, null, null,
+                    HealingExecution.Status.REJECTED, null, "注册表演算前执行器消失", null, null));
+            return HealingOutcome.terminal(id, decision, HealingExecution.Status.REJECTED,
+                    "注册表演算前执行器消失", null);
+        }
+        ActionExecutor executor = executorOpt.get();
+        ExecutionResult dry = executor.dryRun(action);
+        if (!dry.success()) {
+            long id = repository.insert(toDraft(action, decision, null, null,
+                    HealingExecution.Status.FAILED, null, dry.error(), null, null));
+            return HealingOutcome.terminal(id, decision, HealingExecution.Status.FAILED,
+                    "演算未通过：" + dry.error(), null);
+        }
+
+        // 3. 分支：免审批直执行 / 要审批建单
+        if (decision.type() == HealingGate.DecisionType.AUTO_EXECUTE) {
+            ExecutionResult real = executor.execute(action);
+            HealingExecution stored = toDraft(action, decision, dry, real,
+                    real.success() ? HealingExecution.Status.SUCCEEDED : HealingExecution.Status.FAILED,
+                    real.output(), real.error(), real.preSnapshot(), real.undoToken());
+            long id = repository.insert(stored);
+            log.warn("[Healing] AUTO_EXECUTE 终态 | id={} | action={} | success={}",
+                    id, action.actionKey(), real.success());
+            return HealingOutcome.terminal(id, decision, stored.status(),
+                    real.success() ? "已执行" : "执行失败：" + real.error(), real);
+        }
+
+        // 4. 审批路径：payload 可重放（审批批准后执行器按同样参数重走 dryRun+execute）
+        String payloadJson = buildApprovalPayload(action, dry);
+        Long approvalId = approvalService.submit(
+                "HEALING",                                     // actionType：审批页区分自愈单
+                action.actionKey(),
+                executor.permissionLevel(action.actionKey()).name(),  // 风险列 = 执行器声明的权限等级
+                buildSummary(action, dry),
+                payloadJson, action.requestedBy(),
+                traceId(action), null);                        // sessionId 未上手
+        HealingExecution pending = toDraft(action, decision, dry, null,
+                HealingExecution.Status.PENDING_APPROVAL, null, null, null, null);
+        long id = repository.insert(HealingExecution.draft(
+                pending.actionKey(), pending.environment(), pending.target(), pending.paramsJson(),
+                pending.alertId(), pending.requestedBy(), pending.gateDecision(), approvalId,
+                decision.executorKey(), pending.status(), pending.dryRunPlan(), null,
+                null, null, null));
+        log.warn("[Healing] REQUIRES_APPROVAL | id={} | approvalId={} | action={} | mode={}",
+                id, approvalId, action.actionKey(), decision.approvalMode());
+        return HealingOutcome.pending(id, decision, approvalId, dry);
+    }
+
+    /**
+     * 审批单被批准后的续走入口（HealingController 在批审回调中调）。
+     * <p>
+     * 契约：行必须处于 PENDING_APPROVAL；按台账里的原始参数重走
+     * dryRun + execute；终态回填 + 审批单执行结果回写。
+     * </p>
+     */
+    public HealingOutcome executeApproved(long executionId) {
+        HealingExecution row = repository.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("执行台账不存在: id=" + executionId));
+        if (!HealingExecution.Status.PENDING_APPROVAL.equals(row.status())) {
+            throw new IllegalStateException(
+                    "执行台账非待审批态，禁止重复执行: id=" + executionId + ", status=" + row.status());
+        }
+        HealingAction action = replayFromRow(row);
+        Optional<ActionExecutor> executorOpt = registry.locate(row.actionKey());
+        if (executorOpt.isEmpty()) {
+            repository.markFinished(executionId, HealingExecution.Status.FAILED,
+                    null, "批准复核时执行器已不可用", null, null);
+            return HealingOutcome.terminal(executionId,
+                    HealingGate.GateDecision.denied(row.actionKey(), "批准复核时执行器已不可用"),
+                    HealingExecution.Status.FAILED, "批准复核时执行器已不可用", null);
+        }
+        ActionExecutor executor = executorOpt.get();
+
+        ExecutionResult dry = executor.dryRun(action);
+        if (!dry.success()) {
+            repository.markFinished(executionId, HealingExecution.Status.FAILED,
+                    null, "批准复核演算未通过: " + dry.error(), null, null);
+            return HealingOutcome.terminal(executionId,
+                    HealingGate.GateDecision.needsApproval(row.actionKey(), "SINGLE", executor.executorKey(), null, null),
+                    HealingExecution.Status.FAILED, "批准复核演算未通过: " + dry.error(), null);
+        }
+
+        ExecutionResult real = executor.execute(action);
+        String finalStatus = real.success()
+                ? HealingExecution.Status.SUCCEEDED : HealingExecution.Status.FAILED;
+        repository.markFinished(executionId, finalStatus,
+                real.output(), real.error(), mapToJson(real.preSnapshot()), real.undoToken());
+        if (row.approvalId() != null) {
+            approvalService.recordExecution(row.approvalId(), real.success(),
+                    real.success() ? real.output() : real.error());
+        }
+        log.warn("[Healing] 批准执行终态 | id={} | approvalId={} | success={}",
+                executionId, row.approvalId(), real.success());
+        return HealingOutcome.terminal(executionId,
+                HealingGate.GateDecision.needsApproval(row.actionKey(), row.gateDecision(),
+                        executor.executorKey(), null, null),
+                finalStatus,
+                real.success() ? "批准后执行成功" : "批准后执行失败：" + real.error(), real);
+    }
+
+    /** 台账回放：从行字段复原 HealingAction（params_json → Map）。 */
+    private HealingAction replayFromRow(HealingExecution row) {
+        Map<String, Object> params = jsonToMap(row.paramsJson());
+        return new HealingAction(row.actionKey(), row.environment(), row.target(),
+                params, row.alertId(), row.requestedBy(), null);
+    }
+
+    // ---------------- 私有工具 ----------------
+
+    private HealingExecution toDraft(HealingAction action, HealingGate.GateDecision decision,
+                                     ExecutionResult dry, ExecutionResult real,
+                                     String status, String output, String error,
+                                     Map<String, Object> preSnapshot, String undoToken) {
+        return HealingExecution.draft(
+                action.actionKey(), action.environment(), action.target(),
+                mapToJson(action.params()), action.alertId(), action.requestedBy(),
+                decision.type().name(), null, decision.executorKey(), status,
+                dry != null ? dry.output() : null, output, error,
+                mapToJson(preSnapshot), undoToken);
+    }
+
+    private String buildSummary(HealingAction action, ExecutionResult dry) {
+        return "自愈审批：" + action.actionKey() + " @ " + action.target()
+                + "（环境 " + action.environment() + "）。演算：" + dry.output();
+    }
+
+    private String buildApprovalPayload(HealingAction action, ExecutionResult dry) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "actionKey", action.actionKey(),
+                    "environment", action.environment(),
+                    "target", action.target() == null ? "" : action.target(),
+                    "params", action.params(),
+                    "alertId", action.alertId() == null ? -1 : action.alertId(),
+                    "dryRunPlan", dry.output() == null ? "" : dry.output()));
+        } catch (Exception ex) {
+            return "{\"error\":\"payload build failed\"}";
+        }
+    }
+
+    private String traceId(HealingAction action) {
+        return "heal-" + (action.alertId() == null ? "manual" : action.alertId())
+                + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String mapToJson(Map<String, Object> map) {
+        if (map == null || map.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> jsonToMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, Map.class);
+        } catch (Exception ex) {
+            return Map.of();
+        }
+    }
+
+    /**
+     * 编排终局视图（API 层返回的契约）。
+     *
+     * @param executionId 台账行 id
+     * @param decision    门裁决类型（审批路径为 REQUIRES_APPROVAL）
+     * @param status      台账终态
+     * @param message     人类可读的终局总结
+     * @param approvalId  审批单 id（PENDING_APPROVAL 时必有；终态行为 null）
+     * @param dryRunPlan  演算计划文本（终端行有值 = 审批单可展示「将要发生什么」）
+     * @param result      执行结果（PENDING_APPROVAL 为 null）
+     */
+    public record HealingOutcome(
+            long executionId,
+            HealingGate.DecisionType decision,
+            String status,
+            String message,
+            Long approvalId,
+            String dryRunPlan,
+            ExecutionResult result) {
+
+        public static HealingOutcome terminal(long executionId, HealingGate.GateDecision decision,
+                                              String status, String message, ExecutionResult result) {
+            return new HealingOutcome(executionId, decision.type(), status,
+                    message, null, null, result);
+        }
+
+        public static HealingOutcome pending(long executionId, HealingGate.GateDecision decision,
+                                             Long approvalId, ExecutionResult dryRunResult) {
+            return new HealingOutcome(executionId, decision.type(),
+                    HealingExecution.Status.PENDING_APPROVAL,
+                    "已建审批单，等待人工点头", approvalId,
+                    dryRunResult.output(), null);
+        }
+    }
+}
