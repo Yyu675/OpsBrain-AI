@@ -177,8 +177,9 @@ const router = createRouter({
       }
     },
     {
-      path: '/self-healing/tasks', name: 'healing-tasks', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingTasks', 'dashboard'),
-      meta: { title: '自愈任务', stage: 'L4', hiddenFromNavigation: true, description: '追踪自动化自愈任务的计划、执行、验证与回滚状态。', capabilities: ['任务队列', '执行状态', '风险标识', '关联告警'] }
+      // S3-1：占位页已替换为真实实现 —— 自愈中心（执行台账 + 治理门触发 + 撤销）
+      path: '/self-healing/tasks', name: 'healing-tasks', component: lazy(() => import('../views/HealingCenter.vue'), 'HealingCenter', 'list'),
+      meta: { title: '自愈中心', stage: 'L4', roles: ['admin'], description: '受控自愈执行台账：治理门触发、审批回路、快照撤销一体审计。', capabilities: ['执行台账审计', '治理门触发', '审批回路', '快照撤销'] }
     },
     {
       path: '/self-healing/tasks/:id', name: 'healing-task-detail', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingTaskDetail', 'detail'),

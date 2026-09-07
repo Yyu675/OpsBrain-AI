@@ -22,6 +22,8 @@ export const API_ENDPOINTS = {
   AUTH_LOGOUT: `${API_BASE}/auth/logout`,
   // 审批中心（方向 D：L3 人机协同审批）
   APPROVALS: `${API_BASE}/approvals`,
+  // 自愈中心（S3-1：L4 受控自愈）
+  HEALING: `${API_BASE}/healing`,
 
   // M8 看板统计
   DASHBOARD_OVERVIEW: `${API_BASE}/dashboard/overview`,
