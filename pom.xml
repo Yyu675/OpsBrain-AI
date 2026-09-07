@@ -106,11 +106,15 @@
           与 ToolRuntimeManager 的分工（AGENTS 3.7.5）：Resilience4j 管
           「跨调用的熔断状态」（数据源客户端级），ToolRuntimeManager 管
           「单次工具执行的超时与重试」（工具级），两层不重叠。
-          版本由 spring-boot-dependencies 托管；注解切面需要 AOP starter。
+          版本注意：spring-boot-dependencies 3.5.6 <b>不</b>托管该构件
+          （首推即被打回），此处显式钉 2.4.0（central 目录核对的最新版，
+          2026-03 发布）；若与 Boot 3.5.6 组合出解析冲突，回退 2.3.0。
+          注解切面需要 AOP starter。
         -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>2.4.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -290,11 +294,13 @@
         <!--
           MockWebServer（S0-3）：熔断行为验证用——记录真实 HTTP 请求计数，
           证明「熔断打开后请求不再打网络」（路线图 §4.3 注入验证的工具）。
-          版本由 spring-boot-dependencies 管理 okhttp3 系列。
+          版本注意：BOM 同样不托管 okhttp3（与 resilience4j 同批发现），
+          显式钉 4.12.0（square 官方长期稳定版）。
         -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>mockwebserver</artifactId>
+            <version>4.12.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
