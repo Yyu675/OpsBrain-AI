@@ -74,7 +74,9 @@ class AlertReplayEvaluationTest {
         ticketService = mock(TicketService.class);
         AlertWebSocketNotifier notifier = mock(AlertWebSocketNotifier.class);
         Notifier dingTalk = mock(Notifier.class);
-        service = new AlertService(alertRepository, ticketService, notifier, dingTalk);
+        service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
+                // S2-1：诊断编排器挂 mock——触发路径本身不属于本测试的关注面
+                mock(com.devops.agent.application.diagnosis.DiagnosisOrchestrator.class));
 
         ReflectionTestUtils.setField(service, "alertEnabled", true);
         ReflectionTestUtils.setField(service, "autoTicketEnabled", true);

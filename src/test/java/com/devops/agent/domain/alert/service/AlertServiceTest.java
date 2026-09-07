@@ -65,6 +65,7 @@ class AlertServiceTest {
     private TicketService ticketService;
     private AlertWebSocketNotifier notifier;
     private Notifier dingTalk;
+    private com.devops.agent.application.diagnosis.DiagnosisOrchestrator diagnosisOrchestrator;
     private AlertService service;
 
     @BeforeEach
@@ -73,7 +74,10 @@ class AlertServiceTest {
         ticketService = mock(TicketService.class);
         notifier = mock(AlertWebSocketNotifier.class);
         dingTalk = mock(Notifier.class);
-        service = new AlertService(alertRepository, ticketService, notifier, dingTalk);
+        diagnosisOrchestrator = mock(com.devops.agent.application.diagnosis.DiagnosisOrchestrator.class);
+        when(diagnosisOrchestrator.submit(anyLong(), any(), anyString())).thenReturn("trace-diag-1");
+        service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
+                diagnosisOrchestrator);
 
         // @Value 字段在非 Spring 环境不会注入，必须显式设成与生产默认值一致
         ReflectionTestUtils.setField(service, "alertEnabled", true);
@@ -81,6 +85,7 @@ class AlertServiceTest {
         ReflectionTestUtils.setField(service, "alertCreator", "alert-bot");
         ReflectionTestUtils.setField(service, "aggregateEnabled", true);
         ReflectionTestUtils.setField(service, "aggregateWindowMinutes", 5);
+        ReflectionTestUtils.setField(service, "autoDiagnoseEnabled", true);
 
         // 默认：无活跃告警、无可聚合的组工单、保存后回填 ID
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
@@ -486,4 +491,60 @@ class AlertServiceTest {
             verify(alertRepository, never()).updateTicketId(anyLong(), eq((String) null));
         }
     }
+
+    // ==================== S2-1：自动诊断入钩 ====================
+
+    @Test
+    @DisplayName("S2-1：新告警建单后触发自动诊断（alertId/工单号/服务名透传）")
+    void newAlertTriggersDiagnosis() {
+        service.processWebhook(webhook(incoming("firing", Map.of(
+                "alertname", "HighErrorRate",
+                "service", "order-service",
+                "severity", "critical"))));
+        verify(diagnosisOrchestrator).submit(eq(1L), eq("TK-2026-0001"), eq("order-service"));
+    }
+
+    @Test
+    @DisplayName("S2-1：去重告警不重复触发诊断（§6.1 验收第 4 条）")
+    void dedupAlertSkipsDiagnosis() {
+        Alert existing = new Alert();
+        existing.setId(42L);
+        existing.setOccurrenceCount(1);
+        existing.setTicketId("TK-OLD");
+        when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(existing));
+        service.processWebhook(webhook(incoming("firing", Map.of(
+                "alertname", "HighErrorRate",
+                "service", "order-service",
+                "severity", "critical"))));
+        verify(diagnosisOrchestrator, never()).submit(anyLong(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("S2-1：聚合抑制分支不触发独立诊断（风暴根源一条诊断即可）")
+    void aggregatedAlertSkipsDiagnosis() {
+        Alert group = new Alert();
+        group.setId(7L);
+        group.setTicketId("TK-GROUP");
+        when(alertRepository.findActiveGroupTicket(any(), any(), anyInt())).thenReturn(Optional.of(group));
+        service.processWebhook(webhook(incoming("firing", Map.of(
+                "alertname", "HighErrorRate",
+                "service", "order-service",
+                "severity", "critical"))));
+        verify(diagnosisOrchestrator, never()).submit(anyLong(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("S2-1：自动诊断开关关闭 → 建单照走，诊断不触发")
+    void diagnosisSwitchOff() {
+        ReflectionTestUtils.setField(service, "autoDiagnoseEnabled", false);
+        service.processWebhook(webhook(incoming("firing", Map.of(
+                "alertname", "HighErrorRate",
+                "service", "order-service",
+                "severity", "critical"))));
+        verify(diagnosisOrchestrator, never()).submit(anyLong(), any(), anyString());
+        // 建单仍发生（开关只关诊断）
+        verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                any(), anyString(), anyString(), anyString());
+    }
+
 }

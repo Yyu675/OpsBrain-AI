@@ -63,13 +63,19 @@ public class AlertService {
     /** 通知渠道：依赖接口而非具体厂商实现（可插拔） */
     private final com.devops.agent.domain.notify.Notifier notifier;
 
+    /** 诊断编排器（S2-1）：新告警建单后异步触发诊断。required=false 的旧构造点
+     *  （三个手工构造测试）不挂它的场景沿用原语义——诊断是附属增值，缺装不阻断。 */
+    private final com.devops.agent.application.diagnosis.DiagnosisOrchestrator diagnosisOrchestrator;
+
     public AlertService(AlertRepository alertRepository, TicketService ticketService,
                         AlertWebSocketNotifier alertNotifier,
-                        com.devops.agent.domain.notify.Notifier notifier) {
+                        com.devops.agent.domain.notify.Notifier notifier,
+                        com.devops.agent.application.diagnosis.DiagnosisOrchestrator diagnosisOrchestrator) {
         this.alertRepository = alertRepository;
         this.ticketService = ticketService;
         this.alertNotifier = alertNotifier;
         this.notifier = notifier;
+        this.diagnosisOrchestrator = diagnosisOrchestrator;
     }
 
     // ==================== 配置注入（application.yml devops.alert.*） ====================
@@ -90,6 +96,10 @@ public class AlertService {
     /** 告警聚合降噪开关（方向 E）。关闭后回退为每条告警各建单（原行为） */
     @Value("${devops.alert.aggregate-enabled:true}")
     private boolean aggregateEnabled;
+
+    /** 自动诊断开关（S2-1）。关闭后告警仍入库建单，但不触发诊断编排 */
+    @Value("${devops.alert.auto-diagnose-enabled:true}")
+    private boolean autoDiagnoseEnabled;
 
     /** 聚合时间窗口（分钟）：窗口内同 service+module 的不同告警聚合到同一工单 */
     @Value("${devops.alert.aggregate-window-minutes:5}")
@@ -292,6 +302,37 @@ public class AlertService {
 
         // 自动建单（Single Writer 契约 6.10：通过 TicketService 写入，不直写 Repository）
         createAutoTicket(saved, alertName, service, module);
+
+        // S2-1：新告警 → 自动诊断（异步、不阻塞；工单号可能为空由会话表回填设计承载）。
+        // 去重与聚合抑制分支在上方已 return——两条旁路天然不重复触发诊断。
+        triggerAutoDiagnosis(saved, service);
+    }
+
+    /**
+     * 自动诊断触发点（S2-1，路线图 §6.1 2-1.1）。
+     * <p>
+     * 诊断是附属增值：任何触发失败只记 WARN，不反噬告警入库/建单主流程
+     * （与上方「建单失败不阻塞告警入库」同一族护身原则）。
+     * </p>
+     */
+    private void triggerAutoDiagnosis(Alert alert, String service) {
+        if (!autoDiagnoseEnabled) {
+            log.info("⏸️ [AlertService] 自动诊断已关闭，跳过 | alertId={}", alert.getId());
+            return;
+        }
+        if (service == null || service.isBlank()) {
+            log.info("ℹ️ [AlertService] 告警无服务名，跳过诊断 | alertId={} | alertName={}",
+                    alert.getId(), alert.getAlertName());
+            return;
+        }
+        try {
+            String traceId = diagnosisOrchestrator.submit(alert.getId(), alert.getTicketId(), service);
+            log.info("🩺 [AlertService] 自动诊断已提交 | alertId={} | ticketId={} | service={} | traceId={}",
+                    alert.getId(), alert.getTicketId(), service, traceId);
+        } catch (Exception e) {
+            log.warn("⚠️ [AlertService] 自动诊断提交失败（不影响告警/工单） | alertId={} | error={}",
+                    alert.getId(), e.getMessage());
+        }
     }
 
     /**

@@ -87,7 +87,9 @@ class AlertTimeZoneConsistencyTest {
         ticketService = mock(TicketService.class);
         notifier = mock(AlertWebSocketNotifier.class);
         dingTalk = mock(Notifier.class);
-        service = new AlertService(alertRepository, ticketService, notifier, dingTalk);
+        service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
+                // S2-1：诊断编排器挂 mock——触发路径本身不属于本测试的关注面
+                mock(com.devops.agent.application.diagnosis.DiagnosisOrchestrator.class));
 
         // @Value 字段在非 Spring 环境不会注入，不设则全是 false/0，
         // alertEnabled=false 会让 handle() 直接返回，用例以无关原因"通过"
