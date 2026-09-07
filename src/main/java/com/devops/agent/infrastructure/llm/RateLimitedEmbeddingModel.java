@@ -27,8 +27,9 @@ import java.util.List;
  *
  * <h3>范围说明（诚实边界）</h3>
  * <ul>
- *   <li>限流拒绝即失败：{@code timeout-duration: 0}（application.yml 已注明依据），
- *       不排队——SSE/调度线程不应挂在许可等待上；</li>
+ *   <li>配速优先、超时兜底（S0-3 校正版）：{@code timeout-duration: 10s}
+ *       ——摄取/评测是顺序批量突发，零等待会把它们拒绝掉（实测假阴性，
+ *       见报告 102 §三）；10s 上限消化突发，超限仍拒绝防失控任务无限排队；</li>
  *   <li>本装饰器不管超时：单次调用的时长上限由端点级 HTTP 超时承担
  *       （{@code LlmEndpointSpec.timeout}），chat 流式（TokenStream）在
  *       Bean 层既不能 TimeLimit 也不宜 RateLimit 打断，其治理随阶段 1

@@ -186,25 +186,29 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
     private KnowledgeIngestionService ingestionService;
 
     @Test
-    @DisplayName("RAG 覆盖层：正例知识库命中率（需 pgvector + 种子数据，EVAL_RAG=true）")
-    // ⚠️ S0-4 基线捕获轮临时摘除 @EnabledIfEnvironmentVariable(EVAL_RAG)：
-    // 捕获到真实命中率后立刻恢复门控（约定 CI eval job 才置 EVAL_RAG=true）。
+    @DisplayName("RAG 覆盖层：检索管道连通性（需 pgvector + 种子数据，EVAL_RAG=true）")
+    @EnabledIfEnvironmentVariable(named = "EVAL_RAG", matches = "true")
     void ragCoverageEvaluation() throws Exception {
         List<EvalItem> items = loadDataset();
         List<EvalItem> positives = items.stream().filter(i -> i.type().equals("POSITIVE")).toList();
 
-        // S0-4：种子数据 = 内置知识库文档（classpath:knowledge/*.md），
-        // 真空容器库先摄取再评分。MOCK 嵌入向量跨文本近似正交，本层口径是
-        // 「hybrid 融合通道（vector↔tsvector 混合）在 minScore=0 下能否捞出
-        // 相关片段」——它度量【知识库文本与提问的术语重合度】，
-        // 不度量语义向量质量（那个口径归 EVAL_LLM/真实嵌入，报告 102 会注明）。
+        // S0-4 定版口径（实测两次后确立，详见报告 102 §三的关键教训）：
+        // 种子数据 = 内置知识库文档（classpath:knowledge/*.md），真空容器库
+        // 先摄取再评分。MOCK 嵌入向量跨文本近似正交，在默认 minScore=0.73 下
+        // 命中率≈0 是度量失真、不是覆盖缺失；在 minScore=0（本类属性）下
+        // 命中率必然 100%——这不是「全覆盖」，而是【检索管道连通性判据】：
+        // 任何一次「有数据却返回空/null」都是管道断裂信号（实测曾抓住
+        // S0-3 限流零等待拒绝批量摄取的缺陷）。语义级覆盖率判据只有
+        // 真实嵌入才有意义，归 EVAL_LLM 手动 job（0-4.5）。
         var ingest = ingestionService.ingestAllLocalDocuments(true);
         org.junit.jupiter.api.Assertions.assertTrue(ingest.getChunksIngested() > 0,
                 "EVAL_RAG 前置失败：空容器库摄取种子文档为 0 切片——评测无对象");
 
         StringBuilder report = new StringBuilder();
         appendReport(report, "# L1 问答评测报告（RAG 覆盖层）\n");
-        appendReport(report, "> 正例 " + positives.size() + " 条 · 判据：检索命中 ≥ 1 片段（topK=3，minScore=0.73）\n");
+        appendReport(report, "> 正例 " + positives.size()
+                + " 条 · 判据（MOCK 连通性口径）：检索返回非空（topK=3，minScore=0，"
+                + "语义口径说明见方法注释 / 报告 102 §三）\n");
 
         org.junit.jupiter.api.Assertions.assertNotNull(hybridRetrieverService,
                 "EVAL_RAG=true 但 HybridRetrieverService 未注入——请确认 pgvector 可用且种子数据已导入");
@@ -231,40 +235,13 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
             appendReport(report, "\n## 未命中正例（知识库缺口，需补文档）\n" + String.join("\n", missed) + "\n");
         }
         writeReport(report);
-        // ⚠️ S0-4 基线捕获轮：阈值临时抬到 100%——必红，红的注解首行携带精确
-        // 命中率（受限网络下 artifact 不可下载、注解约 250 字截断，数字必须
-        // 放在消息最前）。取得数字后立即恢复常态阈值与门控。
+        // 连通性红线：minScore=0 +场景 有数据时命中率必须 100%；任何 <100% 意味着
+        // 有查询返回了空/null——管道断裂（如限流拒绝、向量化异常被吞为 null
+        // 信号）。这不是「覆盖质量 ≥90%」的门槛（那个门槛只在真实嵌入下
+        // 可测量，归 EVAL_LLM 手动 job）。
         org.junit.jupiter.api.Assertions.assertTrue(hitRate >= 1.0,
-                String.format("S0-4-BASELINE hitRate=%.1f%% hit=%d/%d",
-                        hitRate * 100, hit, positives.size()));
-    }
-
-    /** S0-4 捕获轮专用：按文档归属桶统计命中分布（第二个注解通道，验后连本方法一起删） */
-    @Test
-    @DisplayName("S0-4 临时：命中分布三桶统计")
-    void tmpBaselineBucketStats() throws Exception {
-        List<EvalItem> positives = loadDataset().stream()
-                .filter(i -> i.type().equals("POSITIVE")).toList();
-        ingestionService.ingestAllLocalDocuments(true);
-        KnowledgeScope scope = KnowledgeScope.admin("eval-runner", null);
-        int k8sHit = 0, k8sTotal = 0, slbHit = 0, slbTotal = 0, otherHit = 0, otherTotal = 0;
-        StringBuilder otherMissed = new StringBuilder();
-        for (EvalItem item : positives) {
-            String q = item.query().toLowerCase();
-            List<String> chunks = hybridRetrieverService.retrieve(item.query(), 3, scope);
-            boolean hitB = chunks != null && !chunks.isEmpty();
-            if (q.contains("k8s") || q.contains("pod") || q.contains("kubectl") || q.contains("容器")) {
-                k8sTotal++; if (hitB) k8sHit++;
-            } else if (q.contains("slb") || q.contains("负载均衡")) {
-                slbTotal++; if (hitB) slbHit++;
-            } else {
-                otherTotal++; if (hitB) otherHit++; else otherMissed.append('#').append(item.id).append(' ');
-            }
-        }
-        org.junit.jupiter.api.Assertions.fail(String.format(
-                "S0-4-BUCKETS k8s=%d/%d slb=%d/%d other=%d/%d otherMissed={%s}",
-                k8sHit, k8sTotal, slbHit, slbTotal, otherHit, otherTotal,
-                otherMissed.length() > 120 ? otherMissed.substring(0, 120) + "…" : otherMissed.toString()));
+                "检索管道连通性断裂：命中率 " + String.format("%.1f%%", hitRate * 100)
+                        + "（缺失查询详见报告 target/eval-report.md 未命中清单）");
     }
 
     // ==================== 第三层：LLM 端到端评测（EVAL_LLM=true）====================
