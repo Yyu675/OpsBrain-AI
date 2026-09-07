@@ -140,7 +140,9 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
         for (int i = 0; i < 29; i++) {
             sb.append('[').append(base + i * 30).append(",\"0.10\"],");
         }
-        sb.append('[').append(base + 29L * 30).append(",\"5.00\"]}");
+        // 收尾必须三层连闭：内层数组 ] → 外层 values 数组 ] → 指标对象 }
+        // （此前漏写外层 ]，Jackson 在第 707 列报 "Unexpected close marker '}'"）
+        sb.append('[').append(base + 29L * 30).append(",\"5.00\"]]}");
         enqueueMatrix(sb.toString());
         var e = collector.collect("order-service", "30m", "cpu");
         assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);

@@ -120,8 +120,12 @@ class K8sHealingExecutorsTest {
         PodList siblings = new PodList();
         siblings.setItems(java.util.List.of(pod("user-abc", 2), pod("user-def", 0),
                 pod("user-ghi", 0), pod("user-jkl", 0), pod("user-mno", 0)));
-        when(chain.nsOps().withLabel("app", "user-service").list())
-                .thenReturn(siblings);
+        // withLabel 中间环也要落到桩上——直接对返回值再 stub，不信赖链式默认值
+        @SuppressWarnings("unchecked")
+        io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable<Pod, PodList, PodResource> filtered =
+                mock(io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable.class);
+        when(chain.nsOps().withLabel("app", "user-service")).thenReturn(filtered);
+        when(filtered.list()).thenReturn(siblings);
 
         ExecutionResult dry = restartWith(chain.client()).dryRun(
                 action("k8s.pod.restart", Map.of("namespace", "staging", "pod", "user-abc")));
