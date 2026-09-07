@@ -7,6 +7,8 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -39,6 +41,8 @@ public class LlmHypothesisGenerator implements HypothesisGenerator {
     /** MOCK/dev 下为 null（AiModelConfig 仅在 REAL 模式注册）；不强制注入。 */
     @Autowired(required = false)
     private ChatModel turboModel;
+
+    private static final Logger log = LoggerFactory.getLogger(LlmHypothesisGenerator.class);
 
     private final RuleBasedHypothesisGenerator ruleBasedFallback;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -93,7 +97,9 @@ public class LlmHypothesisGenerator implements HypothesisGenerator {
             }
             return llmGenerated;
         } catch (Exception ex) {
-            // 回落触发点 3：任何调用异常——静默回落，不污染上层
+            // 回落触发点 3：任何调用异常——回落规则基线，不污染上层；
+            // MOCK 模式会稳定走进这条分支，故用 debug 而非 warn（防噪声风暴）
+            log.debug("[Hypothesis] LLM 调用异常，回落规则基线：{}", ex.getMessage());
             return ruleBasedFallback.generate(aggregated, evidenceWithIds);
         }
     }
@@ -118,6 +124,8 @@ public class LlmHypothesisGenerator implements HypothesisGenerator {
             }
             return objectMapper.writeValueAsString(items);
         } catch (Exception ignored) {
+            // 序列化理论上不会失败（LinkedHashMap + 基本类型）；收口时留痕不再裸吞
+            log.debug("[Hypothesis] 证据摘要 JSON 序列化失败，给 LLM 传空数组：{}", ignored.getMessage());
             return "[]";
         }
     }
@@ -160,7 +168,10 @@ public class LlmHypothesisGenerator implements HypothesisGenerator {
             }
             return candidates;
         } catch (Exception ex) {
-            return null; // 解析失败：当作「模型没给出结果」，交由规则基线
+            // 解析失败 = 模型输出非预期 JSON，当作「没给出结果」交由规则基线；
+            // 留 debug 痕——LLM 提示词调优期需要看到为什么解析不上
+            log.debug("[Hypothesis] LLM 输出解析失败，交由规则基线：{}", ex.getMessage());
+            return null;
         }
     }
 

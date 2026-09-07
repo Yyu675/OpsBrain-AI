@@ -72,6 +72,9 @@ public class K8sRestartPodExecutor extends AbstractK8sHealingExecutor {
                             + "，本次影响 1 个（爆炸半径比率上限 "
                             + Math.round(maxBlastRatio * 100) + "%）");
         } catch (Exception e) {
+            // 返回值里已带异常类名给人看，日志侧同步留痕给运维查
+            log.warn("⚠️ [K8sHealing] 演算查询失败 | action={} 异常={}",
+                    action.actionKey(), e.getMessage());
             return ExecutionResult.fail(executorKey(), action.actionKey(), true,
                     "K8s 演算查询失败（" + e.getClass().getSimpleName() + "）");
         }

@@ -134,6 +134,8 @@ public class HealingController {
                             ? u.getDisplayName() : u.getUsername())
                     .orElse("user:" + userId);
         } catch (Exception e) {
+            // 未登录/非请求上下文 → 「unknown」是预期身份；留 debug 痕，排障时不至于无从查起
+            log.debug("[Healing] 操作人身份取不到，回落 unknown：{}", e.getMessage());
             return "unknown";
         }
     }

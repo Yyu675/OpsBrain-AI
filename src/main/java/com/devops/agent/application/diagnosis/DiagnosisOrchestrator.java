@@ -281,7 +281,10 @@ public class DiagnosisOrchestrator {
         try {
             stateManager.transition(toState, trigger, detail);
         } catch (Exception ignore) {
-            // 状态机不兜底——排障依据是会话行，不是状态机单点
+            // 状态机不兜底——排障依据是会话行，不是状态机单点；
+            // 但契约要求留痕：debug 级别既不进告警噪声，又能在排障现场指到它
+            log.debug("[Diagnosis] 状态机转移跳过 | to={} trigger={} 原因={}",
+                    toState, trigger, ignore.getMessage());
         }
     }
 

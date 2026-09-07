@@ -484,6 +484,8 @@ public class HealingOrchestrator {
                     "alertId", action.alertId() == null ? -1 : action.alertId(),
                     "dryRunPlan", dry.output() == null ? "" : dry.output()));
         } catch (Exception ex) {
+            // error 字符串会写进审计 JSON（现场其实可见），补 debug 痕让日志侧也能指到
+            log.debug("[Healing] 审计 payload 组装失败（已降级为 error 占位）：{}", ex.getMessage());
             return "{\"error\":\"payload build failed\"}";
         }
     }
@@ -500,6 +502,7 @@ public class HealingOrchestrator {
         try {
             return objectMapper.writeValueAsString(map);
         } catch (Exception ex) {
+            log.debug("[Healing] Map→JSON 序列化失败（已按 null 落库）：{}", ex.getMessage());
             return null;
         }
     }
@@ -512,6 +515,9 @@ public class HealingOrchestrator {
         try {
             return objectMapper.readValue(json, Map.class);
         } catch (Exception ex) {
+            // undoToken 是我们自己写入的——读不回来等于数据已受损，warn 级留证据
+            log.warn("⚠️ [Healing] undoToken JSON 反序列化失败，按空 Map 处理（撤销能力受影响）：{}",
+                    ex.getMessage());
             return Map.of();
         }
     }

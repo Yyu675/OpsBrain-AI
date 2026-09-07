@@ -71,6 +71,8 @@ public class K8sScaleReplicasExecutor extends AbstractK8sHealingExecutor {
                             + " 调整为 " + target + "（影响 " + affected + " 个 Pod，"
                             + "回滚方案：执行后按快照恢复为 " + current + "）");
         } catch (Exception e) {
+            log.warn("⚠️ [K8sHealing] 演算查询失败 | action={} 异常={}",
+                    action.actionKey(), e.getMessage());
             return ExecutionResult.fail(executorKey(), action.actionKey(), true,
                     "K8s 演算查询失败（" + e.getClass().getSimpleName() + "）");
         }
@@ -154,6 +156,9 @@ public class K8sScaleReplicasExecutor extends AbstractK8sHealingExecutor {
                             + " 副本数恢复为 " + previousReplicas,
                     Map.of(), null);
         } catch (Exception e) {
+            // 回滚失败 = 事故升级的临界时刻，error 级留痕
+            log.error("🚨 [K8sHealing] 回滚副本数失败 | ns={} deploy={} 异常={}",
+                    action.environment(), action.target(), e.getMessage());
             return ExecutionResult.fail(executorKey(), action.actionKey(), false,
                     "K8s 回滚副本数失败（" + e.getClass().getSimpleName() + "）——升级人工处理");
         }
