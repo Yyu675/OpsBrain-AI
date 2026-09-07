@@ -58,6 +58,11 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 2
         # 自动转半开：不依赖「恰好有人发起查询」才开始探测恢复
         automatic-transition-from-open-to-half-open-enabled: true
+        # 「集成未启用」是配置状态、不是数据源健康度：禁用即失败若也计数，
+        # 一个刻意关掉的实例会被误判「连续失败」而打开熔断，健康页显示「熔断中」
+        # 就成了误导。抛出型异常 MetricsIntegrationDisabledException 由这里排出统计
+        # （注解没有 ignoreExceptions 属性，忽略清单只能写在实例配置里）。
+        ignore-exceptions: com.devops.agent.infrastructure.metrics.MetricsIntegrationDisabledException
       # 预留实例槽：logs / cmdb 客户端随阶段 1（S1-2/S1-3）落地时接挂。
   ratelimiter:
     instances:

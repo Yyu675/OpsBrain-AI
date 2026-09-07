@@ -126,8 +126,7 @@ public class PrometheusClient {
      *         「当前没有满足条件的实例」是正常业务结果）
      * @throws MetricsUnavailableException Prometheus 不可达、超时或返回错误
      */
-    @CircuitBreaker(name = "prometheus", fallbackMethod = "queryFallback",
-            ignoreExceptions = MetricsIntegrationDisabledException.class)
+    @CircuitBreaker(name = "prometheus", fallbackMethod = "queryFallback")
     public List<PromQuery.Sample> query(String promql) {
         requireEnabled();
         String url = baseUrl + "/api/v1/query?query=" + encode(promql);
@@ -143,8 +142,7 @@ public class PrometheusClient {
      * @param to     结束时刻
      * @param stepSeconds 采样步长（秒）
      */
-    @CircuitBreaker(name = "prometheus", fallbackMethod = "queryRangeFallback",
-            ignoreExceptions = MetricsIntegrationDisabledException.class)
+    @CircuitBreaker(name = "prometheus", fallbackMethod = "queryRangeFallback")
     public List<PromQuery.Series> queryRange(String promql, Instant from, Instant to,
                                              int stepSeconds) {
         requireEnabled();
@@ -180,8 +178,7 @@ public class PrometheusClient {
      *
      * @return {@code {reachable, latencyMs, baseUrl, error?}}
      */
-    @CircuitBreaker(name = "prometheus", fallbackMethod = "healthFallback",
-            ignoreExceptions = MetricsIntegrationDisabledException.class)
+    @CircuitBreaker(name = "prometheus", fallbackMethod = "healthFallback")
     public Map<String, Object> health() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("baseUrl", baseUrl);
