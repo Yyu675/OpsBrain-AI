@@ -70,7 +70,7 @@ public class LogsEvidenceCollector {
      * @param keyword 内容过滤关键词（可空）
      * @param level   ERROR/WARN/INFO/DEBUG/ALL，默认 ERROR
      */
-    public Evidence collect(String service, String range, String keyword, String level) {
+    public Evidence collect(String service, String range, String level, String keyword) {
         if (!logQueryClient.isEnabled()) {
             return new Evidence(EvidenceStatus.UNAVAILABLE, Evidence.Type.LOGS,
                     "日志数据源未启用（devops.logs.loki.enabled!=true）",

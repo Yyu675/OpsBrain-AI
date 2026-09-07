@@ -124,9 +124,18 @@ class LogsEvidenceCollectorTest extends AbstractIntegrationTest {
         assertThat(ev.status())
                 .as(() -> "evidence_title=" + ev.title() + " || " + ev.toToolPayload())
                 .isEqualTo(Evidence.EvidenceStatus.SUCCESS);
-        String payload = ev.toToolPayload();
-        assertThat(payload).contains("<untrusted_log>").contains("</untrusted_log>");
-        assertThat(payload).contains("\"template\"").contains("\"count\":2");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> content = read(ev);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> patterns = (java.util.List<Map<String, Object>>) content.get("patterns");
+        assertThat(patterns).hasSize(2);
+        assertThat(((Number) patterns.get(0).get("count")).intValue())
+                .as("前两条同形日志应聚为 1 个模式（count=2），实际 patterns=%s", patterns)
+                .isEqualTo(2);
+        @SuppressWarnings("unchecked")
+        java.util.List<String> samples = (java.util.List<String>) patterns.get(0).get("samples");
+        assertThat(samples).as("样本必须经不可信包裹").allSatisfy(sm ->
+                assertThat(sm).startsWith("<untrusted_log>").endsWith("</untrusted_log>"));
     }
 
     @Test
@@ -142,9 +151,13 @@ class LogsEvidenceCollectorTest extends AbstractIntegrationTest {
         assertThat(ev.status())
                 .as(() -> "evidence_title=" + ev.title() + " || " + ev.toToolPayload())
                 .isEqualTo(Evidence.EvidenceStatus.SUCCESS);
-        String payload = ev.toToolPayload();
-        assertThat(payload).contains("\"injectionDetected\":true");
-        assertThat(payload).contains("<untrusted_log>", "被检出样本仍然包裹");
+        Map<String, Object> content = read(ev);
+        assertThat(content.get("injectionDetected"))
+                .as("攻击样本必须被标记，实际 content=%s", content)
+                .isEqualTo(Boolean.TRUE);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> patterns = (java.util.List<Map<String, Object>>) content.get("patterns");
+        assertThat(patterns.toString()).as("被检出样本仍然包裹").contains("<untrusted_log>");
     }
 
     @Test
@@ -161,7 +174,10 @@ class LogsEvidenceCollectorTest extends AbstractIntegrationTest {
         assertThat(payload.length())
                 .as("超预算必被收束：载荷=%d <=2000 || %s", payload.length(), payload.substring(0, Math.min(300, payload.length())))
                 .isLessThanOrEqualTo(2000);
-        assertThat(payload).contains("\"summarized\":true");
+        Map<String, Object> content = read(ev);
+        assertThat(content.get("summarized"))
+                .as("超预算必须标 summarized，实际 content=%s", content)
+                .isEqualTo(Boolean.TRUE);
     }
 
     @Test
@@ -172,5 +188,16 @@ class LogsEvidenceCollectorTest extends AbstractIntegrationTest {
         assertThat(ev.status())
                 .as(() -> "evidence_title=" + ev.title() + " || " + ev.toToolPayload())
                 .isEqualTo(Evidence.EvidenceStatus.FAILED);
+    }
+
+    /** 解析工具载荷中的 content 段（让断言失败自带上下文，不再被字符串截断坑）。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> read(com.devops.agent.domain.evidence.Evidence ev) {
+        try {
+            Map<String, Object> root = new ObjectMapper().readValue(ev.toToolPayload(), Map.class);
+            return (Map<String, Object>) root.get("content");
+        } catch (Exception e) {
+            throw new IllegalStateException("载荷不可解析: " + ev.toToolPayload(), e);
+        }
     }
 }
