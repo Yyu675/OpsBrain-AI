@@ -71,7 +71,7 @@ public class AlertDto {
         public static AlertPage of(List<Alert> alerts, long total, int page, int size) {
             // size 已由控制器钳制为 ≥1，此处不再兜底：
             // 若真为 0 应当暴露为除零异常，而不是静默返回一个错误的页数
-            int totalPages = (int) (total / size); // G-1 注入探针：整除截断
+            int totalPages = (int) Math.ceil((double) total / size);
             return new AlertPage(alerts, total, page, size, totalPages);
         }
     }
