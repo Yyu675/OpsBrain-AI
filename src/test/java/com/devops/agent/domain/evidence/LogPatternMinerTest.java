@@ -58,7 +58,8 @@ class LogPatternMinerTest {
 
         var mixed = LogPatternMiner.mine(List.of(
                 entry("aaa 1"), entry("aaa 2"),
-                new LogEntry(Instant.now(), "WARN", "bbb 1"), new LogEntry(Instant.now(), "WARN", "bbb 2")));
+                new LogEntry(Instant.now(), "WARN", "bbb 1", Map.of()),
+                new LogEntry(Instant.now(), "WARN", "bbb 2", Map.of())));
         assertEquals(2, mixed.get(0).count());
         assertEquals("ERROR", mixed.get(0).worstLevel(), "并列时 ERROR 模式应在 WARN 前");
     }
