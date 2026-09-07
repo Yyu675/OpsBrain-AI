@@ -1,6 +1,6 @@
 package com.devops.agent.controller;
 
-import com.devops.agent.common.ApiResponse;
+import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.common.guard.KnowledgeWriteGuard;
 import jakarta.validation.Valid;
 import com.devops.agent.domain.biz.entity.ChangeEvent;
