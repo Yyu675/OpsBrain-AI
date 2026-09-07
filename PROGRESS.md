@@ -92,7 +92,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| — | 暂无（T14/S0-3 已转待验收；下一轮启动 S0-4 评测基线，前置 S0-2 已具备） | | |
+| T15 | **S0-4：评测跑通与基线记录**（路线图 §4.4，报告 102） | RAG 覆盖层迁 Testcontainers + 种库前置（ingestAllLocalDocuments）+ 基线数字经注解通道捕获（artifact 受限不可下载）+ 阈值按实测基线落定；CI eval job 与 artifact 上传 steps 备好 diff 随报告挂账（workflows 权限） | 2026-09-07 |
 
 ---
 
