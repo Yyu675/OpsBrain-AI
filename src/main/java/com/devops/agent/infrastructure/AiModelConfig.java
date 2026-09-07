@@ -225,8 +225,8 @@ public class AiModelConfig {
     @Bean(name = "embeddingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "MOCK", matchIfMissing = true)
     public EmbeddingModel mockEmbeddingModel() {
-        log.warn("⚠️ [AiModelConfig] Mock 模式：Embedding 模型将返回假向量（{} 维确定性向量）", dimension);
+        log.warn("⚠️ [AiModelConfig] Mock 模式：Embedding 模型将返回假向量（{} 维确定性向量）", vectorDimension);
         // 维度传给 Mock——S0-2-J1 曾证明硬编码 1536 会让维度注入在 MOCK 路径无声落空
-        return new MockEmbeddingModel(dimension);
+        return new MockEmbeddingModel(vectorDimension);
     }
 }
