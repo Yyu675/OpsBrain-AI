@@ -298,58 +298,42 @@ public class PrometheusClient {
 
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             long cost = System.currentTimeMillis() - start;
+            log.debug("[Prometheus] 查询完成 | cost={}ms | promql={}", cost, abbrev(promql));
 
-            JsonNode root;
-            try {
-                root = mapper.readTree(resp.body());
-            } catch (Exception parseError) {
-                // 携带响应体头部 (120 字符截断)：诊断 base-url 指向 HTML 登录页/
-                // 网关错误页/代理劫持时，没有它几小时起步——此举为取证刚需，非调试残留。
-                String bodyPreview = resp.body() == null ? "<null>"
-                        : resp.body().substring(0, Math.min(120, resp.body().length()));
-                // 探针（诊断期保留）：异常原始身份 + 精确失败列号——抓哑弹元凶。
-                System.out.println("[PROM-PARSE-PROBE] causeClass=" + parseError.getClass().getName()
-                        + " msg=" + String.valueOf(parseError.getMessage()).replaceAll("[\n\r]", " ")
-                        + " bodyLen=" + (resp.body() == null ? -1 : resp.body().length()));
-                throw new MetricsUnavailableException(
-                        "Prometheus 返回了非 JSON 响应（HTTP " + resp.statusCode()
-                                + "），可能 base-url 指向了错误的服务；响应体头部="
-                                + bodyPreview.replaceAll("[\\n\\r\\t ]+", " "), parseError);
-            }
+            JsonNode root = mapper.readTree(resp.body());
+            String status = root.path("status").asText("");
 
+            // 真正的失败判定：HTTP 层失败 与 Prometheus 业务层失败分开处理——
+            // 先查 HTTP 状态码，再查业务 status 字段，两级都过才算成功。
+            // 上一版顺序颠倒（先解析再说），把「HTTP 200 的合法失败体」
+            // 和「HTTP 非 200 的错误体」混进同一条 catch，根因埋在半路。
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 // Prometheus 的错误体里 error 字段是人类可读的，直接透出比状态码有用得多
                 String detail = root.path("error").asText("");
                 throw new MetricsUnavailableException(
                         "Prometheus 查询失败（HTTP " + resp.statusCode() + "）："
-                                + (detail.isBlank() ? resp.body() : detail));
+                                + (detail.isBlank() ? abbrevNull(resp.body()) : detail));
             }
-
-            String status = root.path("status").asText("");
             if (!"success".equals(status)) {
+                String errorType = root.path("errorType").asText("?");
+                String error = root.path("error").asText("?");
                 throw new MetricsUnavailableException(
-                        "Prometheus 查询失败：" + root.path("error").asText("未知错误"));
-            }
-
-            if (cost > 1000) {
-                log.warn("[Prometheus] 慢查询 | {}ms | promql={}", cost, promql);
+                        "Prometheus 业务失败（status=" + status + "，"
+                                + "errorType=" + errorType + "）：" + error);
             }
             return root.path("data");
-
         } catch (MetricsUnavailableException e) {
             throw e;
-        } catch (java.net.http.HttpTimeoutException e) {
-            throw new MetricsUnavailableException(
-                    "Prometheus 查询超时（" + timeout.toMillis() + "ms）。"
-                            + "可能是查询过重或服务负载高", e);
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                // 恢复中断标志：吞掉它会让上层的取消逻辑失效
-                Thread.currentThread().interrupt();
-            }
-            throw new MetricsUnavailableException(
-                    "无法连接 Prometheus（" + baseUrl + "）：" + e.getMessage(), e);
         }
+    }
+
+    private static String abbrev(String s) {
+        if (s == null) return "<null>";
+        return s.length() <= 160 ? s : s.substring(0, 160) + "...";
+    }
+
+    private static String abbrevNull(String s) {
+        return s == null ? "<null-body>" : abbrev(s);
     }
 
     /** 解析 instant query 的 {@code result} 数组 */
