@@ -137,7 +137,7 @@ onMounted(async () => {
 .reasoning, .action { font-size: 13px; color: #475569; margin: 6px 0; }
 .evlink { font-family: monospace; font-size: 11px; color: #94a3b8; }
 .feedback-row { display: flex; gap: 8px; margin-top: 10px; }
-.fb-btn { border: 1px solid #dbe2ea; background: #fff; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.fb-btn { border: 1px solid #dbe2ea; background: var(--color-surface, var(--surface-1)); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .fb-btn.active { border-color: #3b82f6; color: #1d4ed8; background: #eff6ff; }
 .fb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .empty-hint { color: #94a3b8; font-size: 13px; }
