@@ -67,12 +67,16 @@ resilience4j:
   ratelimiter:
     instances:
       llm:
-        # 依据：embedding 批量摄取是最大的配额吞吐点；30 次/秒 低于常见云
-        # 厂商 embedding 默认 QPS 低档位，给真实 key 留安全边距。
-        limit-for-period: 30
+        # 依据：60 次/秒 仍低于常见云厂商 embedding 默认 QPS 低档位，
+        # 给真实 key 留安全边距。
+        limit-for-period: 60
         limit-refresh-period: 1s
-        # 0 等待 = 快速失败并显式提示，而不是让 SSE/调度线程排队堆积。
-        timeout-duration: 0s
+        # S0-4 实测校正（原 0s）：摄取/评测是顺序批量调用，零等待会让
+        # 突发直接被拒绝（实测摄取报「向量化失败」）——此类负载要的是
+        # 【配速】而非「拒绝」。10s 等待上限消化突发；超过仍拒绝，
+        # 防失控任务把线程无限挂在排队上。交互单发嵌入的典型等待感知
+        # 远低于 1s（除非已处于持续超载，那本来就该显性失败）。
+        timeout-duration: 10s
 
 server:
   port: 8088
