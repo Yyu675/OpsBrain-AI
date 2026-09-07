@@ -108,8 +108,8 @@
 # 1. 起依赖（PostgreSQL + pgvector / Redis / MinIO）
 docker compose up -d
 
-# 2. 初始化库表
-psql -h localhost -p 25432 -U devops -d devops_knowledge_db -f sql/init.sql
+# 2. 初始化库表（空卷首次启动已自动建；老库由 Flyway baseline 接管，一般无需手工执行）
+psql -h localhost -p 25432 -U devops -d devops_knowledge_db -f src/main/resources/db/migration/V1__baseline.sql
 
 # 3. 配置模型密钥
 export ALIBABA_API_KEY=your_key

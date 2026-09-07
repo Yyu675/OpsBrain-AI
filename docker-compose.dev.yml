@@ -42,15 +42,22 @@ services:
       - "25432:5432"          # 宿主机 25432 → 容器 5432
     volumes:
       - devops_pg_data:/var/lib/postgresql/data
-      # init.sql 是表结构的唯一真相源（幂等全量脚本）。
+      # 表结构的唯一真相源是 Flyway 基线
+      # src/main/resources/db/migration/V1__baseline.sql（S0-1 起，
+      # 原 sql/init.sql 迁入 classpath 由 Flyway 托管）。
       #
-      # ⚠️ 仅在数据卷为空（首次初始化）时自动执行。改了 init.sql 后
-      #    对已有的卷不会生效——要么 `docker compose down -v` 重建，
-      #    要么手工执行一次：
+      # 这里把同一份 V1 挂成 PG 首启脚本，仅为「纯容器、应用尚未启动」
+      # 时的便利；应用一旦启动，Flyway 的 baseline-on-migrate 会把它
+      # 标记为已应用，二者不冲突（V1 保持幂等写法兜底）。
+      #
+      # ⚠️ 仅在数据卷为空（首次初始化）时自动执行。之后的结构变更
+      #    走新迁移文件 V{n}__描述.sql，由应用启动时自动 apply；
+      #    如需手工执行：
       #      docker compose -f docker-compose.dev.yml exec -T postgres \
-      #        psql -U devops -d devops_knowledge_db < sql/init.sql
-      #    （脚本幂等，可安全重复执行；启动期 SchemaGuard 会检出结构缺失）
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      #        psql -U devops -d devops_knowledge_db \
+      #        < src/main/resources/db/migration/V1__baseline.sql
+      #    （启动期 SchemaGuard 仍会检出结构缺失）
+      - ./src/main/resources/db/migration/V1__baseline.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U devops -d devops_knowledge_db"]
       interval: 10s

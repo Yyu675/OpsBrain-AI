@@ -85,7 +85,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| — | 暂无（T11 已转待验收；下一轮启动 S0-1 Flyway） | | |
+| T12 | **S0-1：Flyway 迁移版本化**（路线图 §4.1，方案 B 变体） | 历史迁移早已并入 init.sql（8-27 整合），故方案 B 落地为：init.sql 整体转 `V1__baseline.sql` + Flyway 接入（baseline-on-migrate）+ 删除代码侧冗余建表（两 ensureSchema 与 init.sql 逐字重复）+ CI validate 步骤 + 迁移契约测试 | 2026-09-07 |
 
 ---
 

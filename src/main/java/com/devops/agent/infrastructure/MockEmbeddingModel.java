@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 public class MockEmbeddingModel implements EmbeddingModel {
 
     /**
-     * 向量维度铁律：与 VectorStoreConfig.dimension() 和 init.sql 保持一致
+     * 向量维度铁律：与 VectorStoreConfig.dimension() 和 V1__baseline.sql 保持一致
      */
     private static final int DIMENSION = 1536;
 

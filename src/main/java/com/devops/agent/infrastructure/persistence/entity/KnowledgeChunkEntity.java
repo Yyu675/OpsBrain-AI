@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
  * <p>职责：映射 PostgreSQL + pgvector 存储的知识库切片数据
  * <p>字段说明：
  * - embedding: 1536 维向量（方案 A 云 API Embedding），存储为 PostgreSQL VECTOR 类型
- * - content_tsv: 全文检索向量（tsvector），由 init.sql 的 trg_chunk_tsv_update 触发器自动维护
+ * - content_tsv: 全文检索向量（tsvector），由 V1__baseline.sql 的 trg_chunk_tsv_update 触发器自动维护
  * - parent_id/parent_text: 父子切片结构，子切片引用父段落完整文本
  * <p>
  * MVP-5 知识治理增强：新增 version、effective_at、expired_at、status、knowledge_source 字段
@@ -114,7 +114,7 @@ public class KnowledgeChunkEntity {
     /**
      * 全文检索向量（PostgreSQL tsvector 类型）
      * <p>
-     * <b>P2-21 修复</b>：此字段由 {@code init.sql} 中的
+     * <b>P2-21 修复</b>：此字段由 {@code V1__baseline.sql} 中的
      * {@code trg_chunk_tsv_update} 触发器维护
      * （{@code tsvector_update_trigger(content_tsv, 'pg_catalog.simple', content)}），
      * Java 代码不直接读写。此前触发器缺失，本列恒为 NULL，

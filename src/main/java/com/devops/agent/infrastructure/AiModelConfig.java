@@ -54,7 +54,7 @@ public class AiModelConfig {
     /**
      * 向量维度（全链路唯一来源：devops.ai.vector.dimension）
      * <p>
-     * 必须与 {@code init.sql} 的 {@code VECTOR(n)} 和
+     * 必须与 {@code V1__baseline.sql} 的 {@code VECTOR(n)} 和
      * {@link VectorStoreConfig} 读的是同一个配置键——此前这里不读配置、
      * 也不向 Embedding API 传 dimensions，所谓「维度铁律」只是注释，
      * 换模型时会在写库那一刻才炸（列类型不匹配）。
@@ -149,7 +149,7 @@ public class AiModelConfig {
      * Embedding 模型（向量化模型）
      * <p>
      * <b>维度铁律</b>：输出维度必须等于 {@code devops.ai.vector.dimension}，
-     * 该值同时决定 {@code init.sql} 的 {@code VECTOR(n)} 与
+     * 该值同时决定 {@code V1__baseline.sql} 的 {@code VECTOR(n)} 与
      * {@link VectorStoreConfig} 的配置。三者同源，不允许各写一份。
      * </p>
      * <p>
@@ -161,7 +161,7 @@ public class AiModelConfig {
     @Bean(name = "embeddingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
     public EmbeddingModel embeddingModel() {
-        // 维度取自配置（devops.ai.vector.dimension），与 init.sql 的
+        // 维度取自配置（devops.ai.vector.dimension），与 V1__baseline.sql 的
         // VECTOR(n) 同源。
         //
         // 必须显式传 dimensions：多数现代 Embedding 模型的原生维度并非 1536
@@ -172,7 +172,7 @@ public class AiModelConfig {
         // 此前这里不传参，日志却硬编码打印「(输出维度: 1536)」——
         // 日志在说谎，反而掩盖了真实维度，排查时会误以为配置已生效。
         LlmEndpointSpec spec = embeddingSpec();
-        log.info("🚀 [AiModelConfig] 初始化 Embedding 模型: {}（与 init.sql VECTOR({}) 对齐）",
+        log.info("🚀 [AiModelConfig] 初始化 Embedding 模型: {}（与 V1 基线 VECTOR({}) 对齐）",
                 spec.describe(), vectorDimension);
         return OpenAiCompatibleModelFactory.embedding(spec);
     }

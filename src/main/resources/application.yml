@@ -19,6 +19,20 @@ spring:
   datasource:
     driver-class-name: org.postgresql.Driver
 
+  # ==================== Flyway（S0-1：迁移版本化） ====================
+  # 表结构唯一真相源 = classpath:db/migration/V{n}__描述.sql（AGENTS 3.5）。
+  # 应用启动时自动 migrate：空库执行 V1 基线建全表；已有库按版本表跳过。
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # 现存库（由旧 init.sql 时代建出、没有 flyway_schema_history 表）首次
+    # 启动时，把 V1 标记为“已应用”而不是重跑整份基线——否则 ALTER
+    # 即使幂等，CREATE TABLE 不带 IF NOT EXISTS 的语句也可能报错。
+    baseline-on-migrate: true
+    # 每次启动先校验已应用的迁移文件未被篡改（checksum 比对），
+    # 被手工改过的历史迁移会直接拒绝启动——宁可启动失败，不可带病运行。
+    validate-on-migrate: true
+
   # Redis 配置（由 profile 具体化）
   data:
     redis:

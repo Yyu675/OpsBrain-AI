@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
  * <p>
  * 架构约束：
  * - 本类属于 Infrastructure 层，不得 import Application / Domain 层的类
- * - 向量维度铁律：dimension = 1536，必须与 init.sql VECTOR(1536) 和 EmbeddingModel 输出一致
+ * - 向量维度铁律：dimension = 1536，必须与 V1__baseline.sql VECTOR(1536) 和 EmbeddingModel 输出一致
  */
 @Slf4j
 @Configuration
@@ -24,13 +24,13 @@ public class VectorStoreConfig {
 
     /**
      * 向量维度（全链路唯一来源）
-     * 铁律：必须与 init.sql VECTOR(1536) 和 EmbeddingModel 输出一致
+     * 铁律：必须与 V1__baseline.sql VECTOR(1536) 和 EmbeddingModel 输出一致
      */
     @Value("${devops.ai.vector.dimension}")
     private Integer dimension;
 
     /**
-     * pgvector 表名（对应 init.sql 的 sys_knowledge_chunk）
+     * pgvector 表名（对应 V1__baseline.sql 的 sys_knowledge_chunk）
      */
     private static final String TABLE_NAME = "sys_knowledge_chunk";
 }

@@ -66,10 +66,11 @@ services:
       - pg_data:/var/lib/postgresql/data
       # 首次启动自动建表（仅在数据目录为空时运行，已有数据的卷不会被重复初始化）。
       #
-      # 只挂一个显式脚本，不挂整个 sql/ 目录：
+      # S0-1 起 schema 由 Flyway 托管；这里仅对空卷预建 V1 基线。
+      # 只挂一个显式脚本 + 基线文件本身，不挂迁移目录或 sql/ 目录：
       # sql/ 里有 mock_data.sql，整目录挂载会把演示数据灌进生产库。
       - ./scripts/docker-initdb.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
-      - ./sql:/opt/opsbrain-sql:ro
+      - ./src/main/resources/db/migration/V1__baseline.sql:/opt/opsbrain-sql/V1__baseline.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-devops} -d devops_knowledge_db"]
       interval: 10s

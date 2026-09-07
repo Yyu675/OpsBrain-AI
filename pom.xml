@@ -135,6 +135,19 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!--
+          Flyway（S0-1，路线图 §4.1）：迁移版本化。
+          版本由 spring-boot-starter-parent 的 BOM 托管，不显式钉版本。
+          flyway-database-postgresql 自 Flyway 10 起为 PostgreSQL 的必需模块。
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
 
         <!-- ================= Redis（语义缓存 / 会话） ================= -->
         <dependency>
@@ -283,6 +296,17 @@
                         </exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <!--
+              flyway-maven-plugin：供 CI 与本地执行 `mvnw flyway:validate` /
+              `flyway:info`。版本由 spring-boot-dependencies 的
+              pluginManagement 托管（flyway.version）。连接参数一律通过
+              -D 命令行传入（见 .github/workflows/ci.yml），这里不写死
+              环境信息——pom 不该携带任何环境坐标（AGENTS 3.2）。
+            -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
             </plugin>
             <!--
               已移除 maven-toolchains-plugin。

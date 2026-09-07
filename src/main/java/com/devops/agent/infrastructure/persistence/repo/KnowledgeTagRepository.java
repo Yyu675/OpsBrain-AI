@@ -17,39 +17,6 @@ public class KnowledgeTagRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public void ensureSchema() {
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS sys_knowledge_tag (
-                id BIGSERIAL PRIMARY KEY,
-                name VARCHAR(64) NOT NULL,
-                normalized_name VARCHAR(64) NOT NULL,
-                description VARCHAR(255),
-                color VARCHAR(16),
-                status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
-                create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """);
-        jdbcTemplate.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS uk_knowledge_tag_normalized
-                ON sys_knowledge_tag (normalized_name)
-            """);
-        jdbcTemplate.update("""
-            INSERT INTO sys_knowledge_tag (name, normalized_name)
-            SELECT s.name, s.normalized_name
-              FROM (
-                    SELECT MIN(TRIM(t.tag)) AS name, LOWER(TRIM(t.tag)) AS normalized_name
-                      FROM sys_knowledge_doc_tag t
-                     WHERE TRIM(t.tag) <> ''
-                     GROUP BY LOWER(TRIM(t.tag))
-                   ) s
-             WHERE NOT EXISTS (
-                    SELECT 1 FROM sys_knowledge_tag k
-                     WHERE k.normalized_name = s.normalized_name
-               )
-            """);
-    }
-
     public List<KnowledgeTag> findAll() {
         return jdbcTemplate.query("""
             SELECT k.id, k.name, k.description, k.color,

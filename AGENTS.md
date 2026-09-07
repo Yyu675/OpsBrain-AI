@@ -109,7 +109,7 @@ npm run knip                       # 死代码/死依赖检测
 
 `devops.ai.vector.dimension`（当前 1536）是**全链路唯一真相**，同时约束三处：
 
-1. `init.sql` 中 `VECTOR(n)` 的列定义；
+1. Flyway 迁移中 `VECTOR(n)` 的列定义（首建列在 `V1__baseline.sql`，后续变更走新迁移文件）；
 2. `AiModelConfig` 传给 Embedding API 的 `dimensions`；
 3. `VectorStoreConfig` 建表/校验时使用的维度。
 
@@ -130,21 +130,30 @@ npm run knip                       # 死代码/死依赖检测
 
 - 主库是 **PostgreSQL + pgvector，不需要兼容其他数据库**。可以放心使用 PG 专有能力
   （`tsvector`、`JSONB`、`ON CONFLICT`、数组类型）。
-- Schema 变更：**直接改 `sql/init.sql`，它是表结构的唯一真相源**。不再维护
-  `migration_vNN_*.sql` 增量文件。
-  - **为什么废除双写**：旧约定要求「新增迁移 + 同步 init.sql」，而这种双写
-    在实践中必然漂移——同一个事实写两处，漏一处不会有任何报错。
-    实际发生过两次：v25 的 `sys_operation_audit` 漏同步（审计写入失败被 catch，
-    业务照常跑，只是**悄悄没有审计记录**）；v24 的 `visibility`/`owner_dept`/`dept`
-    三张表五个列 + 三个索引 + 两个 CHECK 约束全部漏同步，
-    而 `docker-compose.dev.yml` 只挂 `init.sql` 不跑迁移——
-    也就是说**按 dev compose 建出来的库根本没有权限过滤所需的列**，
-    知识检索一查就报错。2026-08-27 已整合并逐项验证归零。
-  - init.sql 全程使用 `IF NOT EXISTS` / `DO $$ ... pg_constraint 判重`，
-    **幂等**，可对已有库重复执行来补齐缺失结构。
-  - 改完请自建一个空库跑一遍，确认 `psql -v ON_ERROR_STOP=1 -f sql/init.sql` 返回 0。
-  - 需要给已上线的库做变更时，把 DDL 写成幂等形式追加进 init.sql，
-    再对目标库执行一次该脚本即可；不要另开增量文件，否则漂移会重新长出来。
+- Schema 变更（S0-1，2026-09-07 起）：**真相源是 `src/main/resources/db/migration/`，
+  由 Flyway 托管**（`flyway_schema_history` 版本表 + checksum；应用启动时自动 migrate）。
+  - `V1__baseline.sql` 是单文件基线（即原 `sql/init.sql` 整体迁入，历史 v05~v27
+    已于 2026-08-27 整合进它）。**已对所有现存库应用，禁止再修改其中任何语句**——
+    `validate-on-migrate: true` 会让被篡改的历史迁移直接导致应用启动失败。
+  - **新增变更一律新建 `V{版本}__描述.sql`**（版本顺延，`V2__`, `V3__`……）。
+    Flyway 保证按序、各库只执行一次；新文件不需要 `IF NOT EXISTS` 幂等外壳，
+    但 PG 的 DDL 都跑在事务里，失败自动回滚不留半截。
+  - 空库启动应用 = Flyway 执行全部迁移建全表（CI 第一个 `@SpringBootTest` 即此验收）；
+    已有库首次启动：未见过版本表的库会被 `baseline-on-migrate: true` 标记 V1 已应用后跳过，
+    之后的增量迁移照常执行——**从旧时代继承的库不需要手工跑任何脚本**。
+  - 禁止再在代码里写建表 DDL（旧 `ensureSchema()` 模式已删除：它与基线内容重复，
+    同样的事实写了两处）。`FlywayMigrationContractTest` 守住命名/版本唯一/无库外 DDL。
+  - **为什么废除「双写 init.sql + 增量迁移」**：旧双写约定在实践中必然漂移——
+    同一个事实写两处，漏一处不会有任何报错。实际发生过两次：v25 的
+    `sys_operation_audit` 漏同步（审计写入失败被 catch，业务照常跑，只是
+    **悄悄没有审计记录**）；v24 的 `visibility`/`owner_dept`/`dept` 三张表五个列
+    全部漏同步，而 `docker-compose.dev.yml` 只挂 init.sql 不跑迁移——
+    **按 dev compose 建出来的库根本没有权限过滤所需的列**，知识检索一查就报错。
+    单文件基线（2026-08-27）消灭了「两份文件」的漂移，但「代码侧建表」这第二副本
+    仍在（S0-1 才铲除）；且单文件无版本概念，无法区分「已有库」「新增结构」——
+    Flyway 的版本表与 checksum 彻底补上了这一格。
+  - `sql/` 目录此后只放**数据脚本**（如 `mock_data.sql`），**禁止出现建表 DDL**
+    （契约测试拦截）。docker 首启初始化挂载的是同一份 V1，与 Flyway 天然兼容。
 - **安全类配置表（`sys_risk_policy` / `sys_action_allowlist`）的额外约束**：
   - 校验一律只允许「收紧」方向。条目可以比全局策略更严，**绝不能更松**——
     否则「调整全局策略」就失去了可预期的语义，得逐条去查有没有漏网的例外。

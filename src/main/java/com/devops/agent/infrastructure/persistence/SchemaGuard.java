@@ -16,14 +16,19 @@ import java.util.Map;
  * 启动期数据库 Schema 自检。
  *
  * <h3>解决什么问题</h3>
- * 表结构由单一幂等脚本 {@code sql/init.sql} 定义，没有 Flyway 之类的
- * 版本表来记录"执行到哪了"。于是存在一类很难查的故障：
+ * 表结构自 S0-1（2026-09-07）起由 Flyway 托管
+ * （{@code classpath:db/migration/}，版本表 flyway_schema_history 会记录
+ * "执行到哪了"）。但 Flyway 只保证<b>它自己应用过的迁移</b>完整——
+ * 从手工脚本时代继承的存量库是被 {@code baseline-on-migrate} 标记为已应用
+ * 而<b>跳过</b>的，其真实结构可能本就残缺；以下故障仍然存在且很难查：
  * <b>部署了新版 JAR，但数据库还是旧结构</b>。
  *
  * <p>最常见的触发方式是<b>挂了一个已存在的数据卷</b>：
  * PostgreSQL 官方镜像的 {@code /docker-entrypoint-initdb.d} 只在
- * <b>数据目录为空时</b>执行。也就是说升级时复用老卷，init.sql 根本不会跑，
- * 新增的列就永远不会出现——而容器启动完全正常，没有任何报错。
+ * <b>数据目录为空时</b>执行。Flyway 接管后，新增迁移会在应用启动时
+ * 自动补上，缓解了大头；但存量库在 baseline 时被整体标记为已应用——
+ * 若该库此前就缺列缺表，Flyway 不会发现，容器启动也完全正常，
+ * 没有任何报错。
  *
  * <p>后果不对称，取决于缺的是哪一项：
  * <ul>
@@ -119,12 +124,13 @@ public class SchemaGuard {
         }
 
         String detail = String.join("、", problems);
-        // 提示要落到「怎么修」上：init.sql 是幂等的，可对已有库重复执行，
+        // 提示要落到「怎么修」上：Flyway 已托管增量迁移，此处检出的缺口
+        // 只会来自「Flyway 基线之前用旧脚本手工建的、且基线被 baseline 跳过的
+        // 存量库」或手工建库漏执行。V1 基线保留幂等写法，可对已有库重复执行
         // 补齐缺失的表和列而不影响存量数据。
-        // 最常见成因是复用了旧数据卷——官方镜像只在数据目录为空时跑
-        // initdb 脚本，升级时挂老卷等于 init.sql 从未执行。
-        String hint = "请对该库重新执行 sql/init.sql（脚本幂等，可安全重复执行）"
-                + "；若是复用旧数据卷升级，这是预期内的一次性补齐";
+        // 最常见成因是复用了旧数据卷——官方镜像只在数据目录为空时跑 initdb 脚本。
+        String hint = "请对该库执行 V1 基线脚本 src/main/resources/db/migration/V1__baseline.sql"
+                + "（幂等，可安全重复执行）；若是复用旧数据卷升级，这是预期内的一次性补齐";
 
         if (failFast) {
             throw new IllegalStateException(
