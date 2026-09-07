@@ -51,7 +51,7 @@ resilience4j:
         # 单点抖动（1~2 次失败）不会误开熔断，持续半坏（>=5 次里一半失败）才开。
         sliding-window-size: 10
         minimum-number-of-calls: 5
-        failure-rate-threshold: 1  # S0-3-J2 探针：临时注入 1% 阈值，验证「低于阈值保持闭合」红线（预期 belowFailureThresholdStaysClosedAndKeepsCalling 红，验后立即还原 50）
+        failure-rate-threshold: 50
         # 依据：Prometheus 重启/网络抖动一般数十秒内恢复；30s 后自动放探测流量。
         # 更短会把尚未恢复的实例淹没在探测里，更长则人为拉长不可用窗口。
         wait-duration-in-open-state: 30s
