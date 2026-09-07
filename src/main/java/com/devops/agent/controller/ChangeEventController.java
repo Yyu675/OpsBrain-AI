@@ -72,6 +72,8 @@ public class ChangeEventController {
         try {
             changeTime = LocalDateTime.parse(req.changeTime());
         } catch (Exception e) {
+            // 预期分支（客户端时间格式错→400）；debug 级留痕，400 请求不属系统故障
+            log.debug("[S1-2] changeTime 解析失败 | input={} | {}", req.changeTime(), e.getMessage());
             return ApiResponse.error(400,
                     "changeTime 需为 ISO-8601 本地时间（如 2026-09-07T14:30:00），收到: " + req.changeTime());
         }

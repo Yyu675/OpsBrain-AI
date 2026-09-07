@@ -53,6 +53,8 @@ public class ChangesEvidenceCollector {
             minutes = range == null || range.isBlank()
                     ? 120 : MetricsEvidenceCollector.parseRangeMinutes(range);
         } catch (IllegalArgumentException e) {
+            // 预期分支（坏入参→FAILED 证据）；debug 级留痕供排障，不报 warn（非系统故障）
+            log.debug("[S1-2] 时间窗入参解析失败 | service={} range={} | {}", service, range, e.getMessage());
             return new Evidence(Evidence.EvidenceStatus.FAILED, Evidence.Type.CHANGES,
                     "时间窗参数解析失败: " + e.getMessage(),
                     Map.of("input", String.valueOf(range)), null, null, Instant.now());

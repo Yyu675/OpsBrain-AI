@@ -64,6 +64,8 @@ public class MetricsEvidenceCollector {
         try {
             rangeMinutes = parseRangeMinutes(range);
         } catch (IllegalArgumentException e) {
+            // 预期分支（坏入参→FAILED 证据）；debug 级留痕，非系统故障不报 warn
+            log.debug("[S1-1] 时间窗入参解析失败 | service={} range={} | {}", service, range, e.getMessage());
             return new Evidence(Evidence.EvidenceStatus.FAILED, Evidence.Type.METRICS,
                     "时间窗参数解析失败: " + e.getMessage(), Map.of("input", String.valueOf(range)),
                     null, null, Instant.now());

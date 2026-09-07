@@ -28,7 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 27 是 S0-1 基线（V1__baseline.sql）建出的业务表数量。若未来新增迁移，
  * 数字必须同步更新——这种「改迁移就要改断言」的摩擦正是刻意的：
  * 它让每次结构变更都显性经过测试评审。
- * flyway_schema_history 的版本表记录则断言「恰好一条、version=1、success」，
+ * flyway_schema_history 的版本表记录断言「恰好 {V1 基线, V2 变更表} 两条成功」，
+ * （S1-2 起增量迁移加入后，集合式断言与路上契约测试的版本扫描互为双锁），
  * 三者合起来证明：基线建全了，且是 Flyway 托管地建全了。
  * </p>
  *
@@ -43,8 +44,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Flyway：空库全量迁移链（容器真空库，启动期自动建全表）")
 class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
 
-    /** V1__baseline.sql 建出的业务表数量（改迁移需同步更新，见类注释）。 */
-    private static final int EXPECTED_BASELINE_TABLE_COUNT = 27;
+    /** sys_ 前缀业务表数量（V1=27 + V2 sys_change_event=1；改迁移需同步更新，见类注释）。 */
+    private static final int EXPECTED_BASELINE_TABLE_COUNT = 28;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -69,8 +70,8 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("flyway_schema_history 恰好一条成功记录且 version=1（托管生效证据）")
-    void schemaHistoryShouldRecordExactlySuccessfulBaseline() {
+    @DisplayName("flyway_schema_history 恰好 {1,2} 两条全部成功（基线+首个增量，托管生效证据）")
+    void schemaHistoryShouldRecordBaselinePlusFirstIncrement() {
         var rows = jdbcTemplate.queryForList(
                 """
                 SELECT version, success
@@ -79,10 +80,15 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
                  ORDER BY installed_rank
                 """);
         assertThat(rows)
-                .as("容器真空库只会有一次全量迁移：V1 基线。多出记录说明"
+                .as("容器真空库按序执行 V1 与 V2。多出记录说明"
                         + "测试容器泄漏了别的库的脏状态，或混入了未评审的迁移文件")
-                .hasSize(1);
-        assertThat(rows.get(0).get("version")).as("唯一迁移应为 V1 基线").isEqualTo("1");
-        assertThat(rows.get(0).get("success")).as("基线必须执行成功").isEqualTo(Boolean.TRUE);
+                .hasSize(2);
+        assertThat(rows.get(0).get("version")).as("首条为 V1 基线").isEqualTo("1");
+        assertThat(rows.get(1).get("version"))
+                .as("第二条为 V2（S1-2 sys_change_event；后续增量按序追加即可，"
+                        + "此处只钉『链的头部是已评审的两条』")
+                .isEqualTo("2");
+        assertThat(rows).allSatisfy(r ->
+                assertThat(r.get("success")).as("所有迁移必须成功").isEqualTo(Boolean.TRUE));
     }
 }
