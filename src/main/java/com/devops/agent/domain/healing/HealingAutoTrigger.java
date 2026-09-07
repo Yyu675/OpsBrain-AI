@@ -132,7 +132,7 @@ public class HealingAutoTrigger {
                     alert.getId(), "auto", "POLICY_DRYRUN", null, null,
                     HealingExecution.Status.REJECTED,
                     "策略演练命中（不执行）: policy #" + p.getId() + " " + p.getName(),
-                    null, null, null));
+                    null, null, null, null));
             writeTraceSteps(id, p);
             log.info("🧪 [PolicyEngine] 演练命中 | policy=#{} {} | alert=#{} | action={} | 台账=#{}",
                     p.getId(), p.getName(), alert.getId(), p.getActionKey(), id);
