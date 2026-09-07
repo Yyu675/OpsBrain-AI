@@ -231,11 +231,40 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
             appendReport(report, "\n## 未命中正例（知识库缺口，需补文档）\n" + String.join("\n", missed) + "\n");
         }
         writeReport(report);
-        // ⚠️ S0-4 基线捕获轮：阈值临时抬到 100%——样本库只有 2 篇文档，不可能满分，
-        // 故本轮必红，红的注解携带完整汇总与未命中清单（Sandbox 无法下载 CI
-        // artifact，这是受限网络下的数据通道）。取得数字后立即恢复常态阈值。
+        // ⚠️ S0-4 基线捕获轮：阈值临时抬到 100%——必红，红的注解首行携带精确
+        // 命中率（受限网络下 artifact 不可下载、注解约 250 字截断，数字必须
+        // 放在消息最前）。取得数字后立即恢复常态阈值与门控。
         org.junit.jupiter.api.Assertions.assertTrue(hitRate >= 1.0,
-                "S0-4-BASELINE:\n" + report);
+                String.format("S0-4-BASELINE hitRate=%.1f%% hit=%d/%d",
+                        hitRate * 100, hit, positives.size()));
+    }
+
+    /** S0-4 捕获轮专用：按文档归属桶统计命中分布（第二个注解通道，验后连本方法一起删） */
+    @Test
+    @DisplayName("S0-4 临时：命中分布三桶统计")
+    void tmpBaselineBucketStats() throws Exception {
+        List<EvalItem> positives = loadDataset().stream()
+                .filter(i -> i.type().equals("POSITIVE")).toList();
+        ingestionService.ingestAllLocalDocuments(true);
+        KnowledgeScope scope = KnowledgeScope.admin("eval-runner", null);
+        int k8sHit = 0, k8sTotal = 0, slbHit = 0, slbTotal = 0, otherHit = 0, otherTotal = 0;
+        StringBuilder otherMissed = new StringBuilder();
+        for (EvalItem item : positives) {
+            String q = item.query().toLowerCase();
+            List<String> chunks = hybridRetrieverService.retrieve(item.query(), 3, scope);
+            boolean hitB = chunks != null && !chunks.isEmpty();
+            if (q.contains("k8s") || q.contains("pod") || q.contains("kubectl") || q.contains("容器")) {
+                k8sTotal++; if (hitB) k8sHit++;
+            } else if (q.contains("slb") || q.contains("负载均衡")) {
+                slbTotal++; if (hitB) slbHit++;
+            } else {
+                otherTotal++; if (hitB) otherHit++; else otherMissed.append('#').append(item.id).append(' ');
+            }
+        }
+        org.junit.jupiter.api.Assertions.fail(String.format(
+                "S0-4-BUCKETS k8s=%d/%d slb=%d/%d other=%d/%d otherMissed={%s}",
+                k8sHit, k8sTotal, slbHit, slbTotal, otherHit, otherTotal,
+                otherMissed.length() > 120 ? otherMissed.substring(0, 120) + "…" : otherMissed.toString()));
     }
 
     // ==================== 第三层：LLM 端到端评测（EVAL_LLM=true）====================
