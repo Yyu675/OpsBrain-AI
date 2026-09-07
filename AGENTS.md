@@ -217,6 +217,23 @@ CI 又未启用。CI 一开就暴露了 8 个真实缺陷，其中三类值得�
 `mvnw` 已内置：`GITHUB_ACTIONS=true` 时把 Maven `[ERROR]` 重放为
 `::error::`，经 annotations API 可读。改 `mvnw` 时不要破坏这段。
 
+### 3.7.5 外部依赖韧性（S0-3，2026-09-07 起）
+
+- **分层职责**（路线图 §4.3 分工原则，两层不得重叠，否则出现「熔断了还在重试」）：
+  - **Resilience4j**：跨调用的熔断状态（滑动窗口统计、半开探测），作用于**数据源客户端**
+    （`PrometheusClient` 的 `prometheus` 实例、`RateLimitedEmbeddingModel` 的 `llm` 实例）；
+  - **ToolRuntimeManager**：单次工具执行的超时与重试（工具级，既有职责，保留）。
+- **fallback 必须返回「显式的数据源不可用」语义，禁止返回空结果冒充正常**——
+  空列表代表「查询无匹配」，与「数据源挂了」是两类事（原则同 `HybridRetrieverService`）。
+  `PrometheusClient` 的 fallback 统一转译为本就存在的 `MetricsUnavailableException`，
+  让 `GlobalExceptionHandler` 的既有映射继续生效；`health()` 的 fallback 返回
+  `{reachable:false, error:callPath}`，绝不静默假装健康。
+- 每个外部数据源客户端用**独立熔断器实例**（`resilience4j.circuitbreaker.instances.<名>`），
+  阈值写在 `application.yml` 并配中文注释给依据——调阈值同样适用 §3.7 的「不接受感觉」。
+- 熔断器状态必须可观测：`/actuator/health`（CB HealthIndicator）+ `/actuator/prometheus`
+  （resilience4j micrometer 指标）。
+
+
 ### 3.8 后端测试
 
 - **`@WebMvcTest` 切片不实例化 `@Repository`**。若某个 `@Component`

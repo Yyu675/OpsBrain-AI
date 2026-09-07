@@ -101,6 +101,21 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+        <!--
+          Resilience4j（S0-3，路线图 §4.3）：数据源级熔断 + LLM 限流。
+          与 ToolRuntimeManager 的分工（AGENTS 3.7.5）：Resilience4j 管
+          「跨调用的熔断状态」（数据源客户端级），ToolRuntimeManager 管
+          「单次工具执行的超时与重试」（工具级），两层不重叠。
+          版本由 spring-boot-dependencies 托管；注解切面需要 AOP starter。
+        -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
         <!-- ================= 真实执行器（V1.2，D1 适配器模式）=================
              K8s 适配器实现依赖。CI 用 kubernetes-server-mock（FakeK8sClient）测试，
              不依赖真实集群；演示用本机 kind + KubeConfig。凭证不进仓库。 -->
@@ -270,6 +285,16 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          MockWebServer（S0-3）：熔断行为验证用——记录真实 HTTP 请求计数，
+          证明「熔断打开后请求不再打网络」（路线图 §4.3 注入验证的工具）。
+          版本由 spring-boot-dependencies 管理 okhttp3 系列。
+        -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

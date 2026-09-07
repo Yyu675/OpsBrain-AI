@@ -8,6 +8,8 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import com.devops.agent.infrastructure.llm.RateLimitedEmbeddingModel;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -160,7 +162,7 @@ public class AiModelConfig {
      */
     @Bean(name = "embeddingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
-    public EmbeddingModel embeddingModel() {
+    public EmbeddingModel embeddingModel(RateLimiterRegistry rateLimiterRegistry) {
         // 维度取自配置（devops.ai.vector.dimension），与 V1__baseline.sql 的
         // VECTOR(n) 同源。
         //
@@ -174,7 +176,11 @@ public class AiModelConfig {
         LlmEndpointSpec spec = embeddingSpec();
         log.info("🚀 [AiModelConfig] 初始化 Embedding 模型: {}（与 V1 基线 VECTOR({}) 对齐）",
                 spec.describe(), vectorDimension);
-        return OpenAiCompatibleModelFactory.embedding(spec);
+        // S0-3：Bean 收口限流（llm 实例）。装饰而非注解贴调用方——无论检索、
+        // 摄取还是重建索引，拿到的 embeddingModel 都已带配额护栏
+        return new RateLimitedEmbeddingModel(
+                OpenAiCompatibleModelFactory.embedding(spec),
+                rateLimiterRegistry.rateLimiter("llm"));
     }
 
     // ==================== Mock 模式（开发模式）====================
@@ -224,9 +230,11 @@ public class AiModelConfig {
      */
     @Bean(name = "embeddingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "MOCK", matchIfMissing = true)
-    public EmbeddingModel mockEmbeddingModel() {
+    public EmbeddingModel mockEmbeddingModel(RateLimiterRegistry rateLimiterRegistry) {
         log.warn("⚠️ [AiModelConfig] Mock 模式：Embedding 模型将返回假向量（{} 维确定性向量）", vectorDimension);
         // 维度传给 Mock——S0-2-J1 曾证明硬编码 1536 会让维度注入在 MOCK 路径无声落空
-        return new MockEmbeddingModel(vectorDimension);
+        // 与 REAL 同样过限流装饰：护栏通路在 MOCK 下也可被测试断言
+        return new RateLimitedEmbeddingModel(new MockEmbeddingModel(vectorDimension),
+                rateLimiterRegistry.rateLimiter("llm"));
     }
 }

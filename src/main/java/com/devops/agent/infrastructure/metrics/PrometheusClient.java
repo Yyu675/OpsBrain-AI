@@ -2,6 +2,8 @@ package com.devops.agent.infrastructure.metrics;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -53,6 +55,23 @@ import java.util.Map;
  * @since 2026-08-25
  */
 @Slf4j
+/**
+ * <h3>S0-3：数据源级熔断（Resilience4j）</h3>
+ * 三个对外方法由名为 {@code prometheus} 的熔断器守护（配置见
+ * {@code application.yml resilience4j.circuitbreaker.instances.prometheus}，
+ * 阈值依据写在注释里；分工原则见 AGENTS 3.7.5 与 {@code ToolRuntimeManager}）。
+ * <ul>
+ *   <li>熔断打开后，{@code query}/{@code queryRange} 的 fallback 把
+ *       {@link CallNotPermittedException} 转译为<b>显式</b>的
+ *       {@link MetricsUnavailableException}——继续走 GlobalExceptionHandler 的
+ *       既有业务码映射，前端能区分「熔断中」与「查询无匹配」；</li>
+ *   <li>{@link #health()} 的 fallback 返回 {@code reachable=false} 的显式不可用
+ *       Map 且<b>不发任何网络请求</b>；health 自己吞异常（诊断页契约），
+ *       故健康检查的结果不刷屏计入熔断窗口；</li>
+ *   <li>「集成未启用」抛 {@link MetricsIntegrationDisabledException}（
+ *       {@code ignoreExceptions}）——配置状态不是数据源健康度，不该计数。</li>
+ * </ul>
+ */
 @Component
 public class PrometheusClient {
 
@@ -107,6 +126,8 @@ public class PrometheusClient {
      *         「当前没有满足条件的实例」是正常业务结果）
      * @throws MetricsUnavailableException Prometheus 不可达、超时或返回错误
      */
+    @CircuitBreaker(name = "prometheus", fallbackMethod = "queryFallback",
+            ignoreExceptions = MetricsIntegrationDisabledException.class)
     public List<PromQuery.Sample> query(String promql) {
         requireEnabled();
         String url = baseUrl + "/api/v1/query?query=" + encode(promql);
@@ -122,6 +143,8 @@ public class PrometheusClient {
      * @param to     结束时刻
      * @param stepSeconds 采样步长（秒）
      */
+    @CircuitBreaker(name = "prometheus", fallbackMethod = "queryRangeFallback",
+            ignoreExceptions = MetricsIntegrationDisabledException.class)
     public List<PromQuery.Series> queryRange(String promql, Instant from, Instant to,
                                              int stepSeconds) {
         requireEnabled();
@@ -157,6 +180,8 @@ public class PrometheusClient {
      *
      * @return {@code {reachable, latencyMs, baseUrl, error?}}
      */
+    @CircuitBreaker(name = "prometheus", fallbackMethod = "healthFallback",
+            ignoreExceptions = MetricsIntegrationDisabledException.class)
     public Map<String, Object> health() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("baseUrl", baseUrl);
@@ -199,9 +224,59 @@ public class PrometheusClient {
 
     private void requireEnabled() {
         if (!enabled) {
-            throw new MetricsUnavailableException(
+            throw new MetricsIntegrationDisabledException(
                     "Prometheus 集成未启用。请配置 devops.metrics.prometheus.enabled=true 与 base-url");
         }
+    }
+
+    // ==================================================================
+    // S0-3：熔断 fallback（显式「数据源不可用」语义，绝不冒充空结果）
+    // ==================================================================
+
+    /**
+     * 熔断语义转译：数据源真实失败（连不上/超时/HTTP 错误）原样透传
+     * （它们本就带显式语义且已计入窗口）；只有「熔断打开、请求根本没发出」
+     * 才需要包装——调用方看到的仍是一致的 {@link MetricsUnavailableException}。
+     */
+    private MetricsUnavailableException circuitOpenAsUnavailable(String operation, Throwable t) {
+        if (t instanceof MetricsUnavailableException mue) {
+            return mue;
+        }
+        if (t instanceof CallNotPermittedException) {
+            log.warn("[Prometheus] 熔断器打开，{} 未发出网络请求（等待半开探测恢复）", operation);
+            return new MetricsUnavailableException(
+                    "Prometheus 熔断器处于打开状态：" + operation + " 未发出请求。"
+                            + "连续失败超过阈值后本客户端进入熔断，半开探测成功后自动恢复；"
+                            + "若长时间不恢复请检查 Prometheus 数据源", t);
+        }
+        // 意料外的错误不粉饰——按熔断透传语义兜底，仍保持显式不可区分性
+        return new MetricsUnavailableException(operation + " 失败：" + t.getMessage(), t);
+    }
+
+    @SuppressWarnings("unused") // 由 Resilience4j 按名反射调用
+    private List<PromQuery.Sample> queryFallback(String promql, Throwable t) {
+        throw circuitOpenAsUnavailable("instant query", t);
+    }
+
+    @SuppressWarnings("unused") // 由 Resilience4j 按名反射调用
+    private List<PromQuery.Series> queryRangeFallback(String promql, Instant from, Instant to,
+                                                      int stepSeconds, Throwable t) {
+        throw circuitOpenAsUnavailable("range query", t);
+    }
+
+    @SuppressWarnings("unused") // 由 Resilience4j 按名反射调用
+    private Map<String, Object> healthFallback(Throwable t) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("baseUrl", baseUrl);
+        result.put("enabled", enabled);
+        result.put("reachable", false);
+        result.put("latencyMs", 0L);
+        if (t instanceof CallNotPermittedException) {
+            result.put("error", "熔断器打开：未发出健康探测（连续失败超过阈值，等待半开探测恢复）");
+        } else {
+            result.put("error", t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
+        return result;
     }
 
     /**

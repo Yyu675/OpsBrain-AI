@@ -38,6 +38,37 @@ spring:
     redis:
       database: 0
 
+# ==================== Resilience4j（S0-3，路线图 §4.3）====================
+# 分工（AGENTS 3.7.5）：本层管「跨调用的熔断/限流状态」（数据源客户端级），
+# ToolRuntimeManager 管「单次工具执行的超时与重试」，两层不重叠。
+# 每个数据源客户端一个独立实例，互不被对方故障牵连。
+resilience4j:
+  circuitbreaker:
+    instances:
+      prometheus:
+        sliding-window-type: COUNT_BASED
+        # 依据：指标类查询属人工查看型流量，频率不高；10 次窗口配 5 次最小样本，
+        # 单点抖动（1~2 次失败）不会误开熔断，持续半坏（>=5 次里一半失败）才开。
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        # 依据：Prometheus 重启/网络抖动一般数十秒内恢复；30s 后自动放探测流量。
+        # 更短会把尚未恢复的实例淹没在探测里，更长则人为拉长不可用窗口。
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 2
+        # 自动转半开：不依赖「恰好有人发起查询」才开始探测恢复
+        automatic-transition-from-open-to-half-open-enabled: true
+      # 预留实例槽：logs / cmdb 客户端随阶段 1（S1-2/S1-3）落地时接挂。
+  ratelimiter:
+    instances:
+      llm:
+        # 依据：embedding 批量摄取是最大的配额吞吐点；30 次/秒 低于常见云
+        # 厂商 embedding 默认 QPS 低档位，给真实 key 留安全边距。
+        limit-for-period: 30
+        limit-refresh-period: 1s
+        # 0 等待 = 快速失败并显式提示，而不是让 SSE/调度线程排队堆积。
+        timeout-duration: 0s
+
 server:
   port: 8088
   servlet:
@@ -466,6 +497,11 @@ management:
       show-details: always
       probes:
         enabled: true
+  # S0-3：熔断器状态汇入 /actuator/health（resilience4j-spring-boot3 自带
+  # CircuitBreakerHealthIndicator，这里是显式声明而非依赖默认值）
+  health:
+    circuitbreakers:
+      enabled: true
   metrics:
     tags:
       application: opsbrain-ai

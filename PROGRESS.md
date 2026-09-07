@@ -89,7 +89,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| — | 暂无（T13/S0-2 已转待验收；下一轮启动 S0-3 Resilience4j） | | |
+| T14 | **S0-3：Resilience4j 熔断降级**（路线图 §4.3） | `prometheus` 熔断（@CircuitBreaker 三包公开方法 + 显式 fallback 语义，保留 MetricsUnavailableException 映射）+ LLM embedding 限流装饰器；logs/cmdb 实例槽与 chat 流式/TimeLimiter 如实记缺口（理由+恢复条件记决策表）；分工原则落 AGENTS 3.8 | 2026-09-07 |
 
 ---
 
