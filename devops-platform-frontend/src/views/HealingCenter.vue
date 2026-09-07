@@ -83,6 +83,14 @@ function prettyJson(raw: string | null): string {
   }
 }
 
+/** 验证状态徽章色（PASS 绿 / FAIL 红 / UNKNOWN 灰 / SKIPPED 灰） */
+function verifyTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (status === 'PASS') return 'success'
+  if (status === 'FAIL') return 'danger'
+  if (status === 'UNKNOWN') return 'warning'
+  return 'info'
+}
+
 async function submitTrigger() {
   let params: Record<string, unknown>
   try {
@@ -262,6 +270,14 @@ onMounted(reload)
 
         <h3 class="block-title">执行前快照</h3>
         <pre class="code-block">{{ prettyJson(detailRow.preSnapshotJson) }}</pre>
+
+        <template v-if="detailRow.verifyStatus">
+          <h3 class="block-title">执行后验证</h3>
+          <el-tag size="small" :type="verifyTagType(detailRow.verifyStatus)">
+            {{ detailRow.verifyStatus }}
+          </el-tag>
+          <pre class="code-block verify-block">{{ prettyJson(detailRow.verifyResultJson) }}</pre>
+        </template>
       </div>
     </el-drawer>
 

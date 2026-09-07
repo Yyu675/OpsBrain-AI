@@ -30,6 +30,11 @@ export interface HealingExecution {
   undoToken: string | null
   createdAt: string | null
   finishedAt: string | null
+  /** 执行后验证（S3-3）：PASS / FAIL / UNKNOWN / SKIPPED；null=尚未验证 */
+  verifyStatus: string | null
+  /** 验证结论 JSON（含 before/after 指标组） */
+  verifyResultJson: string | null
+  verifiedAt: string | null
 }
 
 /** 编排终局视图（触发/撤销接口的返回体） */

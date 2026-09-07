@@ -42,7 +42,10 @@ public class HealingExecutionRepository {
             rs.getString("pre_snapshot_json"),
             rs.getString("undo_token"),
             rs.getObject("created_at", LocalDateTime.class),
-            rs.getObject("finished_at", LocalDateTime.class));
+            rs.getObject("finished_at", LocalDateTime.class),
+            rs.getString("verify_status"),
+            rs.getString("verify_result_json"),
+            rs.getObject("verified_at", LocalDateTime.class));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -116,6 +119,37 @@ public class HealingExecutionRepository {
                 "SELECT * FROM sys_healing_execution WHERE approval_id = ? ORDER BY id DESC",
                 ROW_MAPPER, approvalId);
         return rows.stream().findFirst();
+    }
+
+    /**
+     * 验证结论回填（V9）：verify_status + verify_result_json + verified_at。
+     * PASS/FAIL/UNKNOWN/SKIPPED 四态尽收（SKIPPED 也要写——防止扫描器反复捞起）。
+     */
+    public void markVerified(long id, String verifyStatus, String verifyResultJson) {
+        jdbcTemplate.update("""
+                UPDATE sys_healing_execution
+                   SET verify_status = ?, verify_result_json = ?, verified_at = ?
+                 WHERE id = ?
+                """, verifyStatus, verifyResultJson, LocalDateTime.now(), id);
+    }
+
+    /**
+     * 待验证扫描（定时心跳的取数口）：SUCCEEDED 且未验证且已过沉淀期且在观察窗内。
+     *
+     * @param settledBefore finished_at 必须早于此时刻（刚执行完的指标还没稳定，不准验）
+     * @param observedAfter finished_at 必须晚于此时刻（超出观察窗的不再验——
+     *                      陈旧执行回头验出来的指标没有因果力）
+     */
+    public List<HealingExecution> listPendingVerification(LocalDateTime settledBefore,
+                                                          LocalDateTime observedAfter,
+                                                          int limit) {
+        return jdbcTemplate.query("""
+                SELECT * FROM sys_healing_execution
+                 WHERE status = 'SUCCEEDED' AND verify_status IS NULL
+                   AND finished_at IS NOT NULL
+                   AND finished_at < ? AND finished_at > ?
+                 ORDER BY finished_at ASC LIMIT ?
+                """, ROW_MAPPER, settledBefore, observedAfter, Math.max(1, Math.min(limit, 100)));
     }
 
     /**

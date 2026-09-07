@@ -2,6 +2,7 @@ package com.devops.agent.domain.healing;
 
 import com.devops.agent.common.audit.OperationAuditRecord;
 import com.devops.agent.domain.approval.ApprovalService;
+import com.devops.agent.domain.biz.service.TicketService;
 import com.devops.agent.infrastructure.persistence.repo.OperationAuditRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,6 +45,8 @@ public class HealingOrchestrator {
     private final HealingExecutionRepository repository;
     private final ApprovalService approvalService;
     private final OperationAuditRepository operationAuditRepository;
+    private final VerifierRegistry verifierRegistry;
+    private final TicketService ticketService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -56,12 +60,16 @@ public class HealingOrchestrator {
                                ExecutorRegistry registry,
                                HealingExecutionRepository repository,
                                ApprovalService approvalService,
-                               OperationAuditRepository operationAuditRepository) {
+                               OperationAuditRepository operationAuditRepository,
+                               VerifierRegistry verifierRegistry,
+                               TicketService ticketService) {
         this.gate = gate;
         this.registry = registry;
         this.repository = repository;
         this.approvalService = approvalService;
         this.operationAuditRepository = operationAuditRepository;
+        this.verifierRegistry = verifierRegistry;
+        this.ticketService = ticketService;
     }
 
     /**
@@ -225,6 +233,140 @@ public class HealingOrchestrator {
                 .orElseThrow(() -> new IllegalStateException(
                         "HEALING 审批单没有对应的执行台账: approvalId=" + approvalId));
         return executeApproved(row.id());
+    }
+
+    /**
+     * 执行后验证（S3-3/§7.4）：对一次 SUCCEEDED 的执行跑验证器，
+     * 验证未通过 → 自动撤销（undo）→ 升级人工工单。
+     * <p>
+     * 这正是 3-3.5 Saga 补偿在自愈域的落点：自动补偿的唯一有意义
+     * 触发点是「验证发现执行没起效」——为补偿而补偿只会徒增动作面。
+     * UNHEALTHY 且撤销成功 → P1 工单（已自动回滚，人知悉即可）；
+     * UNHEALTHY 且撤销失败/无凭据 → P0 工单（系统还在病态，人必须立刻接管）。
+     * </p>
+     *
+     * @return 验证终局视图（复用 HealingOutcome 载体）
+     */
+    public HealingOutcome verifyAndMaybeRollback(long executionId) {
+        HealingExecution row = repository.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("执行台账不存在: id=" + executionId));
+        if (!HealingExecution.Status.SUCCEEDED.equals(row.status())) {
+            throw new IllegalStateException(
+                    "只有执行成功（SUCCEEDED）的台账可验证: id=" + executionId + ", status=" + row.status());
+        }
+        if (row.verifyStatus() != null) {
+            throw new IllegalStateException(
+                    "该台账已验证过（" + row.verifyStatus() + "），重复验证没有增量信息: id=" + executionId);
+        }
+
+        Optional<ActionVerifier> verifierOpt = verifierRegistry.locate(row.actionKey());
+        if (verifierOpt.isEmpty()) {
+            // 无验证器也必须有结论性留痕——未验证的 SUCCEEDED 不能长得像已验证
+            repository.markVerified(executionId, HealingExecution.Verify.SKIPPED,
+                    "{\"summary\":\"无匹配验证器\"}");
+            return HealingOutcome.terminal(executionId,
+                    HealingGate.GateDecision.auto(row.actionKey(), row.executorKey(), null, null),
+                    HealingExecution.Verify.SKIPPED, "无匹配验证器，标记 SKIPPED", null);
+        }
+
+        HealingAction action = replayFromRow(row);
+        ExecutionResult executionEcho = new ExecutionResult(
+                row.executorKey(), row.actionKey(), true, false, row.output(), null,
+                jsonToMap(row.preSnapshotJson()), row.undoToken(), null, null);
+        ActionVerifier.VerificationResult verification =
+                verifierOpt.get().verify(action, executionEcho);
+
+        boolean pass = verification.isHealthy();
+        String verifyJson = mapToJson(Map.of(
+                "status", verification.status(),
+                "summary", verification.summary() == null ? "" : verification.summary(),
+                "before", verification.before(),
+                "after", verification.after()));
+        repository.markVerified(executionId,
+                pass ? HealingExecution.Verify.PASS
+                        : (ActionVerifier.VerificationResult.UNKNOWN.equals(verification.status())
+                                ? HealingExecution.Verify.UNKNOWN : HealingExecution.Verify.FAIL),
+                verifyJson);
+
+        if (pass) {
+            log.info("[Healing] 验证通过 | id={} | {}", executionId, verification.summary());
+            return HealingOutcome.terminal(executionId,
+                    HealingGate.GateDecision.auto(row.actionKey(), row.executorKey(), null, null),
+                    HealingExecution.Verify.PASS, "验证通过：" + verification.summary(), null);
+        }
+        if (ActionVerifier.VerificationResult.UNKNOWN.equals(verification.status())) {
+            log.warn("[Healing] 验证未知 | id={} | {}", executionId, verification.summary());
+            return HealingOutcome.terminal(executionId,
+                    HealingGate.GateDecision.auto(row.actionKey(), row.executorKey(), null, null),
+                    HealingExecution.Verify.UNKNOWN, "验证未知：" + verification.summary(), null);
+        }
+
+        // FAIL：自动撤销 + 升级人工（P1 已回滚 / P0 未回滚）
+        boolean undoSucceeded = false;
+        String undoNote;
+        if (row.undoToken() == null || row.undoToken().isBlank()) {
+            undoNote = "该执行没有撤销凭据，无法自动回滚";
+        } else {
+            HealingOutcome undoOutcome = undo(executionId);
+            undoSucceeded = HealingExecution.Status.UNDONE.equals(undoOutcome.status());
+            undoNote = undoSucceeded ? "已自动回滚（台账转 UNDONE）"
+                    : "自动回滚失败: " + undoOutcome.message();
+        }
+        String ticketId = escalateToTicket(row, verification, undoSucceeded, undoNote);
+        log.error("[Healing] 验证失败已升级 | id={} | undo={} | ticket={}",
+                executionId, undoNote, ticketId);
+        return HealingOutcome.terminal(executionId,
+                HealingGate.GateDecision.auto(row.actionKey(), row.executorKey(), null, null),
+                HealingExecution.Verify.FAIL,
+                "验证失败：" + verification.summary() + "；" + undoNote + "；升级工单 " + ticketId, null);
+    }
+
+    /**
+     * 心跳批扫描（定时任务入口）：把观察窗内所有未验证的 SUCCEEDED 台账
+     * 逐个验证。单条异常不影响整批（记录下批再来）。
+     *
+     * @param settleSeconds  沉淀期（刚执行完的指标未稳定，不准验）
+     * @param observeSeconds 观察窗（超出窗口的陈旧执行不再验）
+     */
+    public int verifyPendingBatch(int settleSeconds, int observeSeconds, int batchLimit) {
+        LocalDateTime now = LocalDateTime.now();
+        List<HealingExecution> pending = repository.listPendingVerification(
+                now.minusSeconds(settleSeconds), now.minusSeconds(observeSeconds), batchLimit);
+        int processed = 0;
+        for (HealingExecution row : pending) {
+            try {
+                verifyAndMaybeRollback(row.id());
+                processed++;
+            } catch (Exception ex) {
+                log.warn("[Healing] 心跳验证单条失败（下批重试）| id={} | {}",
+                        row.id(), ex.getMessage());
+            }
+        }
+        if (processed > 0) {
+            log.info("[Healing] 心跳验证批次完成 | processed={} | pending={}",
+                    processed, pending.size());
+        }
+        return processed;
+    }
+
+    /** 升级人工工单（P1 已回滚 / P0 回不去）。创建失败只记日志，不影响验证留痕。 */
+    private String escalateToTicket(HealingExecution row,
+                                    ActionVerifier.VerificationResult verification,
+                                    boolean undoSucceeded, String undoNote) {
+        try {
+            String priority = undoSucceeded ? "P1" : "P0";
+            String title = "自愈验证失败 · " + row.actionKey() + " @ " + row.target();
+            String description = "执行台账 #" + row.id() + "（告警 #" + row.alertId() + "）\n"
+                    + "验证结论：" + verification.summary() + "\n"
+                    + "自动回滚：" + undoNote + "\n"
+                    + "请人工核查目标系统当前状态并补齐处置。";
+            var ticket = ticketService.createTicket(title, priority, "healing",
+                    description, null, null, null, "agent-healing");
+            return ticket != null && ticket.getId() != null ? "#" + ticket.getId() : "(创建返回空)";
+        } catch (Exception ex) {
+            log.error("❌ [Healing] 升级工单创建失败 | id={} | {}", row.id(), ex.getMessage());
+            return "(创建失败: " + ex.getMessage() + ")";
+        }
     }
 
     /**

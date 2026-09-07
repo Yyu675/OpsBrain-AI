@@ -27,7 +27,12 @@ public record HealingExecution(
         String preSnapshotJson,
         String undoToken,
         LocalDateTime createdAt,
-        LocalDateTime finishedAt) {
+        LocalDateTime finishedAt,
+        /** 验证状态（V9）：PASS / FAIL / UNKNOWN / SKIPPED；null=尚未验证 */
+        String verifyStatus,
+        /** 验证结论 JSON（含 before/after 指标组，前端执行前后对比的数据源） */
+        String verifyResultJson,
+        LocalDateTime verifiedAt) {
 
     /** 状态机终态集合（批次 3 撤销动作加入 UNDONE）。 */
     public static final class Status {
@@ -46,6 +51,19 @@ public record HealingExecution(
         public static final String UNDO_FAILED = "UNDO_FAILED";
     }
 
+    /** 验证状态常量（V9）。 */
+    public static final class Verify {
+        private Verify() {}
+        /** 验证通过 */
+        public static final String PASS = "PASS";
+        /** 验证未通过（已触发自动回滚或升级人工） */
+        public static final String FAIL = "FAIL";
+        /** 验证器给不出结论（如集群不可达）——「验证不了」与「失败」是两种事实 */
+        public static final String UNKNOWN = "UNKNOWN";
+        /** 无匹配验证器——未验证的 SUCCEEDED 不能长得像已验证 */
+        public static final String SKIPPED = "SKIPPED";
+    }
+
     /** 新建草稿（insert 前的内存形态：id / createdAt / finishedAt 未知）。 */
     public static HealingExecution draft(String actionKey, String environment, String target,
                                          String paramsJson, Long alertId, String requestedBy,
@@ -54,6 +72,7 @@ public record HealingExecution(
                                          String error, String preSnapshotJson, String undoToken) {
         return new HealingExecution(null, actionKey, environment, target, paramsJson,
                 alertId, requestedBy, gateDecision, approvalId, executorKey, status,
-                dryRunPlan, output, error, preSnapshotJson, undoToken, null, null);
+                dryRunPlan, output, error, preSnapshotJson, undoToken, null, null,
+                null, null, null);
     }
 }

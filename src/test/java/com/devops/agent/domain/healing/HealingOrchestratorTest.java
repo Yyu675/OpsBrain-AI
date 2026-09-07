@@ -1,6 +1,7 @@
 package com.devops.agent.domain.healing;
 
 import com.devops.agent.domain.approval.ApprovalService;
+import com.devops.agent.domain.biz.service.TicketService;
 import com.devops.agent.infrastructure.persistence.repo.OperationAuditRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,8 @@ class HealingOrchestratorTest {
     private HealingExecutionRepository repository;
     private ApprovalService approvalService;
     private OperationAuditRepository operationAuditRepository;
+    private VerifierRegistry verifierRegistry;
+    private TicketService ticketService;
     private HealingOrchestrator orchestrator;
 
     private static HealingAction action() {
@@ -52,9 +55,14 @@ class HealingOrchestratorTest {
         repository = mock(HealingExecutionRepository.class);
         approvalService = mock(ApprovalService.class);
         operationAuditRepository = mock(OperationAuditRepository.class);
+        verifierRegistry = mock(VerifierRegistry.class);
+        ticketService = mock(TicketService.class);
+        // 默认无验证器（老用例不关心验证链）；验证用例自行 stub locate()
+        when(verifierRegistry.locate(anyString())).thenReturn(Optional.empty());
         orchestrator = new HealingOrchestrator(
                 gate, new ExecutorRegistry(List.of(new MockActionExecutor())),
-                repository, approvalService, operationAuditRepository);
+                repository, approvalService, operationAuditRepository,
+                verifierRegistry, ticketService);
         when(repository.insert(any())).thenReturn(1001L);
     }
 
@@ -128,7 +136,7 @@ class HealingOrchestratorTest {
         HealingExecution pending = new HealingExecution(1002L, "mock.disk.cleanup", "prod",
                 "ns:prod/app-user", "{\"gracePeriodSeconds\":30}", 42L, "auto",
                 "REQUIRES_APPROVAL", 99L, "mock", "PENDING_APPROVAL",
-                "MOCK 演算通过", null, null, null, null, null, null);
+                "MOCK 演算通过", null, null, null, null, null, null, null, null, null);
         when(repository.findById(1002L)).thenReturn(Optional.of(pending));
 
         var outcome = orchestrator.executeApproved(1002L);
@@ -144,7 +152,7 @@ class HealingOrchestratorTest {
     void executeApprovedRejectsNonPending() {
         HealingExecution done = new HealingExecution(1003L, "mock.disk.cleanup", "prod",
                 "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
-                null, "out", null, "{}", "tok", null, null);
+                null, "out", null, "{}", "tok", null, null, null, null, null);
         when(repository.findById(1003L)).thenReturn(Optional.of(done));
 
         assertThrows(IllegalStateException.class, () -> orchestrator.executeApproved(1003L));
@@ -160,7 +168,7 @@ class HealingOrchestratorTest {
                 "ns:prod/app-user", "{\"gracePeriodSeconds\":30}", 42L, "auto",
                 "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
                 "MOCK 演算通过", "MOCK 执行成功",
-                null, "{\"target\":\"ns:prod/app-user\"}", "mock-undo-abcd1234", null, null);
+                null, "{\"target\":\"ns:prod/app-user\"}", "mock-undo-abcd1234", null, null, null, null, null);
     }
 
     @Test
@@ -180,7 +188,7 @@ class HealingOrchestratorTest {
     void undoRejectsNonSucceeded() {
         HealingExecution failed = new HealingExecution(2002L, "mock.disk.cleanup", "prod",
                 "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "FAILED",
-                null, null, "boom", null, null, null, null);
+                null, null, "boom", null, null, null, null, null, null, null);
         when(repository.findById(2002L)).thenReturn(Optional.of(failed));
 
         assertThrows(IllegalStateException.class, () -> orchestrator.undo(2002L));
@@ -193,7 +201,7 @@ class HealingOrchestratorTest {
     void undoRejectsMissingToken() {
         HealingExecution noToken = new HealingExecution(2003L, "mock.disk.cleanup", "prod",
                 "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
-                null, "out", null, "{}", null, null, null);
+                null, "out", null, "{}", null, null, null, null, null, null);
         when(repository.findById(2003L)).thenReturn(Optional.of(noToken));
 
         assertThrows(IllegalStateException.class, () -> orchestrator.undo(2003L));
@@ -207,7 +215,7 @@ class HealingOrchestratorTest {
         HealingExecution pending = new HealingExecution(1002L, "mock.disk.cleanup", "prod",
                 "ns:prod/app-user", "{\"gracePeriodSeconds\":30}", 42L, "auto",
                 "REQUIRES_APPROVAL", 99L, "mock", "PENDING_APPROVAL",
-                "MOCK 演算通过", null, null, null, null, null, null);
+                "MOCK 演算通过", null, null, null, null, null, null, null, null, null);
         when(repository.findByApprovalId(99L)).thenReturn(Optional.of(pending));
         when(repository.findById(1002L)).thenReturn(Optional.of(pending));
 
@@ -265,5 +273,115 @@ class HealingOrchestratorTest {
         orchestrator.handle(action()); // requestedBy = auto
 
         verify(operationAuditRepository, times(1)).save(any());
+    }
+
+    // ---------------- S3-3：执行后验证链（§7.4） ----------------
+
+    /** 造一条 SUCCEEDED + 可撤销的行（供验证用例）。 */
+    private static HealingExecution succeededRowWithToken(long id) {
+        return succeededRow(id);
+    }
+
+    private static ActionVerifier verifierReturning(ActionVerifier.VerificationResult result) {
+        ActionVerifier verifier = mock(ActionVerifier.class);
+        when(verifier.supports(anyString())).thenReturn(true);
+        when(verifier.verify(any(), any())).thenReturn(result);
+        return verifier;
+    }
+
+    @Test
+    @DisplayName("验证通过：HEALTHY → markVerified(PASS)，不撤单不升级")
+    void verifyPassMarksPassOnly() {
+        when(repository.findById(3001L)).thenReturn(Optional.of(succeededRowWithToken(3001L)));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
+                verifierReturning(ActionVerifier.VerificationResult.healthy(
+                        "错误率 0.12 -> 0.01", Map.of(), Map.of()))));
+
+        var outcome = orchestrator.verifyAndMaybeRollback(3001L);
+
+        assertEquals("PASS", outcome.status());
+        verify(repository).markVerified(eq(3001L), eq("PASS"), anyString());
+        verify(repository, never()).markUndoOutcome(anyLong(), anyString(), anyString(), anyString());
+        verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
+                anyString(), isNull(), isNull(), isNull(), anyString());
+    }
+
+    @Test
+    @DisplayName("验证失败且有凭据：自动撤销转 UNDONE + 升级 P1 工单（人知悉即可）")
+    void verifyFailAutoUndoAndP1Ticket() {
+        when(repository.findById(3002L)).thenReturn(Optional.of(succeededRowWithToken(3002L)));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
+                verifierReturning(ActionVerifier.VerificationResult.unhealthy(
+                        "错误率不降反升", Map.of(), Map.of()))));
+
+        var outcome = orchestrator.verifyAndMaybeRollback(3002L);
+
+        assertEquals("FAIL", outcome.status());
+        verify(repository).markVerified(eq(3002L), eq("FAIL"), anyString());
+        verify(repository).markUndoOutcome(eq(3002L), eq("UNDONE"), anyString(), isNull());
+        verify(ticketService).createTicket(anyString(), eq("P1"), eq("healing"),
+                anyString(), isNull(), isNull(), isNull(), eq("agent-healing"));
+    }
+
+    @Test
+    @DisplayName("验证失败且无凭据：撤销无从谈起 → 直接 P0 升级（人必须立刻接管）")
+    void verifyFailWithoutTokenEscalatesP0() {
+        HealingExecution noToken = new HealingExecution(3003L, "mock.disk.cleanup", "prod",
+                "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
+                null, "out", null, "{}", null, null, null, null, null, null);
+        when(repository.findById(3003L)).thenReturn(Optional.of(noToken));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
+                verifierReturning(ActionVerifier.VerificationResult.unhealthy(
+                        "错误率不降反升", Map.of(), Map.of()))));
+
+        var outcome = orchestrator.verifyAndMaybeRollback(3003L);
+
+        assertEquals("FAIL", outcome.status());
+        assertTrue(outcome.message().contains("无法自动回滚"), outcome.message());
+        verify(repository, never()).markUndoOutcome(anyLong(), anyString(), anyString(), anyString());
+        verify(ticketService).createTicket(anyString(), eq("P0"), eq("healing"),
+                anyString(), isNull(), isNull(), isNull(), eq("agent-healing"));
+    }
+
+    @Test
+    @DisplayName("无匹配验证器：标 SKIPPED 留痕——未验证的 SUCCEEDED 不能长得像已验证")
+    void verifySkippedWhenNoVerifier() {
+        when(repository.findById(3004L)).thenReturn(Optional.of(succeededRowWithToken(3004L)));
+
+        var outcome = orchestrator.verifyAndMaybeRollback(3004L);
+
+        assertEquals("SKIPPED", outcome.status());
+        verify(repository).markVerified(eq(3004L), eq("SKIPPED"), anyString());
+    }
+
+    @Test
+    @DisplayName("重复验证拒绝：已有 verify_status 的行没有增量信息")
+    void verifyRejectsAlreadyVerified() {
+        HealingExecution verified = new HealingExecution(3005L, "mock.disk.cleanup", "prod",
+                "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
+                null, "out", null, "{}", "tok", null, null, "PASS", "{}", null);
+        when(repository.findById(3005L)).thenReturn(Optional.of(verified));
+
+        assertThrows(IllegalStateException.class, () -> orchestrator.verifyAndMaybeRollback(3005L));
+        verify(repository, never()).markVerified(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("心跳批扫描：窗口内未验证行逐条处理，单条异常不拖垮整批")
+    void verifyPendingBatchProcessesEach() {
+        HealingExecution rowA = succeededRowWithToken(3006L);
+        HealingExecution rowB = succeededRowWithToken(3007L);
+        when(repository.listPendingVerification(any(), any(), eq(20)))
+                .thenReturn(List.of(rowA, rowB));
+        when(repository.findById(3006L)).thenReturn(Optional.of(rowA));
+        when(repository.findById(3007L)).thenReturn(Optional.of(rowB));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
+                verifierReturning(ActionVerifier.VerificationResult.healthy(
+                        "ok", Map.of(), Map.of()))));
+
+        int processed = orchestrator.verifyPendingBatch(30, 300, 20);
+
+        assertEquals(2, processed);
+        verify(repository, times(2)).markVerified(anyLong(), eq("PASS"), anyString());
     }
 }
