@@ -255,6 +255,23 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          Testcontainers（S0-2，路线图 §4.2）：集成测试真实依赖。
+          版本由 spring-boot-dependencies 内嵌的 testcontainers-bom 托管，
+          无需显式钉版本。junit-jupiter 模块保留 @Testcontainers 扩展点
+          （当前基类用 singleton 容器模式未用到该注解，但路线图 0-2.1 要求
+          三个构件齐备，后续类若需 per-class 容器已备好）。
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

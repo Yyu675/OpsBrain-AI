@@ -1,5 +1,6 @@
 package com.devops.agent.domain.rag;
 
+import com.devops.agent.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * 本测试用 MOCK 模式：MockEmbeddingModel 产生确定性向量，
  * 无需真实 API Key，可在 CI 中稳定运行。
  * </p>
+ * <p>
+ * S0-2（2026-09-07）：改连 Testcontainers 的 pgvector/pgvector:pg16 容器
+ * （{@link AbstractIntegrationTest}），不再依赖宿主机 25432 的 dev 库——
+ * 真空库由 Flyway 全量迁移，测试写入与共享库彻底隔离。
+ * </p>
  *
  * @author OpsBrain AI
  * @since 2026-08-09
@@ -44,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.*;
         "devops.ai.hallucination.min-similarity-score=0"
 })
 @DisplayName("检索链路：摄取写入的数据能否被检索读到")
-class HybridRetrieverIntegrationTest {
+class HybridRetrieverIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private KnowledgeIngestionService ingestionService;
@@ -81,7 +87,7 @@ class HybridRetrieverIntegrationTest {
 
         assertEquals(1, dims.size(), "所有切片维度应一致");
         assertEquals(1536, dims.get(0),
-                "维度必须为 1536，与 init.sql 的 VECTOR(1536) 及 EmbeddingModel 输出一致");
+                "维度必须为 1536，与 V1 基线的 VECTOR(1536) 及 EmbeddingModel 输出一致");
     }
 
     @Test

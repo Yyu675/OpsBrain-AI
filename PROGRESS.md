@@ -87,7 +87,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| — | 暂无（T12/S0-1 已转待验收；下一轮启动 S0-2 Testcontainers） | | |
+| T13 | **S0-2：Testcontainers 集成测试**（路线图 §4.2） | `AbstractIntegrationTest`（singleton `pgvector/pgvector:pg16` + `@DynamicPropertySource`）+ `HybridRetrieverIntegrationTest` 迁入 + 新增 `FlywayMigrationIntegrationTest`（空库全量迁移第二重证据）；Redis/MinIO 按 0-2.6 评估后跳过（决策记录） | 2026-09-07 |
 
 ---
 
