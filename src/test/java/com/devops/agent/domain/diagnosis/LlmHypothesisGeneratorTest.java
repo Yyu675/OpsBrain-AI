@@ -3,28 +3,40 @@ package com.devops.agent.domain.diagnosis;
 import com.devops.agent.domain.diagnosis.HypothesisGenerator.RankedEvidence;
 import com.devops.agent.domain.evidence.Evidence;
 import com.devops.agent.domain.evidence.EvidenceAggregator;
-import com.devops.agent.infrastructure.AiModelConfig;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.ChatResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-/** LlmHypothesisGenerator 的四个核心行为：真实 JSON 断言、MOCK 落空回落规则版、解析失败回落、ChatModel null 直接回落。 */
-@DisplayName("LlmHypothesisGenerator（S2-2 批次 C：LLM 合成版）")
+/**
+ * LlmHypothesisGenerator 四个核心行为：合法 JSON 时 LLM 胜出、
+ * 非 JSON 回落规则版、ChatModel null 直接回落、空数组回落。
+ * <p>
+ * 注意：生产类通过 {@code @Autowired(required=false)} 注入 ChatModel，
+ * 测试不走 Spring 容器，用 {@link ReflectionTestUtils#setField} 手工注入。
+ * </p>
+ */
+@DisplayName("LlmHypothesisGenerator（S2-2 批次 C：LLM 一轨）")
 class LlmHypothesisGeneratorTest {
 
     private RuleBasedHypothesisGenerator ruleFallback;
-    private LlmHypothesisGenerator llmGenerator;
 
     private static EvidenceAggregator.AggregateResult aggSufficient() {
         return new EvidenceAggregator.AggregateResult(
@@ -39,27 +51,40 @@ class LlmHypothesisGeneratorTest {
                 st, type, "t", content, "ref", rel, Instant.now()));
     }
 
+    private static ChatModel stubModelReturning(String text) {
+        ChatModel mockModel = mock(ChatModel.class);
+        when(mockModel.chat(any())).thenReturn(ChatResponse.builder()
+                .aiMessage(AiMessage.from(text)).build());
+        return mockModel;
+    }
+
+    private static LlmHypothesisGenerator withModel(RuleBasedHypothesisGenerator fallback,
+                                                    ChatModel model) {
+        LlmHypothesisGenerator generator = new LlmHypothesisGenerator(fallback);
+        ReflectionTestUtils.setField(generator, "turboModel", model);
+        return generator;
+    }
+
     @BeforeEach
     void setUp() {
         ruleFallback = mock(RuleBasedHypothesisGenerator.class);
-        // 规则基线的 stub：每次调用都返回一个来自「规则」的假设（MK 应该是「不是 LLM」）
+        // 规则基线 stub：每次调用返回一条标志性假设（statement 含「规则」二字用于区分来源）
         when(ruleFallback.generate(any(), any())).thenAnswer(inv -> List.of(
                 new Hypothesis(1, "规则基线假设", "rule-based", 0.72,
                         List.of(10L), List.of(), "回滚", Instant.now())));
     }
 
     @Test
-    @DisplayName("LLM 合法 JSON 返回 → 假设包含期望字段，LLM 胜出")
+    @DisplayName("LLM 返回合法 JSON → 假设解析成功，LLM 胜出，规则基线不被调用")
     void validLlmJsonWins() {
-        String validJson = "[{\"statement\":\"变更回归\",\"reasoning\":\"rel=0.9\",\"confidence\":0.78,\"evidenceIds\":[10],\"suggestedAction\":\"回滚\"}]";
-        ChatModel mockModel = mock(ChatModel.class);
-        when(mockModel.chat(any())).thenReturn(ChatResponse.builder()
-                .aiMessage(dev.langchain4j.data.message.AiMessage.from(validJson)).build());
-        llmGenerator = new LlmHypothesisGenerator(mockModel, ruleFallback);
+        String validJson = "[{\"statement\":\"变更回归\",\"reasoning\":\"rel=0.9\",\"confidence\":0.78,"
+                + "\"evidenceIds\":[10],\"suggestedAction\":\"回滚\"}]";
+        LlmHypothesisGenerator generator = withModel(ruleFallback, stubModelReturning(validJson));
 
         RankedEvidence ev = mkEv(10L, Evidence.EvidenceStatus.SUCCESS, "changes",
                 Map.of("count", 2), 0.9);
-        var out = llmGenerator.generate(aggSufficient(), List.of(ev));
+        var out = generator.generate(aggSufficient(), List.of(ev));
+
         assertTrue(out.size() >= 1);
         assertTrue(out.get(0).statement().contains("变更"), out.get(0).statement());
         assertTrue(out.get(0).confidence() > 0.5);
@@ -68,39 +93,38 @@ class LlmHypothesisGeneratorTest {
     }
 
     @Test
-    @DisplayName("LLM 返回非 JSON（如测试 MOCK 响应）→ 自动回落规则基线，不落神经病")
+    @DisplayName("LLM 返回非 JSON（如 MOCK 的中文闲聊）→ 解析失败，回落规则基线")
     void invalidLlmFallsBackToRule() {
-        ChatModel mockModel = mock(ChatModel.class);
-        when(mockModel.chat(any())).thenReturn(ChatResponse.builder()
-                .aiMessage(dev.langchain4j.data.message.AiMessage.from("这是模拟的 AI 回复，不是 JSON")).build());
-        llmGenerator = new LlmHypothesisGenerator(mockModel, ruleFallback);
+        LlmHypothesisGenerator generator = withModel(ruleFallback,
+                stubModelReturning("这是模拟的 AI 回复，不是 JSON"));
 
-        var out = llmGenerator.generate(aggSufficient(), List.of());
+        var out = generator.generate(aggSufficient(), List.of());
+
         assertEquals(1, out.size());
-        assertTrue(out.get(0).statement().contains("规则"), "解析失败必须回落规则版自动生成：" + out.get(0).statement());
+        assertTrue(out.get(0).statement().contains("规则"),
+                "解析失败必须回落规则版：" + out.get(0).statement());
         verify(ruleFallback, times(1)).generate(any(), any());
     }
 
     @Test
-    @DisplayName("保底再一层：ChatModel 为 nul l → 直接回落规则基线（不顶天到 LLM 活着才 Required）")
+    @DisplayName("ChatModel 为 null（MOCK/dev 未注入）→ 直接回落规则基线，不触碰 LLM")
     void nullChatModelFallsBackDirectly() {
-        llmGenerator = new LlmHypothesisGenerator(ruleFallback);
-        // turboModel 为 null（默认、MOCK 模式、未注入时自然如此）——立即回落
-        var out = llmGenerator.generate(aggSufficient(), List.of());
+        LlmHypothesisGenerator generator = new LlmHypothesisGenerator(ruleFallback);
+
+        var out = generator.generate(aggSufficient(), List.of());
+
         assertEquals(1, out.size());
         assertTrue(out.get(0).statement().contains("规则"));
         verify(ruleFallback, times(1)).generate(any(), any());
     }
 
     @Test
-    @DisplayName("LLM 检出但 EMPTY 数组 → 也是回落（LLM 数 0 = 「给 Mall 的机会没赢得」）")
+    @DisplayName("LLM 返回空数组 → 视同未给出结果，回落规则基线")
     void emptyLlmOutputFallsBack() {
-        ChatModel mockModel = mock(ChatModel.class);
-        when(mockModel.chat(any())).thenReturn(ChatResponse.builder()
-                .aiMessage(dev.langchain4j.data.message.AiMessage.from("[]")).build());
-        llmGenerator = new LlmHypothesisGenerator(mockModel, ruleFallback);
+        LlmHypothesisGenerator generator = withModel(ruleFallback, stubModelReturning("[]"));
 
-        var out = llmGenerator.generate(aggSufficient(), List.of());
+        var out = generator.generate(aggSufficient(), List.of());
+
         assertEquals(1, out.size());
         assertTrue(out.get(0).statement().contains("规则"));
         verify(ruleFallback, times(1)).generate(any(), any());
