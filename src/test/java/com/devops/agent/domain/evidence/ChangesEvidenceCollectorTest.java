@@ -68,7 +68,7 @@ class ChangesEvidenceCollectorTest extends AbstractIntegrationTest {
     @DisplayName("空表查询 → NO_DATA（有效排除证据），sourceRef 为可读谓词")
     void emptyTableYieldsNoData() {
         var ev = collector.collect("order-service", "2h");
-        assertThat(ev.status()).isEqualTo(Evidence.EvidenceStatus.NO_DATA);
+        assertThat(ev.status()).as(() -> "evidence_title=" + ev.title() + " || payload=" + ev.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.NO_DATA);
         assertThat(ev.sourceRef()).contains("sys_change_event");
     }
 
@@ -83,7 +83,7 @@ class ChangesEvidenceCollectorTest extends AbstractIntegrationTest {
                 "别家服务", LocalDateTime.now().minusMinutes(1), "ci-callback", "other-1"));
 
         var ev = collector.collect("order-service", "2h");
-        assertThat(ev.status()).as("evidence_现场=%s", ev.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
+        assertThat(ev.status()).as(() -> "evidence_title=" + ev.title() + " || " + ev.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
         @SuppressWarnings("unchecked")
         Map<String, Object> parsed = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readValue(ev.toToolPayload(), Map.class);
@@ -105,6 +105,6 @@ class ChangesEvidenceCollectorTest extends AbstractIntegrationTest {
         repository.save(ChangeEvent.of("order-service", "deploy", "a",
                 "三小时前的发布", LocalDateTime.now().minusHours(3), "ci-callback", "old-3h"));
         var ev = collector.collect("order-service", "2h");
-        assertThat(ev.status()).isEqualTo(Evidence.EvidenceStatus.NO_DATA);
+        assertThat(ev.status()).as(() -> "evidence_title=" + ev.title() + " || payload=" + ev.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.NO_DATA);
     }
 }

@@ -98,7 +98,7 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
         PrometheusClient disabled = new PrometheusClient("http://unreachable.invalid", 500, false, new ObjectMapper());
         MetricsEvidenceCollector c = new MetricsEvidenceCollector(disabled, new MetricsQueryCatalog());
         var e = c.collect("order-service", "30m", "cpu");
-        assertThat(e.status()).as("evidence_现场=%s", e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.UNAVAILABLE);
+        assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.UNAVAILABLE);
         assertThatThrownBy(() -> new PrometheusClient("http://x", 500, false, new ObjectMapper()).query("up"))
                 .isInstanceOf(MetricsUnavailableException.class); // 佐证未启用是显式异常不是空结果
     }
@@ -108,7 +108,7 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
     void prometheusDownYieldsFailed() {
         SERVER.enqueue(new MockResponse().setResponseCode(500));
         var e = collector.collect("order-service", "30m", "cpu");
-        assertThat(e.status()).as("evidence_现场=%s", e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.FAILED);
+        assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.FAILED);
         assertThat(e.toToolPayload()).contains("\"status\":\"FAILED\"");
     }
 
@@ -117,7 +117,7 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
     void emptyResultIsNoDataNotFailed() {
         enqueueMatrix("");
         var e = collector.collect("order-service", "30m", "cpu");
-        assertThat(e.status()).isEqualTo(Evidence.EvidenceStatus.NO_DATA);
+        assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || payload=" + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.NO_DATA);
         assertThat(e.sourceRef())
                 .as("sourceRef 是实渲染 PromQL，可直接粘贴 Grafana 复现")
                 .contains("order-service").contains("container_cpu_usage_seconds_total")
@@ -129,7 +129,7 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
     void normalSeriesYieldsSuccessNoAnomaly() {
         enqueueMatrix(flatSeries(30, 0.42));
         var e = collector.collect("order-service", "30m", "cpu");
-        assertThat(e.status()).as("evidence_现场=%s", e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
+        assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
         assertThat(((Number) e.content().get("anomalyCount")).longValue()).isZero();
     }
 
@@ -144,7 +144,7 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
         sb.append('[').append(base + 29L * 30).append(",\"5.00\"]}");
         enqueueMatrix(sb.toString());
         var e = collector.collect("order-service", "30m", "cpu");
-        assertThat(e.status()).as("evidence_现场=%s", e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
+        assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
         assertThat(((Number) e.content().get("anomalyCount")).longValue()).isGreaterThanOrEqualTo(1);
     }
 
@@ -152,7 +152,7 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
     @DisplayName("未知指标名 → FAILED 并给出合法清单，且零网络调用")
     void unknownMetricFailsFastWithCatalogHint() {
         var e = collector.collect("order-service", "30m", "disk-io");
-        assertThat(e.status()).as("evidence_现场=%s", e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.FAILED);
+        assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.FAILED);
         assertThat(e.toToolPayload()).contains("cpu");
     }
 
@@ -160,7 +160,7 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
     @DisplayName("非法时间窗 → FAILED 快失败（不到 Prometheus）")
     void badRangeFailsFast() {
         var e = collector.collect("order-service", "3years", "cpu");
-        assertThat(e.status()).as("evidence_现场=%s", e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.FAILED);
+        assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.FAILED);
     }
 
     @Test
