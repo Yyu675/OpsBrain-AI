@@ -5,7 +5,8 @@ import com.devops.agent.domain.evidence.Evidence;
 import com.devops.agent.domain.evidence.EvidenceAggregator;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.ChatResponse;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,7 +54,10 @@ class LlmHypothesisGeneratorTest {
 
     private static ChatModel stubModelReturning(String text) {
         ChatModel mockModel = mock(ChatModel.class);
-        when(mockModel.chat(any())).thenReturn(ChatResponse.builder()
+        // 生产类走 ChatRequest 变体（langchain4j 1.2.0 kestra 重构后
+        // ChatResponse 移到 model.chat.response 包）——stub 必须精确对齐，
+        // 否则 any() 匹配到旧 String 重载导致生产调用返回 null
+        when(mockModel.chat(any(ChatRequest.class))).thenReturn(ChatResponse.builder()
                 .aiMessage(AiMessage.from(text)).build());
         return mockModel;
     }
