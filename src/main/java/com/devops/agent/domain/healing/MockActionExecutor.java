@@ -67,4 +67,14 @@ public class MockActionExecutor implements ActionExecutor {
     public boolean undoSupported(String actionKey) {
         return true;
     }
+
+    @Override
+    public ExecutionResult undo(HealingAction action, String undoToken,
+                                Map<String, Object> preSnapshot) {
+        // Mock 撤销：回显凭据与快照，证明链路通了
+        return ExecutionResult.ok(EXECUTOR_KEY, action.actionKey(),
+                "MOCK 撤销成功：" + action.actionKey() + " @ " + action.target()
+                        + "（凭据 " + undoToken + " 已消费）",
+                Map.of(), null);
+    }
 }

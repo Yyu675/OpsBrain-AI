@@ -101,6 +101,23 @@ public class HealingExecutionRepository {
                 approvalId, id);
     }
 
+    /** 撤销收场：状态（UNDONE / UNDO_FAILED）+ 撤销输出 + 完成时间。 */
+    public void markUndoOutcome(long id, String status, String output, String error) {
+        jdbcTemplate.update("""
+                UPDATE sys_healing_execution
+                   SET status = ?, output = ?, error = ?, finished_at = ?
+                 WHERE id = ?
+                """, status, output, error, LocalDateTime.now(), id);
+    }
+
+    /** 按审批单 id 反查执行台账（审批中心批准回调的桥）。 */
+    public Optional<HealingExecution> findByApprovalId(long approvalId) {
+        List<HealingExecution> rows = jdbcTemplate.query(
+                "SELECT * FROM sys_healing_execution WHERE approval_id = ? ORDER BY id DESC",
+                ROW_MAPPER, approvalId);
+        return rows.stream().findFirst();
+    }
+
     public Optional<HealingExecution> findById(long id) {
         List<HealingExecution> rows = jdbcTemplate.query(
                 "SELECT * FROM sys_healing_execution WHERE id = ?", ROW_MAPPER, id);

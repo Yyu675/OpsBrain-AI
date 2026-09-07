@@ -42,6 +42,8 @@ public record HealingExecution(
         public static final String REJECTED = "REJECTED";
         /** 已撤销（批次 3 回滚触发器写入） */
         public static final String UNDONE = "UNDONE";
+        /** 撤销失败（原执行成功的事实不动，撤销尝试单独留痕） */
+        public static final String UNDO_FAILED = "UNDO_FAILED";
     }
 
     /** 新建草稿（insert 前的内存形态：id / createdAt / finishedAt 未知）。 */

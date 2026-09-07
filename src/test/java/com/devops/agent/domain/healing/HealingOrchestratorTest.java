@@ -148,4 +148,70 @@ class HealingOrchestratorTest {
                 anyString(), anyString(), anyString());
         verify(approvalService, never()).recordExecution(anyLong(), anyBoolean(), anyString());
     }
+
+    // ---------------- 批次 3：撤销路径 ----------------
+
+    private static HealingExecution succeededRow(long id) {
+        return new HealingExecution(id, "mock.disk.cleanup", "prod",
+                "ns:prod/app-user", "{\"gracePeriodSeconds\":30}", 42L, "auto",
+                "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
+                "MOCK 演算通过", "MOCK 执行成功",
+                null, "{\"target\":\"ns:prod/app-user\"}", "mock-undo-abcd1234", null, null);
+    }
+
+    @Test
+    @DisplayName("撤销：SUCCEEDED + undo_token 行 → 执行器 undo → 台账 UNDONE")
+    void undoHappyPath() {
+        when(repository.findById(2001L)).thenReturn(Optional.of(succeededRow(2001L)));
+
+        var outcome = orchestrator.undo(2001L);
+
+        assertEquals(HealingExecution.Status.UNDONE, outcome.status());
+        verify(repository).markUndoOutcome(eq(2001L), eq("UNDONE"),
+                anyString(), isNull());
+    }
+
+    @Test
+    @DisplayName("撤销：非 SUCCEEDED 行直接拒绝（FAILED/REJECTED/PENDING 无成功可撤）")
+    void undoRejectsNonSucceeded() {
+        HealingExecution failed = new HealingExecution(2002L, "mock.disk.cleanup", "prod",
+                "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "FAILED",
+                null, null, "boom", null, null, null, null);
+        when(repository.findById(2002L)).thenReturn(Optional.of(failed));
+
+        assertThrows(IllegalStateException.class, () -> orchestrator.undo(2002L));
+        verify(repository, never()).markUndoOutcome(anyLong(), anyString(),
+                anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("撤销：无撤销凭据成功行拒绝（执行时就没拿到 token，事后不能硬撤）")
+    void undoRejectsMissingToken() {
+        HealingExecution noToken = new HealingExecution(2003L, "mock.disk.cleanup", "prod",
+                "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
+                null, "out", null, "{}", null, null, null);
+        when(repository.findById(2003L)).thenReturn(Optional.of(noToken));
+
+        assertThrows(IllegalStateException.class, () -> orchestrator.undo(2003L));
+        verify(repository, never()).markUndoOutcome(anyLong(), anyString(),
+                anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("按审批单调：HEALING 批准回调按 approvalId 桥到执行台账续走")
+    void executeApprovedByApprovalIdBridges() {
+        HealingExecution pending = new HealingExecution(1002L, "mock.disk.cleanup", "prod",
+                "ns:prod/app-user", "{\"gracePeriodSeconds\":30}", 42L, "auto",
+                "REQUIRES_APPROVAL", 99L, "mock", "PENDING_APPROVAL",
+                "MOCK 演算通过", null, null, null, null, null, null);
+        when(repository.findByApprovalId(99L)).thenReturn(Optional.of(pending));
+        when(repository.findById(1002L)).thenReturn(Optional.of(pending));
+
+        var outcome = orchestrator.executeApprovedByApprovalId(99L);
+
+        assertEquals(HealingExecution.Status.SUCCEEDED, outcome.status());
+        verify(repository).markFinished(eq(1002L), eq("SUCCEEDED"),
+                anyString(), isNull(), anyString(), anyString());
+        verify(approvalService).recordExecution(eq(99L), eq(true), anyString());
+    }
 }

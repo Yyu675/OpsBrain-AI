@@ -173,6 +173,65 @@ public class HealingOrchestrator {
                 real.success() ? "批准后执行成功" : "批准后执行失败：" + real.error(), real);
     }
 
+    /**
+     * 审批中心回调的桥：按审批单 id 找到执行台账续走。
+     * （ApprovalOrchestrator 的 replay 分发 HEALING 类型时走这里。）
+     */
+    public HealingOutcome executeApprovedByApprovalId(long approvalId) {
+        HealingExecution row = repository.findByApprovalId(approvalId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "HEALING 审批单没有对应的执行台账: approvalId=" + approvalId));
+        return executeApproved(row.id());
+    }
+
+    /**
+     * 撤销一次已成功的执行（批次 3：手动撤销入口；后续监控联动的
+     * 回滚触发器复用同一入口——快照与凭据 V7 起已当场落行）。
+     * <p>
+     * 契约：行必须 SUCCEEDED 且带 undo_token；执行器必须仍支持撤销。
+     * 撤销成功 → UNDONE；撤销失败 → UNDO_FAILED（原成功事实不动，
+     * 失败单独留痕，这是审计的诚实性——不能把撤而不成记成 UNDONE）。
+     * </p>
+     */
+    public HealingOutcome undo(long executionId) {
+        HealingExecution row = repository.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("执行台账不存在: id=" + executionId));
+        if (!HealingExecution.Status.SUCCEEDED.equals(row.status())) {
+            throw new IllegalStateException(
+                    "只有执行成功（SUCCEEDED）的台账可撤销: id=" + executionId + ", status=" + row.status());
+        }
+        if (row.undoToken() == null || row.undoToken().isBlank()) {
+            throw new IllegalStateException("该次执行没有撤销凭据（undo_token 为空），不可撤销: id=" + executionId);
+        }
+        HealingAction action = replayFromRow(row);
+        Optional<ActionExecutor> executorOpt = registry.locate(row.actionKey());
+        if (executorOpt.isEmpty()) {
+            repository.markUndoOutcome(executionId, HealingExecution.Status.UNDO_FAILED,
+                    null, "撤销时执行器已不可用");
+            return HealingOutcome.terminal(executionId,
+                    HealingGate.GateDecision.denied(row.actionKey(), "撤销时执行器已不可用"),
+                    HealingExecution.Status.UNDO_FAILED, "撤销时执行器已不可用", null);
+        }
+        ActionExecutor executor = executorOpt.get();
+        ExecutionResult undone = executor.undo(action, row.undoToken(), jsonToMap(row.preSnapshotJson()));
+        if (undone.success()) {
+            repository.markUndoOutcome(executionId, HealingExecution.Status.UNDONE,
+                    undone.output(), null);
+            log.warn("[Healing] 已撤销 | id={} | action={} | token={}",
+                    executionId, row.actionKey(), row.undoToken());
+            return HealingOutcome.terminal(executionId,
+                    HealingGate.GateDecision.auto(row.actionKey(), executor.executorKey(), null, null),
+                    HealingExecution.Status.UNDONE, "已撤销：" + undone.output(), undone);
+        }
+        repository.markUndoOutcome(executionId, HealingExecution.Status.UNDO_FAILED,
+                null, undone.error());
+        log.warn("[Healing] 撤销失败 | id={} | action={} | error={}",
+                executionId, row.actionKey(), undone.error());
+        return HealingOutcome.terminal(executionId,
+                HealingGate.GateDecision.auto(row.actionKey(), executor.executorKey(), null, null),
+                HealingExecution.Status.UNDO_FAILED, "撤销失败：" + undone.error(), undone);
+    }
+
     /** 台账回放：从行字段复原 HealingAction（params_json → Map）。 */
     private HealingAction replayFromRow(HealingExecution row) {
         Map<String, Object> params = jsonToMap(row.paramsJson());

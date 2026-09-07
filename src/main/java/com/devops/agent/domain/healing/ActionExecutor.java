@@ -1,5 +1,7 @@
 package com.devops.agent.domain.healing;
 
+import java.util.Map;
+
 /**
  * 动作执行器抽象（S3-1，PRD D1 决策门的落地骨架）。
  * <p>
@@ -47,5 +49,19 @@ public interface ActionExecutor {
     /** 是否支持撤销（回滚触发器需要）。默认不支持。 */
     default boolean undoSupported(String actionKey) {
         return false;
+    }
+
+    /**
+     * 撤销一次已成功的执行（批次 3：手动撤销入口 + 后续监控联动回滚触发器共用）。
+     *
+     * @param action      原始执行动作（从台账回放）
+     * @param undoToken   执行时返回的撤销凭据
+     * @param preSnapshot 执行前快照（V7 台账 pre_snapshot_json 反序列化值）
+     * @return 撤销结果；默认实现返回失败（与 {@code undoSupported=false} 自洽）
+     */
+    default ExecutionResult undo(HealingAction action, String undoToken,
+                                 Map<String, Object> preSnapshot) {
+        return ExecutionResult.fail(executorKey(), action.actionKey(), false,
+                "执行器「" + executorKey() + "」不支持撤销 " + action.actionKey());
     }
 }
