@@ -83,7 +83,7 @@ class ChangesEvidenceCollectorTest extends AbstractIntegrationTest {
                 "别家服务", LocalDateTime.now().minusMinutes(1), "ci-callback", "other-1"));
 
         var ev = collector.collect("order-service", "2h");
-        assertThat(ev.status()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
+        assertThat(ev.status()).as("evidence_现场=%s", ev.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
         @SuppressWarnings("unchecked")
         Map<String, Object> parsed = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readValue(ev.toToolPayload(), Map.class);
