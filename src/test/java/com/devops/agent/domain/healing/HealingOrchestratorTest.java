@@ -293,9 +293,10 @@ class HealingOrchestratorTest {
     @DisplayName("验证通过：HEALTHY → markVerified(PASS)，不撤单不升级")
     void verifyPassMarksPassOnly() {
         when(repository.findById(3001L)).thenReturn(Optional.of(succeededRowWithToken(3001L)));
-        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
-                verifierReturning(ActionVerifier.VerificationResult.healthy(
-                        "错误率 0.12 -> 0.01", Map.of(), Map.of()))));
+        // verifier 提前到局部变量：when().thenReturn() 内再开 stub 属 Mockito 禁忌（UnfinishedStubbing）
+        ActionVerifier v3001 = verifierReturning(ActionVerifier.VerificationResult.healthy(
+                "错误率 0.12 -> 0.01", Map.of(), Map.of()));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(v3001));
 
         var outcome = orchestrator.verifyAndMaybeRollback(3001L);
 
@@ -310,9 +311,9 @@ class HealingOrchestratorTest {
     @DisplayName("验证失败且有凭据：自动撤销转 UNDONE + 升级 P1 工单（人知悉即可）")
     void verifyFailAutoUndoAndP1Ticket() {
         when(repository.findById(3002L)).thenReturn(Optional.of(succeededRowWithToken(3002L)));
-        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
-                verifierReturning(ActionVerifier.VerificationResult.unhealthy(
-                        "错误率不降反升", Map.of(), Map.of()))));
+        ActionVerifier v3002 = verifierReturning(ActionVerifier.VerificationResult.unhealthy(
+                "错误率不降反升", Map.of(), Map.of()));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(v3002));
 
         var outcome = orchestrator.verifyAndMaybeRollback(3002L);
 
@@ -330,9 +331,9 @@ class HealingOrchestratorTest {
                 "t", "{}", 1L, "auto", "AUTO_EXECUTE", null, "mock", "SUCCEEDED",
                 null, "out", null, "{}", null, null, null, null, null, null);
         when(repository.findById(3003L)).thenReturn(Optional.of(noToken));
-        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
-                verifierReturning(ActionVerifier.VerificationResult.unhealthy(
-                        "错误率不降反升", Map.of(), Map.of()))));
+        ActionVerifier v3003 = verifierReturning(ActionVerifier.VerificationResult.unhealthy(
+                "错误率不降反升", Map.of(), Map.of()));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(v3003));
 
         var outcome = orchestrator.verifyAndMaybeRollback(3003L);
 
@@ -375,9 +376,9 @@ class HealingOrchestratorTest {
                 .thenReturn(List.of(rowA, rowB));
         when(repository.findById(3006L)).thenReturn(Optional.of(rowA));
         when(repository.findById(3007L)).thenReturn(Optional.of(rowB));
-        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(
-                verifierReturning(ActionVerifier.VerificationResult.healthy(
-                        "ok", Map.of(), Map.of()))));
+        ActionVerifier vBatch = verifierReturning(ActionVerifier.VerificationResult.healthy(
+                "ok", Map.of(), Map.of()));
+        when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(vBatch));
 
         int processed = orchestrator.verifyPendingBatch(30, 300, 20);
 

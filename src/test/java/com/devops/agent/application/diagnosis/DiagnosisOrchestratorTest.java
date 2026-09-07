@@ -85,11 +85,14 @@ class DiagnosisOrchestratorTest {
                 .thenReturn(new Evidence(
                         Evidence.EvidenceStatus.SUCCESS, "changes", "完成",
                         Map.of("count", 0), "ref", null, Instant.now()));
-        when(logsCollector.collect(anyString(), anyString(), anyString(), any()))
+        // lenient：changes 抛异常路径（collectorThrows）在 logs 之前熔断，
+        // 本桩对短路径用例必然闲置；严苛模式会把它当"多余桩"处死
+        lenient().when(logsCollector.collect(anyString(), anyString(), anyString(), any()))
                 .thenReturn(new Evidence(
                         Evidence.EvidenceStatus.SUCCESS, "logs", "完成",
                         Map.of("patternCount", 3, "level", "ERROR"), "ref", null, Instant.now()));
-        when(hypothesisGenerator.generate(any(), any()))
+        // lenient：WEAK/异常路径不走到假设生成，短路径用例里本桩闲置
+        lenient().when(hypothesisGenerator.generate(any(), any()))
                 .thenReturn(java.util.List.of());
         orchestrator = new DiagnosisOrchestrator(
                 metricsCollector, changesCollector, logsCollector,

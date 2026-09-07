@@ -90,7 +90,9 @@ public class HealingController {
     /** 执行台账列表（审计视角，最新优先）。 */
     @GetMapping("/executions")
     public ApiResponse<List<HealingExecution>> list(@RequestParam(defaultValue = "50") int limit) {
-        return ApiResponse.success(repository.listRecent(limit));
+        // 就近钳制（分页钳制契约）：上界 200 防一次拉爆 DB/内存，下界 1 防负数 OFFSET
+        int safeLimit = Math.min(Math.max(1, limit), 200);
+        return ApiResponse.success(repository.listRecent(safeLimit));
     }
 
     /** 台账详情。 */
