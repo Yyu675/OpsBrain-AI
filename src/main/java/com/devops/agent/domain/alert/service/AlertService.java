@@ -78,6 +78,14 @@ public class AlertService {
         this.diagnosisOrchestrator = diagnosisOrchestrator;
     }
 
+    /**
+     * S4-1：告警 → 治理策略 → 自愈动作 的触发引擎（可选装配）。
+     * <p>字段注入 + required=false：既有直连 5 参构造的测试与最小上下文装配不受影响；
+     * 引擎缺席时告警链一切照旧（自动诊断那一族护身的同款降级）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.domain.healing.HealingAutoTrigger healingAutoTrigger;
+
     // ==================== 配置注入（application.yml devops.alert.*） ====================
     // 6.20 契约：配置项必须有代码读取它——存在但无人读的配置比没有更糟。
 
@@ -306,6 +314,23 @@ public class AlertService {
         // S2-1：新告警 → 自动诊断（异步、不阻塞；工单号可能为空由会话表回填设计承载）。
         // 去重与聚合抑制分支在上方已 return——两条旁路天然不重复触发诊断。
         triggerAutoDiagnosis(saved, service);
+
+        // S4-1：新告警 → 治理策略求值（演练留痕或构造 HealingAction 递交治理门）。
+        // 与自动诊断同族：异步、失败只 WARN、绝不反噬告警入库/建单主流程。
+        triggerHealingPolicy(saved);
+    }
+
+    /** S4-1 策略引擎触发点：引擎缺席（测试最小装配）时静默跳过。 */
+    private void triggerHealingPolicy(Alert alert) {
+        if (healingAutoTrigger == null) {
+            return;
+        }
+        try {
+            healingAutoTrigger.onAlertFired(alert);
+        } catch (Exception e) {
+            log.warn("⚠️ [AlertService] 策略触发调用失败（不影响告警/工单） | alertId={} | error={}",
+                    alert.getId(), e.getMessage());
+        }
     }
 
     /**

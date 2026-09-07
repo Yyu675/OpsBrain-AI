@@ -127,6 +127,38 @@ public class HealingExecutionRepository {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
+    /**
+     * S4-1：策略引擎冷却判据——同（动作×环境×目标）最近一次真正执行的创建时间。
+     * {@code REJECTED} 行（演练/拒批/幂等拦截）不计：被拒的尝试不该挡住下一次认真尝试。
+     */
+    public Optional<LocalDateTime> lastExecutionAt(String actionKey, String environment, String target) {
+        List<LocalDateTime> rows = jdbcTemplate.query(
+                """
+                SELECT created_at FROM sys_healing_execution
+                 WHERE action_key = ? AND environment = ? AND target = ? AND status <> 'REJECTED'
+                 ORDER BY id DESC
+                 LIMIT 1
+                """,
+                (rs, n) -> rs.getTimestamp(1) == null ? null : rs.getTimestamp(1).toLocalDateTime(),
+                actionKey, environment, target);
+        return rows.isEmpty() ? Optional.empty() : Optional.ofNullable(rows.get(0));
+    }
+
+    /**
+     * S4-1：策略引擎日上限判据——同（动作×环境）自 since 起的真正执行条数。
+     * 同样排除 {@code REJECTED} 行（口径与 {@link #lastExecutionAt} 对齐）。
+     */
+    public int countSince(String actionKey, String environment, LocalDateTime since) {
+        Integer n = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) FROM sys_healing_execution
+                 WHERE action_key = ? AND environment = ?
+                   AND status <> 'REJECTED' AND created_at >= ?
+                """,
+                Integer.class, actionKey, environment, since);
+        return n == null ? 0 : n;
+    }
+
     /** 按审批单 id 反查执行台账（审批中心批准回调的桥）。 */
     public Optional<HealingExecution> findByApprovalId(long approvalId) {
         List<HealingExecution> rows = jdbcTemplate.query(
