@@ -358,7 +358,9 @@ public class DevOpsTools {
         } catch (IllegalArgumentException e) {
             return "参数错误: " + e.getMessage();
         }
-        Evidence evidence = logsEvidenceCollector.collect(service, range, level, keyword);
+        // collect 签名为 (service, range, keyword, level)——实参顺序错位会把 ERROR 级
+        // 别变成关键词过滤器（证据里 LogQL 会同时出现 |~ 与 |= "ERROR"），已实测抓获。
+        Evidence evidence = logsEvidenceCollector.collect(service, range, keyword, level);
         return "【日志取证结果】" + evidence.toToolPayload();
     }
 

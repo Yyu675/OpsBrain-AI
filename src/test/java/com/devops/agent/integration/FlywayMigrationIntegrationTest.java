@@ -44,8 +44,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Flyway：空库全量迁移链（容器真空库，启动期自动建全表）")
 class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
 
-    /** sys_ 前缀业务表数量（V1=27 + V2 sys_change_event=1；改迁移需同步更新，见类注释）。 */
-    private static final int EXPECTED_BASELINE_TABLE_COUNT = 28;
+    /** sys_ 前缀业务表数量（V1=27 + V2=1 + V3=1；改迁移需同步更新，见类注释）。 */
+    private static final int EXPECTED_BASELINE_TABLE_COUNT = 29;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -70,7 +70,7 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("flyway_schema_history 恰好 {1,2} 两条全部成功（基线+首个增量，托管生效证据）")
+    @DisplayName("flyway_schema_history 恰好 {1,2,3} 三条全部成功（基线+增量链头部，托管生效证据）")
     void schemaHistoryShouldRecordBaselinePlusFirstIncrement() {
         var rows = jdbcTemplate.queryForList(
                 """
@@ -82,12 +82,10 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
         assertThat(rows)
                 .as("容器真空库按序执行 V1 与 V2。多出记录说明"
                         + "测试容器泄漏了别的库的脏状态，或混入了未评审的迁移文件")
-                .hasSize(2);
+                .hasSize(3);
         assertThat(rows.get(0).get("version")).as("首条为 V1 基线").isEqualTo("1");
-        assertThat(rows.get(1).get("version"))
-                .as("第二条为 V2（S1-2 sys_change_event；后续增量按序追加即可，"
-                        + "此处只钉『链的头部是已评审的两条』")
-                .isEqualTo("2");
+        assertThat(rows.get(1).get("version")).as("V2 = S1-2 sys_change_event").isEqualTo("2");
+        assertThat(rows.get(2).get("version")).as("V3 = S1-5 sys_diagnosis_evidence").isEqualTo("3");
         assertThat(rows).allSatisfy(r ->
                 assertThat(r.get("success")).as("所有迁移必须成功").isEqualTo(Boolean.TRUE));
     }
