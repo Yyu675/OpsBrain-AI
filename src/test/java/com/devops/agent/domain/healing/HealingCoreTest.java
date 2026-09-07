@@ -151,4 +151,37 @@ class HealingCoreTest {
         assertEquals("DUAL", decision.approvalMode(),
                 "破坏性动作的审批模式必须被硬性提升为 DUAL，配置放松不了");
     }
+
+    // ---------------- 批次 5：注册强契约（3-1.4 折中版） ----------------
+
+    /** 无撤销能力的假执行器（按声明的最高权限参数化）。 */
+    private static ActionExecutor noUndoExecutor(ActionPermissionLevel maxLevel) {
+        return new ActionExecutor() {
+            @Override public String executorKey() { return "no-undo"; }
+            @Override public boolean supports(String actionKey) { return "noun.do".equals(actionKey); }
+            @Override public ActionPermissionLevel permissionLevel(String actionKey) { return maxLevel; }
+            @Override public ExecutionResult dryRun(HealingAction a) { return null; }
+            @Override public ExecutionResult execute(HealingAction a) { return null; }
+            @Override public boolean undoCapable() { return false; }
+            @Override public ActionPermissionLevel maxPermissionLevel() { return maxLevel; }
+        };
+    }
+
+    @Test
+    @DisplayName("注册强契约：非只读执行器无撤销能力 → 启动即失败（宁可起不来，不让不可撤销的手摸生产）")
+    void registryRejectsUnsafeExecutorWithoutUndo() {
+        IllegalStateException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> new ExecutorRegistry(List.of(noUndoExecutor(ActionPermissionLevel.SAFE_AUTO_HEALING))));
+        assertTrue(ex.getMessage().contains("必须可撤销"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("注册强契约豁免：只读执行器（PRD D1 的 K8s 只读轨）天然无撤销语义，可注册")
+    void registryAllowsReadOnlyExecutorWithoutUndo() {
+        ExecutorRegistry registry = new ExecutorRegistry(
+                List.of(noUndoExecutor(ActionPermissionLevel.READ_ONLY_DIAGNOSTIC),
+                        new MockActionExecutor()));
+        assertTrue(registry.locate("noun.do").isPresent());
+    }
 }

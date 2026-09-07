@@ -24,6 +24,20 @@ public class ExecutorRegistry {
     private final List<ActionExecutor> executors;
 
     public ExecutorRegistry(List<ActionExecutor> executors) {
+        // 注册强契约（路线图 §7.1 3-1.4 折中版，报告 109/110 记录）：
+        // 声明非只读最高权限（SAFE_AUTO_HEALING / DESTRUCTIVE_HIGH_RISK）的
+        // 执行器必须具备撤销能力，否则启动即失败——宁可起不来，
+        // 不让一只「不可撤销的手」摸到生产系统。只读执行器（PRD D1 的
+        // V1.2 K8s 只读轨）显式声明 READ_ONLY_DIAGNOSTIC 豁免。
+        for (ActionExecutor executor : executors) {
+            if (executor.maxPermissionLevel() != ActionPermissionLevel.READ_ONLY_DIAGNOSTIC
+                    && !executor.undoCapable()) {
+                throw new IllegalStateException(
+                        "执行器「" + executor.executorKey() + "」声明最高权限 "
+                                + executor.maxPermissionLevel() + " 但不具备撤销能力（undoCapable=false），"
+                                + "违反注册强契约：非只读执行器必须可撤销");
+            }
+        }
         this.executors = List.copyOf(executors);
     }
 

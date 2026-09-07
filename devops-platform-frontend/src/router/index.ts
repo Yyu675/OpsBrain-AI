@@ -182,8 +182,9 @@ const router = createRouter({
       meta: { title: '自愈中心', stage: 'L4', roles: ['admin'], description: '受控自愈执行台账：治理门触发、审批回路、快照撤销一体审计。', capabilities: ['执行台账审计', '治理门触发', '审批回路', '快照撤销'] }
     },
     {
-      path: '/self-healing/tasks/:id', name: 'healing-task-detail', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingTaskDetail', 'detail'),
-      meta: { title: '自愈任务详情', stage: 'L4', hiddenFromNavigation: true, description: '查看任务决策依据、执行编排与全链路状态。', capabilities: ['决策上下文', '执行编排', '状态时间线', '人工控制'] }
+      // S3-1 批次 5：占位页已替换为真实实现 —— 执行详情（可直达链接，供审批/告警页跳转）
+      path: '/self-healing/tasks/:id', name: 'healing-task-detail', component: lazy(() => import('../views/HealingExecutionDetail.vue'), 'HealingExecutionDetail', 'detail'),
+      meta: { title: '自愈执行详情', stage: 'L4', roles: ['admin'], hiddenFromNavigation: true, description: '单次自愈执行的全要素回放：门裁决、演算、输出、快照、撤销。', capabilities: ['决策上下文', '执行回放', '快照查看', '人工撤销'] }
     },
     {
       path: '/self-healing/tasks/:taskId/steps/:stepId', name: 'healing-step-detail', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingStepDetail', 'detail'),

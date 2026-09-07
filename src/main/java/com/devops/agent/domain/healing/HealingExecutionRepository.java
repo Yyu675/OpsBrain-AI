@@ -118,6 +118,23 @@ public class HealingExecutionRepository {
         return rows.stream().findFirst();
     }
 
+    /**
+     * 幂等闸的计数（3-3.4）：同一告警同一动作在时间窗内的「活台账」数。
+     * <p>
+     * 「活」= PENDING_APPROVAL（等人点头）或 SUCCEEDED（已成功且未撤销）。
+     * REJECTED / FAILED / UNDONE 不拦——失败重试与撤后重来是正当诉求。
+     * </p>
+     */
+    public int countRecentBlocking(long alertId, String actionKey, LocalDateTime since) {
+        Integer n = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sys_healing_execution
+                 WHERE alert_id = ? AND action_key = ?
+                   AND status IN ('PENDING_APPROVAL', 'SUCCEEDED')
+                   AND created_at > ?
+                """, Integer.class, alertId, actionKey, since);
+        return n == null ? 0 : n;
+    }
+
     public Optional<HealingExecution> findById(long id) {
         List<HealingExecution> rows = jdbcTemplate.query(
                 "SELECT * FROM sys_healing_execution WHERE id = ?", ROW_MAPPER, id);

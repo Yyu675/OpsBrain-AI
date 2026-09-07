@@ -1,6 +1,7 @@
 package com.devops.agent.domain.healing;
 
 import com.devops.agent.domain.approval.ApprovalService;
+import com.devops.agent.infrastructure.persistence.repo.OperationAuditRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,7 @@ class HealingOrchestratorTest {
     private HealingGate gate;
     private HealingExecutionRepository repository;
     private ApprovalService approvalService;
+    private OperationAuditRepository operationAuditRepository;
     private HealingOrchestrator orchestrator;
 
     private static HealingAction action() {
@@ -49,9 +51,10 @@ class HealingOrchestratorTest {
         gate = mock(HealingGate.class);
         repository = mock(HealingExecutionRepository.class);
         approvalService = mock(ApprovalService.class);
+        operationAuditRepository = mock(OperationAuditRepository.class);
         orchestrator = new HealingOrchestrator(
                 gate, new ExecutorRegistry(List.of(new MockActionExecutor())),
-                repository, approvalService);
+                repository, approvalService, operationAuditRepository);
         when(repository.insert(any())).thenReturn(1001L);
     }
 
@@ -60,6 +63,7 @@ class HealingOrchestratorTest {
     void autoExecuteRunsAndPersists() {
         when(gate.decide(any())).thenReturn(
                 HealingGate.GateDecision.auto("mock.disk.cleanup", "mock", 3, 300));
+        when(repository.countRecentBlocking(eq(42L), anyString(), any())).thenReturn(0);
 
         var outcome = orchestrator.handle(action());
 
@@ -213,5 +217,53 @@ class HealingOrchestratorTest {
         verify(repository).markFinished(eq(1002L), eq("SUCCEEDED"),
                 anyString(), isNull(), anyString(), anyString());
         verify(approvalService).recordExecution(eq(99L), eq(true), anyString());
+    }
+
+    // ---------------- 批次 5：幂等闸与 agent 审计 ----------------
+
+    @Test
+    @DisplayName("幂等闸（3-3.4）：窗口内同告警同动作已有活台账 → REJECTED，演算与审批双双不发生")
+    void idempotencyBlocksDuplicateWithinWindow() {
+        when(gate.decide(any())).thenReturn(
+                HealingGate.GateDecision.auto("mock.disk.cleanup", "mock", 3, 300));
+        when(repository.countRecentBlocking(eq(42L), eq("mock.disk.cleanup"), any())).thenReturn(1);
+
+        var outcome = orchestrator.handle(action());
+
+        assertEquals(HealingExecution.Status.REJECTED, outcome.status());
+        assertTrue(outcome.message().contains("幂等拦截"), outcome.message());
+        ArgumentCaptor<HealingExecution> captor = ArgumentCaptor.forClass(HealingExecution.class);
+        verify(repository, times(1)).insert(captor.capture());
+        assertEquals("REJECTED", captor.getValue().status());
+        // 被拦截的单子绝不能产生审批单
+        verify(approvalService, never()).submit(anyString(), anyString(), anyString(),
+                anyString(), anyString(), anyString(), anyString(), isNull());
+    }
+
+    @Test
+    @DisplayName("幂等豁免：手工触发（alertId 为 null）不查窗口——操作员的重复点击是明示意图")
+    void manualTriggerWithoutAlertIdBypassesIdempotency() {
+        when(gate.decide(any())).thenReturn(
+                HealingGate.GateDecision.auto("mock.disk.cleanup", "mock", 3, 300));
+        HealingAction manual = new HealingAction("mock.disk.cleanup", "prod", "ns:prod/app-user",
+                Map.of(), null, "admin", Instant.now());
+
+        var outcome = orchestrator.handle(manual);
+
+        assertEquals(HealingExecution.Status.SUCCEEDED, outcome.status());
+        verify(repository, never()).countRecentBlocking(anyLong(), anyString(), any());
+        // 手工路径不旁写 agent 审计（HTTP 面已由 OperationAuditInterceptor 覆盖）
+        verify(operationAuditRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("agent 审计旁写（3-3.6）：requestedBy=auto 的 AUTO 终态落 sys_operation_audit")
+    void agentPathWritesOperationAudit() {
+        when(gate.decide(any())).thenReturn(
+                HealingGate.GateDecision.auto("mock.disk.cleanup", "mock", 3, 300));
+
+        orchestrator.handle(action()); // requestedBy = auto
+
+        verify(operationAuditRepository, times(1)).save(any());
     }
 }

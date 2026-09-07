@@ -64,4 +64,31 @@ public interface ActionExecutor {
         return ExecutionResult.fail(executorKey(), action.actionKey(), false,
                 "执行器「" + executorKey() + "」不支持撤销 " + action.actionKey());
     }
+
+    /**
+     * 执行器级撤销能力声明（注册强契约的判定依据，批次 5）。
+     * <p>
+     * 与按动作细分的 {@link #undoSupported(String)} 的区别：本方法是
+     * 「这只手到底有没有撤销能力」的总开关，供注册表在<b>启动期</b>校验；
+     * 运行期撤销仍按 undoSupported(actionKey) 细粒度裁决。
+     * </p>
+     *
+     * @return 默认 true——声明「我的全部写动作都可撤销」
+     */
+    default boolean undoCapable() {
+        return true;
+    }
+
+    /**
+     * 本执行器触达的最高权限等级（注册强契约的判定依据，批次 5）。
+     * <p>
+     * 契约（3-1.4 折中，报告 109 记录）：
+     * <b>声明非只读最高权限的执行器必须 undoCapable()=true</b>，否则
+     * 注册表启动即抛异常。只读执行器（PRD D1 的 V1.2 K8s 只读轨）
+     * 天然没有撤销语义，显式声明 READ_ONLY 即可豁免。
+     * </p>
+     */
+    default ActionPermissionLevel maxPermissionLevel() {
+        return ActionPermissionLevel.SAFE_AUTO_HEALING;
+    }
 }

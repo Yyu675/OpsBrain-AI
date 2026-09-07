@@ -1,12 +1,15 @@
 package com.devops.agent.domain.healing;
 
+import com.devops.agent.common.audit.OperationAuditRecord;
 import com.devops.agent.domain.approval.ApprovalService;
-import com.devops.agent.domain.diagnosis.Hypothesis;
+import com.devops.agent.infrastructure.persistence.repo.OperationAuditRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,16 +42,26 @@ public class HealingOrchestrator {
     private final ExecutorRegistry registry;
     private final HealingExecutionRepository repository;
     private final ApprovalService approvalService;
+    private final OperationAuditRepository operationAuditRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * 幂等窗口（3-3.4）：同一告警同一动作在该秒数内已有活台账则拦截。
+     * 字段带默认值——单元测试手工构造时不走 Spring 注入也是 300。
+     */
+    @Value("${devops.healing.idempotency-window-seconds:300}")
+    private int idempotencyWindowSeconds = 300;
 
     public HealingOrchestrator(HealingGate gate,
                                ExecutorRegistry registry,
                                HealingExecutionRepository repository,
-                               ApprovalService approvalService) {
+                               ApprovalService approvalService,
+                               OperationAuditRepository operationAuditRepository) {
         this.gate = gate;
         this.registry = registry;
         this.repository = repository;
         this.approvalService = approvalService;
+        this.operationAuditRepository = operationAuditRepository;
     }
 
     /**
@@ -66,15 +79,37 @@ public class HealingOrchestrator {
                 || decision.type() == HealingGate.DecisionType.NO_EXECUTOR) {
             long id = repository.insert(toDraft(action, decision, null, null,
                     HealingExecution.Status.REJECTED, null, null, null, null));
+            auditIfAgent(action, "healing.execute.rejected", id, false, decision.reason());
             return HealingOutcome.terminal(id, decision, HealingExecution.Status.REJECTED,
                     decision.reason(), null);
         }
 
-        // 2. 演算（审批单/执行计划的事实依据）
+        // 2. 幂等闸（3-3.4）：同一告警同一动作在窗口内已有活台账 → 拦截。
+        //    手工触发（alertId 为 null）不拦——操作员的重复点击是明示意图。
+        if (action.alertId() != null) {
+            LocalDateTime since = LocalDateTime.now().minusSeconds(idempotencyWindowSeconds);
+            int blocking = repository.countRecentBlocking(
+                    action.alertId(), action.actionKey(), since);
+            if (blocking > 0) {
+                String reason = "幂等拦截：告警 #" + action.alertId() + " 的「" + action.actionKey()
+                        + "」在 " + idempotencyWindowSeconds + " 秒内已有 " + blocking
+                        + " 条待审/成功台账，拒绝重复执行";
+                long id = repository.insert(toDraft(action, decision, null, null,
+                        HealingExecution.Status.REJECTED, null, reason, null, null));
+                auditIfAgent(action, "healing.execute.rejected", id, false, reason);
+                log.warn("[Healing] 幂等拦截 | id={} | alert={} | action={} | blocking={}",
+                        id, action.alertId(), action.actionKey(), blocking);
+                return HealingOutcome.terminal(id, decision,
+                        HealingExecution.Status.REJECTED, reason, null);
+            }
+        }
+
+        // 3. 演算（审批单/执行计划的事实依据）
         Optional<ActionExecutor> executorOpt = registry.locate(action.actionKey());
         if (executorOpt.isEmpty()) {          // 竞态防御：门刚查过，此处双保险
             long id = repository.insert(toDraft(action, decision, null, null,
                     HealingExecution.Status.REJECTED, null, "注册表演算前执行器消失", null, null));
+            auditIfAgent(action, "healing.execute.rejected", id, false, "注册表演算前执行器消失");
             return HealingOutcome.terminal(id, decision, HealingExecution.Status.REJECTED,
                     "注册表演算前执行器消失", null);
         }
@@ -83,6 +118,7 @@ public class HealingOrchestrator {
         if (!dry.success()) {
             long id = repository.insert(toDraft(action, decision, null, null,
                     HealingExecution.Status.FAILED, null, dry.error(), null, null));
+            auditIfAgent(action, "healing.execute", id, false, "演算未通过: " + dry.error());
             return HealingOutcome.terminal(id, decision, HealingExecution.Status.FAILED,
                     "演算未通过：" + dry.error(), null);
         }
@@ -94,6 +130,8 @@ public class HealingOrchestrator {
                     real.success() ? HealingExecution.Status.SUCCEEDED : HealingExecution.Status.FAILED,
                     real.output(), real.error(), real.preSnapshot(), real.undoToken());
             long id = repository.insert(stored);
+            auditIfAgent(action, "healing.execute", id, real.success(),
+                    real.success() ? null : real.error());
             log.warn("[Healing] AUTO_EXECUTE 终态 | id={} | action={} | success={}",
                     id, action.actionKey(), real.success());
             return HealingOutcome.terminal(id, decision, stored.status(),
@@ -116,6 +154,7 @@ public class HealingOrchestrator {
                 pending.alertId(), pending.requestedBy(), pending.gateDecision(), approvalId,
                 decision.executorKey(), pending.status(), pending.dryRunPlan(), null,
                 null, null, null));
+        auditIfAgent(action, "healing.submit_approval", id, true, null);
         log.warn("[Healing] REQUIRES_APPROVAL | id={} | approvalId={} | action={} | mode={}",
                 id, approvalId, action.actionKey(), decision.approvalMode());
         return HealingOutcome.pending(id, decision, approvalId, dry);
@@ -140,6 +179,7 @@ public class HealingOrchestrator {
         if (executorOpt.isEmpty()) {
             repository.markFinished(executionId, HealingExecution.Status.FAILED,
                     null, "批准复核时执行器已不可用", null, null);
+            auditIfAgent(action, "healing.execute_approved", executionId, false, "批准复核时执行器已不可用");
             return HealingOutcome.terminal(executionId,
                     HealingGate.GateDecision.denied(row.actionKey(), "批准复核时执行器已不可用"),
                     HealingExecution.Status.FAILED, "批准复核时执行器已不可用", null);
@@ -150,6 +190,7 @@ public class HealingOrchestrator {
         if (!dry.success()) {
             repository.markFinished(executionId, HealingExecution.Status.FAILED,
                     null, "批准复核演算未通过: " + dry.error(), null, null);
+            auditIfAgent(action, "healing.execute_approved", executionId, false, "批准复核演算未通过");
             return HealingOutcome.terminal(executionId,
                     HealingGate.GateDecision.needsApproval(row.actionKey(), "SINGLE", executor.executorKey(), null, null),
                     HealingExecution.Status.FAILED, "批准复核演算未通过: " + dry.error(), null);
@@ -164,6 +205,8 @@ public class HealingOrchestrator {
             approvalService.recordExecution(row.approvalId(), real.success(),
                     real.success() ? real.output() : real.error());
         }
+        auditIfAgent(action, "healing.execute_approved", executionId, real.success(),
+                real.success() ? null : real.error());
         log.warn("[Healing] 批准执行终态 | id={} | approvalId={} | success={}",
                 executionId, row.approvalId(), real.success());
         return HealingOutcome.terminal(executionId,
@@ -208,6 +251,7 @@ public class HealingOrchestrator {
         if (executorOpt.isEmpty()) {
             repository.markUndoOutcome(executionId, HealingExecution.Status.UNDO_FAILED,
                     null, "撤销时执行器已不可用");
+            auditIfAgent(action, "healing.undo", executionId, false, "撤销时执行器已不可用");
             return HealingOutcome.terminal(executionId,
                     HealingGate.GateDecision.denied(row.actionKey(), "撤销时执行器已不可用"),
                     HealingExecution.Status.UNDO_FAILED, "撤销时执行器已不可用", null);
@@ -217,6 +261,7 @@ public class HealingOrchestrator {
         if (undone.success()) {
             repository.markUndoOutcome(executionId, HealingExecution.Status.UNDONE,
                     undone.output(), null);
+            auditIfAgent(action, "healing.undo", executionId, true, null);
             log.warn("[Healing] 已撤销 | id={} | action={} | token={}",
                     executionId, row.actionKey(), row.undoToken());
             return HealingOutcome.terminal(executionId,
@@ -225,6 +270,7 @@ public class HealingOrchestrator {
         }
         repository.markUndoOutcome(executionId, HealingExecution.Status.UNDO_FAILED,
                 null, undone.error());
+        auditIfAgent(action, "healing.undo", executionId, false, undone.error());
         log.warn("[Healing] 撤销失败 | id={} | action={} | error={}",
                 executionId, row.actionKey(), undone.error());
         return HealingOutcome.terminal(executionId,
@@ -237,6 +283,34 @@ public class HealingOrchestrator {
         Map<String, Object> params = jsonToMap(row.paramsJson());
         return new HealingAction(row.actionKey(), row.environment(), row.target(),
                 params, row.alertId(), row.requestedBy(), null);
+    }
+
+    /**
+     * agent 路径审计旁写（3-3.6）。
+     * <p>
+     * HTTP 面（管理员手工触发/撤销）由 OperationAuditInterceptor 全量覆盖；
+     * 告警驱动（{@code requestedBy="auto"}）的执行没有 HTTP 入口，
+     * 由编排器补写 sys_operation_audit——L4 合规红线是
+     * 「谁在什么时候改了什么必须可追溯」，人不能缺、agent 更不能缺。
+     * 旁写失败只告警不阻断：审计通道故障不该瘫痪执行主链。
+     * </p>
+     */
+    private void auditIfAgent(HealingAction action, String auditAction, long executionId,
+                              boolean success, String detail) {
+        if (!"auto".equals(action.requestedBy())) {
+            return;
+        }
+        try {
+            operationAuditRepository.save(new OperationAuditRecord(
+                    null, "agent", action.requestedBy(), auditAction, "healing_execution",
+                    String.valueOf(executionId), null, "agent:healing",
+                    success ? 200 : 500, success, null,
+                    action.actionKey() + " @ " + action.target(),
+                    success ? null : detail, null, null, 0, LocalDateTime.now()));
+        } catch (Exception ex) {
+            log.warn("⚠️ [Healing] agent 审计旁写失败（不阻断主流程）| id={} | {}",
+                    executionId, ex.getMessage());
+        }
     }
 
     // ---------------- 私有工具 ----------------
