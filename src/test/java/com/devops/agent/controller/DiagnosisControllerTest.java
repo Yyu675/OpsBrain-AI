@@ -73,7 +73,8 @@ class DiagnosisControllerTest {
         var req = new DiagnosisController.FeedbackRequest(
                 42L, "helpful", java.util.List.of(7L, 8L));
         ApiResponse<Map<String, Object>> resp = controller.feedback(req);
-        assertThat(resp.getCode()).isEqualTo(200);
+        // ApiResponse 语义：code 0 = 成功，非 0 = 业务错误码（见 common/dto/ApiResponse）
+        assertThat(resp.getCode()).isZero();
         assertThat(resp.getData().get("feedback")).isEqualTo("HELPFUL");
         assertThat(resp.getData().get("knowledgeBoosted")).isEqualTo(2);
         verify(knowledgeBoostRepository, times(2)).recordFeedback(anyLong(), eq("HELPFUL"));
