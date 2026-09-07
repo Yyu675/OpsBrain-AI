@@ -50,6 +50,11 @@ devops-platform-frontend/coverage/
 log/
 logs/
 *.log
+
+# 例外：infrastructure/logs 是 S1-3 日志取证的【源码】目录，不是日志产物——
+# 上方 logs/ 裸模式在任意深度生效，会静默吞掉它（本轮实证：
+# 四个 .java 未被追踪、CI 编译级联红）。教训：裸目录模式务必配源码豁免。
+!/src/main/java/com/devops/agent/infrastructure/logs/
 hs_err_pid*.log
 replay_pid*.log
 audit.log
