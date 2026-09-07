@@ -4,6 +4,7 @@ import com.devops.agent.domain.healing.ActionPermissionLevel;
 import com.devops.agent.domain.healing.ExecutionResult;
 import com.devops.agent.domain.healing.HealingAction;
 import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.client.KubernetesClient;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
