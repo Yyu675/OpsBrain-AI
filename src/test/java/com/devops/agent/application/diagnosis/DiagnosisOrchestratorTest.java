@@ -152,7 +152,7 @@ class DiagnosisOrchestratorTest {
 
         // SUCCESS=2(changes+logs) 且 FAILED=1 → EvidenceAggregator 规则二判 WEAK。
         // 摘要必须含「置信度上限 0.6」与「人工」字样。
-        verify(sessionRepository).complete(anyLong(), anyString(),
+        verify(sessionRepository).complete(anyLong(), anyString(), anyString(),
                 argThat(sm -> sm != null && sm.contains("置信度上限 0.6") && sm.contains("人工")));
     }
 
