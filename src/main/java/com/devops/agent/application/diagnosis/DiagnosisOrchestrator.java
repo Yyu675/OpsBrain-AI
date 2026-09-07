@@ -74,6 +74,10 @@ public class DiagnosisOrchestrator {
     private final com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator;
     /** S2-2：假设落库（点开假设看证据的关联侧）。 */
     private final com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository;
+    /** 2-1.6：诊断完成 WebSocket 推送（前端诊断页实时刷新）。 */
+    private final com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier;
+    /** 2-1.6：钉钉通知（INSUFFICIENT 时 urgent——人工介入是必须被看到的事）。 */
+    private final com.devops.agent.domain.notify.Notifier notifier;
 
     public DiagnosisOrchestrator(MetricsEvidenceCollector metricsCollector,
                                  ChangesEvidenceCollector changesCollector,
@@ -84,7 +88,9 @@ public class DiagnosisOrchestrator {
                                  AgentStateManager stateManager,
                                  com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService,
                                  com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator,
-                                 com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository) {
+                                 com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository,
+                                 com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier,
+                                 com.devops.agent.domain.notify.Notifier notifier) {
         this.metricsCollector = metricsCollector;
         this.changesCollector = changesCollector;
         this.logsCollector = logsCollector;
@@ -95,6 +101,8 @@ public class DiagnosisOrchestrator {
         this.aiAnalysisService = aiAnalysisService;
         this.hypothesisGenerator = hypothesisGenerator;
         this.hypothesisRepository = hypothesisRepository;
+        this.wsNotifier = wsNotifier;
+        this.notifier = notifier;
         this.pool = new ThreadPoolExecutor(
                 CORE, MAX, 30, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(QUEUE),
@@ -223,8 +231,36 @@ public class DiagnosisOrchestrator {
                     aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
                             ? TriggerType.MANUAL_TAKEOVER : TriggerType.DRAFT_GENERATED,
                     summary);
+            publishCompletion(traceId, alertId, ticketId, aggregated, summary);
         } catch (Exception ex) {
             log.warn("⚠️ [Diagnosis] 会话收尾失败但证据不丢 traceId={} why={}", traceId, ex.getMessage());
+        }
+    }
+
+    /** 2-1.6：诊断完成推送（WS + 钉钉）。推送失败仅 WARN——附属增值一族。 */
+    private void publishCompletion(String traceId, Long alertId, String ticketId,
+                                   EvidenceAggregator.AggregateResult aggregated, String summary) {
+        try {
+            java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("traceId", traceId);
+            payload.put("alertId", alertId);
+            payload.put("ticketId", ticketId);
+            payload.put("sufficiency", String.valueOf(aggregated.sufficiency()));
+            payload.put("conflicts", aggregated.conflicts().size());
+            payload.put("summary", summary);
+            wsNotifier.broadcastDiagnosis(payload);
+        } catch (Exception ex) {
+            log.warn("⚠️ [Diagnosis] WebSocket 推送失败 | traceId={} why={}", traceId, ex.getMessage());
+        }
+        try {
+            String title = aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
+                    ? "⚠️ 诊断证据不足，需人工介入" : "🩺 诊断完成";
+            var msg = aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
+                    ? com.devops.agent.domain.notify.NotifyMessage.urgent(title, summary)
+                    : com.devops.agent.domain.notify.NotifyMessage.normal(title, summary);
+            notifier.send(msg);
+        } catch (Exception ex) {
+            log.warn("⚠️ [Diagnosis] 钉钉通知失败 | traceId={} why={}", traceId, ex.getMessage());
         }
     }
 

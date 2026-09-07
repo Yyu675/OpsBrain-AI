@@ -82,10 +82,28 @@ public class AlertWebSocketNotifier {
      * 不能让某条连接的问题影响告警持久化主链路。
      * </p>
      */
+    /**
+     * 广播诊断完成事件（S2-1 2-1.6 / S2-3）。
+     * <p>
+     * 载荷以自由 Map 承载（证据+假设的摘要骨架，不落 Alert 实体——
+     * 前端按 type=DIAGNOSIS 分支渲染，不蹭告警卡片的既有字段）。
+     * 与告警同一契约：推送失败仅 WARN，绝不影响诊断主流程。
+     * </p>
+     */
+    public void broadcastDiagnosis(java.util.Map<String, Object> payload) {
+        broadcastPayload(java.util.Map.of(
+                "type", "DIAGNOSIS",
+                "timestamp", java.time.LocalDateTime.now().toString(),
+                "payload", payload), "DIAGNOSIS");
+    }
+
     private void broadcast(AlertWebSocketEvent event) {
+        broadcastPayload(event, event.getType());
+    }
+
+    private void broadcastPayload(Object event, String typeHint) {
         if (sessions.isEmpty()) {
-            log.debug("ℹ️ [AlertWS] 无在线客户端，跳过广播 | type={} | alertName={}",
-                    event.getType(), event.getAlert() != null ? event.getAlert().getAlertName() : "?");
+            log.debug("ℹ️ [AlertWS] 无在线客户端，跳过广播 | type={}", typeHint);
             return;
         }
 
@@ -93,8 +111,8 @@ public class AlertWebSocketNotifier {
         try {
             message = new TextMessage(objectMapper.writeValueAsString(event));
         } catch (Exception e) {
-            // 序列化失败不可能影响主流程——多数场景是告警字段含极端内容
-            log.warn("⚠️ [AlertWS] 序列化失败，跳过广播 | type={} | error={}", event.getType(), e.getMessage());
+            // 序列化失败不可能影响主流程——多数场景是载荷含极端内容
+            log.warn("⚠️ [AlertWS] 序列化失败，跳过广播 | type={} | error={}", typeHint, e.getMessage());
             return;
         }
 

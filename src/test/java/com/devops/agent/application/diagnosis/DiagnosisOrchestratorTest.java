@@ -61,6 +61,10 @@ class DiagnosisOrchestratorTest {
     private com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator;
     @Mock
     private com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository;
+    @Mock
+    private com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier;
+    @Mock
+    private com.devops.agent.domain.notify.Notifier notifier;
 
     private DiagnosisOrchestrator orchestrator;
     private String traceId;
@@ -86,7 +90,8 @@ class DiagnosisOrchestratorTest {
         orchestrator = new DiagnosisOrchestrator(
                 metricsCollector, changesCollector, logsCollector,
                 catalog, evidenceRepository, sessionRepository, stateManager,
-                aiAnalysisService, hypothesisGenerator, hypothesisRepository);
+                aiAnalysisService, hypothesisGenerator, hypothesisRepository,
+                wsNotifier, notifier);
     }
 
     @AfterEach
@@ -125,6 +130,9 @@ class DiagnosisOrchestratorTest {
         // 2-1.5：SUFFICIENT 时结论回填工单 AI 分析区（conf 启发值 80）
         verify(aiAnalysisService).save(eq("TK-001"), contains("证据充分"),
                 isNull(), isNull(), isNull(), eq(80), isNull());
+        // 2-1.6：完成态推送——WS 广播 + 钉钉普通通知（SUFFICIENT 非 urgent）
+        verify(wsNotifier).broadcastDiagnosis(any());
+        verify(notifier).send(any(com.devops.agent.domain.notify.NotifyMessage.class));
     }
 
     @Test

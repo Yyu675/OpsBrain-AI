@@ -76,6 +76,15 @@ public class DiagnosisSessionRepository {
         jdbcTemplate.update(sql, errorMessage, id);
     }
 
+    /** 按 trace_id 取会话（诊断详情 API：证据链回放的入口）。 */
+    public Map<String, Object> findByTraceId(String traceId) {
+        String sql = "SELECT id, trace_id, alert_id, ticket_id, service, status, sufficiency, summary, "
+                + "created_at, updated_at FROM sys_diagnosis_session WHERE trace_id = ? "
+                + "ORDER BY id DESC LIMIT 1";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, traceId);
+        return rows.isEmpty() ? Map.of() : rows.get(0);
+    }
+
     /** 供诊断详情 API 汇报：按 alert_id 取活动会话。 */
     public Map<String, Object> findByAlertId(Long alertId) {
         String sql = "SELECT id, trace_id, alert_id, ticket_id, service, status, sufficiency, summary, created_at, updated_at FROM sys_diagnosis_session WHERE alert_id = ?";
