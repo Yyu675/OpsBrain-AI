@@ -23,6 +23,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -33,6 +34,8 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
@@ -72,7 +75,8 @@ class DiagnosisOrchestratorTest {
     @BeforeEach
     void setUp() {
         TraceContext.begin("trace-42");
-        when(catalog.availableMetrics()).thenReturn(java.util.List.of("cpu", "memory"));
+        // availableMetrics 生产签名返回 Set<String>——thenReturn 必须类型严格对齐
+        when(catalog.availableMetrics()).thenReturn(Set.of("cpu", "memory"));
         when(metricsCollector.collect(anyString(), anyString(), anyString()))
                 .thenReturn(new Evidence(
                         Evidence.EvidenceStatus.SUCCESS, "metrics", "完成",
@@ -107,7 +111,8 @@ class DiagnosisOrchestratorTest {
         traceId = orchestrator.submit(1001L, "TK-001", "order-service");
         long elapsed = System.currentTimeMillis() - start;
         assertThat(traceId).isNotNull().startsWith("trace-");
-        assertThat(elapsed).isLessThan(500, "提交必须火眼金睛，绝不允许阻塞告警链路");
+        // AbstractLongAssert.isLessThan 只收 long，文案经 as() 分身表达
+        assertThat(elapsed).as("提交必须火眼金睛，绝不允许阻塞告警链路").isLessThan(500L);
     }
 
     @Test
@@ -148,7 +153,7 @@ class DiagnosisOrchestratorTest {
         // SUCCESS=2(changes+logs) 且 FAILED=1 → EvidenceAggregator 规则二判 WEAK。
         // 摘要必须含「置信度上限 0.6」与「人工」字样。
         verify(sessionRepository).complete(anyLong(), anyString(),
-                containsAll("置信度上限 0.6", "人工"));
+                argThat(sm -> sm != null && sm.contains("置信度上限 0.6") && sm.contains("人工")));
     }
 
     @Test
@@ -162,7 +167,8 @@ class DiagnosisOrchestratorTest {
         verify(sessionRepository, atLeastOnce())
                 .fail(anyLong(), anyString());
         verify(stateManager, atLeastOnce())
-                .transition(eq(AgentState.FAILED), anyString(), anyString());
+                .transition(eq(AgentState.FAILED),
+                        any(AgentStateTransition.TriggerType.class), anyString());
         // 上层捕获了全部异常，诊断链不停
         assertThatCode(() -> TraceContext.getOrCreate());
     }
