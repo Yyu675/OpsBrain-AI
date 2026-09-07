@@ -1,6 +1,10 @@
 package com.devops.agent.domain.tools;
 
 import com.devops.agent.application.runtime.ToolRuntimeManager;
+import com.devops.agent.domain.evidence.Evidence;
+import com.devops.agent.domain.evidence.MetricsEvidenceCollector;
+import com.devops.agent.domain.evidence.MetricsQueryCatalog;
+import com.devops.agent.domain.evidence.ChangesEvidenceCollector;
 import com.devops.agent.domain.biz.entity.TicketEnums;
 import com.devops.agent.domain.biz.service.TicketService;
 import com.devops.agent.domain.rag.Retriever;
@@ -52,6 +56,17 @@ public class DevOpsTools {
 
     @Autowired
     private com.devops.agent.domain.tools.executor.OpsExecutorRegistry opsExecutorRegistry;
+
+    /** S1-1：指标取证装配器（业务逻辑全在 collector，工具层只做治理装配）。 */
+    @Autowired
+    private MetricsEvidenceCollector metricsEvidenceCollector;
+
+    @Autowired
+    private MetricsQueryCatalog metricsQueryCatalog;
+
+    /** S1-2：变更取证装配器。 */
+    @Autowired
+    private ChangesEvidenceCollector changesEvidenceCollector;
 
     /**
      * 工具1: 检索运维知识库
@@ -185,6 +200,111 @@ public class DevOpsTools {
      * @param description 故障描述与堆栈摘要
      * @return 提交确认文本（含供编排层解析的草稿标记块）
      */
+    /**
+     * S1-1：指标取证工具（路线图 §5.2）。
+     * <p>
+     * 三态归属（绝不静默）：数据源未启用→UNAVAILABLE；Prometheus 故障/熔断→FAILED；
+     * 连通但查不到序列→NO_DATA；有数据→SUCCESS（异常可为空清单）。
+     * 治理归 @ToolMeta（ToolRuntimeManager 执行），业务归 MetricsEvidenceCollector，
+     * 本方法只做装配与参数边界校验。
+     * </p>
+     *
+     * @param service 服务名（白名单：字母/数字/点/下划线/中划线，≤128）
+     * @param range   时间窗 30m/2h/1d，默认 30m，上限 7d
+     * @param metrics 指标名逗号分隔，留空查目录默认全部
+     */
+    @Tool("查询服务在告警时间窗内的监控指标，识别异常指标用于故障取证")
+    @ToolMeta(
+            name = "queryServiceMetrics",
+            description = "查询服务在时间窗内的监控指标（CPU/内存/错误率/P99 目录可配），IQR 异常检测，返回四态证据",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#service + '_' + #range + '_' + #metrics",
+            requiresApproval = false,
+            timeoutMs = 15000,
+            maxRetries = 1,
+            compensationAction = ""
+    )
+    public String queryServiceMetrics(@P("服务名，如 order-service（只允许字母数字/点/下划线/中划线）") String service,
+                                      @P("时间窗，如 30m / 2h / 1d，默认 30m，上限 7d") String range,
+                                      @P("可选：指标名逗号分隔，如 cpu,memory；留空查目录默认全部") String metrics) {
+        log.info("[Tool] queryServiceMetrics 被调用,service={}, range={}, metrics={}", service, range, metrics);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod(
+                    "queryServiceMetricsInternal", String.class, String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool(
+                    "queryServiceMetrics", this, method, new Object[]{service, range, metrics});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryServiceMetrics 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("指标取证工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryServiceMetrics 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询服务指标失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 内部实现：参数白名单 → 采集 → 稳定序列化（无治理代码）。 */
+    public String queryServiceMetricsInternal(String service, String range, String metrics) {
+        try {
+            metricsQueryCatalog.requireValidService(service);
+        } catch (IllegalArgumentException e) {
+            return "参数错误: " + e.getMessage()
+                    + "（服务名只允许字母/数字/点/下划线/中划线；合法指标: "
+                    + String.join(",", metricsQueryCatalog.availableMetrics()) + "）";
+        }
+        Evidence evidence = metricsEvidenceCollector.collect(service, range, metrics);
+        return "【指标取证结果】" + evidence.toToolPayload();
+    }
+
+    /**
+     * S1-2：变更取证工具（路线图 §5.3，「根因定位性价比最高的单一方向」）。
+     * <p>
+     * NO_DATA（查过、确实没有）与 FAILED（查不了）语义严格区分；
+     * 时间相关性按分档评分（变更离现在越近分越高）。
+     * </p>
+     */
+    @Tool("查询服务在告警前时间窗内的变更记录（发布/配置/扩缩容），用于根因关联")
+    @ToolMeta(
+            name = "queryRecentChanges",
+            description = "查询 sys_change_event 中告警前窗口内的变更事件并做时间相关性评分；NO_DATA 为有效排除证据",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#service + '_' + #range",
+            requiresApproval = false,
+            timeoutMs = 10000,
+            maxRetries = 1,
+            compensationAction = ""
+    )
+    public String queryRecentChanges(@P("服务名，如 order-service") String service,
+                                     @P("告警前时间窗，如 2h / 30m / 1d，默认 2h，上限 7d") String range) {
+        log.info("[Tool] queryRecentChanges 被调用,service={}, range={}", service, range);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod(
+                    "queryRecentChangesInternal", String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool(
+                    "queryRecentChanges", this, method, new Object[]{service, range});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryRecentChanges 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("变更取证工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryRecentChanges 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询服务变更失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 内部实现：参数白名单 → 采集 → 稳定序列化。 */
+    public String queryRecentChangesInternal(String service, String range) {
+        try {
+            metricsQueryCatalog.requireValidService(service);
+        } catch (IllegalArgumentException e) {
+            return "参数错误: " + e.getMessage();
+        }
+        Evidence evidence = changesEvidenceCollector.collect(service, range);
+        return "【变更取证结果】" + evidence.toToolPayload();
+    }
+
     @Tool("用户需要开工单/上报二级运维时调用")
     @ToolMeta(
             name = "createDevOpsTicket",

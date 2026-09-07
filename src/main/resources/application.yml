@@ -468,6 +468,20 @@ devops:
       # 而不是让页面卡在加载中——没有 Prometheus 的部署应显式关掉
       enabled: ${PROMETHEUS_ENABLED:true}
 
+# ================= S1-1 指标取证：PromQL 查询目录 =================
+# 给 queryServiceMetrics 工具的「指标名 -> PromQL 模板」目录。
+# {service} 为服务名占位符，渲染前经白名单校验（只允许字母数字点划线下划线），
+# PromQL 注入在语法上不可能。
+# ⚠️ 默认值按常见 label 约定写：k8s/Cadvisor 用 pod=~"{service}.*"，
+#    Spring/Actuator 用 application="{service}"。现场 label 规范不同时
+#    必须改写——否则工具能连通但 NO_DATA，这是 1-1.4「PromQL 可粘贴复现」
+#    验收的前提。新增指标往目录里加一行即可，工具自动可见。
+  query-catalog:
+    cpu: 'sum(rate(container_cpu_usage_seconds_total{pod=~"{service}.*"}[5m]))'
+    memory: 'sum(container_memory_working_set_bytes{pod=~"{service}.*"})'
+    error-rate: 'sum(rate(http_server_requests_seconds_count{application="{service}",status=~"5.."}[5m]))'
+    latency-p99: 'histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application="{service}"}[5m])) by (le))'
+
 # ================= 自身可观测性（P2，2026-08-26 新增）=================
 # 系统监控别人的前提是先能监控自己：
 # - /actuator/health：K8s 探针 + 部署健康检查（含 DeepSeek/向量库可达性，见

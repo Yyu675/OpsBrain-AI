@@ -94,7 +94,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| — | 暂无（T15/S0-4 已转待验收；阶段 0 全部完成，下轮启动 S1-1 指标取证工具 queryServiceMetrics） |  |  |
+| T16 | **S1-1：指标取证工具 queryServiceMetrics**（路线图 §5.2，报告 103） | Evidence 轻模型（四态 SUCCESS/NO_DATA/FAILED/UNAVAILABLE）+ MetricsAnomalyDetector（IQR）+ 工具三态落地（禁用=UNAVAILABLE 不静默）；PromQL 模板进 yml 可配，sourceRef=实渲染 PromQL | 2026-09-07 |
+| T17 | **S1-2：变更取证工具 queryRecentChanges**（路线图 §5.3，报告 104 前半；日志 S1-3 挂起） | Flyway V2 sys_change_event（后 Flyway 时代首个增量）+ JdbcTemplate 仓库 + 时间相关性评分（分档）+ CI 回调写入端点（复用写权限守卫）+ NO_DATA/FAILED 语义区分 | 2026-09-07 |
 
 ---
 
