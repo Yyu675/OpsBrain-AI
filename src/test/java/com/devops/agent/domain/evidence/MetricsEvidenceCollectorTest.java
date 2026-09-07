@@ -38,10 +38,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "devops.ai.mode=MOCK",
         // 与 CB 专修测试隔离：本类不关熔断状态机的事，全部取默认
         "devops.metrics.prometheus.enabled=true",
-        // 注意：query-catalog 不能经 TestPropertySource 逐 key 覆盖——
-        // Spring 对 @ConfigurationProperties Map 保守地「整体替换」，
-        // 部分覆盖会把其余键清空（实测：cpu/memory 之外全部消失），
-        // 本类直接用 yml 目录全集。
+        // 注意：目录绑定路径是 devops.metrics.query-catalog.templates.<metric>
+        // ——裸根键（少了 templates. 层）会被静默忽略、目录整体为空（实测），
+        // 本类直接用 yml 目录全集，不玩逐 key 覆盖。
 })
 @DisplayName("S1-1 指标取证采集器：四态与 sourceRef 可复现")
 class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {

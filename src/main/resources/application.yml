@@ -489,10 +489,15 @@ devops:
 #    必须改写——否则工具能连通但 NO_DATA，这是 1-1.4「PromQL 可粘贴复现」
 #    验收的前提。新增指标往目录里加一行即可，工具自动可见。
     query-catalog:
-      cpu: 'sum(rate(container_cpu_usage_seconds_total{pod=~"{service}.*"}[5m]))'
-      memory: 'sum(container_memory_working_set_bytes{pod=~"{service}.*"})'
-      error-rate: 'sum(rate(http_server_requests_seconds_count{application="{service}",status=~"5.."}[5m]))'
-      latency-p99: 'histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application="{service}"}[5m])) by (le))'
+      # 关键：Map 字段名 templates 必须出现在键路径里——
+      # devops.metrics.query-catalog.cpu 这样的根键不会绑进 Map 字段，
+      # 会被 Binder 静默忽略（「绑定路径盲区」，把 catalog 掏空、史称
+      # available="" 案的最终根因；勿再把指标键挂在本层）。
+      templates:
+        cpu: 'sum(rate(container_cpu_usage_seconds_total{pod=~"{service}.*"}[5m]))'
+        memory: 'sum(container_memory_working_set_bytes{pod=~"{service}.*"})'
+        error-rate: 'sum(rate(http_server_requests_seconds_count{application="{service}",status=~"5.."}[5m]))'
+        latency-p99: 'histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application="{service}"}[5m])) by (le))'
 
   # ================= S1-3 日志数据源（Loki）=================
   # 默认未启用：compose/CI 均没有 Loki——部署形态如实上报 UNAVAILABLE，

@@ -9,7 +9,12 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 指标查询目录：把 PromQL 模板从代码挪进配置（{@code devops.metrics.query-catalog.*}）。
+ * 指标查询目录：把 PromQL 模板从代码挪进配置（{@code devops.metrics.query-catalog.templates.*}）。
+ * <p>
+ * 绑定契约（血泪沉淀，勿忘）：贴 prefix 平级的裸键
+ * {@code query-catalog.cpu} <b>不会</b>落进 Map 字段，会进 Binder 的
+ * 绑定路径盲区被静默忽略——目录的命根子是 {@code templates.} 这一层。
+ * </p>
  * <p>
  * 为什么不在代码里写死：PromQL 高度依赖现场的 label 约定
  * （k8s 用 {@code pod=}、Spring 微服务用 {@code application=}），
