@@ -5,7 +5,7 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import io.github.resilience4j.ratelimiter.RateLimiter;
-import io.github.resilience4j.ratelimiter.RequestNotPermittedException;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 
 import java.util.List;
 
@@ -69,7 +69,7 @@ public class RateLimitedEmbeddingModel implements EmbeddingModel {
     private void acquireOrThrow(String callSite) {
         try {
             RateLimiter.waitForPermission(rateLimiter);
-        } catch (RequestNotPermittedException e) {
+        } catch (RequestNotPermitted e) {
             throw new LlmRateLimitedException(
                     "LLM 限流：" + callSite + " 超过应用侧配额（"
                             + rateLimiter.getName() + " 实例），本次调用未发出。"

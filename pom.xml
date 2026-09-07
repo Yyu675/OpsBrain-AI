@@ -116,6 +116,16 @@
             <artifactId>resilience4j-spring-boot3</artifactId>
             <version>2.4.0</version>
         </dependency>
+        <!--
+          resilience4j-annotations：@CircuitBreaker 注解本体。starter 不传递
+          该构件（run 34110627584 编译红：PrometheusClient 三处注解符号缺失
+          证实），须与 starter 同号显式声明。
+        -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-annotations</artifactId>
+            <version>2.4.0</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
@@ -306,6 +316,12 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <!--
               测试失败详情**同时**进控制台与 target/surefire-reports/*.txt。
