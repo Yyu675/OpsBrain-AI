@@ -34,13 +34,16 @@ public class DiagnosisController {
     private final DiagnosisSessionRepository sessionRepository;
     private final DiagnosisEvidenceRepository evidenceRepository;
     private final DiagnosisHypothesisRepository hypothesisRepository;
+    private final com.devops.agent.domain.biz.repository.KnowledgeBoostRepository knowledgeBoostRepository;
 
     public DiagnosisController(DiagnosisSessionRepository sessionRepository,
                                DiagnosisEvidenceRepository evidenceRepository,
-                               DiagnosisHypothesisRepository hypothesisRepository) {
+                               DiagnosisHypothesisRepository hypothesisRepository,
+                               com.devops.agent.domain.biz.repository.KnowledgeBoostRepository knowledgeBoostRepository) {
         this.sessionRepository = sessionRepository;
         this.evidenceRepository = evidenceRepository;
         this.hypothesisRepository = hypothesisRepository;
+        this.knowledgeBoostRepository = knowledgeBoostRepository;
     }
 
     /**
@@ -61,4 +64,55 @@ public class DiagnosisController {
         view.put("hypotheses", hypothesisRepository.findBySessionTraceId(traceId));
         return ApiResponse.success(view);
     }
+
+    /**
+     * 用户反馈入口（路线图 §6.3 2-3.5）：标记假设质量 + 可选的知识回流。
+     * <p>
+     * 语义契约：HELPFUL（完全有用）/ PARTIAL（部分正确）/ WRONG（错误）。
+     * 前端传回 hypothesisId + 可选 chunkIds（前端能自注明引了哪些片段的
+     * 场景才传；未传则只落假设本身的反馈）。
+     * </p>
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/hypothesis/feedback")
+    @Operation(summary = "标记假设质量 + 可选的知识 boost 回流")
+    public ApiResponse<java.util.Map<String, Object>> feedback(
+            @org.springframework.web.bind.annotation.RequestBody FeedbackRequest req) {
+        String verdict = normalizeVerdict(req.feedback());
+        if (verdict == null) {
+            return ApiResponse.error(400, "feedback 必须是 HELPFUL / PARTIAL / WRONG 之一");
+        }
+        int updated = hypothesisRepository.updateFeedback(req.hypothesisId(), verdict);
+        if (updated == 0) {
+            return ApiResponse.error(404, "hypothesisId 不存在: " + req.hypothesisId());
+        }
+        int boosted = 0;
+        if (req.chunkIds() != null) {
+            for (Long chunkId : req.chunkIds()) {
+                if (chunkId != null) {
+                    knowledgeBoostRepository.recordFeedback(chunkId, verdict);
+                    boosted++;
+                }
+            }
+        }
+        return ApiResponse.success(java.util.Map.of(
+                "hypothesisId", req.hypothesisId(),
+                "feedback", verdict,
+                "knowledgeBoosted", boosted));
+    }
+
+    /** 反馈请求体（record 字段即 JSON 键名，零转换）。 */
+    public record FeedbackRequest(
+            long hypothesisId,
+            String feedback,
+            java.util.List<Long> chunkIds) {}
+
+    private static String normalizeVerdict(String verdict) {
+        if (verdict == null) return null;
+        String upper = verdict.trim().toUpperCase();
+        return switch (upper) {
+            case "HELPFUL", "PARTIAL", "WRONG" -> upper;
+            default -> null;
+        };
+    }
+
 }

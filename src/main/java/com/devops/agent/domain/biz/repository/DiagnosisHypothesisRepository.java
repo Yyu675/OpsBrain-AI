@@ -69,6 +69,14 @@ public class DiagnosisHypothesisRepository {
         return sb.append(']').toString();
     }
 
+    /** 落一次用户反馈（2-3.5；单值最后一次为准）。
+     * @return 更新行数（0 = hypothesisId 不存在，调用方必须显性处理） */
+    public int updateFeedback(long id, String feedback) {
+        String sql = "UPDATE sys_diagnosis_hypothesis SET feedback = ?, "
+                + "feedback_at = CURRENT_TIMESTAMP WHERE id = ?";
+        return jdbcTemplate.update(sql, feedback, id);
+    }
+
     /** 观测性的计数读面（监控健康度用，不做渲染别名层）。 */
     public long countBySession(String sessionTraceId) {
         return jdbcTemplate.queryForObject(

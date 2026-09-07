@@ -123,6 +123,7 @@ const router = createRouter({
     },
     {
       path: '/alerts/:id', name: 'alert-detail', component: lazy(() => import('../views/AlertDetail.vue'), 'AlertDetail', 'detail'),
+      path: '/diagnosis/:traceId', name: 'diagnosis-detail', component: lazy(() => import('../views/DiagnosisDetail.vue'), 'DiagnosisDetail', 'detail'),
       meta: { title: '告警事件详情', stage: 'L2', hiddenFromNavigation: true, description: '呈现单个告警的时间线、影响范围、证据与处置上下文。', capabilities: ['事件时间线', '指标与日志证据', '影响范围', '处置记录'] }
     },
     {

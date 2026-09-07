@@ -79,6 +79,10 @@ public class HybridRetrieverService implements Retriever {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /** 反馈回流 boost（S2-3 2-3.6）。表未建/仓储缺席时 boost=1.0（蓝武零偏移）。 */
+    @Autowired(required = false)
+    private com.devops.agent.domain.biz.repository.KnowledgeBoostRepository knowledgeBoostRepository;
+
     /**
      * 后端标识：本实现直查 pgvector。
      *
@@ -167,6 +171,7 @@ public class HybridRetrieverService implements Retriever {
             rows = hybridEnabled
                     ? searchHybrid(vectorLiteral, query, topK * 2, scope)
                     : searchByVector(vectorLiteral, topK * 2, scope);
+            rows = applyFeedbackBoost(rows);
         } catch (Exception e) {
             // 与向量化失败同理：返回 null 显式标记链路故障，不得伪装成无文档
             log.error("[HybridRetriever] 检索执行失败，返回服务不可用信号: {}", e.getMessage());
@@ -323,6 +328,41 @@ public class HybridRetrieverService implements Retriever {
         args.add(minScore);
         args.add(limit);
         return jdbcTemplate.queryForList(sql, args.toArray());
+    }
+
+    /**
+     * 反馈回流 boost（S2-3 2-3.6）：score ×= boost(chunkId)，重排 DESC。
+     * 失败 fallback 到未 boost 的原始次序——回流是增值冒险，不是检索环路的筋骨。
+     */
+    private List<Map<String, Object>> applyFeedbackBoost(List<Map<String, Object>> rows) {
+        if (knowledgeBoostRepository == null || rows == null || rows.isEmpty()) {
+            return rows;
+        }
+        try {
+            List<Long> ids = rows.stream()
+                    .map(r -> ((Number) r.get("id")).longValue()).toList();
+            Map<Long, Double> boosts = knowledgeBoostRepository.boostBatch(ids);
+            if (boosts.isEmpty()) {
+                return rows;
+            }
+            List<Map<String, Object>> boosted = new ArrayList<>(rows.size());
+            for (Map<String, Object> row : rows) {
+                long id = ((Number) row.get("id")).longValue();
+                Double b = boosts.get(id);
+                if (b != null && Math.abs(b - 1.0) > 1e-9) {
+                    Map<String, Object> copy = new java.util.LinkedHashMap<>(row);
+                    copy.put("score", toDouble(row.get("score")) * b);
+                    boosted.add(copy);
+                } else {
+                    boosted.add(row);
+                }
+            }
+            boosted.sort((a, z) -> Double.compare(toDouble(z.get("score")), toDouble(a.get("score"))));
+            return boosted;
+        } catch (Exception ex) {
+            log.warn("[HybridRetriever] 反馈 boost 失败，降级为原序: {}", ex.getMessage());
+            return rows;
+        }
     }
 
     /**

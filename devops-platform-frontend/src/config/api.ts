@@ -51,6 +51,8 @@ export const API_ENDPOINTS = {
   // L2 告警（Stage 3：告警列表 + 人工确认/标记恢复）
   ALERTS: `${API_BASE}/alerts`,
   ALERTS_BY_ID: (id: number) => `${API_BASE}/alerts/${id}`,
+  DIAGNOSIS: `${API_BASE}/diagnosis`,
+  DIAGNOSIS_FEEDBACK: `${API_BASE}/diagnosis/hypothesis/feedback`,
 
   // AI 分析持久化（策略 B：结构化 + 多版本 + 反馈）
   TICKET_AI_ANALYSIS: (id: string) => `${API_BASE}/tickets/${id}/ai-analysis`,

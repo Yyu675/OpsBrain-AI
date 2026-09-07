@@ -21,6 +21,7 @@ class DiagnosisControllerTest {
     private DiagnosisSessionRepository sessionRepository;
     private DiagnosisEvidenceRepository evidenceRepository;
     private DiagnosisHypothesisRepository hypothesisRepository;
+    private com.devops.agent.domain.biz.repository.KnowledgeBoostRepository knowledgeBoostRepository;
     private DiagnosisController controller;
 
     @BeforeEach
@@ -28,7 +29,9 @@ class DiagnosisControllerTest {
         sessionRepository = mock(DiagnosisSessionRepository.class);
         evidenceRepository = mock(DiagnosisEvidenceRepository.class);
         hypothesisRepository = mock(DiagnosisHypothesisRepository.class);
-        controller = new DiagnosisController(sessionRepository, evidenceRepository, hypothesisRepository);
+        knowledgeBoostRepository = mock(com.devops.agent.domain.biz.repository.KnowledgeBoostRepository.class);
+        controller = new DiagnosisController(sessionRepository, evidenceRepository,
+                hypothesisRepository, knowledgeBoostRepository);
     }
 
     @Test
@@ -62,4 +65,30 @@ class DiagnosisControllerTest {
         assertThat(((Map<?, ?>) body.get("session"))).isEmpty();
         assertThat(((List<?>) body.get("evidences"))).hasSize(1);
     }
+
+    @Test
+    @DisplayName("2-3.5 反馈入口：合法判定回落假设 + 按 chunkIds 入库知识 boost")
+    void feedbackEntryMarksAndBoosts() {
+        when(hypothesisRepository.updateFeedback(42L, "HELPFUL")).thenReturn(1);
+        var req = new DiagnosisController.FeedbackRequest(
+                42L, "helpful", java.util.List.of(7L, 8L));
+        ApiResponse<Map<String, Object>> resp = controller.feedback(req);
+        assertThat(resp.getCode()).isEqualTo(200);
+        assertThat(resp.getData().get("feedback")).isEqualTo("HELPFUL");
+        assertThat(resp.getData().get("knowledgeBoosted")).isEqualTo(2);
+        verify(knowledgeBoostRepository, times(2)).recordFeedback(anyLong(), eq("HELPFUL"));
+    }
+
+    @Test
+    @DisplayName("2-3.5 反馈入口：hypothesis 不存在 → 404；非法判定 → 400")
+    void feedbackEntryValidation() {
+        when(hypothesisRepository.updateFeedback(99L, "HELPFUL")).thenReturn(0);
+        ApiResponse<Map<String, Object>> notFound = controller.feedback(
+                new DiagnosisController.FeedbackRequest(99L, "helpful", null));
+        assertThat(notFound.getCode()).isEqualTo(404);
+        ApiResponse<Map<String, Object>> bad = controller.feedback(
+                new DiagnosisController.FeedbackRequest(1L, "helpful-ish", null));
+        assertThat(bad.getCode()).isEqualTo(400);
+    }
+
 }
