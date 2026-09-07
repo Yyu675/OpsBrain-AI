@@ -303,9 +303,14 @@ public class PrometheusClient {
             try {
                 root = mapper.readTree(resp.body());
             } catch (Exception parseError) {
+                // 携带响应体头部 (120 字符截断)：诊断 base-url 指向 HTML 登录页/
+                // 网关错误页/代理劫持时，没有它几小时起步——此举为取证刚需，非调试残留。
+                String bodyPreview = resp.body() == null ? "<null>"
+                        : resp.body().substring(0, Math.min(120, resp.body().length()));
                 throw new MetricsUnavailableException(
                         "Prometheus 返回了非 JSON 响应（HTTP " + resp.statusCode()
-                                + "），可能 base-url 指向了错误的服务", parseError);
+                                + "），可能 base-url 指向了错误的服务；响应体头部="
+                                + bodyPreview.replaceAll("[\\n\\r\\t ]+", " "), parseError);
             }
 
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
