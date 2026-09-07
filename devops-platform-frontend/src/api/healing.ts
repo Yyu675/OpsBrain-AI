@@ -58,7 +58,7 @@ export interface HealingTrigger {
 }
 
 export async function listHealingExecutions(limit = 50): Promise<HealingExecution[]> {
-  const payload = await http.get(`${API_ENDPOINTS.HEALING}/executions`, { params: { limit } })
+  const payload = await http.get(`${API_ENDPOINTS.HEALING}/executions?limit=${limit}`)
   return unwrapBiz<HealingExecution[]>(payload, '查询执行台账失败')
 }
 

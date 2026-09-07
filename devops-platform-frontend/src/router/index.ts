@@ -123,8 +123,11 @@ const router = createRouter({
     },
     {
       path: '/alerts/:id', name: 'alert-detail', component: lazy(() => import('../views/AlertDetail.vue'), 'AlertDetail', 'detail'),
-      path: '/diagnosis/:traceId', name: 'diagnosis-detail', component: lazy(() => import('../views/DiagnosisDetail.vue'), 'DiagnosisDetail', 'detail'),
       meta: { title: '告警事件详情', stage: 'L2', hiddenFromNavigation: true, description: '呈现单个告警的时间线、影响范围、证据与处置上下文。', capabilities: ['事件时间线', '指标与日志证据', '影响范围', '处置记录'] }
+    },
+    {
+      path: '/diagnosis/:traceId', name: 'diagnosis-detail', component: lazy(() => import('../views/DiagnosisDetail.vue'), 'DiagnosisDetail', 'detail'),
+      meta: { title: '诊断详情', stage: 'L3', hiddenFromNavigation: true, description: '按 traceId 回放诊断链：证据、假设、置信度与反馈。', capabilities: ['证据列表', '假设与置信度', '假设反馈', '会话摘要'] }
     },
     {
       // 占位页已替换为真实实现（L2 阶段 B）。
