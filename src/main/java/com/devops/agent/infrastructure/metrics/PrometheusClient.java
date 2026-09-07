@@ -324,6 +324,17 @@ public class PrometheusClient {
             return root.path("data");
         } catch (MetricsUnavailableException e) {
             throw e;
+        } catch (java.net.http.HttpTimeoutException e) {
+            throw new MetricsUnavailableException(
+                    "Prometheus 查询超时（" + timeout.toMillis() + "ms）。"
+                            + "可能是查询过重或服务负载高", e);
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                // 恢复中断标志：吞掉它会让上层的取消逻辑失效
+                Thread.currentThread().interrupt();
+            }
+            throw new MetricsUnavailableException(
+                    "无法连接 Prometheus（" + baseUrl + "）：" + e.getMessage(), e);
         }
     }
 
