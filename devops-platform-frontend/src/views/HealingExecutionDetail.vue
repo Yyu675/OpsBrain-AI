@@ -1,16 +1,18 @@
 <script setup lang="ts">
 /**
- * 自愈执行详情页（S3-1 批次 5：L4 第二条占位路由真实化）
+ * 自愈执行详情页（S3-5：可观测/可回放收口，§3-5.1）
  *
  * 与自愈中心抽屉同一数据源，但给出可直达链接——审批中心、告警详情
  * 等页面可以用 /self-healing/tasks/:id 直接跳转到某次执行。
+ * 批次 5 起附加 V10 步骤时间线（GATE_EVALUATE → … → ESCALATE_TICKET），
+ * 旧占位路由 steps/verification/rollback 一并指向本页（锚节点位）。
  */
 import { notify } from '@/utils/notify'
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ArrowLeft, RotateCcw } from 'lucide-vue-next'
-import { getHealingExecution, undoHealing, type HealingExecution } from '@/api/healing'
+import { getHealingExecution, undoHealing, type HealingExecution, type HealingStep } from '@/api/healing'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 
@@ -32,9 +34,11 @@ const DECISION_LABELS: Record<string, string> = {
 
 const route = useRoute()
 const router = useRouter()
-const executionId = Number(route.params.id)
+// :id（主详情路由）与 :taskId（steps/verification/rollback 回放路由）两参归一
+const executionId = Number(route.params.id ?? route.params.taskId)
 
 const row = ref<HealingExecution | null>(null)
+const steps = ref<HealingStep[]>([])
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 const undoing = ref(false)
@@ -43,7 +47,9 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    row.value = await getHealingExecution(executionId)
+    const detail = await getHealingExecution(executionId)
+    row.value = detail.execution
+    steps.value = detail.steps
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : '加载失败'
   } finally {
@@ -65,6 +71,14 @@ function verifyTagType(status: string): 'success' | 'warning' | 'danger' | 'info
   if (status === 'PASS') return 'success'
   if (status === 'FAIL') return 'danger'
   if (status === 'UNKNOWN') return 'warning'
+  return 'info'
+}
+
+/** 步骤节点徽章色（OK 绿 / FAIL 红 / 其他灰） */
+function stepTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (status === 'OK' || status === 'HEALTHY' || status === 'PASS') return 'success'
+  if (status === 'FAIL' || status === 'UNHEALTHY' || status === 'P0') return 'danger'
+  if (status === 'INTERVENED' || status === 'UNKNOWN' || status === 'P1') return 'warning'
   return 'info'
 }
 
@@ -142,6 +156,17 @@ onMounted(load)
           >撤销本次执行</el-button>
         </div>
 
+        <h3 class="block-title">步骤时间线（回放）</h3>
+        <ul v-if="steps.length" class="step-list">
+          <li v-for="(st, idx) in steps" :key="idx" class="step-item">
+            <el-tag size="small" :type="stepTagType(st.status)" class="step-tag">{{ st.name }}</el-tag>
+            <span class="step-status">{{ st.status }}</span>
+            <span class="step-detail">{{ st.detail || '—' }}</span>
+            <span class="step-at"><RelativeTime :value="st.at" /></span>
+          </li>
+        </ul>
+        <p v-else class="step-empty">无步骤数据（本执行早于 V10 步骤落地，或回放序列未写入）</p>
+
         <h3 class="block-title">演算计划</h3>
         <pre class="code-block">{{ row.dryRunPlan || '—' }}</pre>
 
@@ -191,6 +216,55 @@ onMounted(load)
 
 .actions-bar {
   margin: 16px 0;
+}
+
+.step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+  font-size: 13px;
+}
+
+.step-item:last-child {
+  border-bottom: none;
+}
+
+.step-tag {
+  min-width: 128px;
+  text-align: center;
+}
+
+.step-status {
+  color: var(--el-text-color-regular);
+  min-width: 84px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.step-detail {
+  flex: 1;
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
+
+.step-at {
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.step-empty {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  margin: 0;
 }
 
 .block-title {

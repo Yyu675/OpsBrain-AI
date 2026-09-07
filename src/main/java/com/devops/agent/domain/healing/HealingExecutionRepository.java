@@ -113,6 +113,20 @@ public class HealingExecutionRepository {
                 """, status, output, error, LocalDateTime.now(), id);
     }
 
+    /** S3-5：写入步骤时间线（编排器在终态/阶段节点后覆盖式写入全量序列）。 */
+    public void updateStepsJson(long id, String stepsJson) {
+        jdbcTemplate.update("UPDATE sys_healing_execution SET steps_json = ? WHERE id = ?",
+                stepsJson, id);
+    }
+
+    /** S3-5：读出既有步骤序列（追加节点的读-改-写第一步；无记录/空列返回 null）。 */
+    public String readStepsJson(long id) {
+        List<String> rows = jdbcTemplate.query(
+                "SELECT steps_json FROM sys_healing_execution WHERE id = ?",
+                (rs, n) -> rs.getString(1), id);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
     /** 按审批单 id 反查执行台账（审批中心批准回调的桥）。 */
     public Optional<HealingExecution> findByApprovalId(long approvalId) {
         List<HealingExecution> rows = jdbcTemplate.query(

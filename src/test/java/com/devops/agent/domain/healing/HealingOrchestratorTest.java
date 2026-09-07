@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -89,6 +90,14 @@ class HealingOrchestratorTest {
         assertTrue(row.preSnapshotJson().contains("ns:prod/app-user"),
                 "执行当下必须把快照落行，事后无从补拍");
         assertTrue(row.undoToken().startsWith("mock-undo-"));
+
+        // S3-5：步骤时间线一次性落库——回放页的原材料（§3-5.1）
+        ArgumentCaptor<String> stepsCaptor = ArgumentCaptor.forClass(String.class);
+        verify(repository).updateStepsJson(eq(1001L), stepsCaptor.capture());
+        String stepsJson = stepsCaptor.getValue();
+        assertTrue(stepsJson.contains("GATE_EVALUATE") && stepsJson.contains("AUTO_EXECUTE"), stepsJson);
+        assertTrue(stepsJson.contains("IDEMPOTENCY_CHECK"), stepsJson);
+        assertTrue(stepsJson.contains("DRY_RUN") && stepsJson.contains("EXECUTE"), stepsJson);
     }
 
     @Test
@@ -112,6 +121,10 @@ class HealingOrchestratorTest {
         assertEquals(99L, row.approvalId());
         assertTrue(row.dryRunPlan().contains("MOCK 演算通过"),
                 "审批单展示的「将要发生什么」必须来自演算输出");
+        // S3-5：审批路径的收尾节点是 SUBMIT_APPROVAL（EXECUTE 节点必须缺席）
+        verify(repository).updateStepsJson(eq(1001L),
+                argThat(j -> j.contains("SUBMIT_APPROVAL") && j.contains("approvalId=99")
+                        && !j.contains("\"EXECUTE\"")));
     }
 
     @Test
@@ -322,6 +335,13 @@ class HealingOrchestratorTest {
         verify(repository).markUndoOutcome(eq(3002L), eq("UNDONE"), anyString(), isNull());
         verify(ticketService).createTicket(anyString(), eq("P1"), eq("healing"),
                 anyString(), isNull(), isNull(), isNull(), eq("agent-healing"));
+        // S3-5：验证失败全链路节点追记（VERIFY → UNDO → ESCALATE，读-改-写逐条追加）
+        ArgumentCaptor<String> appended = ArgumentCaptor.forClass(String.class);
+        verify(repository, atLeastOnce()).updateStepsJson(eq(3002L), appended.capture());
+        String all = String.join("|", appended.getAllValues());
+        assertTrue(all.contains("POST_VERIFY"), all);
+        assertTrue(all.contains("AUTO_UNDO"), all);
+        assertTrue(all.contains("ESCALATE_TICKET"), all);
     }
 
     @Test

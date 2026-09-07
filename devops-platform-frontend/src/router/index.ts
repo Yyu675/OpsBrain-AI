@@ -190,16 +190,19 @@ const router = createRouter({
       meta: { title: '自愈执行详情', stage: 'L4', roles: ['admin'], hiddenFromNavigation: true, description: '单次自愈执行的全要素回放：门裁决、演算、输出、快照、撤销。', capabilities: ['决策上下文', '执行回放', '快照查看', '人工撤销'] }
     },
     {
-      path: '/self-healing/tasks/:taskId/steps/:stepId', name: 'healing-step-detail', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingStepDetail', 'detail'),
-      meta: { title: '执行步骤详情', stage: 'L4', hiddenFromNavigation: true, description: '检查单步动作的输入、输出、日志、耗时与异常。', capabilities: ['输入参数', '实时日志', '执行结果', '异常诊断'] }
+      // S3-5 批次 5：占位页已替换为真实实现 —— 步骤回放并入执行详情页（同一时间线，无需拆页）
+      path: '/self-healing/tasks/:taskId/steps/:stepId', name: 'healing-step-detail', component: lazy(() => import('../views/HealingExecutionDetail.vue'), 'HealingExecutionDetail', 'detail'),
+      meta: { title: '执行步骤回放', stage: 'L4', roles: ['admin'], hiddenFromNavigation: true, description: '检查单步动作的输入、输出、日志、耗时与异常。', capabilities: ['输入参数', '实时日志', '执行结果', '异常诊断'] }
     },
     {
-      path: '/self-healing/tasks/:id/verification', name: 'healing-verification', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingVerification', 'detail'),
-      meta: { title: '自愈验证详情', stage: 'L4', hiddenFromNavigation: true, description: '通过指标、探针与业务检查确认自愈效果是否达标。', capabilities: ['验证规则', '前后指标对比', '探针结果', '验收结论'] }
+      // S3-5 批次 5：占位页已替换为真实实现 —— 验证回放入口指向详情页验证区块
+      path: '/self-healing/tasks/:id/verification', name: 'healing-verification', component: lazy(() => import('../views/HealingExecutionDetail.vue'), 'HealingExecutionDetail', 'detail'),
+      meta: { title: '自愈验证回放', stage: 'L4', roles: ['admin'], hiddenFromNavigation: true, description: '通过指标、探针与业务检查确认自愈效果是否达标。', capabilities: ['验证规则', '前后指标对比', '探针结果', '验收结论'] }
     },
     {
-      path: '/self-healing/tasks/:id/rollback', name: 'healing-rollback', component: lazy(() => import('../views/FutureCapability.vue'), 'HealingRollback', 'detail'),
-      meta: { title: '回滚详情', stage: 'L4', hiddenFromNavigation: true, description: '展示回滚计划、执行步骤、恢复点与最终状态。', capabilities: ['回滚计划', '恢复点', '执行日志', '结果确认'] }
+      // S3-5 批次 5：占位页已替换为真实实现 —— 回滚回放入口指向详情页撤销区块（含 UNDO 步骤）
+      path: '/self-healing/tasks/:id/rollback', name: 'healing-rollback', component: lazy(() => import('../views/HealingExecutionDetail.vue'), 'HealingExecutionDetail', 'detail'),
+      meta: { title: '回滚回放', stage: 'L4', roles: ['admin'], hiddenFromNavigation: true, description: '展示回滚计划、执行步骤、恢复点与最终状态。', capabilities: ['回滚计划', '恢复点', '执行日志', '结果确认'] }
     },
     {
       // 占位页已替换为真实实现：后端 sys_operation_audit 与 sys_agent_call_log

@@ -4,14 +4,18 @@ import com.devops.agent.common.audit.OperationAuditRecord;
 import com.devops.agent.domain.approval.ApprovalService;
 import com.devops.agent.domain.biz.service.TicketService;
 import com.devops.agent.infrastructure.persistence.repo.OperationAuditRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -78,8 +82,12 @@ public class HealingOrchestrator {
      * @return 本次编排的终局视图——无论是自动直执行、进了审批还是被拒
      */
     public HealingOutcome handle(HealingAction action) {
+        // S3-5 步骤时间线：从它开始收集，终态落库时一次性写入（§3-5.1 可回放）
+        List<Map<String, Object>> steps = new ArrayList<>();
+
         // 1. 门裁决（唯一准入裁决点）
         HealingGate.GateDecision decision = gate.decide(action);
+        steps.add(step("GATE_EVALUATE", decision.type().name(), decision.reason()));
         log.info("[Healing] 门裁决 | action={} | type={} | reason={}",
                 action.actionKey(), decision.type(), decision.reason());
 
@@ -87,6 +95,7 @@ public class HealingOrchestrator {
                 || decision.type() == HealingGate.DecisionType.NO_EXECUTOR) {
             long id = repository.insert(toDraft(action, decision, null, null,
                     HealingExecution.Status.REJECTED, null, null, null, null));
+            writeSteps(id, steps);
             auditIfAgent(action, "healing.execute.rejected", id, false, decision.reason());
             return HealingOutcome.terminal(id, decision, HealingExecution.Status.REJECTED,
                     decision.reason(), null);
@@ -98,12 +107,15 @@ public class HealingOrchestrator {
             LocalDateTime since = LocalDateTime.now().minusSeconds(idempotencyWindowSeconds);
             int blocking = repository.countRecentBlocking(
                     action.alertId(), action.actionKey(), since);
+            steps.add(step("IDEMPOTENCY_CHECK", blocking > 0 ? "INTERVENED" : "OK",
+                    blocking > 0 ? "窗口内活台账 " + blocking + " 条" : "窗口内无活台账"));
             if (blocking > 0) {
                 String reason = "幂等拦截：告警 #" + action.alertId() + " 的「" + action.actionKey()
                         + "」在 " + idempotencyWindowSeconds + " 秒内已有 " + blocking
                         + " 条待审/成功台账，拒绝重复执行";
                 long id = repository.insert(toDraft(action, decision, null, null,
                         HealingExecution.Status.REJECTED, null, reason, null, null));
+                writeSteps(id, steps);
                 auditIfAgent(action, "healing.execute.rejected", id, false, reason);
                 log.warn("[Healing] 幂等拦截 | id={} | alert={} | action={} | blocking={}",
                         id, action.alertId(), action.actionKey(), blocking);
@@ -115,17 +127,22 @@ public class HealingOrchestrator {
         // 3. 演算（审批单/执行计划的事实依据）
         Optional<ActionExecutor> executorOpt = registry.locate(action.actionKey());
         if (executorOpt.isEmpty()) {          // 竞态防御：门刚查过，此处双保险
+            steps.add(step("DRY_RUN", "FAIL", "注册表演算前执行器消失"));
             long id = repository.insert(toDraft(action, decision, null, null,
                     HealingExecution.Status.REJECTED, null, "注册表演算前执行器消失", null, null));
+            writeSteps(id, steps);
             auditIfAgent(action, "healing.execute.rejected", id, false, "注册表演算前执行器消失");
             return HealingOutcome.terminal(id, decision, HealingExecution.Status.REJECTED,
                     "注册表演算前执行器消失", null);
         }
         ActionExecutor executor = executorOpt.get();
         ExecutionResult dry = executor.dryRun(action);
+        steps.add(step("DRY_RUN", dry.success() ? "OK" : "FAIL",
+                excerpt(dry.success() ? dry.output() : dry.error())));
         if (!dry.success()) {
             long id = repository.insert(toDraft(action, decision, null, null,
                     HealingExecution.Status.FAILED, null, dry.error(), null, null));
+            writeSteps(id, steps);
             auditIfAgent(action, "healing.execute", id, false, "演算未通过: " + dry.error());
             return HealingOutcome.terminal(id, decision, HealingExecution.Status.FAILED,
                     "演算未通过：" + dry.error(), null);
@@ -134,10 +151,13 @@ public class HealingOrchestrator {
         // 3. 分支：免审批直执行 / 要审批建单
         if (decision.type() == HealingGate.DecisionType.AUTO_EXECUTE) {
             ExecutionResult real = executor.execute(action);
+            steps.add(step("EXECUTE", real.success() ? "OK" : "FAIL",
+                    excerpt(real.success() ? real.output() : real.error())));
             HealingExecution stored = toDraft(action, decision, dry, real,
                     real.success() ? HealingExecution.Status.SUCCEEDED : HealingExecution.Status.FAILED,
                     real.output(), real.error(), real.preSnapshot(), real.undoToken());
             long id = repository.insert(stored);
+            writeSteps(id, steps);
             auditIfAgent(action, "healing.execute", id, real.success(),
                     real.success() ? null : real.error());
             log.warn("[Healing] AUTO_EXECUTE 终态 | id={} | action={} | success={}",
@@ -162,6 +182,9 @@ public class HealingOrchestrator {
                 pending.alertId(), pending.requestedBy(), pending.gateDecision(), approvalId,
                 decision.executorKey(), pending.status(), pending.dryRunPlan(), null,
                 null, null, null));
+        steps.add(step("SUBMIT_APPROVAL", "OK",
+                "approvalId=" + approvalId + " mode=" + decision.approvalMode()));
+        writeSteps(id, steps);
         auditIfAgent(action, "healing.submit_approval", id, true, null);
         log.warn("[Healing] REQUIRES_APPROVAL | id={} | approvalId={} | action={} | mode={}",
                 id, approvalId, action.actionKey(), decision.approvalMode());
@@ -198,6 +221,8 @@ public class HealingOrchestrator {
         if (!dry.success()) {
             repository.markFinished(executionId, HealingExecution.Status.FAILED,
                     null, "批准复核演算未通过: " + dry.error(), null, null);
+            appendStep(executionId, "RE_DRY_RUN", "FAIL",
+                    excerpt("批准复核演算未通过: " + dry.error()));
             auditIfAgent(action, "healing.execute_approved", executionId, false, "批准复核演算未通过");
             return HealingOutcome.terminal(executionId,
                     HealingGate.GateDecision.needsApproval(row.actionKey(), "SINGLE", executor.executorKey(), null, null),
@@ -207,6 +232,8 @@ public class HealingOrchestrator {
         ExecutionResult real = executor.execute(action);
         String finalStatus = real.success()
                 ? HealingExecution.Status.SUCCEEDED : HealingExecution.Status.FAILED;
+        appendStep(executionId, "APPROVED_EXECUTE", real.success() ? "OK" : "FAIL",
+                excerpt(real.success() ? real.output() : real.error()));
         repository.markFinished(executionId, finalStatus,
                 real.output(), real.error(), mapToJson(real.preSnapshot()), real.undoToken());
         if (row.approvalId() != null) {
@@ -264,6 +291,7 @@ public class HealingOrchestrator {
             // 无验证器也必须有结论性留痕——未验证的 SUCCEEDED 不能长得像已验证
             repository.markVerified(executionId, HealingExecution.Verify.SKIPPED,
                     "{\"summary\":\"无匹配验证器\"}");
+            appendStep(executionId, "POST_VERIFY", "SKIPPED", "无匹配验证器");
             return HealingOutcome.terminal(executionId,
                     HealingGate.GateDecision.auto(row.actionKey(), row.executorKey(), null, null),
                     HealingExecution.Verify.SKIPPED, "无匹配验证器，标记 SKIPPED", null);
@@ -287,6 +315,8 @@ public class HealingOrchestrator {
                         : (ActionVerifier.VerificationResult.UNKNOWN.equals(verification.status())
                                 ? HealingExecution.Verify.UNKNOWN : HealingExecution.Verify.FAIL),
                 verifyJson);
+        appendStep(executionId, "POST_VERIFY", verification.status(),
+                excerpt(verification.summary()));
 
         if (pass) {
             log.info("[Healing] 验证通过 | id={} | {}", executionId, verification.summary());
@@ -312,7 +342,13 @@ public class HealingOrchestrator {
             undoNote = undoSucceeded ? "已自动回滚（台账转 UNDONE）"
                     : "自动回滚失败: " + undoOutcome.message();
         }
+        if (row.undoToken() != null && !row.undoToken().isBlank()) {
+            appendStep(executionId, "AUTO_UNDO",
+                    undoSucceeded ? "OK" : "FAIL", excerpt(undoNote));
+        }
         String ticketId = escalateToTicket(row, verification, undoSucceeded, undoNote);
+        appendStep(executionId, "ESCALATE_TICKET",
+                undoSucceeded ? "P1" : "P0", excerpt("ticketId=" + ticketId));
         log.error("[Healing] 验证失败已升级 | id={} | undo={} | ticket={}",
                 executionId, undoNote, ticketId);
         return HealingOutcome.terminal(executionId,
@@ -403,6 +439,7 @@ public class HealingOrchestrator {
         if (undone.success()) {
             repository.markUndoOutcome(executionId, HealingExecution.Status.UNDONE,
                     undone.output(), null);
+            appendStep(executionId, "MANUAL_UNDO", "OK", excerpt(undone.output()));
             auditIfAgent(action, "healing.undo", executionId, true, null);
             log.warn("[Healing] 已撤销 | id={} | action={} | token={}",
                     executionId, row.actionKey(), row.undoToken());
@@ -412,6 +449,7 @@ public class HealingOrchestrator {
         }
         repository.markUndoOutcome(executionId, HealingExecution.Status.UNDO_FAILED,
                 null, undone.error());
+        appendStep(executionId, "MANUAL_UNDO", "FAIL", excerpt(undone.error()));
         auditIfAgent(action, "healing.undo", executionId, false, undone.error());
         log.warn("[Healing] 撤销失败 | id={} | action={} | error={}",
                 executionId, row.actionKey(), undone.error());
@@ -493,6 +531,58 @@ public class HealingOrchestrator {
     private String traceId(HealingAction action) {
         return "heal-" + (action.alertId() == null ? "manual" : action.alertId())
                 + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    // ---------------- S3-5：步骤时间线（§3-5.1 可回放） ----------------
+
+    /** 单步节点：name=节点标识，status=节点结果（OK/FAIL/INTERVENED/裁决名），detail=截断摘要。 */
+    private static Map<String, Object> step(String name, String status, String detail) {
+        Map<String, Object> node = new LinkedHashMap<>();
+        node.put("name", name);
+        node.put("status", status);
+        node.put("detail", detail == null ? "" : detail);
+        node.put("at", Instant.now().toString());
+        return node;
+    }
+
+    /** 步骤摘要上限 500 字：详情页不是日志文件，够回放判断即可。 */
+    private static String excerpt(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= 500 ? text : text.substring(0, 500) + "…";
+    }
+
+    /** handle 主线各终态点的一次性写入（失败不拖垮主流程，warn 留痕）。 */
+    private void writeSteps(long id, List<Map<String, Object>> steps) {
+        try {
+            repository.updateStepsJson(id, objectMapper.writeValueAsString(steps));
+        } catch (Exception ex) {
+            log.warn("⚠️ [Healing] 步骤序列落库失败（不影响主流程）| id={} | {}",
+                    id, ex.getMessage());
+        }
+    }
+
+    /** 阶段后追记（读-改-写）：验证/撤销/升级等事后节点逐条追加。 */
+    private void appendStep(long id, String name, String status, String detail) {
+        try {
+            List<Map<String, Object>> steps = new ArrayList<>();
+            String existing = repository.readStepsJson(id);
+            if (existing != null && !existing.isBlank()) {
+                try {
+                    steps.addAll(objectMapper.readValue(existing, new TypeReference<>() { }));
+                } catch (Exception parseEx) {
+                    // 既有序列损坏时清空重写而非整体放弃——损坏本身也要能被看见
+                    log.warn("⚠️ [Healing] 既有步骤序列解析失败，清空重写 | id={} | {}",
+                            id, parseEx.getMessage());
+                }
+            }
+            steps.add(step(name, status, detail));
+            repository.updateStepsJson(id, objectMapper.writeValueAsString(steps));
+        } catch (Exception ex) {
+            log.warn("⚠️ [Healing] 步骤追记失败（不影响主流程）| id={} node={} | {}",
+                    id, name, ex.getMessage());
+        }
     }
 
     private String mapToJson(Map<String, Object> map) {

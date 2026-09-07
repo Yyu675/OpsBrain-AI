@@ -62,9 +62,23 @@ export async function listHealingExecutions(limit = 50): Promise<HealingExecutio
   return unwrapBiz<HealingExecution[]>(payload, '查询执行台账失败')
 }
 
-export async function getHealingExecution(id: number): Promise<HealingExecution> {
+/** 步骤时间节点（S3-5：V10 steps_json 的解析形态，后端已代为 parse） */
+export interface HealingStep {
+  name: string
+  status: string
+  detail: string
+  at: string
+}
+
+/** 台账详情（S3-5 起为双载荷：行本体 + 步骤时间线） */
+export interface HealingExecutionDetail {
+  execution: HealingExecution
+  steps: HealingStep[]
+}
+
+export async function getHealingExecution(id: number): Promise<HealingExecutionDetail> {
   const payload = await http.get(`${API_ENDPOINTS.HEALING}/executions/${id}`)
-  return unwrapBiz<HealingExecution>(payload, '查询台账详情失败')
+  return unwrapBiz<HealingExecutionDetail>(payload, '查询台账详情失败')
 }
 
 /** 手工触发自愈动作：走治理门——直执行 / 建审批单 / 拒绝，结果立即返回 */

@@ -10,6 +10,8 @@ import com.devops.agent.domain.healing.HealingAction;
 import com.devops.agent.domain.healing.HealingExecution;
 import com.devops.agent.domain.healing.HealingExecutionRepository;
 import com.devops.agent.domain.healing.HealingOrchestrator;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +51,9 @@ import java.util.Map;
 @RequestMapping("/api/v1/healing")
 @SaCheckRole("ADMIN")
 public class HealingController {
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
 
     private final HealingOrchestrator orchestrator;
     private final HealingExecutionRepository repository;
@@ -95,12 +101,34 @@ public class HealingController {
         return ApiResponse.success(repository.listRecent(safeLimit));
     }
 
-    /** 台账详情。 */
+    /**
+     * 台账详情（S3-5）：execution 行本体 + steps 时间线（解析好的数组，
+     * 前端不再碰 raw JSON；损坏的序列在此被降级为空数组并留 note）。
+     */
     @GetMapping("/executions/{id}")
-    public ApiResponse<HealingExecution> detail(@PathVariable long id) {
+    public ApiResponse<Map<String, Object>> detail(@PathVariable long id) {
         return repository.findById(id)
-                .map(ApiResponse::success)
+                .map(row -> {
+                    Map<String, Object> body = new LinkedHashMap<>();
+                    body.put("execution", row);
+                    body.put("steps", parseSteps(repository.readStepsJson(id)));
+                    return ApiResponse.success(body);
+                })
                 .orElseGet(() -> ApiResponse.error(ApiCode.NOT_FOUND, "执行台账不存在: " + id));
+    }
+
+    /** steps_json → 数组；损坏/空 → 空数组（回放页给出「无步骤数据」档位）。 */
+    private List<Map<String, Object>> parseSteps(String stepsJson) {
+        if (stepsJson == null || stepsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(stepsJson,
+                    new TypeReference<List<Map<String, Object>>>() { });
+        } catch (Exception e) {
+            log.warn("⚠️ [HealingController] steps_json 解析失败，按空数组降级 | err={}", e.getMessage());
+            return List.of();
+        }
     }
 
     /** 撤销一次已成功且有撤销凭据的执行。 */
