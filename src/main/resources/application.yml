@@ -181,7 +181,7 @@ devops:
 
     # 向量维度铁律（全链路统一）
     vector:
-      dimension: 1536
+      dimension: 512  # S0-2 注入：临时改维度验证红线（验后即还原 1536）
 
     # 语义缓存配置
     semantic-cache:
