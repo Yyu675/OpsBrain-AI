@@ -70,6 +70,10 @@ public class DiagnosisOrchestrator {
     private final AgentStateManager stateManager;
     /** 2-1.5：诊断结果回填工单 AI 分析区。 */
     private final com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService;
+    /** S2-2：假设生成器（规则基线永远可用；LLM 版可插拔后补，此接口不变）。 */
+    private final com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator;
+    /** S2-2：假设落库（点开假设看证据的关联侧）。 */
+    private final com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository;
 
     public DiagnosisOrchestrator(MetricsEvidenceCollector metricsCollector,
                                  ChangesEvidenceCollector changesCollector,
@@ -78,7 +82,9 @@ public class DiagnosisOrchestrator {
                                  DiagnosisEvidenceRepository evidenceRepository,
                                  DiagnosisSessionRepository sessionRepository,
                                  AgentStateManager stateManager,
-                                 com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService) {
+                                 com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService,
+                                 com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator,
+                                 com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository) {
         this.metricsCollector = metricsCollector;
         this.changesCollector = changesCollector;
         this.logsCollector = logsCollector;
@@ -87,6 +93,8 @@ public class DiagnosisOrchestrator {
         this.sessionRepository = sessionRepository;
         this.stateManager = stateManager;
         this.aiAnalysisService = aiAnalysisService;
+        this.hypothesisGenerator = hypothesisGenerator;
+        this.hypothesisRepository = hypothesisRepository;
         this.pool = new ThreadPoolExecutor(
                 CORE, MAX, 30, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(QUEUE),
@@ -126,13 +134,18 @@ public class DiagnosisOrchestrator {
             List<Evidence> evidences = collect(service);
             EvidenceAggregator.AggregateResult aggregated = EvidenceAggregator.aggregate(evidences);
 
-            // ── ② 证据落库（traceId 与本会话同一，供回放）
-            persistEvidence(traceId, evidences);
+            // ── ② 证据落库（traceId 与本会话同一，供回放；同时拿到持久化 id 桥）
+            var ranked = persistEvidence(traceId, evidences);
             stateManager.transition(AgentState.EVIDENCE_READY, TriggerType.TOOL_COMPLETED,
                     "证据就绪：" + aggregated.summary());
 
-            // ── ③ 判定 + 会话收尾（证据不足硬终止转人工）
+            // ── ③ 假设生成与落库（S2-2：INSUFFICIENT 已在聚合层硬终止，不产假设）
             String summary = buildFinalSummary(aggregated);
+            if (aggregated.sufficiency() != EvidenceAggregator.Sufficiency.INSUFFICIENT) {
+                summary = generateAndPersistHypotheses(traceId, aggregated, ranked, summary);
+            }
+
+            // ── ④ 判定 + 会话收尾（证据不足硬终止转人工）
             completeSession(traceId, alertId, ticketId, aggregated, summary);
         } catch (Exception ex) {
             log.error("❌ [Diagnosis] 诊断异常 | traceId={} alertId={} | {}",
@@ -157,17 +170,21 @@ public class DiagnosisOrchestrator {
         return evidences;
     }
 
-    private void persistEvidence(String traceId, List<Evidence> evidences) {
+    private List<com.devops.agent.domain.diagnosis.HypothesisGenerator.RankedEvidence> persistEvidence(
+            String traceId, List<Evidence> evidences) {
+        List<com.devops.agent.domain.diagnosis.HypothesisGenerator.RankedEvidence> ranked = new ArrayList<>();
         for (Evidence e : evidences) {
             try {
-                evidenceRepository.save(traceId, "diagnosis-engine", e.evidenceType(),
+                long id = evidenceRepository.save(traceId, "diagnosis-engine", e.evidenceType(),
                         e.status().name(), e.title(),
                         e.toToolPayload(), e.sourceRef(), e.relevanceScore(),
                         e.collectedAt() == null ? null : Timestamp.from(e.collectedAt()));
+                ranked.add(new com.devops.agent.domain.diagnosis.HypothesisGenerator.RankedEvidence(id, e));
             } catch (Exception ex) {
                 log.warn("⚠️ [Diagnosis] 证据落库失败 | type={} why={}", e.evidenceType(), ex.getMessage());
             }
         }
+        return ranked;
     }
 
     private void completeSession(String traceId, Long alertId, String ticketId,
@@ -244,6 +261,30 @@ public class DiagnosisOrchestrator {
             case WEAK -> "证据薄弱：置信度上限 0.6，建议人工复核并补证后推理。";
             case INSUFFICIENT -> "证据不足：关键方向证据缺失，终止推理。建议人工介入并附已获得的取证记录。";
         };
+    }
+
+    /** S2-2：调用生成器（任一实现）出 Top-3，落库并把 Top-1 并入摘要。
+     *  生成/落库失败不反噬——摘要只退化为「无数假设版」，诊断主流程照走。 */
+    private String generateAndPersistHypotheses(
+            String traceId,
+            EvidenceAggregator.AggregateResult aggregated,
+            List<com.devops.agent.domain.diagnosis.HypothesisGenerator.RankedEvidence> ranked,
+            String summary) {
+        try {
+            var hypotheses = hypothesisGenerator.generate(aggregated, ranked);
+            if (hypotheses == null || hypotheses.isEmpty()) {
+                return summary + "；本证据面无可落地假设（规则基线判为无物可说）";
+            }
+            for (var h : hypotheses) {
+                hypothesisRepository.save(traceId, h);
+            }
+            return summary + "；Top-1 假设：" + hypotheses.get(0).statement()
+                    + "（置信度 " + String.format("%.2f", hypotheses.get(0).confidence()) + "）";
+        } catch (Exception ex) {
+            log.warn("⚠️ [Diagnosis] 假设生成/落库失败（摘要退化为默认版） | traceId={} why={}",
+                    traceId, ex.getMessage());
+            return summary;
+        }
     }
 
     /** 供告警控制器在决策时感知诊断池压力（「需要人工吗」另一个维度的告警）。 */

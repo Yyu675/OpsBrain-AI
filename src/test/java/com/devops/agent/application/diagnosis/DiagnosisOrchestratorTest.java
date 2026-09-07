@@ -57,6 +57,10 @@ class DiagnosisOrchestratorTest {
     private AgentStateManager stateManager;
     @Mock
     private com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService;
+    @Mock
+    private com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator;
+    @Mock
+    private com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository;
 
     private DiagnosisOrchestrator orchestrator;
     private String traceId;
@@ -77,10 +81,12 @@ class DiagnosisOrchestratorTest {
                 .thenReturn(new Evidence(
                         Evidence.EvidenceStatus.SUCCESS, "logs", "完成",
                         Map.of("patternCount", 3, "level", "ERROR"), "ref", null, Instant.now()));
+        when(hypothesisGenerator.generate(any(), any()))
+                .thenReturn(java.util.List.of());
         orchestrator = new DiagnosisOrchestrator(
                 metricsCollector, changesCollector, logsCollector,
                 catalog, evidenceRepository, sessionRepository, stateManager,
-                aiAnalysisService);
+                aiAnalysisService, hypothesisGenerator, hypothesisRepository);
     }
 
     @AfterEach
