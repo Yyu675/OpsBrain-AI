@@ -5,6 +5,7 @@ import com.devops.agent.domain.evidence.Evidence;
 import com.devops.agent.domain.evidence.MetricsEvidenceCollector;
 import com.devops.agent.domain.evidence.MetricsQueryCatalog;
 import com.devops.agent.domain.evidence.ChangesEvidenceCollector;
+import com.devops.agent.domain.evidence.LogsEvidenceCollector;
 import com.devops.agent.domain.biz.entity.TicketEnums;
 import com.devops.agent.domain.biz.service.TicketService;
 import com.devops.agent.domain.rag.Retriever;
@@ -67,6 +68,10 @@ public class DevOpsTools {
     /** S1-2：变更取证装配器。 */
     @Autowired
     private ChangesEvidenceCollector changesEvidenceCollector;
+
+    /** S1-3：日志取证装配器。 */
+    @Autowired
+    private LogsEvidenceCollector logsEvidenceCollector;
 
     /**
      * 工具1: 检索运维知识库
@@ -303,6 +308,58 @@ public class DevOpsTools {
         }
         Evidence evidence = changesEvidenceCollector.collect(service, range);
         return "【变更取证结果】" + evidence.toToolPayload();
+    }
+
+    /**
+     * S1-3：日志取证工具（路线图 §5.4）。
+     * <p>
+     * 样本一律经 PromptInjectionGuard（LOG_CONTENT 通道）检测并包裹
+     * {@code <untrusted_log>}；单次载荷预算 2000 字符，超量自动摘要化；
+     * 数据源未启用=UNAVAILABLE（默认配置即为未启用——部署形态如实报告）。
+     * </p>
+     */
+    @Tool("查询服务在告警时间窗内的日志（默认 ERROR 级），聚合为错误模式用于故障取证")
+    @ToolMeta(
+            name = "queryServiceLogs",
+            description = "查询 Loki 日志并做 Drain-lite 模式聚类；样本限 3 条/模式并经注入检测包裹；载荷 ≤2000 字符",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#service + '_' + #range + '_' + #level + '_' + #keyword",
+            requiresApproval = false,
+            timeoutMs = 12000,
+            maxRetries = 1,
+            compensationAction = ""
+    )
+    public String queryServiceLogs(@P("服务名，如 order-service") String service,
+                                   @P("时间窗，如 30m / 2h / 1d，默认 30m，上限 7d") String range,
+                                   @P("日志级别：ERROR / WARN / INFO / DEBUG / ALL，默认 ERROR") String level,
+                                   @P("可选：内容过滤关键词，如 timeout、OutOfMemory") String keyword) {
+        log.info("[Tool] queryServiceLogs 被调用,service={}, range={}, level={}, keyword={}",
+                service, range, level, keyword);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod(
+                    "queryServiceLogsInternal", String.class, String.class, String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool(
+                    "queryServiceLogs", this, method, new Object[]{service, range, level, keyword});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryServiceLogs 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("日志取证工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryServiceLogs 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询服务日志失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 内部实现：参数白名单 → 采集 → 稳定序列化。 */
+    public String queryServiceLogsInternal(String service, String range, String level, String keyword) {
+        try {
+            metricsQueryCatalog.requireValidService(service);
+        } catch (IllegalArgumentException e) {
+            return "参数错误: " + e.getMessage();
+        }
+        Evidence evidence = logsEvidenceCollector.collect(service, range, level, keyword);
+        return "【日志取证结果】" + evidence.toToolPayload();
     }
 
     @Tool("用户需要开工单/上报二级运维时调用")

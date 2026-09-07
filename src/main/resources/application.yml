@@ -63,7 +63,19 @@ resilience4j:
         # 就成了误导。抛出型异常 MetricsIntegrationDisabledException 由这里排出统计
         # （注解没有 ignoreExceptions 属性，忽略清单只能写在实例配置里）。
         ignore-exceptions: com.devops.agent.infrastructure.metrics.MetricsIntegrationDisabledException
-      # 预留实例槽：logs / cmdb 客户端随阶段 1（S1-2/S1-3）落地时接挂。
+      logs:
+        # S1-3（路线图 §5.4）：logs 实例槽接线——T14 挂账的恢复条件成就。
+        # 参数与 prometheus 同语义：人工查看型流量，容忍单点抖动、不拖垮现场；
+        # 未启用是部署形态，不吃失败预算（ignore-exceptions）。
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        ignore-exceptions: com.devops.agent.infrastructure.logs.LogsIntegrationDisabledException
+      # 预留实例槽：cmdb 客户端随阶段 1 后续工具落地时接挂（同形配置拍平即可）。
   ratelimiter:
     instances:
       llm:
@@ -481,6 +493,19 @@ devops:
     memory: 'sum(container_memory_working_set_bytes{pod=~"{service}.*"})'
     error-rate: 'sum(rate(http_server_requests_seconds_count{application="{service}",status=~"5.."}[5m]))'
     latency-p99: 'histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application="{service}"}[5m])) by (le))'
+
+  # ================= S1-3 日志数据源（Loki）=================
+  # 默认未启用：compose/CI 均没有 Loki——部署形态如实上报 UNAVAILABLE，
+  # 不因「查不了」而伪装「查过没有」。
+  logs:
+    loki:
+      # docker-compose.dev 若后续接入 Loki，宿主机映射口与 metrics 同风格（23100）
+      base-url: ${LOKI_BASE_URL:http://localhost:23100}
+      timeout-ms: ${LOKI_TIMEOUT_MS:5000}
+      enabled: ${LOKI_ENABLED:false}
+      # LogQL 流选择器的 label 键。现场 label 约定不同（app/job/container/service_name）
+      # 时改这里 —— 与 metrics 的 query-catalog 同理：模板数据进配置，不进代码。
+      service-label: ${LOKI_SERVICE_LABEL:app}
 
 # ================= 自身可观测性（P2，2026-08-26 新增）=================
 # 系统监控别人的前提是先能监控自己：
