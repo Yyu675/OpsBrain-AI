@@ -71,10 +71,19 @@ class MetricsAnomalyDetectorTest {
 
     @Test
     void percentileMatchesR7Definition() {
-        // R-7 线性插值：n=4 时 P25=idx 0.75 → v0+0.75*(v1-v0)
-        double p25 = MetricsAnomalyDetector.percentile(List.of(0.0, 10.0, 20.0, 30.0), 25);
-        assertEquals(7.5, p25, 1e-9);
-        double p50 = MetricsAnomalyDetector.percentile(List.of(0.0, 10.0, 20.0, 30.0), 50);
-        assertEquals(15.0, p50, 1e-9);
+        // R-7 线性插值口径逐点钉死（idx = p/100 * (n-1)，取整两邻线性插值）：
+        // n=4: P25 idx 0.75 → 0+0.75*(10-0)=7.5（插值区）；
+        // n=5: P25 idx 1.0 → 精确落点 10；P50 idx 2.0 → 20；P75 idx 3.0 → 30；
+        // n=10: P10 idx 0.9 → 0+0.9*(10-0)=9.0（非整数插值）
+        assertEquals(7.5, MetricsAnomalyDetector.percentile(
+                List.of(0.0, 10.0, 20.0, 30.0), 25), 1e-9);
+        assertEquals(10.0, MetricsAnomalyDetector.percentile(
+                List.of(0.0, 10.0, 20.0, 30.0, 40.0), 25), 1e-9);
+        assertEquals(20.0, MetricsAnomalyDetector.percentile(
+                List.of(0.0, 10.0, 20.0, 30.0, 40.0), 50), 1e-9);
+        assertEquals(30.0, MetricsAnomalyDetector.percentile(
+                List.of(0.0, 10.0, 20.0, 30.0, 40.0), 75), 1e-9);
+        assertEquals(9.0, MetricsAnomalyDetector.percentile(
+                List.of(0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0), 10), 1e-9);
     }
 }

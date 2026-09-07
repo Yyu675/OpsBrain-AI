@@ -38,8 +38,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "devops.ai.mode=MOCK",
         // 与 CB 专修测试隔离：本类不关熔断状态机的事，全部取默认
         "devops.metrics.prometheus.enabled=true",
-        "devops.metrics.query-catalog.cpu=sum(rate(container_cpu_usage_seconds_total{pod=~\"{service}.*\"}[5m]))",
-        "devops.metrics.query-catalog.memory=sum(container_memory_working_set_bytes{pod=~\"{service}.*\"})"
+        // 注意：query-catalog 不能经 TestPropertySource 逐 key 覆盖——
+        // Spring 对 @ConfigurationProperties Map 保守地「整体替换」，
+        // 部分覆盖会把其余键清空（实测：cpu/memory 之外全部消失），
+        // 本类直接用 yml 目录全集。
 })
 @DisplayName("S1-1 指标取证采集器：四态与 sourceRef 可复现")
 class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
