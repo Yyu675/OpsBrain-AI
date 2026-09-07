@@ -7,6 +7,7 @@ import com.devops.agent.domain.governance.ApprovalMode;
 import com.devops.agent.domain.governance.AutomationGovernanceService;
 import com.devops.agent.domain.governance.AutomationPolicy;
 import com.devops.agent.domain.governance.EscalateTarget;
+import com.devops.agent.domain.governance.GovernanceViews;
 import com.devops.agent.domain.governance.RiskPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -421,7 +422,8 @@ class AutomationGovernanceControllerWebTest {
         @DisplayName("evaluate：省略 environment 时默认 prod")
         void evaluateDefaultsToProd() throws Exception {
             when(service.evaluate(anyString(), anyString()))
-                    .thenReturn(Map.of("allowed", false, "reason", "未登记"));
+                    .thenReturn(GovernanceViews.EvaluateResult.deny(
+                            "k8s.pod.restart", "prod", "未登记"));
 
             mockMvc.perform(post("/api/v1/governance/evaluate")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -437,7 +439,8 @@ class AutomationGovernanceControllerWebTest {
         @DisplayName("predict/simulate：输入原样透传，结论逐条返回")
         void simulatePassesInput() throws Exception {
             when(service.simulate(any(), any(), any(), any(), anyString()))
-                    .thenReturn(Map.of("matchedCount", 1L, "summary", "将由策略处理"));
+                    .thenReturn(new GovernanceViews.SimulateResult(
+                            null, List.of(), 1L, null, "将由策略处理"));
 
             mockMvc.perform(post("/api/v1/governance/policies/simulate")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -465,7 +468,8 @@ class AutomationGovernanceControllerWebTest {
             p.setEffective(Boolean.FALSE);
             p.setIneffectiveReason("引用的动作已停用");
             when(service.listAutomationPolicies(any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(Map.of("items", List.of(p), "total", 1L));
+                    .thenReturn(new GovernanceViews.AutomationPolicyPage(
+                            List.of(p), 1L, 1, 20, 1));
 
             mockMvc.perform(get("/api/v1/governance/policies"))
                     .andExpect(status().isOk())

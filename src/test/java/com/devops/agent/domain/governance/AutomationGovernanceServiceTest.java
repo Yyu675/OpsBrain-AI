@@ -6,9 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -289,9 +287,9 @@ class AutomationGovernanceServiceTest {
         void deniesUnregisteredAction() {
             when(allowlistRepo.findByActionKey("rm.rf.slash")).thenReturn(Optional.empty());
 
-            Map<String, Object> r = service.evaluate("rm.rf.slash", "prod");
-            assertEquals(false, r.get("allowed"));
-            assertTrue(String.valueOf(r.get("reason")).contains("未登记"));
+            GovernanceViews.EvaluateResult r = service.evaluate("rm.rf.slash", "prod");
+            assertFalse(r.allowed());
+            assertTrue(r.reason().contains("未登记"));
         }
 
         @Test
@@ -301,9 +299,9 @@ class AutomationGovernanceServiceTest {
             when(allowlistRepo.findByActionKey("k8s.pod.restart")).thenReturn(Optional.of(e));
             when(policyRepo.findByRiskLevel("CONTROLLED_WRITE")).thenReturn(Optional.empty());
 
-            Map<String, Object> r = service.evaluate("k8s.pod.restart", "prod");
-            assertEquals(false, r.get("allowed"));
-            assertTrue(String.valueOf(r.get("reason")).contains("策略缺失"));
+            GovernanceViews.EvaluateResult r = service.evaluate("k8s.pod.restart", "prod");
+            assertFalse(r.allowed());
+            assertTrue(r.reason().contains("策略缺失"));
         }
 
         @Test
@@ -313,9 +311,9 @@ class AutomationGovernanceServiceTest {
             e.setEnabled(false);
             when(allowlistRepo.findByActionKey("k8s.pod.restart")).thenReturn(Optional.of(e));
 
-            Map<String, Object> r = service.evaluate("k8s.pod.restart", "staging");
-            assertEquals(false, r.get("allowed"));
-            assertTrue(String.valueOf(r.get("reason")).contains("停用"));
+            GovernanceViews.EvaluateResult r = service.evaluate("k8s.pod.restart", "staging");
+            assertFalse(r.allowed());
+            assertTrue(r.reason().contains("停用"));
         }
 
         @Test
@@ -326,9 +324,9 @@ class AutomationGovernanceServiceTest {
             when(policyRepo.findByRiskLevel("CONTROLLED_WRITE")).thenReturn(
                     Optional.of(policy("CONTROLLED_WRITE", ApprovalMode.SINGLE, "staging", false, 5)));
 
-            Map<String, Object> r = service.evaluate("k8s.pod.restart", "staging");
-            assertEquals(false, r.get("allowed"));
-            assertTrue(String.valueOf(r.get("reason")).contains("未开启自动执行"));
+            GovernanceViews.EvaluateResult r = service.evaluate("k8s.pod.restart", "staging");
+            assertFalse(r.allowed());
+            assertTrue(r.reason().contains("未开启自动执行"));
         }
 
         @Test
@@ -340,12 +338,12 @@ class AutomationGovernanceServiceTest {
             when(policyRepo.findByRiskLevel("CONTROLLED_WRITE")).thenReturn(
                     Optional.of(policy("CONTROLLED_WRITE", ApprovalMode.SINGLE, "staging", true, 5)));
 
-            Map<String, Object> r = service.evaluate("host.log.rotate", "staging");
-            assertEquals(true, r.get("allowed"));
+            GovernanceViews.EvaluateResult r = service.evaluate("host.log.rotate", "staging");
+            assertTrue(r.allowed());
             // 条目没设 requiresApproval → 跟随策略的 SINGLE → true
-            assertEquals(Boolean.TRUE, r.get("requiresApproval"));
+            assertEquals(Boolean.TRUE, r.requiresApproval());
             // 条目 2 与策略 5 取小 → 2
-            assertEquals(2, r.get("blastRadiusCount"));
+            assertEquals(2, r.blastRadiusCount());
         }
     }
 
@@ -386,11 +384,8 @@ class AutomationGovernanceServiceTest {
             stubPolicy(p);
 
             ActionAllowlistEntry e = entry("k8s.pod.describe", "READ_ONLY", "prod");
-            Map<String, Object> page = new LinkedHashMap<>();
-            page.put("items", List.of(e));
-            page.put("total", 1L);
             when(allowlistRepo.query(any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(page);
+                    .thenReturn(new GovernanceViews.ActionPage(List.of(e), 1L, 1, 20, 1));
 
             service.listActions(null, null, null, null, 1, 20);
             assertEquals(Boolean.FALSE, e.getEffectiveRequiresApproval());
@@ -448,16 +443,15 @@ class AutomationGovernanceServiceTest {
         @Test
         @DisplayName("筛选选项的风险等级来自枚举，即便库里当前没有该等级的动作")
         void riskLevelOptionsComeFromEnum() {
-            when(allowlistRepo.filterOptions()).thenReturn(Map.of("categories", List.of("k8s")));
+            when(allowlistRepo.listCategories()).thenReturn(List.of("k8s"));
 
-            Map<String, Object> options = service.actionFilterOptions();
-            @SuppressWarnings("unchecked")
-            List<Map<String, String>> levels = (List<Map<String, String>>) options.get("riskLevels");
+            GovernanceViews.ActionFilterOptions options = service.actionFilterOptions();
+            List<GovernanceViews.RiskLevelOption> levels = options.riskLevels();
 
             assertNotNull(levels);
             assertEquals(ToolRiskLevel.values().length, levels.size());
             assertTrue(levels.stream()
-                    .anyMatch(m -> "HIGH_RISK_EXECUTION".equals(m.get("value"))));
+                    .anyMatch(o -> "HIGH_RISK_EXECUTION".equals(o.value())));
         }
 
         @Test

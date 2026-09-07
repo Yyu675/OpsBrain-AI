@@ -10,7 +10,6 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -73,10 +72,9 @@ public class ActionAllowlistRepository {
      * @param category   类别精确匹配
      * @param riskLevel  风险等级精确匹配
      * @param enabled    启用状态，null = 不限
-     * @return {@code {items, total, page, size, totalPages}}
      */
-    public Map<String, Object> query(String keyword, String category, String riskLevel,
-                                     Boolean enabled, int page, int size) {
+    public GovernanceViews.ActionPage query(String keyword, String category, String riskLevel,
+                                            Boolean enabled, int page, int size) {
         StringBuilder where = new StringBuilder(" WHERE 1=1");
         List<Object> args = new ArrayList<>();
 
@@ -132,13 +130,7 @@ public class ActionAllowlistRepository {
              LIMIT ? OFFSET ?
             """, ROW_MAPPER, pageArgs.toArray());
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("items", items);
-        result.put("total", totalCount);
-        result.put("page", safePage);
-        result.put("size", safeSize);
-        result.put("totalPages", totalPages);
-        return result;
+        return new GovernanceViews.ActionPage(items, totalCount, safePage, safeSize, totalPages);
     }
 
     public Optional<ActionAllowlistEntry> findById(long id) {
@@ -153,18 +145,22 @@ public class ActionAllowlistRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
-    /** 类别聚合，供筛选下拉。从实际数据聚合而非硬编码，避免列出库里没有的选项 */
-    public Map<String, Object> filterOptions() {
-        List<String> categories = jdbcTemplate.queryForList(
+    /**
+     * 类别聚合，供筛选下拉。从实际数据聚合而非硬编码，避免列出库里没有的选项。
+     *
+     * <p>P0-2b 起只返回类别列表本身——原先包一层 {@code {categories: [...]}}
+     * 的 Map 是 service 端就绪前的临时形态，现在由
+     * {@code AutomationGovernanceService.actionFilterOptions} 统一组装
+     * {@link GovernanceViews.ActionFilterOptions}。</p>
+     */
+    public List<String> listCategories() {
+        return jdbcTemplate.queryForList(
                 "SELECT DISTINCT category FROM sys_action_allowlist ORDER BY category",
                 String.class);
-        Map<String, Object> options = new LinkedHashMap<>();
-        options.put("categories", categories);
-        return options;
     }
 
     /** 启用/停用条目的计数，供页面顶部统计条 */
-    public Map<String, Object> stats() {
+    public GovernanceViews.ActionStats stats() {
         Map<String, Object> row = jdbcTemplate.queryForMap("""
             SELECT COUNT(*)                                        AS total,
                    COUNT(*) FILTER (WHERE enabled)                 AS enabled_count,
@@ -174,13 +170,17 @@ public class ActionAllowlistRepository {
                                                                    AS prod_enabled
               FROM sys_action_allowlist
             """);
-        Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("total", row.get("total"));
-        stats.put("enabledCount", row.get("enabled_count"));
-        // 这两个是「该警惕」的数字，单独拎出来让管理员一眼看到风险敞口
-        stats.put("highRiskEnabled", row.get("high_risk_enabled"));
-        stats.put("prodEnabled", row.get("prod_enabled"));
-        return stats;
+        // 后两个是「该警惕」的数字，单独拎出来让管理员一眼看到风险敞口
+        return new GovernanceViews.ActionStats(
+                toLong(row.get("total")),
+                toLong(row.get("enabled_count")),
+                toLong(row.get("high_risk_enabled")),
+                toLong(row.get("prod_enabled")));
+    }
+
+    /** COUNT(*) 在 PG 里是 BIGINT（JDBC 返回 Long），统一过 Number 兜底，防止驱动实现差异 */
+    private static long toLong(Object value) {
+        return value instanceof Number n ? n.longValue() : 0L;
     }
 
     // ==================== 写入 ====================

@@ -10,7 +10,6 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -63,8 +62,9 @@ public class AutomationPolicyRepository {
 
     // ==================== 查询 ====================
 
-    public Map<String, Object> query(String keyword, String actionKey, String environment,
-                                     Boolean enabled, int page, int size) {
+    public GovernanceViews.AutomationPolicyPage query(String keyword, String actionKey,
+                                                      String environment,
+                                                      Boolean enabled, int page, int size) {
         StringBuilder where = new StringBuilder(" WHERE 1=1");
         List<Object> args = new ArrayList<>();
 
@@ -111,13 +111,8 @@ public class AutomationPolicyRepository {
              LIMIT ? OFFSET ?
             """, ROW_MAPPER, pageArgs.toArray());
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("items", items);
-        result.put("total", totalCount);
-        result.put("page", safePage);
-        result.put("size", safeSize);
-        result.put("totalPages", totalPages);
-        return result;
+        return new GovernanceViews.AutomationPolicyPage(
+                items, totalCount, safePage, safeSize, totalPages);
     }
 
     public Optional<AutomationPolicy> findById(long id) {
@@ -149,7 +144,7 @@ public class AutomationPolicyRepository {
         return n == null ? 0 : n;
     }
 
-    public Map<String, Object> stats() {
+    public GovernanceViews.PolicyStats stats() {
         Map<String, Object> row = jdbcTemplate.queryForMap("""
             SELECT COUNT(*)                                          AS total,
                    COUNT(*) FILTER (WHERE enabled)                   AS enabled_count,
@@ -159,14 +154,18 @@ public class AutomationPolicyRepository {
                                       AND environment = 'prod')      AS prod_live_count
               FROM sys_automation_policy
             """);
-        Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("total", row.get("total"));
-        stats.put("enabledCount", row.get("enabled_count"));
-        stats.put("dryRunCount", row.get("dry_run_count"));
-        // 这两个是真正「会动手」的策略数——风险敞口，单独拎出来
-        stats.put("liveCount", row.get("live_count"));
-        stats.put("prodLiveCount", row.get("prod_live_count"));
-        return stats;
+        // 后两个是真正「会动手」的策略数——风险敞口，单独拎出来
+        return new GovernanceViews.PolicyStats(
+                toLong(row.get("total")),
+                toLong(row.get("enabled_count")),
+                toLong(row.get("dry_run_count")),
+                toLong(row.get("live_count")),
+                toLong(row.get("prod_live_count")));
+    }
+
+    /** COUNT(*) 在 PG 里是 BIGINT（JDBC 返回 Long），统一过 Number 兜底，防止驱动实现差异 */
+    private static long toLong(Object value) {
+        return value instanceof Number n ? n.longValue() : 0L;
     }
 
     // ==================== 写入 ====================

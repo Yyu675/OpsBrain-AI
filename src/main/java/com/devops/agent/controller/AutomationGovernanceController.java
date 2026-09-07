@@ -8,6 +8,7 @@ import com.devops.agent.domain.governance.ApprovalMode;
 import com.devops.agent.domain.governance.AutomationGovernanceService;
 import com.devops.agent.domain.governance.AutomationPolicy;
 import com.devops.agent.domain.governance.EscalateTarget;
+import com.devops.agent.domain.governance.GovernanceViews;
 import com.devops.agent.domain.governance.RiskPolicy;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -24,7 +25,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 自动化治理配置接口（L3）：风险等级策略 + 动作白名单。
@@ -192,15 +192,12 @@ public class AutomationGovernanceController {
     // ==================================================================
 
     @GetMapping("/risk-policies")
-    public ApiResponse<Map<String, Object>> listPolicies() {
+    public ApiResponse<GovernanceViews.RiskPolicyOverview> listPolicies() {
         List<RiskPolicy> policies = service.listPolicies();
-        return ApiResponse.success(Map.of(
-                "items", policies,
-                // 词表随数据一起下发，前端不必自己维护一份枚举镜像——
-                // 镜像必然漂移，本项目已因此踩过工单状态机 8 处不一致
-                "approvalModes", describeApprovalModes(),
-                "escalateTargets", describeEscalateTargets()
-        ));
+        // 词表随数据一起下发，前端不必自己维护一份枚举镜像——
+        // 镜像必然漂移，本项目已因此踩过工单状态机 8 处不一致
+        return ApiResponse.success(new GovernanceViews.RiskPolicyOverview(
+                policies, describeApprovalModes(), describeEscalateTargets()));
     }
 
     /**
@@ -235,7 +232,7 @@ public class AutomationGovernanceController {
     // ==================================================================
 
     @GetMapping("/actions")
-    public ApiResponse<Map<String, Object>> listActions(
+    public ApiResponse<GovernanceViews.ActionPage> listActions(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String riskLevel,
@@ -247,12 +244,12 @@ public class AutomationGovernanceController {
     }
 
     @GetMapping("/actions/stats")
-    public ApiResponse<Map<String, Object>> actionStats() {
+    public ApiResponse<GovernanceViews.ActionStats> actionStats() {
         return ApiResponse.success(service.actionStats());
     }
 
     @GetMapping("/actions/filter-options")
-    public ApiResponse<Map<String, Object>> actionFilterOptions() {
+    public ApiResponse<GovernanceViews.ActionFilterOptions> actionFilterOptions() {
         return ApiResponse.success(service.actionFilterOptions());
     }
 
@@ -301,7 +298,7 @@ public class AutomationGovernanceController {
      * 有了它，配完立刻能问一句、拿到带原因的明确答复。</p>
      */
     @PostMapping("/evaluate")
-    public ApiResponse<Map<String, Object>> evaluate(@RequestBody EvaluateRequest req) {
+    public ApiResponse<GovernanceViews.EvaluateResult> evaluate(@RequestBody EvaluateRequest req) {
         if (req.actionKey() == null || req.actionKey().isBlank()) {
             throw new IllegalArgumentException("动作标识不能为空");
         }
@@ -315,7 +312,7 @@ public class AutomationGovernanceController {
     // ==================================================================
 
     @GetMapping("/policies")
-    public ApiResponse<Map<String, Object>> listPolicies(
+    public ApiResponse<GovernanceViews.AutomationPolicyPage> listPolicies(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String actionKey,
             @RequestParam(required = false) String environment,
@@ -327,7 +324,7 @@ public class AutomationGovernanceController {
     }
 
     @GetMapping("/policies/stats")
-    public ApiResponse<Map<String, Object>> policyStats() {
+    public ApiResponse<GovernanceViews.PolicyStats> policyStats() {
         return ApiResponse.success(service.automationPolicyStats());
     }
 
@@ -391,11 +388,11 @@ public class AutomationGovernanceController {
      * 不给删会让列表堆满废弃规则，干扰对求值顺序的判断。</p>
      */
     @DeleteMapping("/policies/{id}")
-    public ApiResponse<Map<String, Object>> deletePolicy(
+    public ApiResponse<GovernanceViews.DeleteResult> deletePolicy(
             @PathVariable long id,
             @RequestParam(required = false) Integer version) {
         service.deleteAutomationPolicy(id, requireVersion(version));
-        return ApiResponse.success(Map.of("id", id, "deleted", true), "策略已删除");
+        return ApiResponse.success(new GovernanceViews.DeleteResult(id, true), "策略已删除");
     }
 
     /**
@@ -406,7 +403,7 @@ public class AutomationGovernanceController {
      * 实际把整个集群都包进去了，而这在真实告警来临前无从发现。</p>
      */
     @PostMapping("/policies/simulate")
-    public ApiResponse<Map<String, Object>> simulate(@RequestBody SimulateRequest req) {
+    public ApiResponse<GovernanceViews.SimulateResult> simulate(@RequestBody SimulateRequest req) {
         String env = req.environment() == null || req.environment().isBlank()
                 ? "prod" : req.environment().trim().toLowerCase();
         return ApiResponse.success(service.simulate(
@@ -499,20 +496,17 @@ public class AutomationGovernanceController {
         return value;
     }
 
-    private static List<Map<String, Object>> describeApprovalModes() {
+    private static List<GovernanceViews.ApprovalModeOption> describeApprovalModes() {
         return java.util.Arrays.stream(ApprovalMode.values())
-                .map(m -> Map.<String, Object>of(
-                        "value", m.name(),
-                        "label", m.getDisplayName(),
-                        "requiredApprovers", m.getRequiredApprovers()))
+                .map(m -> new GovernanceViews.ApprovalModeOption(
+                        m.name(), m.getDisplayName(), m.getRequiredApprovers()))
                 .toList();
     }
 
-    private static List<Map<String, Object>> describeEscalateTargets() {
+    private static List<GovernanceViews.EscalateTargetOption> describeEscalateTargets() {
         return java.util.Arrays.stream(EscalateTarget.values())
-                .map(t -> Map.<String, Object>of(
-                        "value", t.name(),
-                        "label", t.getDisplayName()))
+                .map(t -> new GovernanceViews.EscalateTargetOption(
+                        t.name(), t.getDisplayName()))
                 .toList();
     }
 }

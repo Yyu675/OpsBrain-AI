@@ -5,9 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -320,11 +318,9 @@ class AutomationPolicyServiceTest {
         @DisplayName("列表查询为每一行装填，前端不必自己判断")
         void appliesToListItems() {
             AutomationPolicy p = policy("测试", "P3", "k8s.pod.restart", "dev");
-            Map<String, Object> page = new LinkedHashMap<>();
-            page.put("items", List.of(p));
-            page.put("total", 1L);
             when(policyRepo.query(any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(page);
+                    .thenReturn(new GovernanceViews.AutomationPolicyPage(
+                            List.of(p), 1L, 1, 20, 1));
             when(allowlistRepo.findByActionKey("k8s.pod.restart"))
                     .thenReturn(Optional.of(action("k8s.pod.restart", true, "dev")));
 
@@ -342,9 +338,9 @@ class AutomationPolicyServiceTest {
         void reportsNoMatch() {
             when(policyRepo.findEnabledInEvalOrder()).thenReturn(List.of());
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
-            assertEquals(0L, r.get("matchedCount"));
-            assertTrue(String.valueOf(r.get("summary")).contains("默认流程"));
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
+            assertEquals(0L, r.matchedCount());
+            assertTrue(r.summary().contains("默认流程"));
         }
 
         @Test
@@ -358,10 +354,9 @@ class AutomationPolicyServiceTest {
             when(riskRepo.findByRiskLevel("CONTROLLED_WRITE"))
                     .thenReturn(Optional.of(risk(true, ApprovalMode.NONE, "dev")));
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) r.get("evaluated");
-            assertEquals("DRY_RUN", rows.get(0).get("outcome"));
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
+            List<GovernanceViews.SimulatedRow> rows = r.evaluated();
+            assertEquals("DRY_RUN", rows.get(0).outcome());
         }
 
         @Test
@@ -375,10 +370,9 @@ class AutomationPolicyServiceTest {
             when(riskRepo.findByRiskLevel("CONTROLLED_WRITE"))
                     .thenReturn(Optional.of(risk(true, ApprovalMode.SINGLE, "dev")));
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) r.get("evaluated");
-            assertEquals("PENDING_APPROVAL", rows.get(0).get("outcome"));
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
+            List<GovernanceViews.SimulatedRow> rows = r.evaluated();
+            assertEquals("PENDING_APPROVAL", rows.get(0).outcome());
         }
 
         @Test
@@ -390,11 +384,10 @@ class AutomationPolicyServiceTest {
             when(allowlistRepo.findByActionKey("k8s.pod.restart"))
                     .thenReturn(Optional.of(action("k8s.pod.restart", false, "dev")));
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) r.get("evaluated");
-            assertEquals("BLOCKED", rows.get(0).get("outcome"));
-            assertTrue(String.valueOf(rows.get(0).get("reason")).contains("停用"));
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
+            List<GovernanceViews.SimulatedRow> rows = r.evaluated();
+            assertEquals("BLOCKED", rows.get(0).outcome());
+            assertTrue(rows.get(0).reason().contains("停用"));
         }
 
         @Test
@@ -412,13 +405,12 @@ class AutomationPolicyServiceTest {
             when(riskRepo.findByRiskLevel("CONTROLLED_WRITE"))
                     .thenReturn(Optional.of(risk(true, ApprovalMode.NONE, "dev")));
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) r.get("evaluated");
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
+            List<GovernanceViews.SimulatedRow> rows = r.evaluated();
 
             // 区分「求值了但没匹配」与「根本没被求值」——两者的排查方向完全不同
-            assertEquals(Boolean.TRUE, rows.get(1).get("skipped"));
-            assertTrue(String.valueOf(rows.get(1).get("reason")).contains("命中即停"));
+            assertTrue(rows.get(1).skipped());
+            assertTrue(rows.get(1).reason().contains("命中即停"));
         }
 
         @Test
@@ -427,11 +419,10 @@ class AutomationPolicyServiceTest {
             AutomationPolicy p = policy("测试", "P3", "k8s.pod.restart", "dev");
             when(policyRepo.findEnabledInEvalOrder()).thenReturn(List.of(p));
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "prod");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) r.get("evaluated");
-            assertEquals(false, rows.get(0).get("matched"));
-            assertTrue(String.valueOf(rows.get(0).get("reason")).contains("生效环境"));
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "prod");
+            List<GovernanceViews.SimulatedRow> rows = r.evaluated();
+            assertFalse(rows.get(0).matched());
+            assertTrue(rows.get(0).reason().contains("生效环境"));
         }
 
         @Test
@@ -440,10 +431,9 @@ class AutomationPolicyServiceTest {
             AutomationPolicy p = policy("测试", "P0", "k8s.pod.restart", "dev");
             when(policyRepo.findEnabledInEvalOrder()).thenReturn(List.of(p));
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) r.get("evaluated");
-            String reason = String.valueOf(rows.get(0).get("reason"));
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
+            List<GovernanceViews.SimulatedRow> rows = r.evaluated();
+            String reason = rows.get(0).reason();
             assertTrue(reason.contains("级别要求"), reason);
             assertTrue(reason.contains("P3"), reason);
         }
@@ -458,9 +448,9 @@ class AutomationPolicyServiceTest {
             when(riskRepo.findByRiskLevel("CONTROLLED_WRITE"))
                     .thenReturn(Optional.of(risk(true, ApprovalMode.NONE, "dev")));
 
-            Map<String, Object> r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
-            assertNotNull(r.get("firstEffective"));
-            assertTrue(String.valueOf(r.get("summary")).contains("测试"));
+            GovernanceViews.SimulateResult r = service.simulate("P3", "K8S", "svc", "Alert", "dev");
+            assertNotNull(r.firstEffective());
+            assertTrue(r.summary().contains("测试"));
         }
     }
 }

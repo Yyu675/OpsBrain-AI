@@ -178,6 +178,69 @@ class OpenApiSchemaIntegrationTest {
     }
 
     @Nested
+    @DisplayName("P0-2b 告警/治理的 record，schema 必须有具体字段")
+    class StepThreeSchemasAreConcrete {
+
+        @Test
+        @DisplayName("AlertPage 生成了完整字段，而不是 additionalProperties")
+        void alertPageHasProperties() throws Exception {
+            JsonNode schema = componentSchema("AlertPage");
+            assertThat(schema)
+                    .as("components.schemas 里找不到 AlertPage。"
+                            + "P0-2b 第三步把告警 listAlerts 换成了 record，"
+                            + "若这里没有说明 springdoc 没识别到它")
+                    .isNotNull();
+
+            List<String> props = fieldNames(schema.path("properties"));
+            assertThat(props)
+                    .as("AlertPage 的 schema 必须含全部 5 个字段，"
+                            + "前端 alerts.ts 据 openapi-typescript 生成类型。实际：%s", props)
+                    .contains("alerts", "total", "page", "size", "totalPages");
+        }
+
+        @Test
+        @DisplayName("治理 ActionPage 字段完整，且 items 是 $ref 引用的数组而非 unknown[]")
+        void actionPageHasPropertiesAndRefItems() throws Exception {
+            JsonNode schema = componentSchema("ActionPage");
+            assertThat(schema)
+                    .as("components.schemas 里找不到 ActionPage")
+                    .isNotNull();
+
+            List<String> props = fieldNames(schema.path("properties"));
+            assertThat(props)
+                    .as("ActionPage 的 schema 必须含全部 5 个字段。实际：%s", props)
+                    .contains("items", "total", "page", "size", "totalPages");
+
+            JsonNode items = schema.path("properties").path("items");
+            assertThat(items.path("type").asText())
+                    .as("items 应为数组类型").isEqualTo("array");
+            assertThat(items.path("items").has("$ref"))
+                    .as("items.items 必须是对 ActionAllowlistEntry 的 $ref 引用。"
+                            + "只有 type:array 而无 items.$ref 时前端拿到 unknown[]，"
+                            + "治理页等于没有类型保护")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("EvaluateResult 字段完整——含放行时的四个约束字段")
+        void evaluateResultHasProperties() throws Exception {
+            JsonNode schema = componentSchema("EvaluateResult");
+            assertThat(schema)
+                    .as("components.schemas 里找不到 EvaluateResult")
+                    .isNotNull();
+
+            List<String> props = fieldNames(schema.path("properties"));
+            assertThat(props)
+                    .as("EvaluateResult 的 schema 必须含全部 8 个字段。"
+                            + "NOTE：@JsonInclude(NON_NULL) 只影响序列化时的省略，"
+                            + "不影响 schema 的属性罗列。实际：%s", props)
+                    .contains("actionKey", "environment", "allowed", "reason",
+                            "requiresApproval", "approvalMode",
+                            "blastRadiusCount", "cooldownSeconds");
+        }
+    }
+
+    @Nested
     @DisplayName("导出静态契约供前端消费")
     class ExportForFrontend {
 

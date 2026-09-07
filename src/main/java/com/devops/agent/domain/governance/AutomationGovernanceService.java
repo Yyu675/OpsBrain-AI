@@ -165,17 +165,14 @@ public class AutomationGovernanceService {
      * 而界面显示「不需审批」但引擎实际拦下来，用户会认为系统坏了。</p>
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> listActions(String keyword, String category, String riskLevel,
-                                           Boolean enabled, int page, int size) {
-        Map<String, Object> result =
+    public GovernanceViews.ActionPage listActions(String keyword, String category, String riskLevel,
+                                                  Boolean enabled, int page, int size) {
+        GovernanceViews.ActionPage result =
                 allowlistRepository.query(keyword, category, riskLevel, enabled, page, size);
-
-        @SuppressWarnings("unchecked")
-        List<ActionAllowlistEntry> items = (List<ActionAllowlistEntry>) result.get("items");
 
         // 一次性取出全部策略做 Map，避免逐条查（列表 20 行就是 20 次查询）
         Map<String, RiskPolicy> policies = policyMap();
-        for (ActionAllowlistEntry e : items) {
+        for (ActionAllowlistEntry e : result.items()) {
             applyEffective(e, policies.get(e.getRiskLevel()));
         }
         return result;
@@ -190,25 +187,23 @@ public class AutomationGovernanceService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> actionFilterOptions() {
-        Map<String, Object> options = new LinkedHashMap<>(allowlistRepository.filterOptions());
+    public GovernanceViews.ActionFilterOptions actionFilterOptions() {
         // 风险等级来自 Java 枚举而非库里的 DISTINCT：即便当前没有任何
         // HIGH_RISK_EXECUTION 的动作，新建表单里也必须能选到它
-        List<Map<String, String>> levels = new ArrayList<>();
+        List<GovernanceViews.RiskLevelOption> levels = new ArrayList<>();
         for (ToolRiskLevel level : ToolRiskLevel.values()) {
-            levels.add(Map.of(
-                    "value", level.name(),
-                    "label", level.getDisplayName(),
-                    "description", level.getDescription()));
+            levels.add(new GovernanceViews.RiskLevelOption(
+                    level.name(), level.getDisplayName(), level.getDescription()));
         }
-        options.put("riskLevels", levels);
-        options.put("environments", List.copyOf(KNOWN_ENVIRONMENTS));
-        options.put("knownCategories", List.copyOf(KNOWN_CATEGORIES));
-        return options;
+        return new GovernanceViews.ActionFilterOptions(
+                allowlistRepository.listCategories(),
+                levels,
+                List.copyOf(KNOWN_ENVIRONMENTS),
+                List.copyOf(KNOWN_CATEGORIES));
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> actionStats() {
+    public GovernanceViews.ActionStats actionStats() {
         return allowlistRepository.stats();
     }
 
@@ -282,57 +277,53 @@ public class AutomationGovernanceService {
      * 现在还没有引擎，但接口先定下来，可以让配置页的「模拟校验」直接复用，
      * 用户改完配置能立刻看到「在 prod 上执行 k8s.pod.restart：不允许，原因是…」。</p>
      *
-     * @return 判定结果，含 {@code allowed} 与人类可读的 {@code reason}
+     * @return 判定结果：拒绝原因必定可读；放行时带合并后的生效约束
+     * （审批门槛 / 爆炸半径 / 观察窗口），这些字段在拒绝时为 null
+     * ——见 {@link GovernanceViews.EvaluateResult} 的说明
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> evaluate(String actionKey, String environment) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("actionKey", actionKey);
-        result.put("environment", environment);
-
+    public GovernanceViews.EvaluateResult evaluate(String actionKey, String environment) {
         Optional<ActionAllowlistEntry> found = allowlistRepository.findByActionKey(actionKey);
         if (found.isEmpty()) {
             // 未登记 = 拒绝。这是白名单语义的核心，不是「查不到就放行」
-            return deny(result, "该动作未登记在白名单中。白名单为允许清单，未登记的动作一律不允许自动执行");
+            return GovernanceViews.EvaluateResult.deny(actionKey, environment,
+                    "该动作未登记在白名单中。白名单为允许清单，未登记的动作一律不允许自动执行");
         }
 
         ActionAllowlistEntry entry = found.get();
         if (!entry.isEnabled()) {
-            return deny(result, "该动作已登记但处于停用状态");
+            return GovernanceViews.EvaluateResult.deny(actionKey, environment,
+                    "该动作已登记但处于停用状态");
         }
         if (!entry.allowsEnvironment(environment)) {
-            return deny(result, "该动作未在 " + environment + " 环境开放（当前开放：" + entry.getEnvironments() + "）");
+            return GovernanceViews.EvaluateResult.deny(actionKey, environment,
+                    "该动作未在 " + environment + " 环境开放（当前开放：" + entry.getEnvironments() + "）");
         }
 
         RiskPolicy policy = policyRepository.findByRiskLevel(entry.getRiskLevel()).orElse(null);
         if (policy == null) {
             // 策略缺失时拒绝而非放行：读不到约束就等于没有约束，
             // 此时执行是在完全无防护的状态下操作生产系统
-            return deny(result, "风险等级 " + entry.getRiskLevel() + " 的策略缺失，出于安全默认拒绝");
+            return GovernanceViews.EvaluateResult.deny(actionKey, environment,
+                    "风险等级 " + entry.getRiskLevel() + " 的策略缺失，出于安全默认拒绝");
         }
         if (!policy.allowsEnvironment(environment)) {
-            return deny(result, "风险等级「" + policy.getDisplayName() + "」未在 "
-                    + environment + " 环境开放（当前开放：" + policy.getAllowedEnvironments() + "）");
+            return GovernanceViews.EvaluateResult.deny(actionKey, environment,
+                    "风险等级「" + policy.getDisplayName() + "」未在 "
+                            + environment + " 环境开放（当前开放：" + policy.getAllowedEnvironments() + "）");
         }
         if (!policy.isAutoExecuteAllowed()) {
-            return deny(result, "风险等级「" + policy.getDisplayName()
-                    + "」未开启自动执行，需人工手动触发");
+            return GovernanceViews.EvaluateResult.deny(actionKey, environment,
+                    "风险等级「" + policy.getDisplayName()
+                            + "」未开启自动执行，需人工手动触发");
         }
 
         applyEffective(entry, policy);
-        result.put("allowed", true);
-        result.put("reason", "允许自动执行");
-        result.put("requiresApproval", entry.getEffectiveRequiresApproval());
-        result.put("approvalMode", policy.getApprovalMode().name());
-        result.put("blastRadiusCount", entry.getEffectiveBlastRadiusCount());
-        result.put("cooldownSeconds", policy.getCooldownSeconds());
-        return result;
-    }
-
-    private Map<String, Object> deny(Map<String, Object> result, String reason) {
-        result.put("allowed", false);
-        result.put("reason", reason);
-        return result;
+        return GovernanceViews.EvaluateResult.allow(actionKey, environment,
+                entry.getEffectiveRequiresApproval(),
+                policy.getApprovalMode().name(),
+                entry.getEffectiveBlastRadiusCount(),
+                policy.getCooldownSeconds());
     }
 
     // ==================================================================
@@ -508,10 +499,7 @@ public class AutomationGovernanceService {
     }
 
     private long countEnabledByRiskLevel(String riskLevel) {
-        Object total = allowlistRepository
-                .query(null, null, riskLevel, true, 1, 1)
-                .get("total");
-        return total instanceof Number n ? n.longValue() : 0L;
+        return allowlistRepository.query(null, null, riskLevel, true, 1, 1).total();
     }
 
     private static void requireText(String value, int maxLength, String fieldName) {
@@ -542,15 +530,13 @@ public class AutomationGovernanceService {
      * 「已启用」的策略，实际永远不会执行，而界面上没有任何迹象。</p>
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> listAutomationPolicies(String keyword, String actionKey,
-                                                      String environment, Boolean enabled,
-                                                      int page, int size) {
-        Map<String, Object> result = automationPolicyRepository.query(
+    public GovernanceViews.AutomationPolicyPage listAutomationPolicies(
+            String keyword, String actionKey, String environment, Boolean enabled,
+            int page, int size) {
+        GovernanceViews.AutomationPolicyPage result = automationPolicyRepository.query(
                 keyword, actionKey, environment, enabled, page, size);
 
-        @SuppressWarnings("unchecked")
-        List<AutomationPolicy> items = (List<AutomationPolicy>) result.get("items");
-        for (AutomationPolicy p : items) {
+        for (AutomationPolicy p : result.items()) {
             applyActionState(p);
         }
         return result;
@@ -565,7 +551,7 @@ public class AutomationGovernanceService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> automationPolicyStats() {
+    public GovernanceViews.PolicyStats automationPolicyStats() {
         return automationPolicyRepository.stats();
     }
 
@@ -673,64 +659,54 @@ public class AutomationGovernanceService {
      * 逐条给出命中与否、以及命中后的最终判定（含白名单与风险策略的联合结论）。</p>
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> simulate(String level, String module, String service,
-                                        String alertName, String environment) {
-        List<Map<String, Object>> evaluated = new ArrayList<>();
-        Map<String, Object> firstEffective = null;
+    public GovernanceViews.SimulateResult simulate(String level, String module, String service,
+                                                   String alertName, String environment) {
+        List<GovernanceViews.SimulatedRow> evaluated = new ArrayList<>();
+        GovernanceViews.SimulatedRow firstEffective = null;
         boolean stopped = false;
 
         for (AutomationPolicy p : automationPolicyRepository.findEnabledInEvalOrder()) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("policyId", p.getId());
-            row.put("policyName", p.getName());
-            row.put("priority", p.getPriority());
-            row.put("actionKey", p.getActionKey());
-            row.put("dryRun", p.isDryRun());
-
             if (stopped) {
                 // 前面已有 stopOnMatch 命中，后续策略引擎根本不会求值。
                 // 如实标注而不是跳过不显示——用户需要知道「这条没被求值」
                 // 与「这条求值了但没匹配」的区别
-                row.put("matched", false);
-                row.put("skipped", true);
-                row.put("reason", "前序策略已命中且设置了「命中即停」，引擎不会求值到这里");
-                evaluated.add(row);
+                evaluated.add(GovernanceViews.SimulatedRow.skipped(p,
+                        "前序策略已命中且设置了「命中即停」，引擎不会求值到这里"));
                 continue;
             }
 
             boolean envMatch = p.getEnvironment() != null
                     && p.getEnvironment().equalsIgnoreCase(environment);
             boolean matched = envMatch && p.matches(level, module, service, alertName);
-            row.put("matched", matched);
-            row.put("skipped", false);
 
             if (!matched) {
-                row.put("reason", !envMatch
+                evaluated.add(GovernanceViews.SimulatedRow.unmatched(p, !envMatch
                         ? "策略生效环境为 " + p.getEnvironment() + "，与本次 " + environment + " 不符"
-                        : describeMismatch(p, level, module, service, alertName));
-                evaluated.add(row);
+                        : describeMismatch(p, level, module, service, alertName)));
                 continue;
             }
 
             // 命中后还要过白名单与风险策略——策略说要做，不代表允许做
-            Map<String, Object> verdict = evaluate(p.getActionKey(), environment);
-            row.put("actionVerdict", verdict);
+            GovernanceViews.EvaluateResult verdict = evaluate(p.getActionKey(), environment);
 
-            boolean allowed = Boolean.TRUE.equals(verdict.get("allowed"));
-            if (!allowed) {
-                row.put("outcome", "BLOCKED");
-                row.put("reason", "策略命中，但动作被拦截：" + verdict.get("reason"));
+            String outcome;
+            String reason;
+            if (!verdict.allowed()) {
+                outcome = "BLOCKED";
+                reason = "策略命中，但动作被拦截：" + verdict.reason();
             } else if (p.isDryRun()) {
-                row.put("outcome", "DRY_RUN");
-                row.put("reason", "策略命中且动作允许，但处于演练模式，只记录不执行");
-            } else if (Boolean.TRUE.equals(verdict.get("requiresApproval"))) {
-                row.put("outcome", "PENDING_APPROVAL");
-                row.put("reason", "策略命中，将创建审批单等待人工确认");
+                outcome = "DRY_RUN";
+                reason = "策略命中且动作允许，但处于演练模式，只记录不执行";
+            } else if (Boolean.TRUE.equals(verdict.requiresApproval())) {
+                outcome = "PENDING_APPROVAL";
+                reason = "策略命中，将创建审批单等待人工确认";
             } else {
-                row.put("outcome", "EXECUTE");
-                row.put("reason", "策略命中，将直接自动执行");
+                outcome = "EXECUTE";
+                reason = "策略命中，将直接自动执行";
             }
 
+            GovernanceViews.SimulatedRow row = GovernanceViews.SimulatedRow.matched(
+                    p, reason, outcome, verdict);
             if (firstEffective == null) {
                 firstEffective = row;
             }
@@ -741,24 +717,21 @@ public class AutomationGovernanceService {
             }
         }
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("input", Map.of(
-                "level", level == null ? "" : level,
-                "module", module == null ? "" : module,
-                "service", service == null ? "" : service,
-                "alertName", alertName == null ? "" : alertName,
-                "environment", environment));
-        result.put("evaluated", evaluated);
-        result.put("matchedCount", evaluated.stream()
-                .filter(r -> Boolean.TRUE.equals(r.get("matched"))).count());
-        result.put("firstEffective", firstEffective);
-        if (firstEffective == null) {
-            result.put("summary", "没有任何启用中的策略匹配该告警，将走默认流程（自动建单，人工处理）");
-        } else {
-            result.put("summary", "将由策略「" + firstEffective.get("policyName") + "」处理："
-                    + firstEffective.get("reason"));
-        }
-        return result;
+        String summary = firstEffective == null
+                ? "没有任何启用中的策略匹配该告警，将走默认流程（自动建单，人工处理）"
+                : "将由策略「" + firstEffective.policyName() + "」处理："
+                        + firstEffective.reason();
+        return new GovernanceViews.SimulateResult(
+                new GovernanceViews.SimulateInput(
+                        level == null ? "" : level,
+                        module == null ? "" : module,
+                        service == null ? "" : service,
+                        alertName == null ? "" : alertName,
+                        environment),
+                evaluated,
+                evaluated.stream().filter(GovernanceViews.SimulatedRow::matched).count(),
+                firstEffective,
+                summary);
     }
 
     /** 说清「为什么没匹配」，逐个条件比对。只说结论用户无法自己调整规则 */
