@@ -76,6 +76,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 |---|---|---|
 | 推进依据切换 | **以《OpsBrain_AI_生产级落地路线图.md》为任务总索引**；其 §14 进度表登记进本台账 | 路线图（已入库）＋用户确认 |
 | T11（P0-2b 告警/治理 record） | **收尾后转路线图阶段 0** | 用户选择；代码+测试已 CI 绿，只差注入-还原验证 |
+| D-01 Flyway 基线方案 | **按路线图推荐采纳 B**（单基线） | 用户未表态时代理按文档推荐执行并告知可反悔；动手前发现路线图「25 个迁移文件」前提已失效（8-27 并入 init.sql），B 形态降为基线搬家+删代码侧双写 |
+| ci.yml 收尾（psql 步骤→flyway validate） | **需用户配合** | 机器人无 workflows 权限；两选：Arena 重连 GitHub 或按报告 100 §五手工应用 |
 | P0-2b 剩余 Map 端点（工单余下 11 个 + 知识库余下） | **暂停挂账**：随阶段 0「前端类型手写」债项（路线图 §10.1）按需补改，不盲目全改 | 用户选择；路线图未给它排期，阶段 0 是主线 |
 | 报告编号 100~114 | 归路线图阶段任务；非路线图任务不占编号 | 路线图 §11.2 |
 
@@ -85,7 +87,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 说明 | 开始 |
 |---|---|---|---|
-| T12 | **S0-1：Flyway 迁移版本化**（路线图 §4.1，方案 B 变体） | 历史迁移早已并入 init.sql（8-27 整合），故方案 B 落地为：init.sql 整体转 `V1__baseline.sql` + Flyway 接入（baseline-on-migrate）+ 删除代码侧冗余建表（两 ensureSchema 与 init.sql 逐字重复）+ CI validate 步骤 + 迁移契约测试 | 2026-09-07 |
+| — | 暂无（T12/S0-1 已转待验收；下一轮启动 S0-2 Testcontainers） | | |
 
 ---
 
@@ -93,6 +95,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 产出 | 验证情况 | 完成于 |
 |---|---|---|---|---|
+| **T12** | **S0-1：Flyway 迁移版本化**（路线图 §4.1，方案 B 变体落地） | `V1__baseline.sql`（init.sql 迁入，SQL 零改动）· flyway 依赖 + baseline-on-migrate + validate-on-migrate · 删除代码侧双写建表（2 个 SchemaInitializer + 2 个 ensureSchema）· `FlywayMigrationContractTest`（5 道闸）· compose/脚本/README/AGENTS §3.5 改写 · 报告 `docs/08-benchmark/100` | CI 绿（b240de4→34102402282）；**K1/K2 注入各命中预期**：K1 sql 目录 DDL→唯一一条注解精确点名契约测试；K2 坏 V2→全部上下文拒载，还原次轮直接转绿=PG 事务回滚无残留。⚠️ **验收 #3/#4 挂账**：机器人无 workflows 权限改不了 ci.yml，需用户重连 GitHub 或手工应用 ci 改动（报告 §五已备好文案） | 2026-09-07 |
 | **T11** | **P0-2b 第三步（告警/治理模块）：9+1 个 Map 端点改 record** | `AlertDto.AlertPage`（新增）· `GovernanceViews`（13 个 record，新增）· 告警 service 拆 find/count · 治理 repo/service 一并强类型化 · `AlertDtoContractTest`（6 例）+ `GovernanceDtoContractTest`（17 例）· OpenAPI 可消费性断言 +3 例 | CI 绿（7d179c4）；**G-1/G-2/G-3 三项注入各命中预期用例**：整除截断→totalPagesRoundsUp+defaultPaging；丢 NON_NULL→denyOmitsConstraintFields；skipped 误标 matched→skippedIsNotUnmatched。首轮漏改 3 处 Map 桩被 CI 编译拦下已补（注解上限 3 条的教训应验） | 2026-09-07 |
 | T1 | 进度台账机制落地 | `PROGRESS.md`（本文件） | 机制文档，无需 CI | 2026-08-28 |
 | T2 | README 定位对齐 98 号结论 | `README.md` 重写 | 移除 L4/L5 与「千亿商业化」等无代码兜底的表述 | 2026-08-28 |
@@ -113,7 +116,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 前置 | 估期* | 状态 |
 |---|---|---|---|---|
-| S0-1 | **Flyway 迁移版本化**（路线图 §4.1：baseline 合并历史迁移为 `V1__baseline.sql` + validate 进 CI；决策点 D-01 待拍板） | — | 3d | 📋 **下一个开工** |
+| S0-1 | ~~**Flyway 迁移版本化**~~（D-01 由代理按路线图推荐采纳方案 B；落地形态=基线搬家+托管接入，历史迁移文件早已不存在） | — | 3d | 🟡 **待验收**（收尾挂账见下方挂起区） |
 | S0-2 | **Testcontainers 集成测试**（§4.2：pgvector 容器 + `AbstractIntegrationTest`，本地离线可跑） | — | 3d | 📋（建议紧随 S0-1：阶段 1 取证工具依赖它） |
 | S0-3 | **Resilience4j 熔断降级**（§4.3：按数据源客户端配实例；与 ToolRuntimeManager 分工=数据源级 vs 工具级） | — | 3d | 📋 |
 | S0-4 | **评测跑通与基线记录**（§4.4：CI 独立 eval job + 基线数字写入报告 102） | S0-2 | 2d | 📋 |
@@ -126,6 +129,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 挂起原因 | 恢复条件 |
 |---|---|---|---|
+| S0-1 收尾 | ci.yml：删「初始化数据库 Schema」psql 步骤 + 增 `flyway validate` 步骤 + 删除 `sql/init.sql` 兼容桩（验收 #1 纯空库 Flyway、#3/#4 一并收口） | GitHub App 无 **workflows** 权限，推送含 workflow 变更被拒（历史 workflow 变更均由用户账号推送） | 用户在 Arena 重连 GitHub / 或按报告 100 §五手工应用（两处文案已备好） |
 | P0-2b 剩余 | Map → record：工单余下 11 个端点 + 知识库余下（多为透传 service，需连带评估） | 路线图未排期；已完成工单/知识库/告警/治理四个模块的高价值端点，是 P1-4 TS 类型生成的最小够用面 | 阶段 0 做「自动生成 TS 类型」（路线图 §10.1 债项）时，按实际需要的端点逐个补 |
 | — | ⚠️ **P0-2 的收益边界（前置调研已做，挂起后仍有效）** | 实测 70/130 端点返回 `Map`/`Object`，OpenAPI 只能生成 `additionalProperties: true`。恢复时按模块逐个改，**不要期待一次性全量** | — |
 
@@ -194,3 +198,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | 2026-08-28 | **编辑器决策重做**：核查发现「用户全是技术人员」不成立（PRD 列了 2 类非技术角色），且 v1 误判了现有实现（双编辑器是同页双模式切换，非两个独立入口）。改为方案 A′：保留双模式 + 修正存储格式。新增两项缺陷待办 F-5（权限）/ F-6（存储格式） |
 | 2026-09-07 | **收到《OpsBrain_AI_生产级落地路线图.md》并确认为任务总索引**（用户上传直挂，以 fast-forward 合入工作分支）。两项决策：T11 收尾后转阶段 0；P0-2b 剩余端点暂停挂账（恢复条件=阶段 0 做 TS 类型生成时按需补）。待办区按路线图阶段 0 重排，S1~S5 启动时再逐条登记，避免双写漂移 |
 | 2026-09-07 | T11 完成（转待验收）：告警/治理 Map → record。教训两条：①首轮只换了带断言的 Map 桩，漏改 3 处被 CI 编译拦下（注解上限 3 条恰好放过同类遗漏——全文件 grep 确认归零再推）；②注入验证分两个探针推，是尊重「注解最多回 3 条」的既有教训 |
+| 2026-09-07 | T12（S0-1）完成（转待验收）：Flyway 迁移版本化。**教训/新知**：①动手前核查证伪了路线图「25 个手写迁移文件」的前提（已于 8-27 并入 init.sql），方案 B 因此降级为「搬家+删双写」；②真正的双真相源不是两份文件，而是**代码侧 ensureSchema 与 init.sql 内容逐字重复**——单文件基线只消灭了第一副本；③机器人无 workflows 权限改 ci.yml → 用无 DDL 的 psql 过渡桩保住 CI 绿，验收 #3/#4 挂账到用户补权 |
