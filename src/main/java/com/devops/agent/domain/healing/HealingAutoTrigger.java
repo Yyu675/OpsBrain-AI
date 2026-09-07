@@ -19,7 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+
+import com.devops.agent.infrastructure.concurrent.ManagedExecutors;
 
 /**
  * 告警 → 治理策略 → 自愈动作 的触发引擎（S4-1 批次 7：补上三表拼图的最后一块）。
@@ -58,11 +59,14 @@ public class HealingAutoTrigger {
     private final HealingExecutionRepository executionRepository;
     private final HealingOrchestrator orchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ExecutorService enginePool = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "healing-policy-engine");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * 求值专用池：单线程够用（策略量小、串行防雪崩）。
+     * <p>用 {@link ManagedExecutors#forBestEffort}（有界队列 + 满载丢弃告警）
+     * 而非无界队列工厂：策略求值是旁路增强，宁可丢弃记日志
+     * 也绝不能让队列在告警风暴里无限堆积反噬告警链。</p>
+     */
+    private final ExecutorService enginePool =
+            ManagedExecutors.forBestEffort("healing-policy-engine", 1, 200);
 
     /** 全局开关。关闭只影响自动触发；人工触发/审批回放照常（引擎本就是旁路增强） */
     @Value("${devops.healing.policy-trigger.enabled:true}")
@@ -236,6 +240,6 @@ public class HealingAutoTrigger {
 
     @PreDestroy
     public void shutdown() {
-        enginePool.shutdown();
+        ManagedExecutors.shutdownGracefully(enginePool, "healing-policy-engine", 3);
     }
 }
