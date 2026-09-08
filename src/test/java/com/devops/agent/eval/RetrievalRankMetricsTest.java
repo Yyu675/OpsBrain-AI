@@ -65,12 +65,14 @@ class RetrievalRankMetricsTest {
         List<RetrievalRankMetrics.QueryRanking> rankings = List.of(
                 q(Set.of("A.md"), "A.md", "X.md"),     // rank 1
                 q(Set.of("B.md"), "X.md", "B.md"),     // rank 2
-                q(Set.of("C.md"), "X.md", "Y.md", "Z.md", "C.md"), // rank 5
+                // 五个位置四项填充：C 严格在第 5 名（CI 抓过漏排一项的夹具 off-by-one）
+                q(Set.of("C.md"), "X.md", "Y.md", "Z.md", "W.md", "C.md"), // rank 5
                 q(Set.of("D.md"), "X.md", "Y.md"));    // miss
 
         assertEquals(0.25, RetrievalRankMetrics.recallAtK(rankings, 1), 1e-9);
         assertEquals(0.50, RetrievalRankMetrics.recallAtK(rankings, 3), 1e-9);
-        // K 大到覆盖名次 5 才计入第三条
+        // rank 5 的第三条在 K=4 时仍不计入（窗口边界），K=5 才放行
+        assertEquals(0.50, RetrievalRankMetrics.recallAtK(rankings, 4), 1e-9);
         assertEquals(0.75, RetrievalRankMetrics.recallAtK(rankings, 5), 1e-9);
     }
 
@@ -91,7 +93,7 @@ class RetrievalRankMetricsTest {
         List<RetrievalRankMetrics.QueryRanking> rankings = List.of(
                 q(Set.of("A.md"), "A.md"),             // 1.0
                 q(Set.of("B.md"), "X.md", "B.md"),     // 0.5
-                q(Set.of("C.md"), "X.md", "Y.md", "Z.md", "C.md"), // 0.2
+                q(Set.of("C.md"), "X.md", "Y.md", "Z.md", "W.md", "C.md"), // rank 5 → 0.2
                 q(Set.of("D.md"), "X.md"));            // 0.0
 
         assertEquals((1.0 + 0.5 + 0.2 + 0.0) / 4, RetrievalRankMetrics.mrr(rankings), 1e-9);
