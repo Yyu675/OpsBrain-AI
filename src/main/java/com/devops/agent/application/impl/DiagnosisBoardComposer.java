@@ -47,6 +47,10 @@ final class DiagnosisBoardComposer {
      * @param windowDays        统计窗口天（已夹紧，透传展示 + 定趋势长度）
      * @param trendRows         逐日诊断行 [{day, total, completed}]
      * @param today             窗口右端点（含）。注入而非自读：时钟语义可钉测
+     * @param diagnosisCostTotal 完成会话归因 LLM 成本总额（单次均价分子，4-4.3）
+     * @apiNote 单次均价 = 归因总成本 / 全部完成会话数——零成本会话（缓存命中等）
+     *          计入分母，与 avgDurationSeconds 同分母口径；无完成会话时透传 null
+     *          （Dashboard 页祖传纪律：null ≠ 0）；四位小数与前端 ¥ 成本显示一致
      */
     static Map<String, Object> compose(List<Map<String, Object>> statusRows,
                                        List<Map<String, Object>> sufficiencyRows,
@@ -54,7 +58,8 @@ final class DiagnosisBoardComposer {
                                        Double avgDurationSeconds,
                                        int windowDays,
                                        List<Map<String, Object>> trendRows,
-                                       LocalDate today) {
+                                       LocalDate today,
+                                       Double diagnosisCostTotal) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("windowDays", windowDays);
 
@@ -76,6 +81,15 @@ final class DiagnosisBoardComposer {
                     "count", ((Number) r.get("n")).longValue()));
         }
         sessions.put("sufficiency", suff);
+        // 4-4.3 单次诊断均价：分母从状态分布里取 COMPLETED（未知状态进 total 不进
+        // 本口径分母——与四态桶的「不静默消失也不污染既有口径」同一条纪律）
+        long completedCount = byStatus.stream()
+                .filter(r -> "COMPLETED".equals(r.get("status")))
+                .mapToLong(r -> ((Number) r.get("count")).longValue())
+                .findFirst().orElse(0L);
+        sessions.put("avgCostRmb",
+                completedCount == 0 || diagnosisCostTotal == null ? null
+                        : round(diagnosisCostTotal / completedCount, 4));
         out.put("sessions", sessions);
 
         // 方向聚合：[total, SUCCESS, NO_DATA, FAILED, UNAVAILABLE]

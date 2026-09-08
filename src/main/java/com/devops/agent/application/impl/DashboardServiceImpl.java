@@ -91,8 +91,18 @@ public class DashboardServiceImpl implements DashboardService {
                  GROUP BY DATE(created_at)
                  ORDER BY day
                 """, window - 1);
+        // 4-4.3 均价分子：窗口内完成诊断归因到的 LLM 调用总成本
+        // （trace_id 一对多直接 SUM；无归因调用→0，均价语义与分母留给 Composer）
+        Double costTotal = jdbcTemplate.queryForObject(
+                """
+                SELECT COALESCE(SUM(l.cost_rmb), 0)
+                  FROM sys_agent_call_log l
+                  JOIN sys_diagnosis_session s ON l.trace_id = s.trace_id
+                 WHERE s.status = 'COMPLETED'
+                   AND s.created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                """, Double.class, window);
         return DiagnosisBoardComposer.compose(statusRows, sufficiencyRows,
-                evidenceRows, avgSeconds, window, trendRows, LocalDate.now());
+                evidenceRows, avgSeconds, window, trendRows, LocalDate.now(), costTotal);
     }
 
     @Override

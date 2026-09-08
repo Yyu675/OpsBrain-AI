@@ -122,6 +122,8 @@ export interface DiagnosisSessionsStats {
   byStatus: { status: string; count: number }[]
   /** 平均耗时秒（仅完成会话；无完成会话时为 null——null 与 0 必须区分） */
   avgDurationSeconds: number | null
+  /** 单次诊断均价（¥，trace_id 归因成本/全部完成会话；无完成会话为 null，S4-4.3） */
+  avgCostRmb: number | null
   /** 充分性分布（仅 COMPLETED 会话） */
   sufficiency: DiagnosisSufficiencyStat[]
 }
@@ -172,6 +174,7 @@ export async function getDiagnosisBoard(days = 7): Promise<DiagnosisBoard> {
       total: data?.sessions?.total ?? 0,
       byStatus: data?.sessions?.byStatus ?? [],
       avgDurationSeconds: data?.sessions?.avgDurationSeconds ?? null,
+      avgCostRmb: data?.sessions?.avgCostRmb ?? null,
       sufficiency: data?.sessions?.sufficiency ?? []
     },
     sessionTrend: {

@@ -104,6 +104,7 @@ const diagnosisBoard = (over: Record<string, unknown> = {}) => ({
     total: 48,
     byStatus: [{ status: 'COMPLETED', count: 40 }],
     avgDurationSeconds: 12.35,
+    avgCostRmb: 0.0123,
     sufficiency: [{ sufficiency: 'SUFFICIENT', count: 30 }],
   },
   evidenceDirections: [
@@ -405,6 +406,7 @@ describe('诊断区看板（S4-4.2 批次 16）', () => {
 
     expect(w.text()).toContain('诊断区')
     expect(w.text()).toContain('75.0%') // metrics 30/40
+    expect(w.text()).toContain('¥0.0123') // 单次均价四位小数（S4-4.3）
     expect(w.find('.diagnosis-attention').exists()).toBe(true)
     expect(w.find('.diagnosis-attention').text()).toContain('指标') // 天文台说中文不说 metrics
   })

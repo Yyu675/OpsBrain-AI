@@ -360,6 +360,10 @@ const rootCauseTop = computed(() =>
                 <div class="closure-kpi-value">{{ diagnosis.sessions.avgDurationSeconds === null ? '—' : diagnosis.sessions.avgDurationSeconds + 's' }}</div>
               </div>
               <div class="closure-kpi-card">
+                <div class="closure-kpi-label">单次均价</div>
+                <div class="closure-kpi-value">{{ diagnosis.sessions.avgCostRmb === null ? '—' : '¥' + diagnosis.sessions.avgCostRmb.toFixed(4) }}</div>
+              </div>
+              <div class="closure-kpi-card">
                 <div class="closure-kpi-label">需关注方向</div>
                 <div class="closure-kpi-value">{{ diagnosis.attentionTypes.length || '—' }}</div>
               </div>

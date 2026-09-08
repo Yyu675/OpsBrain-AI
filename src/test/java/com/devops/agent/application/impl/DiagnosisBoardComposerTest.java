@@ -55,7 +55,7 @@ class DiagnosisBoardComposerTest {
     @DisplayName("全空输入：total=0、方向空、点名空、耗时 null，趋势恒为窗口长全零（空窗口不报幻象数字，也不塌图）")
     void emptyEverything() {
         Map<String, Object> board = DiagnosisBoardComposer.compose(
-                List.of(), List.of(), List.of(), null, 7, List.of(), TODAY);
+                List.of(), List.of(), List.of(), null, 7, List.of(), TODAY, 0.0);
 
         assertEquals(0L, sessions(board).get("total"));
         assertNull(sessions(board).get("avgDurationSeconds"));
@@ -73,7 +73,7 @@ class DiagnosisBoardComposerTest {
                 List.of(row("status", "COMPLETED", "n", 40L),
                         row("status", "ERROR", "n", 5L),
                         row("status", "REJECTED", "n", 3L)),
-                List.of(), List.of(), 12.345678, 7, List.of(), TODAY);
+                List.of(), List.of(), 12.345678, 7, List.of(), TODAY, 0.0);
 
         assertEquals(48L, sessions(board).get("total"));
         List<?> byStatus = (List<?>) sessions(board).get("byStatus");
@@ -87,7 +87,7 @@ class DiagnosisBoardComposerTest {
     void nullAvgStaysNull() {
         Map<String, Object> board = DiagnosisBoardComposer.compose(
                 List.of(row("status", "REJECTED", "n", 2L)),
-                List.of(), List.of(), null, 7, List.of(), TODAY);
+                List.of(), List.of(), null, 7, List.of(), TODAY, 0.0);
 
         assertNull(sessions(board).get("avgDurationSeconds"));
     }
@@ -101,7 +101,7 @@ class DiagnosisBoardComposerTest {
                         ev("metrics", "NO_DATA", 10),
                         ev("metrics", "FAILED", 5),
                         ev("topology", "UNAVAILABLE", 4)),
-                null, 7, List.of(), TODAY);
+                null, 7, List.of(), TODAY, 0.0);
 
         List<Map<String, Object>> dirs = directions(board);
         assertEquals(2, dirs.size());
@@ -123,7 +123,7 @@ class DiagnosisBoardComposerTest {
                         ev("logs", "NO_DATA", 8),
                         ev("topology", "UNAVAILABLE", 1),
                         ev("changes", "SUCCESS", 6)),
-                null, 7, List.of(), TODAY);
+                null, 7, List.of(), TODAY, 0.0);
 
         assertEquals(List.of("metrics", "topology"), board.get("attentionTypes"),
                 "logs 全是 NO_DATA——源健康没事可报，不点名；changes 全成功");
@@ -135,7 +135,7 @@ class DiagnosisBoardComposerTest {
         Map<String, Object> board = DiagnosisBoardComposer.compose(
                 List.of(), List.of(),
                 List.of(ev("metrics", "SUCCESS", 5), ev("metrics", "DEGRADED", 3)),
-                null, 7, List.of(), TODAY);
+                null, 7, List.of(), TODAY, 0.0);
 
         Map<String, Object> m = directions(board).get(0);
         assertEquals(8L, m.get("total"));
@@ -150,7 +150,7 @@ class DiagnosisBoardComposerTest {
                 List.of(), List.of(
                         row("sufficiency", "SUFFICIENT", "n", 30L),
                         row("sufficiency", "PARTIAL", "n", 6L)),
-                List.of(), null, 7, List.of(), TODAY);
+                List.of(), null, 7, List.of(), TODAY, 0.0);
 
         List<?> suff = (List<?>) sessions(board).get("sufficiency");
         assertEquals(2, suff.size());
@@ -162,7 +162,7 @@ class DiagnosisBoardComposerTest {
         Map<String, Object> board = DiagnosisBoardComposer.compose(
                 List.of(), List.of(),
                 List.of(ev("metrics", "GHOST", 0)), // 理论构造：分组行 count 为 0
-                null, 7, List.of(), TODAY);
+                null, 7, List.of(), TODAY, 0.0);
 
         assertEquals(0.0, directions(board).get(0).get("successRate"));
     }
@@ -175,7 +175,7 @@ class DiagnosisBoardComposerTest {
         Map<String, Object> board = DiagnosisBoardComposer.compose(
                 List.of(), List.of(), List.of(), null, 4,
                 List.of(day("2026-09-06", 3, 2), day("2026-09-08", 1, 0)),
-                TODAY);
+                TODAY, 0.0);
 
         Map<String, Object> t = trend(board);
         assertEquals(List.of("09-05", "09-06", "09-07", "09-08"), t.get("days"));
@@ -191,12 +191,36 @@ class DiagnosisBoardComposerTest {
                 List.of(), List.of(), List.of(), null, 3,
                 List.of(day("2026-08-01", 99, 88),  // 越窗左侧
                         day("2026-09-07", 5, 4)),
-                TODAY);
+                TODAY, 0.0);
 
         Map<String, Object> t = trend(board);
         assertEquals(List.of("09-06", "09-07", "09-08"), t.get("days"));
         assertEquals(List.of(0L, 5L, 0L), t.get("created"),
                 "08-01 属于另一窗口的数据，哪怕行递进来也不能污染本窗");
         assertEquals(List.of(0L, 4L, 0L), t.get("completed"));
+    }
+
+    // ---- 单次诊断均价口径（批次 23，S4-4.3） ----
+
+    @Test
+    @DisplayName("均价=归因总成本/全部完成会话：1 元 3 次完成 → 0.3333，四位小数同前端成本口径")
+    void avgCostRoundsToFourDecimals() {
+        Map<String, Object> board = DiagnosisBoardComposer.compose(
+                List.of(row("status", "COMPLETED", "n", 3L)),
+                List.of(), List.of(), null, 7, List.of(), TODAY, 1.0);
+
+        assertEquals(0.3333, sessions(board).get("avgCostRmb"),
+                "1/3 四位小数收口——前端 ¥0.3333 展示与后端同一份四舍五入");
+    }
+
+    @Test
+    @DisplayName("有成本但零完成会话 → null 不编造（分母保护：成本不硬挂到零分母上）")
+    void avgCostNullWhenNoCompletedSession() {
+        Map<String, Object> board = DiagnosisBoardComposer.compose(
+                List.of(row("status", "ERROR", "n", 2L)),
+                List.of(), List.of(), null, 7, List.of(), TODAY, 5.0);
+
+        assertNull(sessions(board).get("avgCostRmb"),
+                "5 元成本 + 0 次完成——均价无从谈起（ERROR 会话归因成本仍在账上，只是不平均）");
     }
 }

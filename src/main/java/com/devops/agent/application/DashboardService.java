@@ -58,7 +58,9 @@ public interface DashboardService {
     /**
      * S4-4.2 诊断区看板：会话分布 / 平均耗时 / 充分性分布 /
      * 各方向取证四态 / 源故障点名；S4-4.3 增补逐日诊断量趋势
-     * （固定窗口补零，与 getCallTrends 同一纪律）。days 由实现层夹紧 [1, 90]。
+     * （固定窗口补零，与 getCallTrends 同一纪律）+ 单次诊断均价
+     * （trace_id 归因成本 / 全部完成会话，零成本会话入分母）。
+     * days 由实现层夹紧 [1, 90]。
      */
     Map<String, Object> getDiagnosisBoard(int days);
 }
