@@ -1,0 +1,146 @@
+{
+  "title": "OpsBrain 效果看板(4-4 备用盘，Grafana 接入即用)",
+  "uid": "opsbrain-effectiveness",
+  "_meta": "批 64 F2:指标侧已全在 app(Prom 拉模型即可用,此盘是可视化副本——Grafana service 按手册 §10 可选启用并自动 provision)",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "工单总量 / 紧急未办水位(批 49 gauge)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opsbrain_tickets_total",
+          "legendFormat": "工单总量"
+        },
+        {
+          "refId": "B",
+          "expr": "opsbrain_tickets_urgent_pending",
+          "legendFormat": "紧急未办(P0/P1)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "告警累计 / 待审批水位",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opsbrain_alerts_active",
+          "legendFormat": "活动告警"
+        },
+        {
+          "refId": "B",
+          "expr": "opsbrain_approvals_pending",
+          "legendFormat": "待审批"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "外部数据源熔断器状态(0-3;1=闭合,开半开即水位动作)",
+      "type": "state-timeline",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "resilience4j_circuitbreaker_state",
+          "legendFormat": "{{name}}={{state}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "数据源调用失败率(每分钟;4-4 验收点:'某数据源长期不可用'类退化的可发现面)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(resilience4j_circuitbreaker_calls_total{kind=\"failed\"}[1m])",
+          "legendFormat": "失败速率 {{name}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(resilience4j_circuitbreaker_calls_total[1m])",
+          "legendFormat": "总速率 {{name}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "agent 请求面:HTTP 速率与 p95(app 自监控)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(http_server_requests_seconds_count[1m])",
+          "legendFormat": "请求速率 {{uri}}"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m]))",
+          "legendFormat": "p95 {{uri}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "诊断/工具时延(5-1.4 面,真窗后自然填充)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, rate(devops_diagnosis_seconds_bucket[5m]))",
+          "legendFormat": "诊断 p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, rate(devops_tool_seconds_bucket[5m]))",
+          "legendFormat": "工具 p95 {{tool}}"
+        }
+      ]
+    }
+  ]
+}

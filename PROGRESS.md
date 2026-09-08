@@ -458,3 +458,11 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 新档 `docs/09-operations/项目现状与待办一页纸.md`(5 分钟可读版)。
 - 《真窗联合测试清单.md》整卷重写为四问格式大白话;T12/T13 测试类名更正为 AgentEvaluationTest(原写 EvalDatasetTest 系勘误)。报告 165。
 
+## 批 64(2026-09-09):全维深挖+路线图对立+决策落账+F1/F2 两处修
+
+- 全卷对立:工程面 19/26(F1 CI 迁移校验补强补 13.1-1),真窗 7+Trivy 1;再无「已实现缺一的修复任务」。报告 166。
+- F1:pom 钉 flyway-maven-plugin 11.20.3 + 插件 classpath 内 DB 模块;CI 迁移校验步(migrate 零障库→validate→表数≥27),三轮修红转绿(取证道 commit comment tee 常驻)。
+- F2:monitoring/grafana 效果看板备用盘+手册 §10 可选启用。
+- 决策三件(D-07/私有化/D-01..06)预置件 §四落案。
+- README 能力矩阵 L4 行勘误(与批 58 判词对齐,执行器实查已破零)。
+
