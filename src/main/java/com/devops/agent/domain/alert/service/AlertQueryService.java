@@ -5,9 +5,7 @@ import com.devops.agent.domain.alert.repository.AlertRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -47,23 +45,28 @@ public class AlertQueryService {
     /**
      * 分页查询告警列表（按状态 + 级别筛选）
      *
+     * <p>P0-2b 起与 {@link #countAlerts} 拆成两个调用，由控制器组装
+     * {@code AlertDto.AlertPage}——与 {@code TicketService.findTickets/countTickets}
+     * 同款分工：service 只管数据，分页包装在控制器层完成，
+     * 这样 record 才能放在 controller.dto（domain 不得 import controller）。</p>
+     *
      * @param status 状态筛选（FIRING/ACKNOWLEDGED/RESOLVED，空=全部）
      * @param level  级别筛选（P0~P4，空=全部）
      * @param page   页码（从 1 开始，越界由 Controller 兜底）
      * @param size   每页大小（越界由 Controller 兜底）
-     * @return {@code {total, alerts}}
      */
-    public Map<String, Object> listAlerts(String status, String level, int page, int size) {
-        List<Alert> alerts = alertRepository.findPage(status, level, page, size);
-        int total = alertRepository.countByQuery(status, level);
+    public List<Alert> findAlerts(String status, String level, int page, int size) {
+        return alertRepository.findPage(status, level, page, size);
+    }
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("alerts", alerts);
-        result.put("total", total);
-        result.put("page", page);
-        result.put("size", size);
-        result.put("totalPages", (int) Math.ceil((double) total / size));
-        return result;
+    /**
+     * 与 {@link #findAlerts} 同条件的总数统计。
+     *
+     * <p>必须<b>按同一筛选条件</b>统计，否则页码与实际数据矛盾
+     * （用户看到「共 3 页」翻到第 2 页却是空的）。</p>
+     */
+    public long countAlerts(String status, String level) {
+        return alertRepository.countByQuery(status, level);
     }
 
     /**

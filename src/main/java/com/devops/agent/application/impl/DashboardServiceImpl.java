@@ -44,6 +44,77 @@ public class DashboardServiceImpl implements DashboardService {
     private static final String SERVED_QUERY_FILTER =
             "operation_type IN ('CHAT', 'CACHE_HIT')";
 
+    /**
+     * S4-4.2 诊断区：本类既有直查 JdbcTemplate 的看板风格延续——
+     * 合并语义全部下沉 {@link DiagnosisBoardComposer}（纯函数，可钉测）。
+     * 窗口夹紧与 /trends 同宽 [1, 90]。
+     */
+    @Override
+    public Map<String, Object> getDiagnosisBoard(int days) {
+        int window = Math.min(Math.max(1, days), 90);
+        List<Map<String, Object>> statusRows = jdbcTemplate.queryForList(
+                """
+                SELECT status, COUNT(*) AS n FROM sys_diagnosis_session
+                 WHERE created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                 GROUP BY status ORDER BY n DESC
+                """, window);
+        List<Map<String, Object>> sufficiencyRows = jdbcTemplate.queryForList(
+                """
+                SELECT sufficiency, COUNT(*) AS n FROM sys_diagnosis_session
+                 WHERE status = 'COMPLETED' AND sufficiency IS NOT NULL
+                   AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                 GROUP BY sufficiency ORDER BY n DESC
+                """, window);
+        List<Map<String, Object>> evidenceRows = jdbcTemplate.queryForList(
+                """
+                SELECT evidence_type, status, COUNT(*) AS n FROM sys_diagnosis_evidence
+                 WHERE collected_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                 GROUP BY evidence_type, status
+                """, window);
+        // AVG 聚合永远返回一行（无完成会话时为 NULL）——不会 EmptyResultDataAccess
+        Double avgSeconds = jdbcTemplate.queryForObject(
+                """
+                SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)))
+                  FROM sys_diagnosis_session
+                 WHERE status = 'COMPLETED'
+                   AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                """, Double.class, window);
+        // 逐日诊断量趋势（S4-4.3）：SQL 只取有数的行，补零/越窗丢弃属日历
+        // 语义，全部下沉 Composer（right 端点由这里注入 LocalDate.now()）
+        List<Map<String, Object>> trendRows = jdbcTemplate.queryForList(
+                """
+                SELECT DATE(created_at) AS day,
+                       COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed
+                  FROM sys_diagnosis_session
+                 WHERE created_at >= CURRENT_DATE - CAST(? AS INTEGER)
+                 GROUP BY DATE(created_at)
+                 ORDER BY day
+                """, window - 1);
+        // 4-4.3 均价分子：窗口内完成诊断归因到的 LLM 调用总成本
+        // （trace_id 一对多直接 SUM；无归因调用→0，均价语义与分母留给 Composer）
+        Double costTotal = jdbcTemplate.queryForObject(
+                """
+                SELECT COALESCE(SUM(l.cost_rmb), 0)
+                  FROM sys_agent_call_log l
+                  JOIN sys_diagnosis_session s ON l.trace_id = s.trace_id
+                 WHERE s.status = 'COMPLETED'
+                   AND s.created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                """, Double.class, window);
+        // S4-2 校准读数（批次 35）：假设置信度 × 反馈对的直采——判定集/豁免计数/
+        // 空集 null 纪律全部下沉 HypothesisCalibrationBoard（纯函数）。
+        List<Map<String, Object>> feedbackRows = jdbcTemplate.queryForList(
+                """
+                SELECT confidence, feedback FROM sys_diagnosis_hypothesis
+                 WHERE feedback IS NOT NULL
+                   AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                """, window);
+        Map<String, Object> board = DiagnosisBoardComposer.compose(statusRows, sufficiencyRows,
+                evidenceRows, avgSeconds, window, trendRows, LocalDate.now(), costTotal);
+        board.put("calibration", HypothesisCalibrationBoard.compose(feedbackRows));
+        return board;
+    }
+
     @Override
     public DashboardOverviewDTO getOverview() {
         log.info("📊 [Dashboard] 开始查询看板概览数据");

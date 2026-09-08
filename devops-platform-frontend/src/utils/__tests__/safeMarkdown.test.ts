@@ -116,10 +116,21 @@ describe('缓存行为', () => {
     expect(safeMarkdown(raw)).toBe(safeMarkdown(raw))
   })
 
-  it('显式 cacheKey 相同时复用结果 —— 流式渲染按 id+length 缓存的前提', () => {
-    const first = safeMarkdown('内容 A', 'msg-1:5')
-    const second = safeMarkdown('内容 B（不同内容，同 key）', 'msg-1:5')
+  it('同 cacheKey 且内容相同时复用结果 —— 流式渲染避免每个 token 全量重解析', () => {
+    const first = safeMarkdown('内容 A', 'msg-1')
+    const second = safeMarkdown('内容 A', 'msg-1')
     expect(second).toBe(first)
+  })
+
+  it('同 cacheKey 但内容不同时必须重新渲染，不得返回旧结果', () => {
+    // 本用例的前身断言的是「同 key 就复用，哪怕内容不同」——
+    // 那锁住的是缺陷而非契约：cacheKey 曾是 `id + 内容长度`，
+    // 运维文档把「延迟 30 秒」改成「90 秒」长度不变，用户会看到旧值。
+    // 现 safeMarkdown 内部附加内容指纹，内容变则缓存自然失效。
+    const first = safeMarkdown('内容 A', 'msg-1')
+    const second = safeMarkdown('内容 B（不同内容，同 key）', 'msg-1')
+    expect(second).not.toBe(first)
+    expect(second).toContain('内容 B')
   })
 
   it('不同 cacheKey 各自渲染', () => {
@@ -156,5 +167,31 @@ describe('畸形输入降级', () => {
 
   it('纯文本原样保留可见内容', () => {
     expect(safeMarkdown('简单一句话')).toContain('简单一句话')
+  })
+})
+
+describe('缓存键（内容指纹）', () => {
+  it('同 cacheKey 但内容不同时不得复用旧结果', () => {
+    // 真实场景：运维文档把「延迟 30 秒」改成「90 秒」，长度不变。
+    // 修复前 key 是 `id-{length}`，两者撞 key，用户看到的仍是旧值——
+    // 而这种数字在运维手册里是要照着执行的。
+    const before = safeMarkdown('主从延迟 30 秒', 'doc-42')
+    const after = safeMarkdown('主从延迟 90 秒', 'doc-42')
+
+    expect(before).toContain('30')
+    expect(after).toContain('90')
+    expect(after).not.toContain('30')
+  })
+
+  it('同 cacheKey 且内容相同时复用缓存（指纹一致）', () => {
+    const a = safeMarkdown('# 同样的内容', 'doc-7')
+    const b = safeMarkdown('# 同样的内容', 'doc-7')
+
+    expect(a).toBe(b)
+  })
+
+  it('不传 cacheKey 时按内容本身缓存，仍然正确', () => {
+    expect(safeMarkdown('**A**')).toContain('<strong>A</strong>')
+    expect(safeMarkdown('**B**')).toContain('<strong>B</strong>')
   })
 })

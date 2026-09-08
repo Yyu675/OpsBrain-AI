@@ -51,7 +51,12 @@ export async function pendingCount(): Promise<number> {
   return data?.pending ?? 0
 }
 
-/** 审批单详情 */
+/**
+ * 审批单详情。
+ *
+ * @public 后端 GET /api/v1/approvals/{id} 真实在服务（ApprovalController line 80），
+ * 本函数是将来详情/审批操作页的接入面——当前零页面消费，@public 防 knip 假阳。
+ */
 export async function getApproval(id: number): Promise<ApprovalRequest> {
   const payload = await http.get<unknown>(`${API_ENDPOINTS.APPROVALS}/${id}`)
   return unwrapBiz<ApprovalRequest>(payload, '查询审批单失败')

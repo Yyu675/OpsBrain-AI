@@ -168,7 +168,7 @@ onMounted(() => {
   min-height: 0;
   height: calc(100vh - 56px);
   max-height: calc(100vh - 56px);
-  background: var(--color-bg, #f5f7fa);
+  background: var(--color-bg, var(--surface-0));
 }
 
 .ai-chat-inner {
@@ -200,7 +200,7 @@ onMounted(() => {
   height: 36px;
   border-radius: var(--radius-md, 8px);
   background: var(--color-primary-lighter, #ecf5ff);
-  color: var(--color-primary, #409eff);
+  color: var(--color-primary, var(--brand));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -222,7 +222,7 @@ onMounted(() => {
 .page-subtitle {
   margin: 2px 0 0 0;
   font-size: 12px;
-  color: var(--color-text-tertiary, #909399);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 
 /* 模式切换 Tab */
@@ -256,13 +256,13 @@ onMounted(() => {
   flex-shrink: 0;
 
   &:hover {
-    border-color: var(--color-primary, #409eff);
-    color: var(--color-primary, #409eff);
+    border-color: var(--color-primary, var(--brand));
+    color: var(--color-primary, var(--brand));
   }
 
   &.active {
-    background: var(--color-primary, #409eff);
-    border-color: var(--color-primary, #409eff);
+    background: var(--color-primary, var(--brand));
+    border-color: var(--color-primary, var(--brand));
     color: #fff;
   }
 }

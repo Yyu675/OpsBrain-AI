@@ -4,9 +4,11 @@
  */
 
 // 开发环境 Base URL
+/** @public knip 假阳存证：%s */
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8088/ai'
 
 // API 路径前缀
+/** @public knip 假阳存证：%s */
 export const API_PREFIX = '/api/v1'
 
 // 完整 API 地址
@@ -22,10 +24,13 @@ export const API_ENDPOINTS = {
   AUTH_LOGOUT: `${API_BASE}/auth/logout`,
   // 审批中心（方向 D：L3 人机协同审批）
   APPROVALS: `${API_BASE}/approvals`,
+  // 自愈中心（S3-1：L4 受控自愈）
+  HEALING: `${API_BASE}/healing`,
 
   // M8 看板统计
   DASHBOARD_OVERVIEW: `${API_BASE}/dashboard/overview`,
   DASHBOARD_TRENDS: `${API_BASE}/dashboard/trends`,
+  DASHBOARD_DIAGNOSIS_BOARD: `${API_BASE}/dashboard/diagnosis-board`,
 
   // M5 知识库
   // TODO(P2-待接入): KNOWLEDGE_INGEST / KNOWLEDGE_CHUNKS 端点因后端 /ingest 已废弃(410, 见 6.25 P1-9)、
@@ -51,6 +56,8 @@ export const API_ENDPOINTS = {
   // L2 告警（Stage 3：告警列表 + 人工确认/标记恢复）
   ALERTS: `${API_BASE}/alerts`,
   ALERTS_BY_ID: (id: number) => `${API_BASE}/alerts/${id}`,
+  DIAGNOSIS: `${API_BASE}/diagnosis`,
+  DIAGNOSIS_FEEDBACK: `${API_BASE}/diagnosis/hypothesis/feedback`,
 
   // AI 分析持久化（策略 B：结构化 + 多版本 + 反馈）
   TICKET_AI_ANALYSIS: (id: string) => `${API_BASE}/tickets/${id}/ai-analysis`,

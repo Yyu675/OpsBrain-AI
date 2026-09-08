@@ -20,52 +20,6 @@ public class KnowledgeCategoryRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public void ensureSchema() {
-        jdbcTemplate.execute("ALTER TABLE sys_knowledge_doc ADD COLUMN IF NOT EXISTS category_id BIGINT");
-        jdbcTemplate.execute("""
-            CREATE TABLE IF NOT EXISTS sys_knowledge_category (
-                id BIGSERIAL PRIMARY KEY,
-                parent_id BIGINT REFERENCES sys_knowledge_category(id),
-                name VARCHAR(64) NOT NULL,
-                sort_order INT NOT NULL DEFAULT 0,
-                status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
-                create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """);
-        jdbcTemplate.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS uk_knowledge_category_name
-                ON sys_knowledge_category (LOWER(name))
-            """);
-        jdbcTemplate.execute("""
-            CREATE INDEX IF NOT EXISTS idx_knowledge_category_parent
-                ON sys_knowledge_category (parent_id, sort_order, id)
-            """);
-        jdbcTemplate.execute("""
-            CREATE INDEX IF NOT EXISTS idx_doc_category_id
-                ON sys_knowledge_doc (category_id)
-            """);
-        jdbcTemplate.update("""
-            INSERT INTO sys_knowledge_category (name, sort_order)
-            SELECT DISTINCT TRIM(d.category), 0
-              FROM sys_knowledge_doc d
-             WHERE d.category IS NOT NULL
-               AND TRIM(d.category) <> ''
-               AND NOT EXISTS (
-                    SELECT 1 FROM sys_knowledge_category c
-                     WHERE LOWER(c.name) = LOWER(TRIM(d.category))
-               )
-            """);
-        jdbcTemplate.update("""
-            UPDATE sys_knowledge_doc d
-               SET category_id = c.id
-              FROM sys_knowledge_category c
-             WHERE d.category_id IS NULL
-               AND d.category IS NOT NULL
-               AND LOWER(TRIM(d.category)) = LOWER(c.name)
-            """);
-    }
-
     public List<KnowledgeCategory> findAll() {
         return jdbcTemplate.query("""
             SELECT c.id, c.parent_id, c.name, c.sort_order,

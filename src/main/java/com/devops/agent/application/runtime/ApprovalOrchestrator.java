@@ -4,7 +4,8 @@ import com.devops.agent.domain.approval.ApprovalRequest;
 import com.devops.agent.domain.approval.ApprovalService;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
 import com.devops.agent.domain.biz.service.TicketService;
-import com.devops.agent.domain.notify.DingTalkNotifier;
+import com.devops.agent.domain.healing.HealingOrchestrator;
+import com.devops.agent.domain.notify.Notifier;
 import com.devops.agent.domain.notify.NotifyMessage;
 import com.devops.agent.domain.tools.TicketDraft;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,19 +34,27 @@ public class ApprovalOrchestrator {
     /** 动作类型：创建工单（当前唯一需审批的写动作） */
     public static final String ACTION_CREATE_TICKET = "CREATE_TICKET";
 
+    /** 动作类型：自愈执行（S3-1，HealingOrchestrator 建的审批单） */
+    public static final String ACTION_HEALING = "HEALING";
+
     private final ApprovalService approvalService;
     private final TicketService ticketService;
     private final ObjectMapper objectMapper;
-    private final DingTalkNotifier dingTalkNotifier;
+    /** 通知渠道：依赖接口而非具体厂商实现（可插拔） */
+    private final Notifier notifier;
+    /** 自愈编排器：HEALING 审批单的批准回调目的地 */
+    private final HealingOrchestrator healingOrchestrator;
 
     public ApprovalOrchestrator(ApprovalService approvalService,
                                 TicketService ticketService,
                                 ObjectMapper objectMapper,
-                                DingTalkNotifier dingTalkNotifier) {
+                                Notifier notifier,
+                                HealingOrchestrator healingOrchestrator) {
         this.approvalService = approvalService;
         this.ticketService = ticketService;
         this.objectMapper = objectMapper;
-        this.dingTalkNotifier = dingTalkNotifier;
+        this.notifier = notifier;
+        this.healingOrchestrator = healingOrchestrator;
     }
 
     /**
@@ -85,7 +94,7 @@ public class ApprovalOrchestrator {
                     + "- **动作**：" + rejected.getActionType() + "\n"
                     + "- **审批人**：" + approver + "\n"
                     + "- **驳回理由**：" + reason + "\n";
-            dingTalkNotifier.send(NotifyMessage.normal(title, md));
+            notifier.send(NotifyMessage.normal(title, md));
         } catch (Exception e) {
             log.warn("⚠️ [ApprovalOrchestrator] 驳回通知失败（已忽略）| id={} | {}", id, e.getMessage());
         }
@@ -103,8 +112,27 @@ public class ApprovalOrchestrator {
         if (ACTION_CREATE_TICKET.equals(actionType)) {
             return replayCreateTicket(req, approver);
         }
+        if (ACTION_HEALING.equals(actionType)) {
+            return replayHealing(req);
+        }
         // 未知动作类型：不猜测执行，明确失败——猜测执行可能造成意外副作用
         throw new IllegalStateException("不支持的动作类型，无法重放执行: " + actionType);
+    }
+
+    /**
+     * 重放「自愈执行」：按审批单 id 找到执行台账，由自愈编排器重走
+     * dryRun + execute。台账状态流转与快照/撤销凭据全部归
+     * HealingOrchestrator 管（Single Writer），这里只做桥接。
+     */
+    private String replayHealing(ApprovalRequest req) {
+        HealingOrchestrator.HealingOutcome outcome =
+                healingOrchestrator.executeApprovedByApprovalId(req.getId());
+        if (!"SUCCEEDED".equals(outcome.status())) {
+            throw new IllegalStateException("自愈执行未成功: " + outcome.message());
+        }
+        log.warn("🩹 [ApprovalOrchestrator] 审批通过后已执行自愈 | approvalId={} | executionId={}",
+                req.getId(), outcome.executionId());
+        return "自愈执行成功（台账 #" + outcome.executionId() + "）";
     }
 
     /** 重放「创建工单」：payload 反序列化为 TicketDraft 后落库 */
@@ -139,7 +167,7 @@ public class ApprovalOrchestrator {
                     + "- **审批人**：" + approver + "\n"
                     + "- **执行结果**：" + detail + "\n";
             // 执行失败需人工介入 → 强提醒
-            dingTalkNotifier.send(success
+            notifier.send(success
                     ? NotifyMessage.normal(title, md)
                     : NotifyMessage.urgent(title, md));
         } catch (Exception e) {

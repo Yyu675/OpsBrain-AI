@@ -19,7 +19,43 @@
     <properties>
         <java.version>21</java.version>
         <!-- LangChain4j 统一版本；升级只需改这一处 -->
-        <langchain4j.version>1.1.0</langchain4j.version>
+        <!--
+          1.1.0 → 1.2.0：修 AbstractGuardrailService 的并发缺陷。
+
+          1.1.0 里那四个缓存用的是普通 HashMap，而 DefaultAiServices 的动态代理
+          是所有请求共用的单例。并发调用同一 AI Service 方法时多线程同时进入
+          computeIfAbsent，JDK 9+ 的 modCount 校验会抛 ConcurrentModificationException，
+          被应用层兜底 catch 吞成一句「50001 服务内部异常」。
+
+          上游 issue #3335「Guardrails implementation not thread-safe」已修复
+          （四个 Map 全部改为 ConcurrentHashMap），本项目核对过 1.2.0 的源码确认包含该修复。
+          另有 issue #3558 报告的正是本项目遇到的同一条堆栈，至今仍 open——
+          说明它就是 #3335 未升级版本的重现。
+
+          选 1.2.0 而非最新的 1.19.x：这是**包含修复的最小跨度**。
+          langchain4j 1.x 期间 API 仍在演进，而本项目重度依赖
+          TokenStream / AiServices / ChatMemoryProvider 等接口，
+          跨十几个小版本的收益（新特性）远不及回归风险。
+          修完这个具体缺陷即止，后续升级应单独评估。
+        -->
+        <langchain4j.version>1.2.0</langchain4j.version>
+
+        <!-- fabric8 K8s 客户端版本（V1.2 执行器适配器，2026-08-26）
+             6.13.x 为 2024 年稳定线，支持 K8s 1.28+；如需最新 API 再评估升级 -->
+        <fabric8.version>6.13.4</fabric8.version>
+
+        <!--
+          让 javac 把每条诊断打成 GitHub Actions 的 workflow command，
+          从而变成一条 annotation。
+
+          缘由：CI 的原始日志存放在 Azure blob
+          （productionresultssa7.blob.core.windows.net），部分开发/排障环境
+          访问不到，只能读 annotations API，而它默认只给一句
+          "Process completed with exit code 1"，看不到究竟哪一行编译错了。
+          打成 annotation 后，错误会同时出现在 PR 的 Files changed 视图里，
+          评审时不必点进日志翻。
+        -->
+        <maven.compiler.showWarnings>true</maven.compiler.showWarnings>
     </properties>
 
     <!-- 用 LangChain4j BOM 统一托管所有 langchain4j-* 子模块版本，避免版本错配 -->
@@ -51,6 +87,71 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
+        <!-- ================= 自身可观测性（P2，2026-08-26 新增）=================
+             系统能监控别人（Prometheus 代理查询），也要能监控自己：
+             /actuator/health 供 K8s 探针与部署健康检查；/actuator/prometheus
+             暴露自身指标（工具调用/Saga 补偿/LLM 成本）供 Prometheus 抓取。
+             注意：/actuator/** 不在 /api/** 下，不会被 SaInterceptor 拦截，
+             必须在 WebConfig 显式配置鉴权（见 WebConfig 注释），否则内部指标裸奔公网。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <!--
+          micrometer-registry-otlp（S5-1 批次 52）：OTLP 协议指标导出。
+          版本由 spring-boot-dependencies(Micrometer BOM）托管，与
+          prometheus 注册器同族同号——双注册器共存互不干扰
+          （prom 拉模型照旧，otlp 推模型走 collector）。
+          默认停用（management.otlp.metrics.export.enabled=false），
+          只在部署方供给 collector 地址后经 env 显开——
+          不给默认开启：没接 collector 的推流器只会把周期错误
+          喂给日志，还误导读者以为指标有去处。
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-otlp</artifactId>
+        </dependency>
+        <!--
+          Resilience4j（S0-3，路线图 §4.3）：数据源级熔断 + LLM 限流。
+          与 ToolRuntimeManager 的分工（AGENTS 3.7.5）：Resilience4j 管
+          「跨调用的熔断状态」（数据源客户端级），ToolRuntimeManager 管
+          「单次工具执行的超时与重试」（工具级），两层不重叠。
+          版本注意：spring-boot-dependencies 3.5.6 <b>不</b>托管该构件
+          （首推即被打回），此处显式钉 2.4.0（central 目录核对的最新版，
+          2026-03 发布）；若与 Boot 3.5.6 组合出解析冲突，回退 2.3.0。
+          注解切面需要 AOP starter。
+        -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>2.4.0</version>
+        </dependency>
+        <!--
+          resilience4j-annotations：@CircuitBreaker 注解本体。starter 不传递
+          该构件（run 34110627584 编译红：PrometheusClient 三处注解符号缺失
+          证实），须与 starter 同号显式声明。
+        -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-annotations</artifactId>
+            <version>2.4.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        <!-- ================= 真实执行器（V1.2，D1 适配器模式）=================
+             K8s 适配器实现依赖。CI 用 kubernetes-server-mock（FakeK8sClient）测试，
+             不依赖真实集群；演示用本机 kind + KubeConfig。凭证不进仓库。 -->
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-client</artifactId>
+            <version>${fabric8.version}</version>
+        </dependency>
 
         <!-- ================= 对象存储（工单附件） ================= -->
         <!-- MinIO SDK：S3 兼容协议，生产可平滑切换到阿里云 OSS / AWS S3 -->
@@ -76,6 +177,19 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <!--
+          Flyway（S0-1，路线图 §4.1）：迁移版本化。
+          版本由 spring-boot-starter-parent 的 BOM 托管，不显式钉版本。
+          flyway-database-postgresql 自 Flyway 10 起为 PostgreSQL 的必需模块。
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
         <!-- ================= Redis（语义缓存 / 会话） ================= -->
@@ -154,6 +268,29 @@
             <version>0.4</version>
         </dependency>
 
+        <!-- ================= API 文档（P0-2）=================
+             springdoc-openapi：从 Controller 反射生成 OpenAPI 3 契约。
+
+             为什么需要：130 个端点此前无机器可读契约，前后端靠人工维护 TS 类型
+             对齐，已因此出过 95 号那类事故（同一个错误码在两侧语义相反）。
+
+             版本 2.8.15 的选择依据（不是随手挑的最新版）：
+             - springdoc 官方版本表：Spring Boot [3.5.0, 4.0.0) 对应 2.8.15；
+             - 2.8.1~2.8.12 与 Spring Boot 3.5.x 有已知不兼容（社区实测报告）；
+             - 2.8.16 在「不使用 Spring Boot 自动配置」的应用上有启动失败问题
+               （springdoc#3288，已于 2026-07 修复）。本项目用标准
+               @SpringBootApplication，不属于该场景，但仍取官方基线版更稳。
+
+             ⚠️ 收益边界（前置调研，见 PROGRESS.md）：本项目 130 个端点里
+             70 个返回 Map<String,Object> 或 Object，OpenAPI 对这些只能生成
+             additionalProperties:true。本次接入先拿到 60 个强类型端点的契约，
+             Map 型端点需后续逐个换成 record DTO 才能产出有效 schema。 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.8.15</version>
+        </dependency>
+
         <!-- ================= 测试 ================= -->
         <!-- 经典命名：spring-boot-starter-test（含 JUnit 5、AssertJ、Mockito 等） -->
         <dependency>
@@ -161,10 +298,71 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          Testcontainers（S0-2，路线图 §4.2）：集成测试真实依赖。
+          版本由 spring-boot-dependencies 内嵌的 testcontainers-bom 托管，
+          无需显式钉版本。junit-jupiter 模块保留 @Testcontainers 扩展点
+          （当前基类用 singleton 容器模式未用到该注解，但路线图 0-2.1 要求
+          三个构件齐备，后续类若需 per-class 容器已备好）。
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          MockWebServer（S0-3）：熔断行为验证用——记录真实 HTTP 请求计数，
+          证明「熔断打开后请求不再打网络」（路线图 §4.3 注入验证的工具）。
+          版本注意：BOM 同样不托管 okhttp3（与 resilience4j 同批发现），
+          显式钉 4.12.0（square 官方长期稳定版）。
+        -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
+            <version>4.12.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
+            <!--
+              测试失败详情**同时**进控制台与 target/surefire-reports/*.txt。
+
+              动因：本项目的 CI 日志走 Azure blob，而 artifact 下载在受限网络下
+              取不到（返回 0 字节）。默认配置下控制台只有
+              「Tests run: 9, Failures: 9」这一行，**看不到任何一条失败原因**——
+              排查时只能靠猜，而猜错方向会把本来正确的产品代码改坏。
+
+              ⚠️ 这里曾配成 useFile=false，结果与 mvnw 里的 surefire 重放逻辑
+              互相打架：useFile=false 让 surefire **不再写 .txt**，
+              而 mvnw 那段恰恰是去读 .txt 的，于是「找到 0 个报告」，
+              详情一条也出不来。两个各自正确的修复合在一起变成了死局，
+              且双方都不报错——CI 探针打出「Tests行=183 但 surefire 报告 0 个」
+              才把它暴露出来。
+
+              现改为保留默认 useFile=true（写文件，供 mvnw 重放与 artifact 上传），
+              另开 useUnlimitedThreads 无关项不动；trimStackTrace=false 保留，
+              它让 Caused by 链完整，是定位根因的关键。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <trimStackTrace>false</trimStackTrace>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -177,24 +375,74 @@
                     </excludes>
                 </configuration>
             </plugin>
-            <!-- Maven Toolchains 插件：根据 toolchains.xml 自动选择 JDK 21 -->
+            <!--
+              flyway-maven-plugin：供 CI 与本地执行 `mvnw flyway:validate` /
+              `flyway:info`。版本由 spring-boot-dependencies 的
+              pluginManagement 托管（flyway.version）。连接参数一律通过
+              -D 命令行传入（见 .github/workflows/ci.yml），这里不写死
+              环境信息——pom 不该携带任何环境坐标（AGENTS 3.2）。
+            -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <!-- 版本钉 11.17.3：Boot BOM 不托管本插件；
+                     11.20.3 为 11.x 主族末版(插件自身版本列车,与 DB 模块 flyway-database-postgresql 同列车,不同代 flyway-core;CI 批 64 实测:不可混查 flyway-core 版本列车 11.17.3)
+                     也治住 IDE 档把未钉版插件误报成 1116 一类问题。
+                     连接参数不传固定值，CI 以 -D 注入（无环境坐标入 pom）。 -->
+                <version>11.20.3</version>
+                <dependencies>
+                    <!-- Flyway ≥10.2 起各数据库支持拆分为独立模块;插件自身
+                         classpath 不含项目依赖,必须在插件内显式声明,
+                         否则 flyway:migrate 报 "Unsupported Database: PostgreSQL"(CI 实测红面批 64)。 -->
+                    <dependency>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-database-postgresql</artifactId>
+                        <version>11.20.3</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+            <!--
+              已移除 maven-toolchains-plugin。
+
+              它在 validate 阶段就要求存在 ~/.m2/toolchains.xml 并从中匹配
+              JDK 21，否则直接失败：
+                  Cannot find matching toolchain definitions for: {version=21}
+
+              而 CI 用 actions/setup-java 装 JDK 并不会生成 toolchains.xml，
+              新克隆仓库的开发机同样没有——于是「装好 JDK 21 却仍然构建失败」，
+              且报错指向 toolchain 而非真实原因，极难定位。
+
+              这个插件本身也是多余的：上面 <java.version>21</java.version>
+              已通过 spring-boot-starter-parent 传给 maven.compiler.release，
+              编译目标版本由它单点决定。真正要防的是「用 JDK 17 去构建」，
+              那应当由 CI 的 setup-java 与 enforcer 保证，而不是 toolchains
+              ——后者只是换了个地方再声明一遍同一件事（同一事实两处定义）。
+            -->
+
+            <!--
+              编译诊断以 GitHub Actions workflow command 格式输出。
+
+              解决的是「CI 红了但看不到为什么」：原始日志存放在 Azure blob，
+              部分排障环境访问不到，annotations API 又只给
+              "Process completed with exit code 1"。
+              加上 -Xplugin 式的输出前缀后，javac 的每条 error 都会被
+              GitHub 识别成 annotation，可通过 API 读取，也会直接标注在
+              PR 的对应代码行上。
+
+              仅在 CI 生效（-Dci.annotations=true），本地构建不受影响——
+              本地终端里 ::error:: 前缀反而碍眼。
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-toolchains-plugin</artifactId>
-                <version>3.2.0</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>toolchain</goal>
-                        </goals>
-                    </execution>
-                </executions>
+                <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <toolchains>
-                        <jdk>
-                            <version>21</version>
-                        </jdk>
-                    </toolchains>
+                    <!-- 完整输出诊断，不因数量多而截断 -->
+                    <compilerArgs>
+                        <arg>-Xmaxerrs</arg>
+                        <arg>1000</arg>
+                        <arg>-Xmaxwarns</arg>
+                        <arg>200</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
         </plugins>

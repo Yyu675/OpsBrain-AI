@@ -222,7 +222,7 @@ defineExpose({ collapsed, toggle })
   width: 18px;
   height: 1px;
   margin: 2px 0 4px;
-  background: var(--color-border-light, #E5E7EB);
+  background: var(--color-border-light, var(--border-1));
   flex-shrink: 0;
 }
 
@@ -237,25 +237,25 @@ defineExpose({ collapsed, toggle })
   border: none;
   border-radius: var(--radius-sm, 6px);
   background: transparent;
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .cp-expand:hover {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #409eff);
+  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--color-primary, var(--brand));
 }
 .cp-expand:focus-visible {
-  outline: 2px solid var(--color-primary, #409eff);
+  outline: 2px solid var(--color-primary, var(--brand));
   outline-offset: 1px;
 }
 
 /* 折叠态图标轨与主内容之间的分隔线（展开态由调用方内容自带边框） */
 .cp-left.cp-collapsed {
-  border-right: 1px solid var(--color-border-light, #E5E7EB);
+  border-right: 1px solid var(--color-border-light, var(--border-1));
 }
 .cp-right.cp-collapsed {
-  border-left: 1px solid var(--color-border-light, #E5E7EB);
+  border-left: 1px solid var(--color-border-light, var(--border-1));
 }
 
 /* 移动端：侧栏改为上下堆叠，图标轨横向排列 */
@@ -289,7 +289,7 @@ defineExpose({ collapsed, toggle })
   .cp-right.cp-collapsed {
     border-right: none;
     border-left: none;
-    border-bottom: 1px solid var(--color-border-light, #E5E7EB);
+    border-bottom: 1px solid var(--color-border-light, var(--border-1));
   }
 }
 </style>

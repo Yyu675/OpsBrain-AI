@@ -53,15 +53,10 @@ public class TeamMemberController {
     @GetMapping
     public ApiResponse<Map<String, Object>> listUsers(
             @RequestParam(defaultValue = "false") boolean includeDisabled) {
-        try {
-            List<TeamMember> members = teamMemberService.listAssignableMembers(includeDisabled);
-            return ApiResponse.success(Map.of(
-                    "total", members.size(),
-                    "users", members
-            ));
-        } catch (Exception e) {
-            log.error("❌ [TeamMemberController] 查询成员名录失败: {}", e.getMessage(), e);
-            return ApiResponse.error(50001, "查询成员名录失败");
-        }
+        List<TeamMember> members = teamMemberService.listAssignableMembers(includeDisabled);
+        return ApiResponse.success(Map.of(
+                "total", members.size(),
+                "users", members
+        ));
     }
 }

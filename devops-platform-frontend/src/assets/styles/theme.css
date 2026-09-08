@@ -1,0 +1,322 @@
+/**
+ * OpsBrain 设计令牌层（Design Tokens）
+ * ============================================================================
+ * 借鉴 new-api 的核心思路：**一套语义令牌 + 多个正交轴**。
+ *
+ * 四个轴互不干扰，可自由组合：
+ *   1. 明暗       html.dark
+ *   2. 配色预设   html[data-theme="ops-blue" | "graphite" | "nord"]
+ *   3. 圆角       html[data-radius="none" | "sm" | "md" | "lg"]
+ *   4. 密度       html[data-density="compact" | "default" | "comfortable"]
+ *
+ * 用法：<html class="dark" data-theme="graphite" data-radius="sm" data-density="compact">
+ *
+ * ── 为什么必须是「语义令牌」而不是「颜色名令牌」 ──────────────────
+ * 现状 variables.css 里是 `--color-primary: #1B4F9C` 这类**具体颜色**，
+ * 组件写 `background: var(--color-bg-elevated)`。这在单主题下没问题，
+ * 但要加暗色时会发现：`--color-bg-elevated: #FFFFFF` 这个名字本身
+ * 就假定了「浅色」，暗色下把它改成 #1E1E1E 会让名字与值自相矛盾，
+ * 更糟的是有些地方语义是「卡片背景」、有些是「弹层背景」，
+ * 共用一个变量后暗色下无法分别调整。
+ *
+ * 所以这一层用 `--surface-1/2/3`（按层级）、`--text-1/2/3`（按主次）
+ * 这类**语义**命名，明暗各给一套值。组件只认语义，不认具体颜色。
+ *
+ * ── 为什么用 oklch ─────────────────────────────────────────────
+ * oklch 是感知均匀色彩空间：同样把 L 从 0.55 调到 0.65，
+ * 在蓝色和黄色上「看起来变亮的程度」是一致的，而 hsl 不是。
+ * 这让「生成一整套色阶」与「暗色反转」可以按公式推导而非逐个手调。
+ * 兼容性：Chrome 111+ / Safari 15.4+ / Firefox 113+，2026 年已可放心使用。
+ */
+
+/* ══════════════════════════════════════════════════════════════════
+   1. 基础层：与主题无关的常量
+   ══════════════════════════════════════════════════════════════════ */
+:root {
+  /* 字体 */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+
+  /* 字号阶梯（由密度轴覆盖） */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* 间距基数（由密度轴覆盖）。所有间距都是它的倍数，
+     改一个值即可整体收紧/放松，不用逐处调 padding */
+  --space-unit: 0.25rem;
+  --space-1: calc(var(--space-unit) * 1);
+  --space-2: calc(var(--space-unit) * 2);
+  --space-3: calc(var(--space-unit) * 3);
+  --space-4: calc(var(--space-unit) * 4);
+  --space-5: calc(var(--space-unit) * 5);
+  --space-6: calc(var(--space-unit) * 6);
+  --space-8: calc(var(--space-unit) * 8);
+  --space-12: calc(var(--space-unit) * 12);
+
+  /* 圆角（由圆角轴覆盖） */
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-lg: calc(var(--radius) * 1.5);
+  --radius-full: 9999px;
+
+  /* 行高 */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+
+  /* 层级 */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-drawer: 1030;
+  --z-modal: 1040;
+  --z-toast: 1060;
+
+  /* ── 动效令牌 ──────────────────────────────────────────────
+     统一时长与缓动，避免各处自己写 0.2s ease 导致节奏不一。
+     ease-out-cubic 是 UI 动效的通用选择：起步快、收尾缓，
+     符合「物体减速停下」的直觉。 */
+  --ease-out: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 350ms;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   2. 明色（默认）
+   ══════════════════════════════════════════════════════════════════ */
+:root {
+  /* 表面层级：数字越大越"靠前"（页面底 → 卡片 → 弹层） */
+  --surface-0: oklch(0.98 0.004 250);   /* 页面底色 */
+  --surface-1: oklch(1 0 0);            /* 卡片 */
+  --surface-2: oklch(0.985 0.003 250);  /* 卡片内嵌区/表头 */
+  --surface-3: oklch(1 0 0);            /* 弹层/下拉 */
+  --surface-hover: oklch(0.965 0.005 250);
+  --surface-active: oklch(0.94 0.008 250);
+
+  /* 文本主次 */
+  --text-1: oklch(0.22 0.015 260);      /* 标题/正文 */
+  --text-2: oklch(0.45 0.012 260);      /* 次要说明 */
+  --text-3: oklch(0.62 0.010 260);      /* 占位/禁用 */
+  --text-inverse: oklch(1 0 0);
+
+  /* 边框 */
+  --border-1: oklch(0.91 0.006 250);    /* 常规分隔 */
+  --border-2: oklch(0.86 0.008 250);    /* 强调/输入框 */
+
+  /* 品牌色（沿用现有 #1B4F9C 的色相，转为 oklch 以便派生） */
+  --brand: oklch(0.42 0.13 258);
+  --brand-hover: oklch(0.47 0.14 258);
+  --brand-active: oklch(0.37 0.12 258);
+  --brand-subtle: oklch(0.95 0.03 258);  /* 浅底，用于选中态背景 */
+  --brand-fg: oklch(1 0 0);              /* 品牌色上的文字 */
+
+  /* 状态色。每个都配 subtle 底色，避免各处自己调透明度 */
+  --success: oklch(0.58 0.15 150);
+  --success-subtle: oklch(0.96 0.04 150);
+  --warning: oklch(0.68 0.15 70);
+  --warning-subtle: oklch(0.97 0.05 70);
+  --danger: oklch(0.56 0.20 25);
+  --danger-subtle: oklch(0.96 0.04 25);
+  --info: oklch(0.55 0.13 250);
+  --info-subtle: oklch(0.96 0.03 250);
+
+  /* 运维语义色：P0-P3 告警等级。
+     单列出来是因为它们不等同于通用状态色——
+     P0 比 danger 更"红"，需要在密集列表里一眼跳出来 */
+  --sev-p0: oklch(0.52 0.24 20);
+  --sev-p1: oklch(0.62 0.19 45);
+  --sev-p2: oklch(0.70 0.15 80);
+  --sev-p3: oklch(0.60 0.06 250);
+
+  /* 图表色板：按色相均匀分布，保证相邻序列可区分。
+     ECharts 直接读这组变量，暗色下自动跟随 */
+  --chart-1: oklch(0.55 0.15 258);
+  --chart-2: oklch(0.62 0.14 175);
+  --chart-3: oklch(0.68 0.15 70);
+  --chart-4: oklch(0.58 0.18 25);
+  --chart-5: oklch(0.55 0.14 310);
+  --chart-6: oklch(0.65 0.12 210);
+
+  /* 阴影。暗色下要弱化——深色背景上强阴影会显脏 */
+  --shadow-sm: 0 1px 2px oklch(0.2 0.02 260 / 0.06);
+  --shadow-md: 0 2px 8px oklch(0.2 0.02 260 / 0.08);
+  --shadow-lg: 0 8px 24px oklch(0.2 0.02 260 / 0.12);
+
+  /* 侧边栏（常需与主区不同底色） */
+  --sidebar-bg: oklch(1 0 0);
+  --sidebar-fg: var(--text-2);
+  --sidebar-active-bg: var(--brand-subtle);
+  --sidebar-active-fg: var(--brand);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   3. 暗色
+   ── 不是简单反转亮度：暗色下需要降低饱和度、压低阴影、
+      并让表面层级靠"逐级变亮"而非"逐级变暗"来表达
+   ══════════════════════════════════════════════════════════════════ */
+html.dark {
+  --surface-0: oklch(0.17 0.008 260);
+  --surface-1: oklch(0.21 0.010 260);
+  --surface-2: oklch(0.25 0.011 260);
+  --surface-3: oklch(0.27 0.012 260);
+  --surface-hover: oklch(0.28 0.012 260);
+  --surface-active: oklch(0.32 0.014 260);
+
+  --text-1: oklch(0.95 0.005 260);
+  --text-2: oklch(0.75 0.010 260);
+  --text-3: oklch(0.58 0.012 260);
+  --text-inverse: oklch(0.17 0.008 260);
+
+  --border-1: oklch(0.30 0.012 260);
+  --border-2: oklch(0.38 0.014 260);
+
+  /* 暗色下品牌色要提亮：深底上的深蓝几乎不可见 */
+  --brand: oklch(0.68 0.14 258);
+  --brand-hover: oklch(0.74 0.14 258);
+  --brand-active: oklch(0.62 0.13 258);
+  --brand-subtle: oklch(0.30 0.05 258);
+  --brand-fg: oklch(0.15 0.01 260);
+
+  --success: oklch(0.70 0.15 150);
+  --success-subtle: oklch(0.28 0.05 150);
+  --warning: oklch(0.78 0.14 70);
+  --warning-subtle: oklch(0.30 0.05 70);
+  --danger: oklch(0.68 0.18 25);
+  --danger-subtle: oklch(0.30 0.06 25);
+  --info: oklch(0.70 0.12 250);
+  --info-subtle: oklch(0.28 0.04 250);
+
+  --sev-p0: oklch(0.65 0.21 20);
+  --sev-p1: oklch(0.72 0.17 45);
+  --sev-p2: oklch(0.78 0.14 80);
+  --sev-p3: oklch(0.68 0.05 250);
+
+  --chart-1: oklch(0.68 0.14 258);
+  --chart-2: oklch(0.72 0.13 175);
+  --chart-3: oklch(0.78 0.14 70);
+  --chart-4: oklch(0.68 0.16 25);
+  --chart-5: oklch(0.68 0.13 310);
+  --chart-6: oklch(0.74 0.11 210);
+
+  /* 暗色阴影几乎不可见，改用更深的黑并压低扩散 */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.30);
+  --shadow-md: 0 2px 8px oklch(0 0 0 / 0.36);
+  --shadow-lg: 0 8px 24px oklch(0 0 0 / 0.45);
+
+  --sidebar-bg: oklch(0.19 0.009 260);
+  --sidebar-fg: var(--text-2);
+  --sidebar-active-bg: var(--brand-subtle);
+  --sidebar-active-fg: var(--brand);
+
+  color-scheme: dark;  /* 让原生滚动条/表单控件跟随暗色 */
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   4. 配色预设（覆盖品牌色与图表色，明暗各一套）
+   ══════════════════════════════════════════════════════════════════ */
+
+/* 石墨灰：降低色彩干扰，适合长时间盯盘的 NOC 大屏 */
+html[data-theme='graphite'] {
+  --brand: oklch(0.42 0.02 260);
+  --brand-hover: oklch(0.48 0.02 260);
+  --brand-active: oklch(0.36 0.02 260);
+  --brand-subtle: oklch(0.94 0.005 260);
+}
+html.dark[data-theme='graphite'] {
+  --brand: oklch(0.75 0.02 260);
+  --brand-hover: oklch(0.82 0.02 260);
+  --brand-active: oklch(0.68 0.02 260);
+  --brand-subtle: oklch(0.30 0.01 260);
+}
+
+/* Nord：低饱和冷色，护眼 */
+html[data-theme='nord'] {
+  --brand: oklch(0.52 0.08 230);
+  --brand-hover: oklch(0.58 0.09 230);
+  --brand-active: oklch(0.46 0.07 230);
+  --brand-subtle: oklch(0.95 0.02 230);
+}
+html.dark[data-theme='nord'] {
+  --brand: oklch(0.72 0.09 230);
+  --brand-hover: oklch(0.78 0.09 230);
+  --brand-active: oklch(0.66 0.08 230);
+  --brand-subtle: oklch(0.31 0.03 230);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   5. 圆角轴（放在预设之后，使用户显式选择覆盖预设默认值）
+   ══════════════════════════════════════════════════════════════════ */
+html[data-radius='none'] { --radius: 0; }
+html[data-radius='sm']   { --radius: 0.25rem; }
+html[data-radius='md']   { --radius: 0.5rem; }
+html[data-radius='lg']   { --radius: 0.875rem; }
+
+/* ══════════════════════════════════════════════════════════════════
+   6. 密度轴
+   ── 运维系统的核心诉求：一屏能看多少行。
+      compact 让同样高度多显示约 30% 的表格行
+   ══════════════════════════════════════════════════════════════════ */
+html[data-density='compact'] {
+  --space-unit: 0.1875rem;
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.125rem;
+  --text-2xl: 1.375rem;
+  --text-3xl: 1.625rem;
+  --control-h: 28px;
+  --row-h: 36px;
+}
+html[data-density='default'] {
+  --control-h: 32px;
+  --row-h: 44px;
+}
+html[data-density='comfortable'] {
+  --space-unit: 0.3125rem;
+  --text-base: 1.0625rem;
+  --control-h: 38px;
+  --row-h: 52px;
+}
+:root { --control-h: 32px; --row-h: 44px; }
+
+/* ══════════════════════════════════════════════════════════════════
+   7. 无障碍：尊重系统「减少动态效果」
+   ── 前庭功能障碍用户会因动画产生眩晕，这是 WCAG 要求，不是可选项
+   ══════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   8. 主题切换过渡
+   ── 只对颜色属性加过渡，不要用 `transition: all`：
+      那会让布局属性也参与过渡，切换主题时整页元素抖动
+   ══════════════════════════════════════════════════════════════════ */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color var(--duration-normal) var(--ease-out),
+              border-color var(--duration-normal) var(--ease-out),
+              color var(--duration-normal) var(--ease-out),
+              fill var(--duration-normal) var(--ease-out),
+              box-shadow var(--duration-normal) var(--ease-out) !important;
+}

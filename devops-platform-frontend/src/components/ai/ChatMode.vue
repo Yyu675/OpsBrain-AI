@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
+import { toStreamError } from '@/constants/bizCode'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
 import {
   Send, Bot, User, Loader, CheckCircle, AlertCircle, Wrench,
   Copy, RefreshCw, Square, Trash2, FileText, ChevronRight
@@ -68,12 +69,12 @@ const scrollToBottom = async () => {
 
 const clearChat = () => {
   if (chat.isStreaming) {
-    ElMessage.warning('AI 正在生成中，无法清空')
+    notify.warning('AI 正在生成中，无法清空')
     return
   }
   chat.clear()
   inputText.value = ''
-  ElMessage.success('已清空对话历史')
+  notify.success('已清空对话历史')
 }
 
 // ==================== 发送 / 停止 / 重新生成 ====================
@@ -125,7 +126,7 @@ const runStream = async (query: string) => {
                 if (ticketId) {
                   chat.mergeMetadata({ ticketId })
                   emit('ticket-created', ticketId)
-                  ElMessage.success({ message: `工单 ${ticketId} 创建成功！`, duration: 5000 })
+                  notify.success(`工单 ${ticketId} 创建成功！`, { duration: 5000 })
                 }
               } catch (e) {
                 console.error('解析工单结果失败:', e)
@@ -144,8 +145,48 @@ const runStream = async (query: string) => {
         },
 
         onError: (data: SSEErrorEvent) => {
-          chat.finishStreaming(`❌ ${data.message || '请求失败，请稍后重试'}`)
-          ElMessage.error(data.message || '请求失败，请稍后重试')
+          // 走 BIZ_ERRORS 查表而非只用 message：后端下发的 message 有时
+          // 只有「连接超时」四个字，而该码（50002）的 Retry 是 SAFE——
+          // 重试就能好。丢掉 code 等于把这个信息藏起来，
+          // 用户多半以为服务坏了就走了
+          const view = toStreamError(data.code, data.message)
+          // 保留已流式输出的内容，与 onClose / stopGeneration 两条收尾路径一致。
+          // 此前直接覆盖：模型已经答了半页，中途报错就被一句错误提示整个抹掉，
+          // 而那半页往往已经有用（诊断思路、前半段命令），用户还没来得及复制
+          const partial = chat.streamingMessage?.content ?? ''
+          chat.finishStreaming(
+            partial ? `${partial}\n\n---\n\n❌ ${view.text}` : `❌ ${view.text}`
+          )
+          if (view.retryable) {
+            notify.warning(`${view.title}，可重试`)
+          } else {
+            notify.error(view.title)
+          }
+        },
+
+        /**
+         * 流正常结束但**没收到 complete 事件**时的兜底。
+         *
+         * fetchEventSource 在服务端关闭流时会正常 resolve——不抛错、不进 catch。
+         * 若此前既没有 complete 也没有 error（后端超时切断、网关 502 断流、
+         * Nginx proxy_read_timeout 到期都会这样），isStreaming 就永远停在 true：
+         *   - 输入框 :disabled="chat.isStreaming" → 一直禁用
+         *   - 发送按钮被「停止生成」替换，而此时 abortController 已置空，
+         *     stopGeneration 直接 return —— **点了没有任何反应**
+         * 结果是整个对话框彻底卡死，用户只能刷新页面。
+         *
+         * 这里按「是否已有内容」区分收尾文案：有内容说明是中途断流，
+         * 保留已生成部分并注明；完全没内容则如实说明没收到回答。
+         */
+        onClose: () => {
+          if (!chat.isStreaming) return   // 已由 complete/error 正常收尾
+          const partial = chat.streamingMessage?.content ?? ''
+          chat.finishStreaming(
+            partial
+              ? `${partial}\n\n_（连接已中断，以上为已生成内容）_`
+              : '❌ 连接意外中断，未收到回答，请重试'
+          )
+          notify.warning('连接中断，回答可能不完整')
         }
       },
       abortController,
@@ -160,7 +201,7 @@ const runStream = async (query: string) => {
       return
     }
     chat.finishStreaming(`❌ 连接失败：${errorMessage(error)}`)
-    ElMessage.error('连接失败，请检查网络或稍后重试')
+    notify.error('连接失败，请检查网络或稍后重试')
   } finally {
     abortController = null
   }
@@ -179,18 +220,18 @@ const sendMessage = async () => {
 const stopGeneration = () => {
   if (!chat.isStreaming || !abortController) return
   abortController.abort()
-  ElMessage.info('已停止生成')
+  notify.info('已停止生成')
 }
 
 /** 重新生成：删掉该条回答，用其原始提问重跑 */
 const regenerate = async (msg: ChatMessage) => {
   if (chat.isStreaming) {
-    ElMessage.warning('AI 正在生成中，请稍候')
+    notify.warning('AI 正在生成中，请稍候')
     return
   }
   const query = msg.metadata?.sourceQuery || chat.lastUserQuery
   if (!query) {
-    ElMessage.warning('找不到原始提问，无法重新生成')
+    notify.warning('找不到原始提问，无法重新生成')
     return
   }
   chat.removeMessage(msg.id)
@@ -200,8 +241,8 @@ const regenerate = async (msg: ChatMessage) => {
 /** 复制消息内容 */
 const copyMessage = async (content: string) => {
   const ok = await copyText(content)
-  if (ok) ElMessage.success('已复制到剪贴板')
-  else ElMessage.warning('复制失败，请手动选择文本')
+  if (ok) notify.success('已复制到剪贴板')
+  else notify.warning('复制失败，请手动选择文本')
 }
 
 // ==================== 输入交互 ====================
@@ -222,11 +263,22 @@ onMounted(() => {
   scrollToBottom()
 })
 
-// 卸载时中止 SSE，避免 Hub 切模式后 token 继续写入 store 且 isStreaming 永不复位
+/**
+ * 卸载时中止 SSE 并**收尾流式状态**。
+ *
+ * 只 abort 是不够的：abort 会让 chatStream 的 promise 走 catch 分支，
+ * 但组件已卸载、那段 catch 里的 finishStreaming 未必来得及执行；
+ * 而 isStreaming 存在 store（跨组件共享），切走再回来输入框仍是禁用态。
+ * 故这里显式收尾，与 onClose 的兜底同一目的。
+ */
 onBeforeUnmount(() => {
   if (abortController) {
     abortController.abort()
     abortController = null
+  }
+  if (chat.isStreaming) {
+    const partial = chat.streamingMessage?.content ?? ''
+    chat.finishStreaming(partial ? `${partial}\n\n_（已停止生成）_` : '_（已停止生成）_')
   }
 })
 </script>
@@ -262,7 +314,7 @@ onBeforeUnmount(() => {
             <div
               v-if="msg.role === 'assistant'"
               class="message-text markdown-body"
-              v-html="renderMarkdown(msg.content, msg.id + ':' + msg.content.length)"
+              v-html="renderMarkdown(msg.content, msg.id)"
             ></div>
             <div v-else class="message-text">{{ msg.content }}</div>
 
@@ -507,7 +559,7 @@ onBeforeUnmount(() => {
       display: block;
       padding: 0;
       background: transparent;
-      color: #E2E8F0;
+      color: var(--border-1);
       font-size: 12px;
       line-height: 1.6;
     }

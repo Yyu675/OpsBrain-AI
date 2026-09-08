@@ -1,14 +1,15 @@
 package com.devops.agent.infrastructure;
 
+import com.devops.agent.infrastructure.llm.LlmEndpointSpec;
+import com.devops.agent.infrastructure.llm.OpenAiCompatibleModelFactory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import com.devops.agent.infrastructure.llm.RateLimitedEmbeddingModel;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -55,7 +56,7 @@ public class AiModelConfig {
     /**
      * 向量维度（全链路唯一来源：devops.ai.vector.dimension）
      * <p>
-     * 必须与 {@code init.sql} 的 {@code VECTOR(n)} 和
+     * 必须与 {@code V1__baseline.sql} 的 {@code VECTOR(n)} 和
      * {@link VectorStoreConfig} 读的是同一个配置键——此前这里不读配置、
      * 也不向 Embedding API 传 dimensions，所谓「维度铁律」只是注释，
      * 换模型时会在写库那一刻才炸（列类型不匹配）。
@@ -63,6 +64,32 @@ public class AiModelConfig {
      */
     @Value("${devops.ai.vector.dimension}")
     private int vectorDimension;
+
+    // ==================== 端点描述（配置 → 中性模型）====================
+    //
+    // 五个 Bean 曾各自手写一遍 baseUrl/apiKey/modelName/timeout/maxRetries，
+    // 同样六行复制五份。后果不是「代码丑」而是「改一处漏四处」——
+    // Embedding Bean 就曾漏传 dimensions，日志却照常打印「输出维度 1536」，
+    // 故障要到写库那一刻才以 expected 1536 dimensions, not 3072 暴露。
+    // 现在配置的解读只发生在下面三个方法里，且它们是纯函数、可单测。
+
+    /** Turbo（日常对话）端点 */
+    public LlmEndpointSpec turboSpec() {
+        return LlmEndpointSpec.chat(alibabaBaseUrl, alibabaApiKey, turboModel,
+                Duration.ofMillis(timeout), maxRetries);
+    }
+
+    /** Reasoner（复杂推理）端点，超时按 REASONER_TIMEOUT_MULTIPLIER 放大 */
+    public LlmEndpointSpec reasonerSpec() {
+        return LlmEndpointSpec.reasoner(alibabaBaseUrl, alibabaApiKey, reasonerModel,
+                Duration.ofMillis(timeout), maxRetries);
+    }
+
+    /** Embedding 端点，维度取自 devops.ai.vector.dimension */
+    public LlmEndpointSpec embeddingSpec() {
+        return LlmEndpointSpec.embedding(alibabaBaseUrl, alibabaApiKey, embeddingModel,
+                Duration.ofMillis(timeout), maxRetries, vectorDimension);
+    }
 
     // ==================== Real 模式（生产模式）====================
 
@@ -73,16 +100,9 @@ public class AiModelConfig {
     @Bean(name = "turboModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
     public ChatModel turboModel() {
-        log.info("🚀 [AiModelConfig] 初始化 Turbo 模型: {}", turboModel);
-        return OpenAiChatModel.builder()
-                .baseUrl(alibabaBaseUrl)
-                .apiKey(alibabaApiKey)
-                .modelName(turboModel)
-                .timeout(Duration.ofMillis(timeout))
-                .maxRetries(maxRetries) // 最大重试次数
-                .logRequests(true) // 开发期开启请求日志（方便调试）
-                .logResponses(false) // 生产环境关闭响应日志（避免泄露敏感信息）
-                .build();
+        LlmEndpointSpec spec = turboSpec();
+        log.info("🚀 [AiModelConfig] 初始化 Turbo 模型: {}", spec.describe());
+        return OpenAiCompatibleModelFactory.chat(spec, true);
     }
 
     /**
@@ -92,16 +112,11 @@ public class AiModelConfig {
     @Bean(name = "reasonerModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
     public ChatModel reasonerModel() {
-        log.info("🚀 [AiModelConfig] 初始化 Reasoner 模型: {}", reasonerModel);
-        return OpenAiChatModel.builder()
-                .baseUrl(alibabaBaseUrl)
-                .apiKey(alibabaApiKey)
-                .modelName(reasonerModel)
-                .timeout(Duration.ofMillis(timeout * 2)) // 推理模型超时时间翻倍
-                .maxRetries(maxRetries)
-                .logRequests(true)
-                .logResponses(false)
-                .build();
+        // 超时翻倍这条规则由 LlmEndpointSpec.reasoner() 统一表达，
+        // 不再以裸的 timeout * 2 散落在两个方法里
+        LlmEndpointSpec spec = reasonerSpec();
+        log.info("🚀 [AiModelConfig] 初始化 Reasoner 模型: {}", spec.describe());
+        return OpenAiCompatibleModelFactory.chat(spec, true);
     }
 
     /**
@@ -111,18 +126,13 @@ public class AiModelConfig {
     @Bean(name = "turboStreamingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
     public StreamingChatModel turboStreamingModel() {
-        // 注意：OpenAiStreamingChatModelBuilder 在 langchain4j-open-ai 1.1.0 中
-        // 没有 maxRetries 方法（与同步 OpenAiChatModelBuilder 不同）。
-        // 流式重试需在更上层（编排层/HTTP 客户端层）兜底，而非此处。
-        log.info("🚀 [AiModelConfig] 初始化 Turbo 流式模型: {} (流式无 maxRetries，由编排层兜底)", turboModel);
-        return OpenAiStreamingChatModel.builder()
-                .baseUrl(alibabaBaseUrl)
-                .apiKey(alibabaApiKey)
-                .modelName(turboModel)
-                .timeout(Duration.ofMillis(timeout))
-                .logRequests(true)
-                .logResponses(false)
-                .build();
+        // .streaming() 把重试数显式归零：LangChain4j 1.1.0 的流式 builder
+        // 没有 maxRetries 方法，配置里留个非 0 值会让人误以为流式也会重试。
+        // 流式重试需在更上层（编排层/HTTP 客户端层）兜底。
+        LlmEndpointSpec spec = turboSpec().streaming();
+        log.info("🚀 [AiModelConfig] 初始化 Turbo 流式模型: {} (流式无 maxRetries，由编排层兜底)",
+                spec.describe());
+        return OpenAiCompatibleModelFactory.streamingChat(spec, true);
     }
 
     /**
@@ -131,24 +141,17 @@ public class AiModelConfig {
     @Bean(name = "reasonerStreamingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
     public StreamingChatModel reasonerStreamingModel() {
-        // 注意：OpenAiStreamingChatModelBuilder 在 langchain4j-open-ai 1.1.0 中
-        // 没有 maxRetries 方法（与同步 OpenAiChatModelBuilder 不同）。
-        log.info("🚀 [AiModelConfig] 初始化 Reasoner 流式模型: {} (流式无 maxRetries，由编排层兜底)", reasonerModel);
-        return OpenAiStreamingChatModel.builder()
-                .baseUrl(alibabaBaseUrl)
-                .apiKey(alibabaApiKey)
-                .modelName(reasonerModel)
-                .timeout(Duration.ofMillis(timeout * 2))
-                .logRequests(true)
-                .logResponses(false)
-                .build();
+        LlmEndpointSpec spec = reasonerSpec().streaming();
+        log.info("🚀 [AiModelConfig] 初始化 Reasoner 流式模型: {} (流式无 maxRetries，由编排层兜底)",
+                spec.describe());
+        return OpenAiCompatibleModelFactory.streamingChat(spec, true);
     }
 
     /**
      * Embedding 模型（向量化模型）
      * <p>
      * <b>维度铁律</b>：输出维度必须等于 {@code devops.ai.vector.dimension}，
-     * 该值同时决定 {@code init.sql} 的 {@code VECTOR(n)} 与
+     * 该值同时决定 {@code V1__baseline.sql} 的 {@code VECTOR(n)} 与
      * {@link VectorStoreConfig} 的配置。三者同源，不允许各写一份。
      * </p>
      * <p>
@@ -159,8 +162,8 @@ public class AiModelConfig {
      */
     @Bean(name = "embeddingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
-    public EmbeddingModel embeddingModel() {
-        // 维度取自配置（devops.ai.vector.dimension），与 init.sql 的
+    public EmbeddingModel embeddingModel(RateLimiterRegistry rateLimiterRegistry) {
+        // 维度取自配置（devops.ai.vector.dimension），与 V1__baseline.sql 的
         // VECTOR(n) 同源。
         //
         // 必须显式传 dimensions：多数现代 Embedding 模型的原生维度并非 1536
@@ -170,17 +173,14 @@ public class AiModelConfig {
         //   ERROR: expected 1536 dimensions, not 3072
         // 此前这里不传参，日志却硬编码打印「(输出维度: 1536)」——
         // 日志在说谎，反而掩盖了真实维度，排查时会误以为配置已生效。
-        log.info("🚀 [AiModelConfig] 初始化 Embedding 模型: {} | 请求降维至 {} 维（与 init.sql VECTOR({}) 对齐）",
-                embeddingModel, vectorDimension, vectorDimension);
-        return OpenAiEmbeddingModel.builder()
-                .baseUrl(alibabaBaseUrl)
-                .apiKey(alibabaApiKey)
-                .modelName(embeddingModel)
-                .dimensions(vectorDimension)
-                .timeout(Duration.ofMillis(timeout))
-                .maxRetries(maxRetries)
-                .logRequests(false) // Embedding 请求频繁，关闭日志
-                .build();
+        LlmEndpointSpec spec = embeddingSpec();
+        log.info("🚀 [AiModelConfig] 初始化 Embedding 模型: {}（与 V1 基线 VECTOR({}) 对齐）",
+                spec.describe(), vectorDimension);
+        // S0-3：Bean 收口限流（llm 实例）。装饰而非注解贴调用方——无论检索、
+        // 摄取还是重建索引，拿到的 embeddingModel 都已带配额护栏
+        return new RateLimitedEmbeddingModel(
+                OpenAiCompatibleModelFactory.embedding(spec),
+                rateLimiterRegistry.rateLimiter("llm"));
     }
 
     // ==================== Mock 模式（开发模式）====================
@@ -230,8 +230,11 @@ public class AiModelConfig {
      */
     @Bean(name = "embeddingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "MOCK", matchIfMissing = true)
-    public EmbeddingModel mockEmbeddingModel() {
-        log.warn("⚠️ [AiModelConfig] Mock 模式：Embedding 模型将返回假向量（1536 维零向量）");
-        return new MockEmbeddingModel();
+    public EmbeddingModel mockEmbeddingModel(RateLimiterRegistry rateLimiterRegistry) {
+        log.warn("⚠️ [AiModelConfig] Mock 模式：Embedding 模型将返回假向量（{} 维确定性向量）", vectorDimension);
+        // 维度传给 Mock——S0-2-J1 曾证明硬编码 1536 会让维度注入在 MOCK 路径无声落空
+        // 与 REAL 同样过限流装饰：护栏通路在 MOCK 下也可被测试断言
+        return new RateLimitedEmbeddingModel(new MockEmbeddingModel(vectorDimension),
+                rateLimiterRegistry.rateLimiter("llm"));
     }
 }

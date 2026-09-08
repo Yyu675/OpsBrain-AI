@@ -22,7 +22,8 @@ import { VersionConflictError } from '@/api/services/ticket.service'
 // A2：负责人名录改由后端下发，不再硬编码编造名单
 import { fetchTeamMembers } from '@/api/users'
 import { errorMessage } from '@/utils/errors'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
+import { nowAsBackendTime } from '@/utils/time'
 import type { TeamMember } from '@/api/types'
 import type { FrontendTicket } from '@/api/types/ticket'
 import {
@@ -30,7 +31,6 @@ import {
   type TicketStatus,
   type TicketPriority
 } from '@/constants/ticket'
-import { ElMessage } from 'element-plus'
 
 // 仅用于清理旧版本遗留的缓存，不再写入
 const PERSIST_KEY = 'tickets'
@@ -88,18 +88,20 @@ export const CATEGORY_OPTIONS = [
  */
 export { UNASSIGNED }
 
-/**
- * 负责人候选名单（兜底）
+/*
+ * 此处原有 `export const ASSIGNEE_FALLBACK = [UNASSIGNED]`，已删除。
  *
- * 仅在 GET /api/v1/users 不可用时使用——此时至少要让用户能选「待分配」，
- * 而不是面对一个空白下拉框无法提交表单。
+ * 它记录的兜底意图（后端名录拿不到时至少保留「待分配」，避免空白下拉框
+ * 导致表单无法提交）**已经由下方 `assignees` computed 实现**：
+ * 它无条件在名单末尾补上 UNASSIGNED，名录为空时自然只剩这一项。
  *
- * 注意：此前这里是 ['张明','李四','王五','赵六','孙七','周八','待分配'] 硬编码七人名单，
- * 而库里只有「张明」一个真实负责人，工单会被指派给不存在的人。
- * 真实名单现由 useTicketsStore().assignees 从后端加载。
+ * 那次改造之后这个常量就没有任何引用了（全仓 grep 仅剩定义本身），
+ * 是一个被遗留下来的空壳。留着的坏处不是占地方，而是
+ * 下一个人会以为「兜底逻辑在这个常量里」，改它却毫无效果。
+ *
+ * 由 tools/audit/scan_export_coverage.py 报出（未被任何测试引用），
+ * 顺藤摸瓜发现它连生产代码也没人用。
  */
-export const ASSIGNEE_FALLBACK = [UNASSIGNED]
-
 
 export const TAG_OPTIONS = [
   '生产环境', '测试环境', '预发环境',
@@ -236,7 +238,19 @@ export const useTicketsStore = defineStore('tickets', () => {
     } catch (e: unknown) {
       if (requestSequence !== listRequestSequence) return
       error.value = errorMessage(e, '加载工单列表失败')
-      ElMessage.error(error.value)
+      /*
+       * 只记录错误、**不弹提示**，交给调用方决定如何呈现。
+       *
+       * 原来这里 notify.error 之后又 throw，而 TicketList 的 fetchList 会
+       * catch 住写进 listError，再由 DataStateBoundary 渲染成整块错误态
+       * （含原因、建议、重试按钮）。于是同一次失败被报了两遍：
+       * 一个红色 toast + 一整块错误面板，信息完全重复。
+       *
+       * 列表加载失败属于「页面级」故障，页面内的错误态比飘一下的 toast
+       * 更合适——它不会消失、带重试入口、也不会在批量刷新时刷屏。
+       * 写操作（updateStatus / transferTicket 等）仍保留 handleServerError，
+       * 因为那些是「动作级」反馈，没有承载它的页面区域。
+       */
       throw e
     } finally {
       if (requestSequence === listRequestSequence) loading.value = false
@@ -256,7 +270,7 @@ export const useTicketsStore = defineStore('tickets', () => {
    */
   const refreshTickets = async () => {
     await loadTicketsFromBackend(lastQuery.value ?? undefined)
-    ElMessage.success('工单列表已刷新')
+    notify.success('工单列表已刷新')
   }
 
   // 已移除工单列表的持久化与跨标签页同步。
@@ -376,7 +390,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       })
       // 用后端返回值校准（时间戳由服务端生成，避免客户端时钟偏差）
       t.replies[optimisticIndex] = saved
-      t.updatedAt = new Date().toISOString().slice(0, 16).replace('T', ' ')
+      t.updatedAt = nowAsBackendTime()
 
       // 回复会产生活动流记录，重新拉取以保持时间线一致
       await loadActivities(id)
@@ -496,7 +510,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     const snapshot = JSON.parse(JSON.stringify(t)) as Ticket
 
     Object.assign(t, patch)
-    t.updatedAt = new Date().toISOString().slice(0, 16).replace('T', ' ')
+    t.updatedAt = nowAsBackendTime()
 
     try {
       const updated = await apiUpdateTicket(id, {
@@ -538,11 +552,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       // 冲突时重试仍会覆盖他人修改，必须先刷新看到最新内容
       if ((e as VersionConflictError)?.isVersionConflict) {
         console.warn('[TicketsStore] 版本冲突，本地修改已回滚', e)
-        ElMessage.warning({
-          message: (e as Error).message,
-          duration: 6000,
-          showClose: true
-        })
+        notify.warning((e as Error).message, { duration: 6000, showClose: true })
         // 拉取最新数据，让用户看到他人改了什么
         await refreshTickets()
         // 详情页可能不在当前列表页内，额外拉取单条工单确保 version 同步
@@ -782,11 +792,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       // 后端此时不抛异常（标签是附属元数据，不因其失败而中断主流程），
       // 故必须由前端比对提交值与返回值才能发现
       if (tags.length > 0 && saved.length === 0) {
-        ElMessage.warning({
-          message: '标签保存失败，请稍后重试',
-          duration: 6000,
-          showClose: true
-        })
+        notify.warning('标签保存失败，请稍后重试', { duration: 6000, showClose: true })
       }
 
       // 标签变更会产生活动流记录
@@ -850,11 +856,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       console.warn('[TicketsStore] 加载成员名录失败，降级为仅「待分配」', e)
       teamMembers.value = []
       membersLoaded.value = false
-      ElMessage.warning({
-        message: '负责人名单加载失败，暂时只能选择「待分配」',
-        duration: 5000,
-        showClose: true
-      })
+      notify.warning('负责人名单加载失败，暂时只能选择「待分配」', { duration: 5000, showClose: true })
     }
   }
 

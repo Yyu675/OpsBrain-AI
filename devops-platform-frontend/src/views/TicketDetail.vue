@@ -1,23 +1,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Clock, AlertTriangle,
   Send, ArrowUp, ArrowRightLeft, X, Check, Info, Plus,
-  Sparkles, BookPlus, Paperclip, Trash2, Download, TrendingUp
+  Sparkles, BookPlus, Paperclip, TrendingUp
 } from 'lucide-vue-next'
 import { useTicketsStore, getStatusLabel, getPriorityLabel, UNASSIGNED } from '@/stores/tickets'
+import { canTransitionStatus, isTerminalStatus } from '@/constants/ticket'
 import { useAppStore } from '@/stores/app'
 import {
   fetchTicketById,
-  fetchTicketAttachments,
-  uploadTicketAttachment,
-  fetchAttachmentDownloadUrl,
-  deleteTicketAttachment,
   // B1 首响 / 升级
-  acknowledgeTicket,
-  escalateTicket,
   // B2 现场处置
   addTicketAction,
   fetchTicketActions,
@@ -27,18 +21,28 @@ import {
   confirmRootCause,
   submitVerification,
   skipVerification,
-  type TicketActionRecord,
-  type TicketAttachmentMeta
+  type TicketActionRecord
 } from '@/api/tickets'
+import { useTicketClosure } from '@/composables/useTicketClosure'
+import { useTicketAttachments } from '@/composables/useTicketAttachments'
+import { useTicketActions } from '@/composables/useTicketActions'
 import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
 import { getTrends, type TrendData } from '@/api/dashboard'
 import { mapServiceToModule } from '@/api/utils/dto-converter'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
 import { useExternalResourceState } from '@/composables/useResourceState'
 import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
 import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
-import AnalysisCard from '@/components/ticket/AnalysisCard.vue'
+import TicketTimeline from '@/components/ticket/TicketTimeline.vue'
 import TicketInsights from '@/components/ticket/TicketInsights.vue'
+// 右侧栏四块已拆为独立组件。业务逻辑仍留在本文件（addTag/removeTag、
+// useTicketAttachments 的回调），子组件只负责画 DOM 并把交互抛回来——
+// 这样 TicketDetail.actions.test.ts 里打在 vm.addTag() 上的 6 例
+// 一行不用改，拆分对错才有一把没被挪动过的标尺。
+import TicketPropsPanel from '@/components/ticket/TicketPropsPanel.vue'
+import TicketTagEditor from '@/components/ticket/TicketTagEditor.vue'
+import TicketAttachmentPanel from '@/components/ticket/TicketAttachmentPanel.vue'
+import TicketActivityLog from '@/components/ticket/TicketActivityLog.vue'
 import KnowledgeSinkDrawer from '@/components/ticket/KnowledgeSinkDrawer.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
@@ -138,96 +142,17 @@ watch(ticketId, (newId, oldId) => {
 })
 
 /**
- * B5 闭环进度条：6 阶段横向步骤条
+ * 闭环进度、SLA 展示与属性栏的派生计算已抽到 useTicketClosure。
  *
- * 阶段：建单 → 首响 → 止损 → 修复 → 验证 → 归档
- * 状态：done 已完成 / current 当前 / skipped 跳过(标灰) / pending 待处理
+ * 抽出的判定口径（止损按 mitigatedAt 而非状态、首响超时标 skipped、
+ * 已解决未验证时验证标 skipped、已超时优先于进度着色）连同注释一并搬走，
+ * 由 useTicketClosure.test.ts 单独覆盖。
  */
-const closureStages = computed(() => {
-  const t = ticket.value
-  if (!t) return []
-  const stages: { key: string; label: string; state: 'done'|'current'|'skipped'|'pending'; meta?: string }[] = [
-    { key: 'created', label: '建单', state: 'done' },
-    {
-      key: 'responded',
-      label: '首响',
-      state: t.firstResponseState === 'RESPONDED' ? 'done'
-           : t.firstResponseState === 'BREACHED' ? 'skipped'
-           : t.firstResponseState === 'AT_RISK' ? 'current' : 'current',
-      meta: t.firstResponseMinutes != null ? `${t.firstResponseMinutes} 分钟` : undefined
-    },
-    {
-      key: 'mitigated',
-      label: '止损',
-      state: t.mitigatedAt ? 'done' : 'pending'
-    },
-    {
-      key: 'fixed',
-      label: '修复',
-      // 有根因确认说明修复已完成（根因分析紧接修复之后）
-      state: t.rootCauseAt ? 'done' : 'pending'
-    },
-    {
-      key: 'verified',
-      label: '验证',
-      state: t.verifiedAt
-        ? (t.verifySkipped ? 'skipped' : 'done')
-        : (t.status === 'resolved' || t.status === 'closed' ? 'skipped' : 'pending'),
-      meta: t.verifySkipped ? (t.verifySkipReason || '已跳过') : undefined
-    },
-    {
-      key: 'archived',
-      label: '归档',
-      state: t.status === 'closed' ? 'done' : 'pending'
-    }
-  ]
-  // 找到第一个非 done 的阶段标为 current（如果尚未标记）
-  const firstPending = stages.findIndex(s => s.state === 'pending')
-  if (firstPending >= 0 && !stages.some(s => s.state === 'current')) {
-    stages[firstPending].state = 'current'
-  }
-  return stages
-})
-
-const properties = computed(() => {
-  const t = ticket.value
-  if (!t) return []
-  return [
-    { label: '工单编号', value: t.id, mono: true },
-    { label: '优先级', value: getPriorityLabel(t.priority), type: `priority-${t.priority}` },
-    { label: '状态', value: getStatusLabel(t.status), type: 'status' },
-    { label: '分类', value: t.category },
-    { label: '服务', value: t.service },
-    { label: 'SLA', value: t.sla }
-  ]
-})
-
-/**
- * 是否展示 SLA 提醒
- * <p>终态工单 SLA 计时已停，不再提醒。</p>
- */
-const showSlaAlert = computed(() => {
-  const t = ticket.value
-  if (!t) return false
-  if (t.status === 'resolved' || t.status === 'closed' || t.status === 'void') return false
-  return t.slaBreached || t.slaProgress >= 70
-})
-
-/** SLA 进度条配色：超时红、临界橙、正常主色 */
-const slaBarClass = computed(() => {
-  const t = ticket.value
-  if (!t) return ''
-  if (t.slaBreached) return 'progress-fill-error'
-  if (t.slaProgress >= 70) return 'progress-fill-warning'
-  return 'progress-fill-normal'
-})
-
-const replyContent = ref('')
-const submitting = ref(false)
+const { closureStages, properties, showSlaAlert, slaBarClass } = useTicketClosure(ticket)
 
 /** AI 分析 composable */
 const {
-  analysisContent, analysisStreaming, analysisDone, citations, analysisCost,
+  analysisContent, analysisStreaming, analysisDone, citations, citationDocs, analysisCost,
   analysisFromArchive, analysisArchivedAt,
   analysisId, analysisFeedback, submitFeedback,
   structured, confidenceClass, useStructuredRender,
@@ -289,207 +214,29 @@ const ticketContextText = computed(() => {
   return `工单编号: ${t.id}\n标题: ${t.title}\n优先级: ${getPriorityLabel(t.priority)}\n状态: ${getStatusLabel(t.status)}\n服务: ${t.service}\n分类: ${t.category}\nSLA: ${t.sla}\n描述: ${t.description}`
 })
 
-const submitReply = async () => {
-  const cur = ticket.value
-  if (!cur) return
-  const text = replyContent.value.trim()
-  if (!text) {
-    ElMessage.warning('请输入回复内容')
-    return
-  }
-  if (submitting.value) return
-
-  submitting.value = true
-  const draft = text
-  replyContent.value = ''
-
-  try {
-    await store.appendReply(cur.id, {
-      role: 'agent',
-      author: app.currentUser.name || cur.assignee,
-      time: '',
-      content: text
-    })
-    ElMessage.success('回复已发送')
-  } catch {
-    replyContent.value = draft
-  } finally {
-    submitting.value = false
-  }
-}
-
-const transferDialogVisible = ref(false)
-const transferTarget = ref('')
-
 /**
- * 负责人当前负载提示（如「张明（3 单在处理）」）
- * 「待分配」不是人，无负载可言。
- */
-const workloadOf = (name: string): string => {
-  if (name === UNASSIGNED) return ''
-  const m = store.teamMembers.find(x => x.name === name)
-  if (!m || !m.activeTicketCount) return ''
-  return `（${m.activeTicketCount} 单在处理）`
-}
-
-const openTransferDialog = () => {
-  const cur = ticket.value
-  transferTarget.value = cur?.assignee && cur.assignee !== UNASSIGNED ? cur.assignee : ''
-  transferDialogVisible.value = true
-  // A2：转派名单来自后端 sys_team_member，按需加载（store 内已做去重）
-  void store.loadTeamMembers()
-}
-
-const doTransfer = async () => {
-  const cur = ticket.value
-  if (!cur || !transferTarget.value) return
-  const t = store.getById(cur.id)
-  if (!t || t.assignee === transferTarget.value) {
-    transferDialogVisible.value = false
-    return
-  }
-  try {
-    await store.transferTicket(cur.id, transferTarget.value)
-    ElMessage.success(`已转派给 ${transferTarget.value}`)
-    transferDialogVisible.value = false
-  } catch {
-    // store 已提示错误
-  }
-}
-
-/**
- * 提升优先级（原名 escalateTicket）
+ * 工单状态流转类写操作已抽到 useTicketActions。
  *
- * 与「升级/上报」是两件不同的事，B1 起拆开：
- * - 提升优先级：改 priority，**会连带重算 SLA 时限**（B0 起 deadline 由优先级派生）
- * - 升级上报：记录升级事实 + 原因，不动优先级（见 doEscalate）
+ * 抽出的目的是让「哪个动作有防重入」一眼可查——它们此前散在 200~470 行
+ * 之间、中间还夹着派生计算与对话框状态，要确认「升级上报有没有防重入」
+ * 得在 2500 行里翻。集中后可以直接对照：每个写活动流的动作都必须有进行中标记。
  *
- * 此前二者混在一个「升级」按钮里，用户点它其实是在改 SLA 计时基线却不知情。
+ * B2/B3 的表单类动作（处置记录/根因/验证）刻意留在本文件：它们与各自的
+ * 对话框表单状态强耦合，搬过去要一并带走 6 个 ref，反而让 composable
+ * 变成第二个大杂烩。分界线是「是否只依赖工单本身」。
  */
-const raisePriority = async () => {
-  const cur = ticket.value
-  if (!cur) return
-  const priorities: Array<'low' | 'medium' | 'high' | 'urgent'> = ['low', 'medium', 'high', 'urgent']
-  const idx = priorities.indexOf(cur.priority)
-  if (idx >= priorities.length - 1) {
-    ElMessage.warning('已经是最高优先级')
-    return
-  }
-  const next = priorities[idx + 1]
-  try {
-    await ElMessageBox.confirm(
-      `将优先级从「${getPriorityLabel(cur.priority)}」提升为「${getPriorityLabel(next)}」？\n` +
-      '注意：SLA 首响与解决时限会按新优先级重算。',
-      '提升优先级',
-      { confirmButtonText: '确认提升', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch {
-    return   // 用户取消
-  }
-  try {
-    await store.updateTicket(cur.id, { priority: next })
-    ElMessage.success(`已提升为「${getPriorityLabel(next)}」，SLA 时限已重算`)
-  } catch {
-    // store 已提示错误
-  }
-}
+const {
+  replyContent, submitting, submitReply,
+  transferDialogVisible, transferTarget, workloadOf, openTransferDialog, doTransfer,
+  priorityAction, raisePriority,
+  acknowledging, doAcknowledge, escalateAction, doEscalate,
+  closeTicket, reopenLabel, processingAction, startProcessing,
+} = useTicketActions({
+  ticket,
+  getOperator: () => app.currentUser.name,
+  store,
+})
 
-/**
- * 确认接单（B1 显式首响）
- *
- * 幂等：后端 SQL 带 first_response_at IS NULL 条件，重复点击不会把首响时刻推后。
- */
-const acknowledging = ref(false)
-const doAcknowledge = async () => {
-  const cur = ticket.value
-  if (!cur || acknowledging.value) return
-  acknowledging.value = true
-  try {
-    const updated = await acknowledgeTicket(cur.id, app.currentUser.name || '当前用户')
-    // 用后端返回值校准派生字段（首响状态/MTTA/版本号均由后端计算）
-    const t = store.getById(cur.id)
-    if (t) {
-      t.firstResponseState = updated.firstResponseState
-      t.firstResponseMinutes = updated.firstResponseMinutes
-      t.firstResponder = updated.firstResponder
-      t.status = updated.status
-      t.version = updated.version
-      t.updatedAt = updated.updatedAt
-    }
-    await store.loadActivities(cur.id)
-    ElMessage.success('已确认接单')
-  } catch (e) {
-    console.error('确认接单失败', e)
-    handleServerError(e, { action: '确认接单' })
-  } finally {
-    acknowledging.value = false
-  }
-}
-
-/**
- * 升级上报（B1）
- *
- * 只记录升级事实与原因，**不改优先级、不换负责人**——
- * 那属 L3 审批工作流范畴（6.3 决策）。原因必填，否则无法追溯也无法据此改进流程。
- */
-const doEscalate = async () => {
-  const cur = ticket.value
-  if (!cur) return
-  let reason: string
-  try {
-    const r = await ElMessageBox.prompt(
-      '请说明升级原因（例如：超出本级处理能力、需跨团队协同、影响面扩大）',
-      '升级上报',
-      {
-        confirmButtonText: '提交升级',
-        cancelButtonText: '取消',
-        inputPlaceholder: '升级原因（必填）',
-        inputValidator: (v: string) => (v && v.trim().length > 0) || '升级原因不能为空'
-      }
-    )
-    reason = (r.value || '').trim()
-  } catch {
-    return   // 用户取消
-  }
-  try {
-    await escalateTicket(cur.id, reason, app.currentUser.name || '当前用户')
-    await store.loadActivities(cur.id)
-    ElMessage.success('已提交升级，已记入活动流')
-  } catch (e) {
-    console.error('升级失败', e)
-    handleServerError(e, { action: '升级上报' })
-  }
-}
-
-const closeTicket = () => {
-  const cur = ticket.value
-  if (!cur) return
-  ElMessageBox.confirm('确定关闭该工单？关闭后不能再回复。', '关闭工单', {
-    confirmButtonText: '关闭',
-    cancelButtonText: '取消',
-    type: 'warning'
-  })
-    .then(async () => {
-      try {
-        await store.updateStatus(cur.id, 'closed')
-        ElMessage.success('工单已关闭')
-      } catch {
-        // store 已提示错误
-      }
-    })
-    .catch(() => {})
-}
-
-const startProcessing = async () => {
-  const cur = ticket.value
-  if (!cur) return
-  try {
-    await store.updateStatus(cur.id, 'processing')
-    ElMessage.success('工单已标记为处理中')
-  } catch {
-    // store 已提示错误
-  }
-}
 
 /**
  * B3 修复验证：转「已解决」时弹出验证弹窗
@@ -516,7 +263,7 @@ const doSubmitVerification = async () => {
   if (!cur || verifySubmitting.value) return
   const f = verifyForm.value
   if (f.skip && !f.skipReason.trim()) {
-    ElMessage.warning('跳过验证须填写理由')
+    notify.warning('跳过验证须填写理由')
     return
   }
   verifySubmitting.value = true
@@ -537,7 +284,7 @@ const doSubmitVerification = async () => {
     }
     await store.loadActivities(cur.id)
     verifyDialogVisible.value = false
-    ElMessage.success(f.skip ? '已跳过验证，工单标记为已解决' : '验证通过，工单已解决')
+    notify.success(f.skip ? '已跳过验证，工单标记为已解决' : '验证通过，工单已解决')
   } catch (e) {
     handleServerError(e, { action: '提交验证' })
   } finally {
@@ -590,7 +337,7 @@ const doAddAction = async () => {
   const cur = ticket.value
   if (!cur || actionSubmitting.value) return
   if (!actionForm.value.summary.trim()) {
-    ElMessage.warning('处置摘要不能为空')
+    notify.warning('处置摘要不能为空')
     return
   }
   actionSubmitting.value = true
@@ -605,7 +352,7 @@ const doAddAction = async () => {
     await loadActions()
     await store.loadActivities(cur.id)
     actionDialogVisible.value = false
-    ElMessage.success('处置动作已记录')
+    notify.success('处置动作已记录')
   } catch (e) {
     handleServerError(e, { action: '记录处置动作' })
   } finally {
@@ -626,7 +373,7 @@ const doUpdateStage = async (stage: string) => {
       t.updatedAt = updated.updatedAt
     }
     await store.loadActivities(cur.id)
-    ElMessage.success(`已切换到「${STAGES.find(s => s.value === stage)?.label || stage}」`)
+    notify.success(`已切换到「${STAGES.find(s => s.value === stage)?.label || stage}」`)
   } catch (e) {
     handleServerError(e, { action: '切换处置阶段' })
   }
@@ -647,7 +394,7 @@ const doMarkMitigated = async () => {
       t.updatedAt = updated.updatedAt
     }
     await store.loadActivities(cur.id)
-    ElMessage.success('已标记止损（业务已恢复，根因可能未定位）')
+    notify.success('已标记止损（业务已恢复，根因可能未定位）')
   } catch (e) {
     handleServerError(e, { action: '标记止损' })
   }
@@ -685,7 +432,7 @@ const doConfirmRootCause = async () => {
   const cur = ticket.value
   if (!cur || rootCauseSubmitting.value) return
   if (!rootCauseForm.value.rootCause.trim()) {
-    ElMessage.warning('根因不能为空')
+    notify.warning('根因不能为空')
     return
   }
   rootCauseSubmitting.value = true
@@ -704,7 +451,7 @@ const doConfirmRootCause = async () => {
     }
     await store.loadActivities(cur.id)
     rootCauseDialogVisible.value = false
-    ElMessage.success('根因已确认')
+    notify.success('根因已确认')
   } catch (e) {
     handleServerError(e, { action: '确认根因' })
   } finally {
@@ -746,7 +493,7 @@ const handleGenerateReply = async () => {
   const result = await generateReply()
   if (result) {
     replyContent.value = result
-    ElMessage.success('AI 已生成回复草稿，请审核后发送')
+    notify.success('AI 已生成回复草稿，请审核后发送')
   }
 }
 
@@ -759,14 +506,14 @@ const addTag = async () => {
   if (!cur || !newTagInput.value.trim()) return
   const tag = newTagInput.value.trim()
   if ((cur.tags || []).includes(tag)) {
-    ElMessage.warning('标签已存在')
+    notify.warning('标签已存在')
     return
   }
   tagRemoving.value = true
   try {
     const newTags = [...(cur.tags || []), tag]
     await store.updateTags(cur.id, newTags)
-    ElMessage.success('标签已添加')
+    notify.success('标签已添加')
     newTagInput.value = ''
   } catch {
     // store 已提示错误
@@ -782,7 +529,7 @@ const addTagFromSuggestion = async (tag: string) => {
   try {
     const newTags = [...(cur.tags || []), tag]
     await store.updateTags(cur.id, newTags)
-    ElMessage.success('标签已添加')
+    notify.success('标签已添加')
   } catch {
     // store 已提示错误
   } finally {
@@ -797,7 +544,7 @@ const removeTag = async (tag: string) => {
   try {
     const newTags = (cur.tags || []).filter(t => t !== tag)
     await store.updateTags(cur.id, newTags)
-    ElMessage.success('标签已移除')
+    notify.success('标签已移除')
   } catch {
     // store 已提示错误
   } finally {
@@ -806,72 +553,22 @@ const removeTag = async (tag: string) => {
 }
 
 // ==================== 附件 ====================
-const attachments = ref<TicketAttachmentMeta[]>([])
-const attachmentsLoading = ref(false)
-const uploading = ref(false)
-const fileInputRef = ref<HTMLInputElement | null>(null)
-
-const loadAttachments = async () => {
-  const id = ticketId.value
-  if (!id) return
-  attachmentsLoading.value = true
-  try {
-    attachments.value = await fetchTicketAttachments(id)
-  } catch (e) {
-    console.warn('加载附件失败', e)
-    attachments.value = []
-  } finally {
-    attachmentsLoading.value = false
-  }
-}
-
-const pickAttachment = () => fileInputRef.value?.click()
-
-const onAttachmentSelected = async (e: Event) => {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  const cur = ticket.value
-  if (!file || !cur) return
-  uploading.value = true
-  try {
-    const saved = await uploadTicketAttachment(cur.id, file, app.currentUser.name)
-    attachments.value = [...attachments.value, saved]
-    ElMessage.success(`已上传 ${saved.originalName}`)
-  } catch (err) {
-    handleServerError(err, { action: '上传附件' })
-  } finally {
-    uploading.value = false
-  }
-}
-
-const downloadAttachment = async (item: TicketAttachmentMeta) => {
-  try {
-    const url = await fetchAttachmentDownloadUrl(item.id)
-    window.open(url, '_blank', 'noopener')
-  } catch (err) {
-    handleServerError(err, { action: '获取下载链接' })
-  }
-}
-
-const removeAttachment = async (item: TicketAttachmentMeta) => {
-  try {
-    await ElMessageBox.confirm(`确定删除附件「${item.originalName}」？`, '删除附件', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
-    })
-  } catch {
-    return
-  }
-  try {
-    await deleteTicketAttachment(item.id)
-    attachments.value = attachments.value.filter(a => a.id !== item.id)
-    ElMessage.success('附件已删除')
-  } catch (err) {
-    handleServerError(err, { action: '删除附件' })
-  }
-}
+// 逻辑已抽到 useTicketAttachments：它是本文件交互面最窄、
+// 与其余逻辑耦合最少的一块（不参与状态机、不写活动流、不影响闭环进度）。
+// 「切换工单先清空再重载」「加载失败只降级不弹错、上传失败必须提示」
+// 等取舍连同注释一并搬走。
+//
+// 拆分后不再解构 fileInputRef / pickAttachment：隐藏 input 与「点按钮触发选择」
+// 是纯 DOM 细节，已封进 TicketAttachmentPanel 内部。composable 里那两个成员
+// 未删——它们有独立单测，且接口收窄属于本页的选择，不该反向裁剪公共 composable。
+const {
+  attachments, attachmentsLoading, uploading,
+  loadAttachments, onAttachmentSelected,
+  downloadAttachment, removeAttachment,
+} = useTicketAttachments({
+  ticketId,
+  getOperator: () => app.currentUser.name,
+})
 
 // ==================== 知识沉淀 ====================
 const sinkOpen = ref(false)
@@ -882,18 +579,13 @@ const openSink = () => {
 }
 
 const onSinkPublished = (_docId: number, title: string) => {
-  ElMessage.success(`已沉淀为知识「${title}」`)
+  notify.success(`已沉淀为知识「${title}」`)
 }
 
 const onSinkGotoDoc = (docId: number) => {
   sinkOpen.value = false
   router.push(`/knowledge/${docId}`)
 }
-
-watch(ticketId, () => {
-  attachments.value = []
-  loadAttachments()
-})
 
 // onBeforeUnmount 由 useTicketAnalysis composable 处理 abort
 </script>
@@ -983,24 +675,31 @@ watch(ticketId, () => {
                   转派
                 </button>
                 <!-- 拆分为两个按钮：提升优先级会重算 SLA 时限，升级上报只记录不动优先级 -->
-                <button class="btn-outline" @click="raisePriority">
+                <button class="btn-outline" :disabled="priorityAction.pending.value" @click="raisePriority">
                   <ArrowUp :size="16" />
-                  提升优先级
+                  {{ priorityAction.pending.value ? '提升中…' : '提升优先级' }}
                 </button>
-                <button class="btn-outline" @click="doEscalate">
+                <button class="btn-outline" :disabled="escalateAction.pending.value" @click="doEscalate">
                   <TrendingUp :size="16" />
-                  升级上报
+                  {{ escalateAction.pending.value ? '提交中…' : '升级上报' }}
                 </button>
+                <!--
+                  状态流转类按钮一律由 canTransitionStatus 驱动，
+                  不再手写 `status === 'x' || status === 'y'` 的枚举列表。
+                  手写列表与状态机已经漂移出 8 处不一致（见 reopenLabel 注释）。
+                -->
                 <button
                   class="btn-outline"
                   @click="startProcessing"
-                  :disabled="ticket.status === 'processing' || ticket.status === 'resolved' || ticket.status === 'closed' || ticket.status === 'void'"
+                  :disabled="processingAction.pending.value || !canTransitionStatus(ticket.status, 'processing')"
+                  :title="canTransitionStatus(ticket.status, 'processing') ? '' : `不能从「${getStatusLabel(ticket.status)}」变更为「处理中」`"
                 >
                   <Clock :size="16" />
-                  标记处理中
+                  {{ processingAction.pending.value ? '处理中…' : reopenLabel }}
                 </button>
                 <button class="btn-outline" @click="closeTicket"
-                  :disabled="ticket.status === 'closed' || ticket.status === 'void'"
+                  :disabled="!canTransitionStatus(ticket.status, 'closed')"
+                  :title="canTransitionStatus(ticket.status, 'closed') ? '' : '工单需先「标记解决」才能关闭'"
                 >
                   <X :size="16" />
                   关闭
@@ -1008,7 +707,7 @@ watch(ticketId, () => {
                 <button
                   class="btn-outline"
                   @click="openSink"
-                  :disabled="ticket.status === 'void'"
+                  :disabled="isTerminalStatus(ticket.status)"
                 >
                   <BookPlus :size="16" />
                   沉淀为知识
@@ -1017,18 +716,19 @@ watch(ticketId, () => {
                 <button
                   class="btn-primary"
                   @click="resolveTicket"
-                  :disabled="ticket.status === 'resolved' || ticket.status === 'closed'"
+                  :disabled="!canTransitionStatus(ticket.status, 'resolved')"
+                  :title="canTransitionStatus(ticket.status, 'resolved') ? '' : '已作废的工单不可再变更状态'"
                 >
                   <Check :size="16" />
                   标记解决
                 </button>
                 <!-- B2 现场处置 -->
-                <button class="btn-outline" @click="openActionDialog" :disabled="ticket.status === 'closed' || ticket.status === 'void'">
+                <button class="btn-outline" @click="openActionDialog" :disabled="isTerminalStatus(ticket.status) || ticket.status === 'closed'">
                   <Plus :size="14" />
                   记录处置
                 </button>
                 <!-- B3 根因 -->
-                <button class="btn-outline" @click="openRootCauseDialog" :disabled="ticket.status === 'closed' || ticket.status === 'void'">
+                <button class="btn-outline" @click="openRootCauseDialog" :disabled="isTerminalStatus(ticket.status) || ticket.status === 'closed'">
                   <AlertTriangle :size="14" />
                   确认根因
                 </button>
@@ -1094,122 +794,37 @@ watch(ticketId, () => {
               <div class="description-body">{{ ticket.description }}</div>
             </div>
 
-            <!-- ========== Timeline ========== -->
-            <div class="timeline">
-
-              <!-- Dynamic Replies
-                   排除 role='ai'：AI 分析已由下方 AnalysisCard 以结构化卡片渲染
-                   （原因列表/可复制命令/置信度）。若不排除，同一份内容会在时间线
-                   出现两次，且这里的纯文本气泡会丢掉全部结构。
-                   历史分析仍保留在库中可审计，界面只呈现最新结论。 -->
-              <div
-                v-for="(reply, i) in visibleReplies"
-                :key="reply.time + '-' + reply.author + '-' + i"
-                class="timeline-row"
-                :class="{ 'timeline-row-right': reply.role === 'creator' }"
-              >
-                <!-- Creator message (right-aligned) -->
-                <template v-if="reply.role === 'creator'">
-                  <div class="timeline-body timeline-body-right">
-                    <div class="user-bubble-wrap">
-                      <div class="user-bubble">
-                        <p>{{ reply.content }}</p>
-                      </div>
-                      <div class="user-bubble-meta">
-                        <span class="user-name">{{ reply.author }}</span>
-                        <span class="user-time">{{ reply.time }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="timeline-track">
-                    <div class="track-avatar" :style="{ background: reply.authorColor || '#6366F1' }">{{ reply.author.charAt(0) }}</div>
-                    <div class="track-line"></div>
-                  </div>
-                </template>
-
-                <!-- Agent message (left-aligned) -->
-                <template v-else>
-                  <div class="timeline-track">
-                    <div class="track-avatar track-avatar-primary">{{ reply.author.charAt(0) }}</div>
-                    <div class="track-line"></div>
-                  </div>
-                  <div class="timeline-body">
-                    <div class="agent-bubble-wrap">
-                      <div class="agent-bubble">
-                        <p style="white-space: pre-line;">{{ reply.content }}</p>
-                      </div>
-                      <div class="agent-bubble-meta">
-                        <span class="agent-name">{{ reply.author }}</span>
-                        <span class="agent-time">{{ reply.time }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </div>
-
-              <!-- AI 分析建议（时间线节点） -->
-              <div v-if="analysisContent || analysisStreaming" class="timeline-row">
-                <div class="timeline-track">
-                  <div class="track-icon track-icon-primary">
-                    <Sparkles :size="16" />
-                  </div>
-                  <div class="track-line"></div>
-                </div>
-                <div class="timeline-body">
-                  <AnalysisCard
-                    :content="analysisContent"
-                    :streaming="analysisStreaming"
-                    :done="analysisDone"
-                    :structured="structured"
-                    :use-structured-render="useStructuredRender"
-                    :confidence-class="confidenceClass"
-                    :citations="citations"
-                    :cost="analysisCost"
-                    :from-archive="analysisFromArchive"
-                    :archived-at="analysisArchivedAt"
-                    :feedback="analysisFeedback"
-                    :can-feedback="analysisId != null"
-                    :on-feedback="submitFeedback"
-                    :render-markdown="renderMarkdown"
-                    :on-copy-command="copyCommand"
-                    :on-copy-analysis="copyAnalysis"
-                    :on-regenerate="regenerateAnalysis"
-                    :on-stop="stopAnalysis"
-                  />
-                </div>
-              </div>
-
-              <!-- SLA Warning / Breach -->
-              <div
-                v-if="showSlaAlert"
-                class="timeline-row"
-              >
-                <div class="timeline-track">
-                  <div class="track-icon" :class="ticket.slaBreached ? 'track-icon-error' : 'track-icon-warning'">
-                    <AlertTriangle :size="16" />
-                  </div>
-                  <div class="track-line"></div>
-                </div>
-                <div class="timeline-body">
-                  <div class="event-bubble" :class="ticket.slaBreached ? 'event-bubble-error' : 'event-bubble-warning'">
-                    <div class="event-header">
-                      <Clock :size="14" :class="ticket.slaBreached ? 'error-icon' : 'warning-icon'" />
-                      <span :class="ticket.slaBreached ? 'event-title-error' : 'event-title-warning'">
-                        {{ ticket.slaBreached ? 'SLA 已超时' : 'SLA 预警' }}
-                      </span>
-                      <span class="event-time">现在</span>
-                    </div>
-                    <p v-if="ticket.slaBreached" class="event-text">
-                      已超出 SLA 承诺时限（{{ ticket.sla }}），请立即处理或升级
-                    </p>
-                    <p v-else class="event-text">
-                      SLA 已消耗 <strong class="warning-strong">{{ ticket.slaProgress }}%</strong>，请尽快处理
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-            </div>
+            <!-- ========== Timeline ==========
+                 已抽到 TicketTimeline.vue：那是本文件视觉最独立的一块
+                 （自成体系的模板 + 236 行专属样式），与页面其余部分
+                 只通过数据往来，没有共享的交互状态。
+                 AI 分析的 18 个字段收成一个对象传入，避免调用处占满一屏。 -->
+            <TicketTimeline
+              :ticket="ticket"
+              :visible-replies="visibleReplies"
+              :show-sla-alert="showSlaAlert"
+              :analysis="{
+                content: analysisContent,
+                streaming: analysisStreaming,
+                done: analysisDone,
+                structured,
+                useStructuredRender,
+                confidenceClass,
+                citations,
+                citationDocs,
+                cost: analysisCost,
+                fromArchive: analysisFromArchive,
+                archivedAt: analysisArchivedAt,
+                feedback: analysisFeedback,
+                id: analysisId,
+                onFeedback: submitFeedback,
+                renderMarkdown,
+                onCopyCommand: copyCommand,
+                onCopyAnalysis: copyAnalysis,
+                onRegenerate: regenerateAnalysis,
+                onStop: stopAnalysis,
+              }"
+            />
 
             <!-- Reply Box -->
             <div class="reply-box" v-if="!['closed', 'resolved', 'void'].includes(ticket.status)">
@@ -1239,69 +854,25 @@ watch(ticketId, () => {
 
             <!-- 工单属性 -->
             <CollapsibleCard title="工单属性" :icon="Info" storage-key="td-props">
-              <div class="props-list">
-                <div v-for="prop in properties" :key="prop.label" class="prop-row">
-                  <span class="prop-label">{{ prop.label }}</span>
-                  <span
-                    class="prop-value"
-                    :class="{
-                      'prop-mono': prop.mono,
-                      'prop-priority-urgent': prop.type === 'priority-urgent',
-                      'prop-priority-high': prop.type === 'priority-high',
-                      'prop-status': prop.type === 'status'
-                    }"
-                  >
-                    <span v-if="prop.type?.startsWith('priority-') && prop.type !== 'priority-medium' && prop.type !== 'priority-low'" class="prop-dot"></span>
-                    {{ prop.value }}
-                  </span>
-                </div>
-              </div>
-              <!-- SLA Progress -->
-              <div class="sla-progress">
-                <div class="sla-header">
-                  <span class="sla-label">SLA 进度</span>
-                  <span class="sla-value" :class="{ 'sla-value-breached': ticket.slaBreached }">
-                    {{ ticket.slaBreached ? '已超时' : ticket.slaProgress + '% 已消耗' }}
-                  </span>
-                </div>
-                <div class="progress-bar">
-                  <div
-                    class="progress-fill"
-                    :class="slaBarClass"
-                    :style="{ width: ticket.slaProgress + '%' }"
-                  ></div>
-                </div>
-              </div>
+              <TicketPropsPanel
+                :properties="properties"
+                :sla-progress="ticket.slaProgress"
+                :sla-breached="ticket.slaBreached"
+                :sla-bar-class="slaBarClass"
+              />
             </CollapsibleCard>
 
             <!-- 标签管理 -->
             <CollapsibleCard title="标签" :icon="Info" storage-key="td-tags" :badge="(ticket.tags || []).length || undefined">
-              <div class="tag-edit-area">
-                <span v-for="tag in (ticket.tags || [])" :key="tag" class="tag-chip">
-                  {{ tag }}
-                  <button class="tag-remove" @click="removeTag(tag)" :disabled="tagRemoving">×</button>
-                </span>
-                <div class="tag-add-row">
-                  <input
-                    v-model="newTagInput"
-                    class="tag-input"
-                    placeholder="添加标签..."
-                    @keydown.enter="addTag"
-                    :disabled="tagRemoving"
-                  />
-                  <button class="tag-add-btn" @click="addTag" :disabled="!newTagInput.trim() || tagRemoving">添加</button>
-                </div>
-                <div v-if="store.hotTags.length" class="tag-suggestions">
-                  <span class="tag-suggest-label">热门：</span>
-                  <button
-                    v-for="tag in store.hotTags.slice(0, 5)"
-                    :key="tag"
-                    class="tag-suggest"
-                    @click="addTagFromSuggestion(tag)"
-                    :disabled="tagRemoving || (ticket.tags || []).includes(tag)"
-                  >{{ tag }}</button>
-                </div>
-              </div>
+              <TicketTagEditor
+                v-model:draft="newTagInput"
+                :tags="ticket.tags || []"
+                :hot-tags="store.hotTags"
+                :busy="tagRemoving"
+                @add="addTag"
+                @remove="removeTag"
+                @add-suggested="addTagFromSuggestion"
+              />
             </CollapsibleCard>
 
             <!-- AI 智能分析（只读 Insights） -->
@@ -1320,52 +891,19 @@ watch(ticketId, () => {
 
             <!-- 附件 -->
             <CollapsibleCard title="附件" :icon="Paperclip" storage-key="td-attachments" :badge="attachments.length || undefined">
-              <div v-if="attachmentsLoading" class="attach-empty">加载中…</div>
-              <div v-else-if="attachments.length === 0" class="attach-empty">暂无附件</div>
-              <ul v-else class="attach-list">
-                <li v-for="item in attachments" :key="item.id" class="attach-item">
-                  <div class="attach-meta">
-                    <span class="attach-name" :title="item.originalName">{{ item.originalName }}</span>
-                    <span class="attach-size">{{ item.sizeText }}</span>
-                  </div>
-                  <div class="attach-ops">
-                    <button class="attach-op" title="下载" @click="downloadAttachment(item)">
-                      <Download :size="14" />
-                    </button>
-                    <button class="attach-op attach-op-danger" title="删除" @click="removeAttachment(item)">
-                      <Trash2 :size="14" />
-                    </button>
-                  </div>
-                </li>
-              </ul>
-              <input
-                ref="fileInputRef"
-                type="file"
-                class="attach-file-input"
-                @change="onAttachmentSelected"
+              <TicketAttachmentPanel
+                :attachments="attachments"
+                :loading="attachmentsLoading"
+                :uploading="uploading"
+                @download="downloadAttachment"
+                @remove="removeAttachment"
+                @select="onAttachmentSelected"
               />
-              <button class="btn-outline attach-upload" :disabled="uploading" @click="pickAttachment">
-                <Paperclip :size="14" />
-                {{ uploading ? '上传中…' : '上传附件' }}
-              </button>
             </CollapsibleCard>
 
             <!-- 操作记录 -->
             <CollapsibleCard title="操作记录" :icon="Clock" storage-key="td-activity">
-              <div class="activity-list">
-                <div v-if="!ticket.activities || ticket.activities.length === 0" class="activity-empty">
-                  暂无操作记录
-                </div>
-                <div v-for="(a, i) in ticket.activities" :key="a.time + '-' + a.user + '-' + i" class="activity-row">
-                  <div class="activity-dot" :class="`activity-dot-${a.color}`"></div>
-                  <div class="activity-body">
-                    <p class="activity-text">
-                      {{ a.text }}<template v-if="a.detail">: <span class="activity-detail" :class="{ 'activity-detail-highlight': a.highlight }">{{ a.detail }}</span></template>
-                    </p>
-                    <p class="activity-meta">{{ a.user }} &middot; {{ a.time }}</p>
-                  </div>
-                </div>
-              </div>
+              <TicketActivityLog :activities="ticket.activities || []" />
             </CollapsibleCard>
           </aside>
 
@@ -1565,8 +1103,8 @@ watch(ticketId, () => {
 
 /* ========== Ticket Header Card ========== */
 .ticket-header-card {
-  background: white;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  background: var(--color-surface, var(--surface-1));
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 24px;
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
@@ -1574,8 +1112,8 @@ watch(ticketId, () => {
 
 /* ========== Ticket Description Card ========== */
 .ticket-description-card {
-  background: white;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  background: var(--color-surface, var(--surface-1));
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 20px 24px;
   margin-top: 16px;
@@ -1584,13 +1122,13 @@ watch(ticketId, () => {
 .description-title {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary, var(--text-2));
   margin: 0 0 8px 0;
 }
 .description-body {
   font-size: 0.9375rem;
   line-height: 1.7;
-  color: var(--color-text-primary, #1f2937);
+  color: var(--color-text-primary, var(--text-1));
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1611,28 +1149,28 @@ watch(ticketId, () => {
 }
 
 .badge-status-processing {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary-light, #2A6BC6);
+  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--color-primary-light, var(--brand-hover));
 }
 
 .badge-status-pending {
-  background: var(--state-warning-bg, #FFFBEB);
-  color: var(--state-warning, #D97706);
+  background: var(--state-warning-bg, var(--warning-subtle));
+  color: var(--state-warning, var(--warning));
 }
 
 .badge-status-resolved {
-  background: var(--state-success, #16A34A);
+  background: var(--state-success, var(--success));
   color: white;
 }
 
 .badge-status-closed {
-  background: #F3F4F6;
-  color: #6B7280;
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 
 .badge-priority-urgent {
-  background: var(--state-error-bg, #FEF2F2);
-  color: var(--state-error, #DC2626);
+  background: var(--state-error-bg, var(--danger-subtle));
+  color: var(--state-error, var(--danger));
 }
 
 .badge-priority-high {
@@ -1641,20 +1179,20 @@ watch(ticketId, () => {
 }
 
 .badge-priority-medium {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #1B4F9C);
+  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--color-primary, var(--brand));
 }
 
 .badge-priority-low {
-  background: #F3F4F6;
-  color: #6B7280;
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 
 .ticket-title {
   font-family: var(--font-display, 'Inter', sans-serif);
   font-size: var(--text-xl, 1.25rem);
   font-weight: var(--weight-semibold, 600);
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary, var(--text-1));
   margin: 0 0 12px 0;
   letter-spacing: -0.01em;
 }
@@ -1664,27 +1202,27 @@ watch(ticketId, () => {
   align-items: center;
   gap: 4px;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
 
 .meta-label {
-  color: var(--color-text-secondary, #4B5563);
+  color: var(--color-text-secondary, var(--text-2));
 }
 
 .meta-value {
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary, var(--text-1));
   font-weight: var(--weight-medium, 500);
 }
 
 .meta-assignee {
-  color: var(--color-primary-light, #2A6BC6);
+  color: var(--color-primary-light, var(--brand-hover));
 }
 
 .meta-dot {
   margin: 0 4px;
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 
 .ticket-actions {
@@ -1699,19 +1237,19 @@ watch(ticketId, () => {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border, #D1D5DB);
+  border: 1px solid var(--color-border, var(--border-2));
   border-radius: var(--radius-md, 8px);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: white;
-  color: var(--color-text-secondary, #4B5563);
+  background: var(--color-surface, var(--surface-1));
+  color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary, #1B4F9C);
-    color: var(--color-primary, #1B4F9C);
+    border-color: var(--color-primary, var(--brand));
+    color: var(--color-primary, var(--brand));
   }
 }
 
@@ -1729,13 +1267,13 @@ watch(ticketId, () => {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: var(--color-primary, #1B4F9C);
+  background: var(--color-primary, var(--brand));
   color: white;
   cursor: pointer;
   transition: background 0.15s ease;
 
   &:hover {
-    background: var(--color-primary-light, #2A6BC6);
+    background: var(--color-primary-light, var(--brand-hover));
   }
 
   &:disabled {
@@ -1745,250 +1283,13 @@ watch(ticketId, () => {
 }
 
 .primary-icon {
-  color: var(--color-primary-light, #2A6BC6);
-}
-
-/* ========== Timeline ========== */
-.timeline {
-  margin-top: 24px;
-}
-
-.timeline-row {
-  display: flex;
-  gap: 16px;
-
-  &.timeline-row-right {
-    justify-content: flex-end;
-  }
-}
-
-.timeline-track {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.track-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-
-  &.track-icon-primary {
-    background: var(--color-primary-lighter, #E8F0FC);
-    color: var(--color-primary-light, #2A6BC6);
-  }
-
-  &.track-icon-warning {
-    background: var(--state-warning-bg, #FFFBEB);
-    color: var(--state-warning, #D97706);
-  }
-
-  &.track-icon-error {
-    background: var(--state-error-bg, #FEF2F2);
-    color: var(--state-error, #DC2626);
-  }
-}
-
-.track-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-semibold, 600);
-  flex-shrink: 0;
-
-  &.track-avatar-primary {
-    background: var(--color-primary, #1B4F9C);
-  }
-}
-
-.track-line {
-  width: 1px;
-  flex: 1;
-  margin-top: 8px;
-  background: var(--color-border-light, #E5E7EB);
-}
-
-.timeline-body {
-  flex: 1;
-  padding-bottom: 24px;
-  min-width: 0;
-
-  &.timeline-body-right {
-    display: flex;
-    justify-content: flex-end;
-  }
-}
-
-/* Event Bubbles */
-.event-bubble {
-  padding: 12px 16px;
-  border-radius: var(--radius-md, 8px);
-  font-size: var(--text-sm, 0.875rem);
-
-  &.event-bubble-primary {
-    background: var(--color-primary-lighter, #E8F0FC);
-  }
-
-  &.event-bubble-warning {
-    background: var(--state-warning-bg, #FFFBEB);
-  }
-
-  &.event-bubble-error {
-    background: var(--state-error-bg, #FEF2F2);
-  }
-}
-
-.event-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.event-title-primary {
-  color: var(--color-primary-light, #2A6BC6);
-  font-weight: var(--weight-medium, 500);
-}
-
-.event-title-warning {
-  color: var(--state-warning, #D97706);
-  font-weight: var(--weight-medium, 500);
-}
-
-.event-title-error {
-  color: var(--state-error, #DC2626);
-  font-weight: var(--weight-semibold, 600);
-}
-
-.event-time {
-  color: var(--color-text-tertiary, #9CA3AF);
-  font-size: var(--text-xs, 0.75rem);
-}
-
-.event-text {
-  color: var(--color-text-secondary, #4B5563);
-  margin: 0;
-
-  strong {
-    color: var(--color-primary, #1B4F9C);
-  }
-}
-
-.warning-strong {
-  color: var(--state-warning, #D97706);
-}
-
-.warning-icon {
-  color: var(--state-warning, #D97706);
-}
-
-.error-icon {
-  color: var(--state-error, #DC2626);
-}
-
-/* AI 分析建议 inline card */
-.ai-suggestion-card {
-  padding: 12px 16px;
-  border-radius: var(--radius-md, 8px);
-  font-size: var(--text-sm, 0.875rem);
-  background: var(--color-primary-lighter, #E8F0FC);
-  border-left: 4px solid var(--color-primary, #1B4F9C);
-}
-
-.ai-suggestion-title {
-  color: var(--color-primary, #1B4F9C);
-  font-weight: var(--weight-semibold, 600);
-  font-size: var(--text-sm, 0.875rem);
-}
-
-/* User Bubble (creator, right-aligned) */
-.user-bubble-wrap {
-  max-width: 28rem;
-}
-
-.user-bubble {
-  padding: 12px 16px;
-  border-radius: var(--radius-lg, 12px);
-  border-top-right-radius: var(--radius-sm, 4px);
-  background: var(--color-primary, #1B4F9C);
-  color: white;
-  font-size: var(--text-sm, 0.875rem);
-
-  p {
-    margin: 0;
-    line-height: var(--leading-relaxed, 1.625);
-  }
-}
-
-.user-bubble-meta {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.user-name {
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, #111827);
-}
-
-.user-time {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, #9CA3AF);
-}
-
-/* Agent Bubble (left-aligned) */
-.agent-bubble-wrap {
-  max-width: 32rem;
-}
-
-.agent-bubble {
-  padding: 12px 16px;
-  border-radius: var(--radius-lg, 12px);
-  border-top-left-radius: var(--radius-sm, 4px);
-  background: white;
-  border: 1px solid var(--color-border-light, #E5E7EB);
-  color: var(--color-text-primary, #111827);
-  font-size: var(--text-sm, 0.875rem);
-
-  p {
-    margin: 0;
-    line-height: var(--leading-relaxed, 1.625);
-  }
-}
-
-.agent-bubble-meta {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.agent-name {
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-primary, #1B4F9C);
-}
-
-.agent-time {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-primary-light, var(--brand-hover));
 }
 
 /* ========== Reply Box ========== */
 .reply-box {
-  background: white;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  background: var(--color-surface, var(--surface-1));
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 16px;
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
@@ -1998,20 +1299,20 @@ watch(ticketId, () => {
 .reply-textarea {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-md, 8px);
   font-size: var(--text-sm, 0.875rem);
   line-height: var(--leading-relaxed, 1.625);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: var(--color-bg, #F5F7FA);
-  color: var(--color-text-primary, #111827);
+  background: var(--color-bg, var(--surface-0));
+  color: var(--color-text-primary, var(--text-1));
   outline: none;
   resize: none;
   box-sizing: border-box;
 
   &:focus {
-    border-color: var(--color-primary-light, #2A6BC6);
-    box-shadow: 0 0 0 2px var(--color-primary-lighter, #E8F0FC);
+    border-color: var(--color-primary-light, var(--brand-hover));
+    box-shadow: 0 0 0 2px var(--color-primary-lighter, var(--brand-subtle));
   }
 }
 
@@ -2025,417 +1326,24 @@ watch(ticketId, () => {
 /* AI 智能分析面板：CollapsibleCard 的 scoped 根元素带本组件 data-v，
    故父作用域 .td-ai-card 规则可直接命中其根，赋予主色高亮边框以突出重点 */
 .td-ai-card {
-  border: 2px solid var(--color-primary-lighter, #E8F0FC);
+  border: 2px solid var(--color-primary-lighter, var(--brand-subtle));
 }
 
-/* 预览占位标签（无真实数据源时标「预览」，不伪造数字 — 09设计规范 §四.1） */
-.preview-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  margin-left: auto;
-  border-radius: var(--radius-full, 9999px);
-  background: var(--color-bg-sunken, #EBEEF3);
-  color: var(--color-text-tertiary, #9CA3AF);
-  font-size: 10px;
-  font-weight: var(--weight-medium, 500);
-  line-height: 1.5;
-  flex-shrink: 0;
-}
+/* ── 右侧栏样式已随模板一并搬出 ──────────────────────────────
+   属性/SLA → TicketPropsPanel.vue
+   标签编辑 → TicketTagEditor.vue
+   附件     → TicketAttachmentPanel.vue（含 .btn-outline 副本，scoped 不穿透）
+   操作记录 → TicketActivityLog.vue
 
-/* ========== Properties ========== */
-.props-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
+   同时删掉了 39 个**已无对应 DOM** 的类：
+   `.ai-insights` / `.insight-*` 十条是 TicketInsights 抽出去时的遗留，
+   `.empty-card` / `.empty-icon` / `.loading-spinner` 等九条在改用
+   AppEmpty / ApiErrorState / PageLoading 后就没人引用了，
+   `.preview-tag` 则是占位标签删除后剩下的。
 
-.prop-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.prop-label {
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, #9CA3AF);
-}
-
-.prop-value {
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-primary, #111827);
-  font-weight: var(--weight-medium, 500);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-
-  &.prop-mono {
-    font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  }
-
-  &.prop-priority-urgent {
-    color: var(--state-error, #DC2626);
-  }
-
-  &.prop-priority-high {
-    color: #EA580C;
-  }
-
-  &.prop-status {
-    color: var(--color-primary-light, #2A6BC6);
-  }
-}
-
-.prop-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  display: inline-block;
-}
-
-/* ========== Tag Edit ========== */
-.tag-edit-area { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.tag-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 8px; font-size: 0.75rem;
-  background: rgba(64, 158, 255, 0.1); color: #409eff;
-  border-radius: 4px;
-}
-.tag-remove {
-  border: none; background: none; cursor: pointer;
-  color: #409eff; font-size: 0.875rem; line-height: 1;
-  padding: 0; opacity: 0.6;
-}
-.tag-remove:hover { opacity: 1; }
-.tag-remove:disabled { opacity: 0.3; cursor: not-allowed; }
-.tag-add-row { display: flex; gap: 6px; width: 100%; margin-top: 4px; }
-.tag-input {
-  flex: 1; padding: 4px 8px; font-size: 0.8125rem;
-  border: 1px solid #e5e7eb; border-radius: 4px;
-}
-.tag-add-btn {
-  padding: 4px 12px; font-size: 0.8125rem;
-  border: 1px solid #409eff; background: #409eff; color: #fff;
-  border-radius: 4px; cursor: pointer;
-}
-.tag-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.tag-suggestions { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; margin-top: 6px; }
-.tag-suggest-label { font-size: 0.75rem; color: #9ca3af; line-height: 1.6; }
-.tag-suggest {
-  border: 1px solid #e5e7eb; background: #fff; color: #6b7280;
-  font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; cursor: pointer;
-}
-.tag-suggest:hover { border-color: #409eff; color: #409eff; }
-.tag-suggest:disabled { opacity: 0.3; cursor: not-allowed; }
-
-/* ========== SLA Progress ========== */
-.sla-progress {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border-light, #E5E7EB);
-}
-
-.sla-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.sla-label {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, #9CA3AF);
-}
-
-.sla-value {
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--state-warning, #D97706);
-}
-
-.sla-value-breached {
-  color: var(--state-error, #DC2626) !important;
-  font-weight: var(--weight-semibold, 600);
-}
-
-.progress-bar {
-  width: 100%;
-  height: 8px;
-  background: var(--color-bg-sunken, #EBEEF3);
-  border-radius: var(--radius-full, 9999px);
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full, 9999px);
-  transition: width 0.3s ease, background 0.2s ease;
-
-  &.progress-fill-normal { background: var(--color-primary-light, #2A6BC6); }
-  &.progress-fill-warning { background: var(--state-warning, #D97706); }
-  &.progress-fill-error { background: var(--state-error, #DC2626); }
-}
-
-/* ========== AI Insights ========== */
-.ai-insights {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.insight-item {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.insight-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md, 8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.insight-icon-blue {
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary-light, #2A6BC6);
-}
-
-.insight-icon-warning {
-  background: var(--state-warning-bg, #FFFBEB);
-  color: var(--state-warning, #D97706);
-}
-
-.insight-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.insight-label {
-  font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, #111827);
-  margin: 0;
-}
-
-.insight-hint {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, #9CA3AF);
-  margin: 2px 0 0 0;
-}
-
-.insight-hint-warning {
-  color: var(--state-warning, #D97706);
-}
-
-/* ========== Activity Log ========== */
-.activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.activity-empty {
-  text-align: center;
-  color: var(--color-text-tertiary, #9ca3af);
-  padding: 20px;
-  font-size: 0.8125rem;
-}
-
-.activity-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.activity-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  margin-top: 6px;
-  flex-shrink: 0;
-
-  &.activity-dot-success { background: var(--state-success, #16A34A); }
-  &.activity-dot-primary { background: var(--color-primary-light, #2A6BC6); }
-  &.activity-dot-gray { background: var(--color-text-tertiary, #9CA3AF); }
-  &.activity-dot-warning { background: var(--state-warning, #D97706); }
-}
-
-.activity-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.activity-text {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-secondary, #4B5563);
-  margin: 0;
-}
-
-.activity-detail {
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, #111827);
-
-  &.activity-detail-highlight {
-    color: var(--color-primary, #1B4F9C);
-  }
-}
-
-.activity-meta {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, #9CA3AF);
-  margin: 2px 0 0 0;
-}
-
-/* ========== Empty / Error States ========== */
-.empty-card {
-  max-width: 520px;
-  margin: 40px auto;
-  padding: 40px 32px;
-  background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border-light, #E5E7EB);
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
-  text-align: center;
-}
-
-.empty-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #1B4F9C);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.empty-icon-error {
-  background: var(--state-error-bg, #FEF2F2);
-  color: var(--state-error, #DC2626);
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  margin: 0 auto 16px;
-  border: 3px solid var(--color-primary-lighter, #E8F0FC);
-  border-top-color: var(--color-primary, #1B4F9C);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.empty-title {
-  font-size: var(--text-xl, 1.25rem);
-  font-weight: var(--weight-semibold, 600);
-  color: var(--color-text-primary, #111827);
-  margin: 0 0 8px 0;
-}
-
-.empty-hint {
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, #9CA3AF);
-  margin: 0 0 20px 0;
-}
-
-.empty-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.attach-empty {
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-  padding: 8px 0 12px;
-}
-
-.attach-list {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.attach-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--color-bg);
-  border-radius: var(--radius-sm);
-}
-
-.attach-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.attach-name {
-  font-size: var(--text-sm);
-  color: var(--color-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.attach-size {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-}
-
-.attach-ops {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.attach-op {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  &:hover {
-    background: var(--color-primary-lighter);
-    color: var(--color-primary);
-  }
-}
-
-.attach-op-danger:hover {
-  background: var(--state-error-bg);
-  color: var(--state-error);
-}
-
-.attach-file-input {
-  display: none;
-}
-
-.attach-upload {
-  width: 100%;
-  justify-content: center;
-}
+   死样式不报错也不影响渲染，但它们会让下一个人以为
+   「页面上还有这块 UI」，照着改半天发现毫无效果——
+   这正是本次拆分前排查右侧栏花掉的时间。 */
 
 /* ===== B5 闭环进度条 ===== */
 .closure-progress-bar {
@@ -2445,7 +1353,7 @@ watch(ticketId, () => {
   padding: 16px 20px;
   background: var(--color-surface, #fff);
   border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   margin-bottom: 16px;
 }
 
@@ -2467,12 +1375,12 @@ watch(ticketId, () => {
   left: 50%;
   right: -50%;
   height: 2px;
-  background: var(--color-border, #E5E7EB);
+  background: var(--color-border, var(--border-1));
   z-index: 0;
 }
 
 .cp-step.done:not(:last-child)::after {
-  background: #16A34A;
+  background: var(--success);
 }
 
 .cp-dot {
@@ -2482,65 +1390,65 @@ watch(ticketId, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--color-border, #E5E7EB);
+  border: 2px solid var(--color-border, var(--border-1));
   background: var(--color-surface, #fff);
-  color: #9ca3af;
+  color: var(--text-3);
   z-index: 1;
   flex-shrink: 0;
 }
 
 .cp-step.done .cp-dot {
-  background: #16A34A;
-  border-color: #16A34A;
+  background: var(--success);
+  border-color: var(--success);
   color: #fff;
 }
 
 .cp-step.current .cp-dot {
-  border-color: #3B82F6;
-  background: #fff;
+  border-color: var(--brand);
+  background: var(--color-surface, var(--surface-1));
 }
 
 .cp-dot-inner {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #3B82F6;
+  background: var(--brand);
 }
 
 .cp-step.skipped .cp-dot {
-  border-color: #D1D5DB;
-  background: #F3F4F6;
-  color: #9ca3af;
+  border-color: var(--border-2);
+  background: var(--surface-2);
+  color: var(--text-3);
 }
 
 .cp-step.skipped .cp-dot::after {
   content: '—';
   font-size: 12px;
   font-weight: 600;
-  color: #9ca3af;
+  color: var(--text-3);
 }
 
 .cp-label {
   font-size: 12px;
-  color: var(--color-text-secondary, #4b5563);
+  color: var(--color-text-secondary, var(--text-2));
   font-weight: 500;
   white-space: nowrap;
 }
 
-.cp-step.done .cp-label { color: #16A34A; }
-.cp-step.current .cp-label { color: #3B82F6; font-weight: 600; }
-.cp-step.skipped .cp-label { color: #9ca3af; }
+.cp-step.done .cp-label { color: var(--success); }
+.cp-step.current .cp-label { color: var(--brand); font-weight: 600; }
+.cp-step.skipped .cp-label { color: var(--text-3); }
 
 .cp-meta {
   font-size: 11px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   font-variant-numeric: tabular-nums;
 }
 
 .cp-meta-skipped {
   cursor: help;
   text-decoration: underline dotted;
-  text-decoration-color: #9ca3af;
+  text-decoration-color: var(--text-3);
 }
 
 /* ===== B2~B4 弹窗 / 抽屉表单 ===== */
@@ -2559,13 +1467,13 @@ watch(ticketId, () => {
 .dialog-form .form-row label {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-secondary, #4b5563);
+  color: var(--color-text-secondary, var(--text-2));
 }
 
 .dialog-form .form-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--color-border, #E5E7EB);
+  border: 1px solid var(--color-border, var(--border-1));
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
@@ -2574,7 +1482,7 @@ watch(ticketId, () => {
 
 .form-hint {
   font-size: 12px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
   margin: 4px 0 0 0;
 }
 
@@ -2583,7 +1491,7 @@ watch(ticketId, () => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--color-text-secondary, #4b5563);
+  color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
 }
 
@@ -2594,23 +1502,23 @@ watch(ticketId, () => {
   padding: 8px 12px;
   background: var(--color-surface, #fff);
   border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   margin-bottom: 16px;
 }
 
 .stage-btn {
   padding: 6px 14px;
-  border: 1px solid var(--color-border, #E5E7EB);
+  border: 1px solid var(--color-border, var(--border-1));
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   font-size: 13px;
-  color: var(--color-text-secondary, #4b5563);
+  color: var(--color-text-secondary, var(--text-2));
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.stage-btn:hover { border-color: var(--color-primary, #3B82F6); color: var(--color-primary, #3B82F6); }
-.stage-btn.active { background: var(--color-primary, #3B82F6); color: #fff; border-color: var(--color-primary, #3B82F6); }
+.stage-btn:hover { border-color: var(--color-primary, var(--brand)); color: var(--color-primary, var(--brand)); }
+.stage-btn.active { background: var(--color-primary, var(--brand)); color: #fff; border-color: var(--color-primary, var(--brand)); }
 
 .action-list-section {
   margin-bottom: 16px;
@@ -2624,7 +1532,7 @@ watch(ticketId, () => {
   border-radius: 6px;
   font-size: 13px;
   background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   margin-bottom: 6px;
 }
 
@@ -2639,18 +1547,18 @@ watch(ticketId, () => {
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
-  background: #E0F2FE;
-  color: #0369A1;
+  background: var(--info-subtle);
+  color: var(--info);
 }
 
-.action-type-badge.action-type-mitigate { background: #FEF3C7; color: #B45309; }
-.action-type-badge.action-type-fix { background: #DCFCE7; color: #15803D; }
-.action-type-badge.action-type-rollback { background: #FEE2E2; color: #B91C1C; }
+.action-type-badge.action-type-mitigate { background: var(--warning-subtle); color: var(--warning); }
+.action-type-badge.action-type-fix { background: var(--success-subtle); color: var(--success); }
+.action-type-badge.action-type-rollback { background: var(--danger-subtle); color: var(--danger); }
 .action-type-badge.action-type-verify { background: #E0E7FF; color: #4338CA; }
 
-.action-summary { flex: 1; color: var(--color-text-primary, #1f2937); }
+.action-summary { flex: 1; color: var(--color-text-primary, var(--text-1)); }
 .action-eff { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
-.eff-ok { background: #DCFCE7; color: #15803D; }
-.eff-no { background: #FEE2E2; color: #B91C1C; }
-.action-meta { font-size: 11px; color: var(--color-text-tertiary, #9ca3af); white-space: nowrap; }
+.eff-ok { background: var(--success-subtle); color: var(--success); }
+.eff-no { background: var(--danger-subtle); color: var(--danger); }
+.action-meta { font-size: 11px; color: var(--color-text-tertiary, var(--text-3)); white-space: nowrap; }
 </style>

@@ -41,6 +41,7 @@ import java.util.Map;
 public class AgentMemoryManager {
 
     private final HotMemoryStore hotMemory;
+    private final com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository turnRepo;
     private final SessionSummaryRepository summaryRepo;
     private final SummaryDistiller distiller;
     private final ObjectMapper objectMapper;
@@ -48,8 +49,10 @@ public class AgentMemoryManager {
     public AgentMemoryManager(HotMemoryStore hotMemory,
                               SessionSummaryRepository summaryRepo,
                               SummaryDistiller distiller,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository turnRepo) {
         this.hotMemory = hotMemory;
+        this.turnRepo = turnRepo;
         this.summaryRepo = summaryRepo;
         this.distiller = distiller;
         this.objectMapper = objectMapper;
@@ -166,6 +169,21 @@ public class AgentMemoryManager {
             log.debug("🧠 [Memory] 温记忆已更新 | sessionId={} | 事实数={} | 累计{}轮",
                     sessionId, merged.getConfirmedFacts().size(), totalTurnCount);
 
+            // 5. 对话原文转写（B-2 冷归档补全）
+            //
+            // 为什么放在这里而不是 SSE 主流程：本方法已经拿到 userQuery 与
+            // aiAnswer 全文，且整体包在 try-catch 里——原文转写天然属于
+            // 「每轮收尾」这件事，不需要动 SSE 回调。
+            //
+            // 为什么需要它：热记忆（Redis）TTL 仅 120 分钟，而冷归档按天执行，
+            // 归档时原文早已过期。此前冷归档只能存摘要并如实标注
+            // contentScope=SUMMARY_ONLY，而合规审计与模型评测取数都要逐轮原文。
+            //
+            // 单独 try-catch 而非并入上面那个：转写失败不该让「温记忆已更新」
+            // 这件已完成的事被日志描述成失败。
+            persistTurnQuietly(sessionId, traceId, userQuery, aiAnswer,
+                    toolResults, tokens, costRmb, finalState);
+
         } catch (Exception e) {
             // 记忆写入失败不影响用户已收到的回答
             log.warn("⚠️ [Memory] 记录对话失败（不影响主流程）| sessionId={} | {}", sessionId, e.getMessage());
@@ -209,6 +227,39 @@ public class AgentMemoryManager {
     /**
      * 从工具结果提取工单号列表
      */
+    /**
+     * 转写对话原文——失败只记日志，绝不影响已完成的记忆写入。
+     *
+     * <p>轮次序号从库里推导而非用上面的 {@code totalTurnCount}：
+     * 后者来自温记忆的累加值，而温记忆与原文表是两条独立写入路径，
+     * 任一条曾经失败过，两者的轮次就会错位——用错位的序号写入会撞唯一键
+     * 而被静默跳过。以原文表自身的 MAX+1 为准，它才是这张表的事实。</p>
+     */
+    private void persistTurnQuietly(String sessionId, String traceId,
+                                    String userQuery, String aiAnswer,
+                                    List<Map<String, Object>> toolResults,
+                                    int tokens, double costRmb, String finalState) {
+        try {
+            String toolJson = null;
+            if (toolResults != null && !toolResults.isEmpty()) {
+                try {
+                    toolJson = objectMapper.writeValueAsString(toolResults);
+                } catch (Exception e) {
+                    // 工具结果序列化失败不应拖累问答原文——那才是主要内容。
+                    // 置 null 并留痕，而不是整轮放弃
+                    log.warn("⚠️ [Memory] 工具结果序列化失败，原文仍会写入（tool_results 置空）"
+                            + " | sessionId={} | {}", sessionId, e.getMessage());
+                }
+            }
+            int seq = turnRepo.nextTurnSeq(sessionId);
+            turnRepo.append(sessionId, traceId, seq, userQuery, aiAnswer,
+                    toolJson, tokens, costRmb, finalState);
+        } catch (Exception e) {
+            log.warn("⚠️ [Memory] 对话原文转写失败（不影响主流程与温记忆）| sessionId={} | {}",
+                    sessionId, e.getMessage());
+        }
+    }
+
     private String extractTicketIds(List<Map<String, Object>> toolResults) {
         if (toolResults == null || toolResults.isEmpty()) return "[]";
         List<String> ids = new ArrayList<>();

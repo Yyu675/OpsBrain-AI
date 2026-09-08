@@ -71,8 +71,8 @@ const toggle = () => { collapsed.value = !collapsed.value }
 
 <style scoped>
 .collapsible-card {
-  background: white;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  background: var(--color-surface, var(--surface-1));
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
   overflow: hidden;
@@ -87,7 +87,7 @@ const toggle = () => { collapsed.value = !collapsed.value }
   transition: background 0.15s;
 }
 .card-header:hover {
-  background: var(--color-surface-hover, #F8F9FB);
+  background: var(--color-surface-hover, var(--surface-2));
 }
 .card-title {
   display: flex;
@@ -95,7 +95,7 @@ const toggle = () => { collapsed.value = !collapsed.value }
   gap: 6px;
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary, var(--text-1));
 }
 .card-badge {
   display: inline-flex;
@@ -106,12 +106,12 @@ const toggle = () => { collapsed.value = !collapsed.value }
   padding: 0 5px;
   font-size: 0.6875rem;
   font-weight: 600;
-  background: var(--color-primary-lighter, #E8F0FC);
-  color: var(--color-primary, #409eff);
+  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--color-primary, var(--brand));
   border-radius: 9px;
 }
 .toggle-icon {
-  color: var(--color-text-tertiary, #9CA3AF);
+  color: var(--color-text-tertiary, var(--text-3));
   transition: transform 0.2s;
 }
 .card-body {

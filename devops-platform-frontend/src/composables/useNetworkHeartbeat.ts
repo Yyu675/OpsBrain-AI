@@ -1,6 +1,6 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 
-export interface HeartbeatOptions {
+interface HeartbeatOptions {
   url?: string
   intervalMs?: number
   timeoutMs?: number

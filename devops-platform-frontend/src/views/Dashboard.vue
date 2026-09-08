@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { parseDate } from '@/utils/time'
 import { computed, ref } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import {
   useClosureMetricsQuery,
   useDashboardOverviewQuery,
+  useAiAnalysisStatsQuery,
+  useDiagnosisBoardQuery,
   useRootCauseStatsQuery,
   useTrendsQuery,
 } from '@/api/queries/dashboard.query'
@@ -35,6 +38,8 @@ const rootCauseQuery = useRootCauseStatsQuery()
  */
 const trendDays = ref(7)
 const trendQuery = useTrendsQuery(trendDays)
+const diagnosisQuery = useDiagnosisBoardQuery(trendDays)
+const aiStatsQuery = useAiAnalysisStatsQuery()
 
 // KPI 主数据：它失败即整页错误态，其余区块都是它的补充
 const data = overviewQuery.data
@@ -44,6 +49,60 @@ const loadError = overviewQuery.error
 const closure = closureQuery.data
 const rootCauseStats = rootCauseQuery.stats
 const trend = trendQuery.data
+const diagnosis = diagnosisQuery.data
+const aiStats = aiStatsQuery.data
+
+/**
+ * 根因准确率显示口径（4-4.1）：rated=0 时后端给 0.0 但那是「还没有任何人
+ * 评过分」不是「准确率 0%」——Dashboard 页祖传纪律：null/无数据 ≠ 0。
+ */
+const aiAccuracyText = computed(() => {
+  const s = aiStats.value
+  if (!s || s.rated === 0) return '—'
+  return `${(s.helpfulRate * 100).toFixed(1)}%`
+})
+const aiRatedText = computed(() => {
+  const s = aiStats.value
+  if (!s) return '—'
+  return s.rated === 0 ? '暂无反馈' : `${s.helpful}/${s.rated}`
+})
+
+/** 诊断区方向中文名：键与后端 evidence_type 一一对应，未知类型原样显示 */
+const DIR_LABELS: Record<string, string> = {
+  metrics: '指标', changes: '变更', logs: '日志', topology: '拓扑'
+}
+
+/** 按状态取会话数；窗口里可能没有某状态，缺省 0 */
+const sessionCount = (status: string) =>
+  diagnosis.value?.sessions.byStatus.find((s) => s.status === status)?.count ?? 0
+
+/** 点名方向中文串：metric、topology 这类原始键不出现在告警文案里 */
+const attentionText = computed(() =>
+  (diagnosis.value?.attentionTypes ?? []).map((t) => DIR_LABELS[t] ?? t).join('、')
+)
+
+/** 诊断量趋势：柱=当日发起，折=当日完成（补零语义由后端 Composer 保证，此处只管画） */
+// S4-2 校准读数（批 35）：ECE 越低越好——空判定集显示「—」，
+// 与根因准确率的 null ≠ 0 纪律同一条；PARTIAL 豁免的口径注随块展示。
+const calibration = computed(() => diagnosis.value?.calibration ?? null)
+const calibEceText = computed(() =>
+  calibration.value?.ece == null ? '—' : `${(calibration.value.ece * 100).toFixed(1)}%`)
+const calibAccText = computed(() =>
+  calibration.value?.empiricalAccuracy == null ? '—' : `${(calibration.value.empiricalAccuracy * 100).toFixed(1)}%`)
+const calibRatedText = computed(() => {
+  const c = calibration.value
+  if (!c) return '—'
+  return c.ratedTotal === 0 ? '暂无反馈' : `${c.helpful}/${c.ratedTotal}`
+})
+
+const diagnosisTrendSeries = computed<TrendSeries[]>(() => {
+  const t = diagnosis.value?.sessionTrend
+  if (!t || !t.days.length) return []
+  return [
+    { name: '发起诊断', data: t.created, type: 'bar', color: '#409eff', suffix: ' 次' },
+    { name: '完成诊断', data: t.completed, type: 'line', color: '#67c23a', suffix: ' 次' }
+  ]
+})
 
 /**
  * 数据更新时间：从 Query 的 dataUpdatedAt 派生。
@@ -54,15 +113,20 @@ const trend = trendQuery.data
 const lastUpdated = computed(() => {
   const ts = overviewQuery.dataUpdatedAt.value
   if (!ts) return ''
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  // 走 parseDate：趋势图 X 轴若按浏览器时区解析，
+  // 跨时区用户看到的时间点会整体平移
+  const d = parseDate(ts)
+  return d ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : String(ts)
 })
 
-/** 刷新：四个查询一并重拉。refetch 会绕过 staleTime */
+/** 刷新：六个查询一并重拉。refetch 会绕过 staleTime */
 const loadDashboard = () => {
   void overviewQuery.refetch()
   void closureQuery.refetch()
   void rootCauseQuery.refetch()
   void trendQuery.refetch()
+  void diagnosisQuery.refetch()
+  void aiStatsQuery.refetch()
 }
 
 /** 工单趋势：柱（新建）+ 折线（验证通过） */
@@ -310,6 +374,113 @@ const rootCauseTop = computed(() =>
             </div>
           </div>
 
+          <!-- B6 诊断区（S4-4.2 批次 16） -->
+          <div v-if="diagnosis" class="diagnosis-section">
+            <h3 class="section-heading">诊断区 · 近 {{ diagnosis.windowDays }} 日</h3>
+
+            <div class="closure-kpi-grid">
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">诊断会话</div>
+                <div class="closure-kpi-value">{{ diagnosis.sessions.total }}</div>
+              </div>
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">完成</div>
+                <div class="closure-kpi-value">{{ sessionCount('COMPLETED') }}</div>
+              </div>
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">平均耗时</div>
+                <div class="closure-kpi-value">{{ diagnosis.sessions.avgDurationSeconds === null ? '—' : diagnosis.sessions.avgDurationSeconds + 's' }}</div>
+              </div>
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">单次均价</div>
+                <div class="closure-kpi-value">{{ diagnosis.sessions.avgCostRmb === null ? '—' : '¥' + diagnosis.sessions.avgCostRmb.toFixed(4) }}</div>
+              </div>
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">需关注方向</div>
+                <div class="closure-kpi-value">{{ diagnosis.attentionTypes.length || '—' }}</div>
+              </div>
+            </div>
+
+            <div v-if="diagnosis.attentionTypes.length" class="diagnosis-attention">
+              需关注：{{ attentionText }} 方向存在 FAILED / UNAVAILABLE 取证失败——先查上游采集，再谈充分性
+            </div>
+
+            <div v-if="diagnosis.sessions.sufficiency.length" class="diagnosis-suff">
+              充分性分布（完成会话）：
+              <span v-for="s in diagnosis.sessions.sufficiency" :key="s.sufficiency" class="suff-chip">{{ s.sufficiency }} × {{ s.count }}</span>
+            </div>
+
+            <template v-if="diagnosis.evidenceDirections.length">
+              <table class="diagnosis-table">
+                <thead>
+                  <tr><th>方向</th><th>总数</th><th>成功</th><th>无数据</th><th>失败</th><th>不可用</th><th>成功率</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="d in diagnosis.evidenceDirections" :key="d.type">
+                    <td>{{ DIR_LABELS[d.type] ?? d.type }}</td>
+                    <td>{{ d.total }}</td>
+                    <td>{{ d.success }}</td>
+                    <td>{{ d.noData }}</td>
+                    <td>{{ d.failed }}</td>
+                    <td>{{ d.unavailable }}</td>
+                    <td>{{ (d.successRate * 100).toFixed(1) }}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <AppEmpty v-else size="sm" description="窗口内暂无取证记录" />
+
+            <!-- AI 效果（4-4.1 半部先行）：根因准确率来自反馈闭环；
+                 幻觉率/证据不足率待 EVAL_LLM 窗数据接入，不在此发空壳 -->
+            <div v-if="aiStats" class="ai-effect">
+              <h4 class="sub-heading">AI 根因分析反馈</h4>
+              <div class="closure-kpi-grid">
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">根因准确率</div>
+                  <div class="closure-kpi-value" :title="aiStats.rated === 0 ? '暂无反馈数据' : `有用 ${aiStats.helpful} / 已评分 ${aiStats.rated}`">{{ aiAccuracyText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">有用/已评分</div>
+                  <div class="closure-kpi-value">{{ aiRatedText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">累计分析</div>
+                  <div class="closure-kpi-value">{{ aiStats.total }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 假设置信度校准（S4-2 数据面 / 批 35）：反馈闭环第二读数；
+                 PARTIAL 不进判定集（二值口径不吞半分），豁免数随 tooltip 透明 -->
+            <div v-if="diagnosis.calibration" class="diagnosis-calibration">
+              <h4 class="sub-heading">假设置信度校准</h4>
+              <div class="closure-kpi-grid">
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">校准误差 ECE</div>
+                  <div class="closure-kpi-value" :title="diagnosis.calibration.ece == null ? '判定集为空：尚无 HELPFUL/WRONG 反馈' : `判定集 ${diagnosis.calibration.ratedTotal} 条（PARTIAL 豁免 ${diagnosis.calibration.excludedPartial}）`">{{ calibEceText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">经验正确率</div>
+                  <div class="closure-kpi-value">{{ calibAccText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">有用/已判定</div>
+                  <div class="closure-kpi-value">{{ calibRatedText }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="diagnosis.sessionTrend.days.length" class="diagnosis-trend">
+              <h4 class="sub-heading">诊断量趋势（发起 / 完成）</h4>
+              <TrendChart
+                class="diagnosis-trend-chart"
+                :labels="diagnosis.sessionTrend.days"
+                :series="diagnosisTrendSeries"
+                height="240px"
+              />
+            </div>
+          </div>
+
           <!-- 统计信息 -->
           <div class="stats-footer">
             <p>有效查询: {{ data.totalQueries }} | 缓存命中: {{ data.cacheHits }} ({{ data.cacheHitRate.toFixed(1) }}%) | 工单: {{ data.totalTickets }} | 平均成本(付费): ¥{{ data.avgCostRmb.toFixed(4) }}</p>
@@ -347,17 +518,17 @@ const rootCauseTop = computed(() =>
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--color-border-light, #E5E7EB);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: 8px;
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   cursor: pointer;
   font-size: 0.875rem;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary, var(--text-2));
   transition: border-color 0.15s, color 0.15s;
 }
 .refresh-btn:hover:not(:disabled) {
-  border-color: var(--el-color-primary, #409eff);
-  color: var(--el-color-primary, #409eff);
+  border-color: var(--el-color-primary, var(--brand));
+  color: var(--el-color-primary, var(--brand));
 }
 .refresh-btn:disabled {
   opacity: 0.6;
@@ -371,7 +542,7 @@ const rootCauseTop = computed(() =>
 }
 .last-updated {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 
 .loading-state,
@@ -388,7 +559,7 @@ const rootCauseTop = computed(() =>
   text-align: center;
   padding: 16px;
   margin-bottom: 16px;
-  background: var(--color-bg-sunken, #f1f5f9);
+  background: var(--color-bg-sunken, var(--surface-2));
   border-radius: var(--radius-md, 8px);
   color: var(--color-text-tertiary, #94a3b8);
   font-size: 13px;
@@ -402,7 +573,7 @@ const rootCauseTop = computed(() =>
 }
 
 .kpi-card {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -422,7 +593,7 @@ const rootCauseTop = computed(() =>
 .kpi-value {
   font-size: 32px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   margin-bottom: 8px;
 }
 
@@ -444,7 +615,7 @@ const rootCauseTop = computed(() =>
 }
 
 .data-panel {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -453,7 +624,7 @@ const rootCauseTop = computed(() =>
 .panel-header h3 {
   font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   margin: 0 0 16px 0;
 }
 
@@ -461,7 +632,7 @@ const rootCauseTop = computed(() =>
   display: block;
   margin: -10px 0 12px 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-3);
 }
 
 .panel-body {
@@ -489,24 +660,24 @@ const rootCauseTop = computed(() =>
 
 .model-name {
   font-weight: 500;
-  color: #1f2937;
+  color: var(--text-1);
 }
 
 .model-count {
-  color: #6b7280;
+  color: var(--text-2);
 }
 
 .model-bar {
   grid-column: 1 / 2;
   height: 8px;
-  background: #e5e7eb;
+  background: var(--border-1);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .model-fill {
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  background: linear-gradient(90deg, var(--brand), #8b5cf6);
   transition: width 0.3s;
 }
 
@@ -515,11 +686,11 @@ const rootCauseTop = computed(() =>
   text-align: right;
   font-size: 14px;
   font-weight: 500;
-  color: #1f2937;
+  color: var(--text-1);
 }
 
 .stats-footer {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 16px 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -529,12 +700,12 @@ const rootCauseTop = computed(() =>
 .stats-footer p {
   margin: 0;
   font-size: 14px;
-  color: #6b7280;
+  color: var(--text-2);
 }
 
 /* ===== B5 闭环度量 ===== */
 .closure-section {
-  background: white;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 12px;
   padding: 20px 24px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
@@ -544,7 +715,7 @@ const rootCauseTop = computed(() =>
 .section-heading {
   font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   margin: 0 0 16px 0;
 }
 
@@ -573,14 +744,14 @@ const rootCauseTop = computed(() =>
 
 .closure-kpi-label {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-2);
   margin-bottom: 4px;
 }
 
 .closure-kpi-value {
   font-size: 20px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-1);
   font-variant-numeric: tabular-nums;
 }
 
@@ -600,28 +771,28 @@ const rootCauseTop = computed(() =>
 .stage-label {
   width: 80px;
   font-size: 13px;
-  color: #4b5563;
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
 .stage-bar {
   flex: 1;
   height: 8px;
-  background: #E5E7EB;
+  background: var(--border-1);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .stage-fill {
   height: 100%;
-  background: var(--color-primary, #3B82F6);
+  background: var(--color-primary, var(--brand));
   border-radius: 4px;
   transition: width 0.3s ease;
 }
 
 .stage-count {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-3);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -631,7 +802,7 @@ const rootCauseTop = computed(() =>
 .sub-heading {
   font-size: 14px;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--text-2);
   margin: 0 0 8px 0;
 }
 
@@ -646,11 +817,56 @@ const rootCauseTop = computed(() =>
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: #F3F4F6;
+  background: var(--surface-2);
   border-radius: 999px;
   font-size: 13px;
 }
 
-.rc-label { color: #4b5563; }
-.rc-count { font-weight: 600; color: #1f2937; font-variant-numeric: tabular-nums; }
+.rc-label { color: var(--text-2); }
+.rc-count { font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
+/* ── B6 诊断区（S4-4.2） ── */
+.diagnosis-section {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+.diagnosis-attention {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--el-color-danger-light-9);
+  border-left: 3px solid var(--el-color-danger);
+  border-radius: 4px;
+  color: var(--el-color-danger);
+  font-size: 13px;
+}
+.diagnosis-suff {
+  margin: 8px 0 12px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.suff-chip {
+  display: inline-block;
+  margin: 0 6px 4px 0;
+  padding: 2px 8px;
+  background: var(--el-fill-color-light);
+  border-radius: 10px;
+}
+.diagnosis-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.diagnosis-table th,
+.diagnosis-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.diagnosis-table th {
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+
 </style>

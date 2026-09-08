@@ -12,8 +12,9 @@
  * 排序（最新告警在前），REST 列表接口不暴露 sortBy 参数——故本页不做
  * 「可点击排序」列（客户端排序只会排当前页，是 6.37 已明确的静默错误）。
  */
+import { notify } from '@/utils/notify'
 import { ref, computed, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { Bell, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-vue-next'
 import type { Alert, AlertStatus } from '@/api/types'
 import { useAlertListQuery, useAlertMutations } from '@/api/queries/alerts.query'
@@ -25,10 +26,16 @@ import {
   ALERT_LEVEL_OPTIONS
 } from '@/utils/alert'
 import RelativeTime from '@/components/common/RelativeTime.vue'
-import AppEmpty from '@/components/common/AppEmpty.vue'
-import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
+import {
+  useUrlFilters,
+  defineUrlFilter,
+  enumParser,
+  positiveIntParser,
+  textParser,
+} from '@/composables/useUrlFilters'
 
 // ==================== 状态 ====================
 
@@ -49,6 +56,34 @@ const levelFilter = ref<string | ''>('')
 const pageRef = ref(1)
 const sizeRef = ref(10)
 
+/**
+ * 筛选与页码同步到 URL。
+ *
+ * 告警页此前完全没有 URL 状态：值班同事筛出「FIRING + P0」后
+ * 没法把结果甩给同事，刷新也会丢——而「把这个告警列表发给你看」
+ * 恰恰是值班交接时最高频的动作。
+ */
+useUrlFilters([
+  defineUrlFilter({
+    ref: statusFilter,
+    key: 'status',
+    defaultValue: '' as AlertStatus | '',
+    parse: enumParser(['FIRING', 'ACKNOWLEDGED', 'RESOLVED'] as const),
+  }),
+  defineUrlFilter({
+    ref: levelFilter,
+    key: 'level',
+    defaultValue: '' as string,
+    parse: textParser(32),
+  }),
+  defineUrlFilter({
+    ref: pageRef, key: 'page', defaultValue: 1, parse: positiveIntParser(10000),
+  }),
+  defineUrlFilter({
+    ref: sizeRef, key: 'size', defaultValue: 10, parse: positiveIntParser(200),
+  }),
+])
+
 const listQuery = useAlertListQuery({
   page: pageRef,
   size: sizeRef,
@@ -58,13 +93,27 @@ const listQuery = useAlertListQuery({
 
 const pagination = useServerPaginationFrom(
   { total: () => listQuery.total.value, totalPages: () => listQuery.totalPages.value },
-  { pageSize: 10 }
+  { pageSize: 10, page: pageRef, size: sizeRef }
 )
-// 让 composable 的 currentPage 与传给 Query 的 pageRef 是同一个 ref，
-// 这样 goToPage 改页码即触发 Query 重拉，无需手动调用
+/**
+ * 页码与每页条数**只有一份 ref**（`pageRef` / `sizeRef`），
+ * 由本页持有并同时交给 Query 与分页 composable。
+ *
+ * 此前这里是「composable 内部自己 ref(1)，再用 watch 单向同步到 pageRef」，
+ * 注释写着「是同一个 ref」但实际是两个。两个方向都出过问题：
+ *
+ * 1. **URL 恢复失效**。`useUrlFilters` 在 setup 阶段把 `?page=3` 写进
+ *    `pageRef`，而分页条读的 `pagination.currentPage` 仍是 1——
+ *    列表显示第 3 页的数据、底部却高亮「1」。
+ *
+ * 2. **改筛选不回第 1 页**。`resetPage()` 把 `currentPage` 设为 1，
+ *    但它本来就是 1，watch 不触发，`pageRef` 仍停在 3——
+ *    换了筛选条件，请求却还在拉第 3 页。
+ *
+ * 共用一份 ref 之后，`useUrlFilters` 写它、`goToPage`/`resetPage` 写它、
+ * Query 的 queryKey 读它，三方天然一致，不再需要任何同步 watch。
+ */
 const { currentPage, total, totalPages, pageNumbers, pageStart, pageEnd } = pagination
-watch(currentPage, (p) => { pageRef.value = p })
-watch(() => pagination.pageSize.value, (s) => { sizeRef.value = s })
 
 const alerts = listQuery.alerts
 const listLoading = listQuery.isLoading
@@ -134,7 +183,7 @@ const acknowledge = async (row: Alert) => {
   actionLoadingId.value = row.id
   try {
     await ackMutation.mutateAsync(row.id)
-    ElMessage.success('已确认告警')
+    notify.success('已确认告警')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   } finally {
@@ -161,7 +210,7 @@ const resolve = async (row: Alert) => {
   actionLoadingId.value = row.id
   try {
     await resolveMutation.mutateAsync(row.id)
-    ElMessage.success('已标记恢复')
+    notify.success('已标记恢复')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   } finally {
@@ -242,23 +291,19 @@ const resolve = async (row: Alert) => {
         </div>
       </div>
 
-      <!-- 加载 / 错误 / 空态 -->
-      <div v-if="listLoading && alerts.length === 0" class="alert-skeleton-wrap">
-        <div v-for="n in 6" :key="'skel-' + n" class="skeleton-bar" />
-      </div>
-      <div v-else-if="listError && alerts.length === 0" class="alert-state-wrap">
-        <ApiErrorState :error="listError" compact retry-label="重试" @retry="fetchList" />
-      </div>
-      <div v-else-if="alerts.length === 0" class="alert-state-wrap">
-        <AppEmpty
-          :kind="hasFilters ? 'search' : 'default'"
-          size="sm"
-          :description="hasFilters ? '筛选无命中，试试调整条件' : '暂无告警，系统运行正常'"
-        />
-      </div>
-
+      <!-- 加载 / 错误 / 空态 / 内容四态统一（与 TicketList 共用同一实现） -->
+      <DataStateBoundary
+        :loading="listLoading"
+        :error="listError"
+        :count="alerts.length"
+        :filtered="hasFilters"
+        empty-description="暂无告警，系统运行正常"
+        filtered-description="筛选无命中，试试调整条件"
+        :skeleton-rows="6"
+        @retry="fetchList"
+      >
       <!-- 列表 -->
-      <div v-else class="table-container">
+      <div class="table-container">
         <el-table class="alerts-table" :data="alerts" border stripe row-key="id">
           <!-- 级别 -->
           <el-table-column label="级别" width="80" align="center">
@@ -376,6 +421,7 @@ const resolve = async (row: Alert) => {
           </el-table-column>
         </el-table>
       </div>
+      </DataStateBoundary>
 
       <!-- Pagination -->
       <ServerPagination
@@ -481,7 +527,7 @@ const resolve = async (row: Alert) => {
   border-radius: 50%;
   flex-shrink: 0;
 
-  &--firing { background: var(--state-error, #f56c6c); }
+  &--firing { background: var(--state-error, var(--danger)); }
 }
 
 .summary-icon { color: var(--color-text-tertiary); }
@@ -525,40 +571,10 @@ const resolve = async (row: Alert) => {
   &:hover { color: var(--state-error); background: rgba(220, 38, 38, 0.06); }
 }
 
-/* ===== 加载骨架 / 空态 / 错误 ===== */
-.alert-skeleton-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  box-shadow: var(--shadow-sm);
-}
-
-.skeleton-bar {
-  height: 20px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, var(--color-bg-sunken, #f1f5f9) 25%, #e2e8f0 37%, var(--color-bg-sunken, #f1f5f9) 63%);
-  background-size: 400% 100%;
-  animation: shimmer 1.4s ease infinite;
-}
-
-@keyframes shimmer {
-  0% { background-position: 100% 50%; }
-  100% { background-position: 0 50%; }
-}
-
+/* 骨架与空态已收敛到 SkeletonRows / DataStateBoundary */
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-.alert-state-wrap {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
 }
 
 /* ===== 表格 ===== */
@@ -596,7 +612,7 @@ const resolve = async (row: Alert) => {
 .timestamp { color: var(--color-text-secondary); font-size: var(--text-xs); }
 
 .occurrence-cell {
-  color: var(--color-warning, #e6a23c);
+  color: var(--color-warning, var(--warning));
   font-weight: var(--weight-semibold);
 }
 
@@ -637,8 +653,8 @@ const resolve = async (row: Alert) => {
   }
 
   &-success:hover:not(:disabled) {
-    border-color: var(--state-success, #67c23a);
-    color: var(--state-success, #67c23a);
+    border-color: var(--state-success, var(--success));
+    color: var(--state-success, var(--success));
     background: rgba(103, 194, 58, 0.08);
   }
 }

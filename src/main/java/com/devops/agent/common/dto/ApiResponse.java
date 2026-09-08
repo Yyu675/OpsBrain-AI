@@ -1,5 +1,7 @@
 package com.devops.agent.common.dto;
 
+import com.devops.agent.common.context.TraceContext;
+
 import java.io.Serializable;
 
 /**
@@ -57,7 +59,7 @@ public class ApiResponse<T> implements Serializable {
         response.code = 0;
         response.message = message;
         response.data = data;
-        response.traceId = generateTraceId();
+        response.traceId = currentTraceId();
         response.timestamp = System.currentTimeMillis();
         return response;
     }
@@ -77,15 +79,17 @@ public class ApiResponse<T> implements Serializable {
         response.code = code;
         response.message = message;
         response.data = data;
-        response.traceId = generateTraceId();
+        response.traceId = currentTraceId();
         response.timestamp = System.currentTimeMillis();
         return response;
     }
 
     /**
-     * 失败响应(带 traceId)
+     * 失败响应(显式指定 traceId)
+     * <p>仅用于确实需要覆盖当前上下文 traceId 的特殊场景（如批量任务回执）。
+     * 常规路径请用 {@link #error(int, String)}，它会自动取当前请求的 traceId。</p>
      */
-    public static <T> ApiResponse<T> error(int code, String message, String traceId) {
+    public static <T> ApiResponse<T> errorWithTrace(int code, String message, String traceId) {
         ApiResponse<T> response = new ApiResponse<>();
         response.code = code;
         response.message = message;
@@ -96,10 +100,21 @@ public class ApiResponse<T> implements Serializable {
     }
 
     /**
-     * 生成 8 位追踪 ID
+     * 取当前请求的 traceId（A5 修复）。
+     * <p>
+     * <b>此前的实现是一个真实缺陷</b>：
+     * {@code Long.toHexString(System.nanoTime()).substring(0, 8)}
+     * ——每次调用都<b>重新生成一个不同的值</b>。这导致同一请求的成功响应、
+     * 错误响应与后端日志三处 traceId 互不相同，字段完全无法用于排障，
+     * 且 8 位十六进制在高并发下碰撞概率不低。
+     * </p>
+     * <p>现统一从 {@link TraceContext}（MDC）读取，与日志、响应头
+     * {@code X-Request-Id} 三者一致。</p>
+     * <p>返回 null 是可接受的——例如在未经 Filter 的内部调用中。
+     * 序列化时该字段直接缺省，不影响前端。</p>
      */
-    private static String generateTraceId() {
-        return Long.toHexString(System.nanoTime()).substring(0, 8);
+    private static String currentTraceId() {
+        return TraceContext.getTraceId();
     }
 
     // ==================== Getters & Setters ====================

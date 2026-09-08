@@ -99,6 +99,13 @@ logging:
     org.springframework.ai: DEBUG
     org.springframework.jdbc.core.JdbcTemplate: DEBUG  # SQL 日志
     org.springframework.jdbc.core.StatementCreatorUtils: TRACE  # SQL 参数日志
-  pattern:
-    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"   # 控制台日志格式
-    file: ../log/%d{yyyy-MM-dd}.log  # 日志文件路径
+  # 注意：pattern 由 application.yml 统一定义（含 %X{traceId}），此处不再覆盖。
+  # 曾经这里覆盖了 console pattern 但漏掉 traceId，会让 A5 的全链路追踪在
+  # dev profile 下静默失效——改 pattern 时务必两处同步，或干脆只在一处定义。
+  #
+  # 另：原 `file: ../log/%d{yyyy-MM-dd}.log` 是错误配置。
+  # `logging.pattern.file` 是**日志格式**，不是文件路径；
+  # 文件路径应使用 `logging.file.name` 或 `logging.file.path`。
+  # 原写法会让文件日志的每一行都变成 "../log/2026-08-24.log" 这样的字面量。
+  file:
+    name: ${LOG_FILE:../log/opsbrain-dev.log}

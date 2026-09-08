@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, watch, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { X, Settings, RotateCcw } from 'lucide-vue-next'
 import { useAppStore, type AppSettings } from '@/stores/app'
 import { useFocusTrap } from '@/utils/focusTrap'
@@ -29,7 +30,7 @@ const close = () => emit('update:visible', false)
 
 const submit = () => {
   app.updateSettings(form.value)
-  ElMessage.success('设置已保存')
+  notify.success('设置已保存')
   close()
 }
 
@@ -42,7 +43,7 @@ const doReset = async () => {
     })
     app.resetSettings()
     form.value = { ...app.settings }
-    ElMessage.success('已恢复默认设置')
+    notify.success('已恢复默认设置')
   } catch { /* cancel */ }
 }
 
@@ -273,6 +274,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
     left: 2px;
     width: 16px;
     height: 16px;
+    /* 这里的 white 是**刻意**的，不要换成 --color-surface：
+       它是开关的滑块，始终压在有色轨道（--color-border / --color-primary）上，
+       需要与轨道形成固定对比。跟随主题的话，暗色下滑块会变成深灰压在深灰轨道上，
+       开关看起来像是消失了。全局那次「硬编码白 → 主题令牌」的清理跳过了这一处。 */
     background: white;
     border-radius: 50%;
     transition: transform 0.15s ease;

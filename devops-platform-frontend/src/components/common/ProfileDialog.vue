@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { X, User } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
 import { useFocusTrap } from '@/utils/focusTrap'
@@ -45,7 +46,7 @@ const close = () => emit('update:visible', false)
 
 const submit = () => {
   if (!canSubmit.value) {
-    ElMessage.warning(nameError.value || emailError.value)
+    notify.warning(nameError.value || emailError.value)
     return
   }
   app.updateProfile({
@@ -53,7 +54,7 @@ const submit = () => {
     email: form.value.email.trim(),
     title: form.value.title.trim()
   })
-  ElMessage.success('个人信息已更新')
+  notify.success('个人信息已更新')
   close()
 }
 

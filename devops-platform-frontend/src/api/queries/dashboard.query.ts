@@ -4,12 +4,15 @@ import { useQuery } from '@tanstack/vue-query'
 import {
   getClosureMetrics,
   getDashboardOverview,
+  getDiagnosisBoard,
   getRootCauseStats,
   getTrends,
   type ClosureMetrics,
+  type DiagnosisBoard,
   type TrendData,
 } from '@/api/dashboard'
 import type { DashboardOverview } from '@/api/types'
+import { fetchAiAnalysisStats } from '@/api/ticketAiAnalysis'
 import { dashboardKeys } from '@/config/queryKeys'
 
 /**
@@ -72,4 +75,30 @@ export function useTrendsQuery(days: Ref<number>, module?: Ref<string | undefine
   })
 }
 
-export type { ClosureMetrics, DashboardOverview, TrendData }
+/**
+ * 诊断区看板（S4-4.2）。
+ *
+ * @param days 窗口天数（进 queryKey，切换即自动重拉）
+ */
+export function useDiagnosisBoardQuery(days: Ref<number>) {
+  return useQuery({
+    queryKey: computed(() => dashboardKeys.diagnosisBoard(days.value)),
+    queryFn: () => getDiagnosisBoard(days.value),
+  })
+}
+
+/** @public knip 假阳存证：re-export 给视图直接 import type 用（5.88.1 对该形态解析盲区，报告 128 §三）——版本收敛后删行复查 */
+export type { ClosureMetrics, DashboardOverview, DiagnosisBoard, TrendData }
+
+/**
+ * AI 效果区（S4-4.1 半部先行）：根因分析反馈统计。
+ * 幻觉率/证据不足率持 EVAL_LLM 窗数据再入区——本 hook 只装配既有反馈闭环。
+ * 注：本 hook 不得插回 @public 注释与上方 re-export 行之间（批 29 案卷：
+ * JSDoc 豁免必须与声明相邻，隔断即豁免失效、门禁出警）。
+ */
+export function useAiAnalysisStatsQuery() {
+  return useQuery({
+    queryKey: dashboardKeys.aiEffectStats(),
+    queryFn: () => fetchAiAnalysisStats(),
+  })
+}

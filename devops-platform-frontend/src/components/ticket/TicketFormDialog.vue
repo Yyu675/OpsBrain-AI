@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { notify } from '@/utils/notify'
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { X, Plus, Sparkles, Loader2 } from 'lucide-vue-next'
 import {
   useTicketsStore,
@@ -130,7 +131,7 @@ const applyDraft = async () => {
       cancelButtonText: '忽略'
     })
     form.value = { ...draft, tagInput: '' }
-    ElMessage.success('已恢复草稿')
+    notify.success('已恢复草稿')
   } catch {
     clearDraft(draftKey.value)
   }
@@ -301,7 +302,7 @@ const aiSuggest = async () => {
   const title = form.value.title.trim()
   const desc = form.value.description.trim()
   if (!title && !desc) {
-    ElMessage.warning('请先填写标题或问题描述，AI 才能分析')
+    notify.warning('请先填写标题或问题描述，AI 才能分析')
     return
   }
 
@@ -324,29 +325,41 @@ const aiSuggest = async () => {
         }
       },
       onComplete: () => {},
-      onError: (data: SSEErrorEvent) => { streamError = data.message || '分析失败' }
+      onError: (data: SSEErrorEvent) => { streamError = data.message || '分析失败' },
+
+      /**
+       * 本处的 aiLoading 已在 finally 里复位，不存在其它三处那种「卡死」问题。
+       * 但仍显式提供 onClose：记下断流事实，让下面的「未能给出建议」提示
+       * 能区分「模型没给出可用 JSON」与「压根没收到完整响应」——
+       * 两者用户的下一步不同（改描述重试 vs 直接重试）。
+       */
+      onClose: () => {
+        if (!raw.trim() && !streamError) {
+          streamError = '连接意外中断，未收到分析结果'
+        }
+      }
     }, aiAbort)
 
     if (streamError && !raw.trim()) {
-      ElMessage.error(`AI 分析失败：${streamError}`)
+      notify.error(`AI 分析失败：${streamError}`)
       return
     }
     const parsed = extractSuggestionJson(raw)
     if (!parsed) {
-      ElMessage.warning('AI 未能给出可用的分类建议，请手动选择')
+      notify.warning('AI 未能给出可用的分类建议，请手动选择')
       return
     }
     if (applySuggestion(parsed)) {
-      ElMessage.success('AI 已根据描述推荐分类、优先级和标签，请确认后提交')
+      notify.success('AI 已根据描述推荐分类、优先级和标签，请确认后提交')
     } else {
-      ElMessage.info('AI 分析完成，但未产生可采纳的建议')
+      notify.info('AI 分析完成，但未产生可采纳的建议')
     }
   } catch (error: unknown) {
     if (isAbortLike(error) || aiAbort?.signal.aborted) {
       // 用户关闭弹窗或主动中断，静默处理
     } else {
       console.error('[TicketFormDialog] AI 分类失败', error)
-      ElMessage.error('AI 分析失败，请稍后重试或手动选择分类')
+      notify.error('AI 分析失败，请稍后重试或手动选择分类')
     }
   } finally {
     aiLoading.value = false
@@ -354,11 +367,28 @@ const aiSuggest = async () => {
   }
 }
 
+/**
+ * 字段长度上限，与**后端 @Size 及数据库列定义**对齐。
+ *
+ * 此前前端写死 title=120 / description=1000，比后端（255 / 20000）严得多，
+ * 且用的是 maxlength 静默截断。两侧不一致的代价：
+ * 用户明明可以写的内容被前端偷偷砍掉，且完全没有提示。
+ *
+ * 改这两个值时必须同步 TicketController.CreateTicketRequest 的 @Size。
+ */
+const TITLE_MAX = 255
+const DESC_MAX = 20000
+
 const validate = (): string | null => {
   if (!form.value.title.trim()) return '请填写工单标题'
   if (form.value.title.trim().length < 5) return '标题至少 5 个字符'
+  if (form.value.title.length > TITLE_MAX) return `标题不能超过 ${TITLE_MAX} 字`
   if (!form.value.description.trim()) return '请填写问题描述'
   if (form.value.description.trim().length < 10) return '描述至少 10 个字符，便于处理'
+  // 超长在提交前拦下并说明，而不是让后端返回一个用户看不懂的 40001
+  if (form.value.description.length > DESC_MAX) {
+    return `问题描述超出 ${DESC_MAX} 字上限（当前 ${form.value.description.length} 字），请精简或改用附件`
+  }
   if (!form.value.service) return '请选择关联服务'
   if (!form.value.category) return '请选择工单分类'
   return null
@@ -372,7 +402,7 @@ const submit = async () => {
   if (submitting.value) return
   const err = validate()
   if (err) {
-    ElMessage.warning(err)
+    notify.warning(err)
     return
   }
 
@@ -395,7 +425,7 @@ const submit = async () => {
         // 附件由详情页的专用接口管理
       })
       const updated = store.getById(props.ticket.id)!
-      ElMessage.success(`工单 ${updated.id} 已更新`)
+      notify.success(`工单 ${updated.id} 已更新`)
       emit('submit', updated)
     } else {
       // 创建走后端，工单号由后端生成（Redis INCR 保证并发安全）
@@ -423,16 +453,15 @@ const submit = async () => {
       const submittedTags = form.value.tags.length
       const savedTags = (local?.tags ?? created.tags ?? []).length
       if (submittedTags > 0 && savedTags === 0) {
-        ElMessage.warning({
-          message: `工单 ${created.id} 已创建，但 ${submittedTags} 个标签保存失败，请在详情页重新添加`,
-          duration: 6000,
-          showClose: true
-        })
+        notify.warning(
+          `工单 ${created.id} 已创建，但 ${submittedTags} 个标签保存失败，请在详情页重新添加`,
+          { duration: 6000, showClose: true }
+        )
       } else if (savedTags < submittedTags) {
         // 后端会归一化（去空/去重/截断/限量 20），少于提交数属正常
-        ElMessage.success(`工单 ${created.id} 已创建（标签去重后保留 ${savedTags} 个）`)
+        notify.success(`工单 ${created.id} 已创建（标签去重后保留 ${savedTags} 个）`)
       } else {
-        ElMessage.success(`工单 ${created.id} 已创建`)
+        notify.success(`工单 ${created.id} 已创建`)
       }
       emit('submit', local ?? created)
     }
@@ -468,6 +497,17 @@ const submit = async () => {
           </header>
 
           <div class="dialog-body">
+            <!--
+              表单分组：按「填写心智」而非字段类型划分。
+              一屏十几个字段平铺时，用户无法判断哪些必填、哪些可以先跳过；
+              分组后每组 2-4 项，配合小标题形成节奏，扫读成本显著下降。
+            -->
+            <section class="form-section">
+              <h4 class="form-section-title">
+                基本信息
+                <span class="form-section-hint">描述这是什么问题</span>
+              </h4>
+
             <!-- 标题 -->
             <div class="form-row">
               <label class="form-label required">工单标题</label>
@@ -476,8 +516,11 @@ const submit = async () => {
                 type="text"
                 class="form-input"
                 placeholder="请简要描述问题，例如：生产环境 Redis 主从复制延迟"
-                maxlength="120"
+                :maxlength="TITLE_MAX"
               />
+              <div class="char-hint" :class="{ 'is-warn': form.title.length > TITLE_MAX * 0.9 }">
+                {{ form.title.length }} / {{ TITLE_MAX }}
+              </div>
             </div>
 
             <!-- 问题描述 + AI 建议 -->
@@ -490,14 +533,28 @@ const submit = async () => {
                   {{ aiLoading ? 'AI 分析中…' : 'AI 自动分类' }}
                 </button>
               </div>
+              <!--
+                描述框刻意**不设 maxlength**。
+
+                maxlength 是静默截断：运维粘贴一段 3000 字的堆栈或日志时，
+                浏览器只保留前 1000 字且不给任何提示，用户以为贴全了。
+                编辑态更糟——打开一张描述超长的老工单再保存，
+                超出部分会被永久截掉，属于静默数据丢失。
+
+                改为软上限：超出时显示红色计数 + 提交前拦截并说明，
+                让用户自己决定是精简还是改用附件。
+                上限 20000 对齐后端 @Size(max = 20000) 与 DB 的 TEXT 类型。
+              -->
               <textarea
                 v-model="form.description"
                 class="form-textarea"
                 rows="4"
                 placeholder="请详细描述：现象、影响范围、发生时间、已排查步骤等"
-                maxlength="1000"
               ></textarea>
-              <div class="char-hint">{{ form.description.length }} / 1000</div>
+              <div class="char-hint" :class="{ 'is-over': form.description.length > DESC_MAX }">
+                {{ form.description.length }} / {{ DESC_MAX }}
+                <span v-if="form.description.length > DESC_MAX">（已超出，请精简或改用附件）</span>
+              </div>
             </div>
 
             <!-- 优先级 -->
@@ -519,6 +576,14 @@ const submit = async () => {
             </div>
 
             <!-- 分类 / 服务 -->
+            </section>
+
+            <section class="form-section">
+              <h4 class="form-section-title">
+                归类与定级
+                <span class="form-section-hint">决定路由与 SLA 时限</span>
+              </h4>
+
             <div class="form-row form-row-2">
               <div>
                 <label class="form-label required">工单分类</label>
@@ -535,6 +600,14 @@ const submit = async () => {
             </div>
 
             <!-- 负责人 / SLA -->
+            </section>
+
+            <section class="form-section">
+              <h4 class="form-section-title">
+                处理安排
+                <span class="form-section-hint">可留空，创建后再指派</span>
+              </h4>
+
             <div class="form-row form-row-2">
               <div>
                 <label class="form-label">负责人</label>
@@ -614,6 +687,7 @@ const submit = async () => {
               <label class="form-label">附件</label>
               <div class="form-hint">工单创建后，可在详情页上传附件</div>
             </div>
+            </section>
           </div>
 
           <footer class="dialog-footer">
@@ -693,6 +767,34 @@ const submit = async () => {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+/* ── 表单分组（G3）─────────────────────────────────────────
+   用「小标题 + 细分隔线」而非卡片：卡片会在弹窗里套出第二层容器，
+   视觉层级过重，反而让弹窗显得拥挤。 */
+.form-section {
+  padding-bottom: var(--space-4, 16px);
+  margin-bottom: var(--space-4, 16px);
+  border-bottom: 1px solid var(--border-1);
+}
+.form-section:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+.form-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2, 8px);
+  margin: 0 0 var(--space-3, 12px);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.form-section-hint {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 400;
+  color: var(--text-3);
 }
 
 .form-row {
@@ -795,6 +897,17 @@ const submit = async () => {
   align-self: flex-end;
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
+
+  /* 接近上限：预警但不阻断 */
+  &.is-warn {
+    color: var(--state-warning, var(--warning));
+  }
+
+  /* 已超出：必须显眼——这是提交会被拦下的原因 */
+  &.is-over {
+    color: var(--state-error, var(--danger));
+    font-weight: var(--weight-medium, 500);
+  }
 }
 
 .priority-list {

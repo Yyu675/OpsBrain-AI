@@ -8,6 +8,7 @@
 
 import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz, HttpError, httpRequest } from '../utils/http'
+import { BizCode } from '../constants/bizCode'
 import type {
   KnowledgeDocCreateRequest,
   KnowledgeDocUpdateRequest,
@@ -80,7 +81,7 @@ function unwrapDoc<T>(payload: unknown, errorPrefix: string, opts: { notFoundIsN
       if (e.bizCode === 40009) {
         throw new VersionConflictError(e.message || errorPrefix)
       }
-      if (e.bizCode === 40004 && opts.notFoundIsNotFound) {
+      if (e.bizCode === BizCode.NOT_FOUND && opts.notFoundIsNotFound) {
         throw new NotFoundDocError(e.message || errorPrefix)
       }
     }
@@ -283,6 +284,9 @@ export async function fetchKnowledgeDocDetail(id: number): Promise<KnowledgeDocD
 /**
  * 按源工单反查已沉淀的文档（L1.5 来源回链）
  * <p>供工单详情页展示「已沉淀为知识」徽标与跳转入口。</p>
+ *
+ * @public 后端 GET .../by-source-ticket/{id} 路由在服务（KnowledgeDocController），
+ * 徽标入口页待接——@public 详见报告 122 §三的豁免标准件约定。
  */
 export async function findDocsBySourceTicket(ticketId: number): Promise<KnowledgeDocListItem[]> {
   const payload = await http.get<unknown>(`${API_ENDPOINTS.KNOWLEDGE_DOCS}/by-source-ticket/${ticketId}`)
@@ -313,7 +317,9 @@ export async function compareKnowledgeDocVersions(
 }
 
 /**
- * 手动触发向量化重试（针对 index_status=FAILED/PENDING 的文档）
+ * 手动触发向量化重试（针对 index_status=FAILED/PENDING 的文档）。
+ *
+ * @public 后端 POST .../reindex/pending 路由在服务，管理页「索引健康」操作项待接。
  */
 export async function retryIndexing(limit = 20): Promise<{ retried: number }> {
   const payload = await http.post<unknown>(

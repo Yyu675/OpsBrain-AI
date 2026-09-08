@@ -1,8 +1,7 @@
 import { computed } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 
-import { fetchHotTags, fetchTicketById, fetchTicketStats, fetchTickets } from '@/api/tickets'
-import { fetchTeamMembers } from '@/api/users'
+import { fetchHotTags, fetchTickets } from '@/api/tickets'
 import { ticketKeys } from '@/config/queryKeys'
 import type {
   FrontendTicketPriority,
@@ -22,7 +21,7 @@ import type {
  */
 
 /** 列表 Query 参数：store 的筛选状态 → http 参数 */
-export interface ListParamsToRequest {
+interface ListParamsToRequest {
   page?: number
   size?: number
   keyword?: string
@@ -67,37 +66,11 @@ export function useTicketListQuery(params: () => ListParamsToRequest) {
   })
 }
 
-/** 工单详情（后端 40004 返回 null，Query 把 null 作正常结果，视图据此判 notFound） */
-export function useTicketDetailQuery(id: () => string) {
-  const key = computed(() => id())
-  return useQuery({
-    queryKey: computed(() => ticketKeys.detail(key.value)),
-    queryFn: () => fetchTicketById(key.value),
-    enabled: computed(() => !!key.value),
-  })
-}
-
-/** 后端全量统计（KPI。与列表分开，避免翻页重拉） */
-export function useTicketStatsQuery() {
-  return useQuery({
-    queryKey: ticketKeys.stats(),
-    queryFn: () => fetchTicketStats(),
-  })
-}
-
 /** 热门标签（跨全表聚合，与具体列表无关） */
 export function useTicketHotTagsQuery() {
   return useQuery({
     queryKey: computed(() => ticketKeys.hotTags()),
     queryFn: () => fetchHotTags(),
-  })
-}
-
-/** 负责人名录（后端下发 + 负载） */
-export function useTeamMembersQuery() {
-  return useQuery({
-    queryKey: ticketKeys.all,
-    queryFn: () => fetchTeamMembers(),
   })
 }
 

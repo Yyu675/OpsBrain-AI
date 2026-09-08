@@ -28,14 +28,26 @@ import java.util.concurrent.TimeUnit;
  * 职责：工具调用的统一治理入口，参考 Agent Methodology §9 Tool Runtime 治理。
  * <ol>
  *   <li>读取 {@link ToolMeta} 元数据，执行对应治理逻辑</li>
- *   <li>幂等检查（Redis 分布式锁）</li>
+ *   <li>幂等检查（Redis SET NX EX）</li>
  *   <li>超时控制（CompletableFuture + Future.get(timeout)）</li>
- *   <li>重试策略（指数退避、分类重试）</li>
+ *   <li>重试策略（指数退避、按 {@link ToolFailureType#isRetryable()} 分类）</li>
  *   <li>熔断保护（失败率统计）</li>
- *   <li>审批拦截（高风险工具）</li>
- *   <li>补偿注册（记录补偿动作，失败时触发）</li>
- *   <li>审计日志（完整调用链路）</li>
+ *   <li>失败登记（FAILED 态写入 sys_agent_tool_execution，供运维回放）</li>
+ *   <li>审计日志（结构化 INFO，不落库——避免与编排层 double insert）</li>
  * </ol>
+ *
+ * <h3>不在本类职责内的两件事（曾被误列在上面）</h3>
+ * <ul>
+ *   <li><b>审批拦截</b>——{@code ToolMeta.requiresApproval()} 在本类的执行流程里
+ *       <b>从不被读取</b>。审批由编排层 {@code DevOpsAgentServiceImpl} 结合
+ *       {@code AutomationGovernanceService} 的风险策略在写操作前动态判断
+ *       （见 {@code DevOpsTools} 上「P0 优先级由编排层在写前动态判断」的注释）。
+ *       放在这里判断不可行：工具跑在模型 HTTP 回调线程，拿不到登录态与工单上下文；</li>
+ *   <li><b>Saga 步骤登记与补偿触发</b>——同样在编排层。此处拿不到 traceId，
+ *       无法确定步骤归属哪个 Saga。</li>
+ * </ul>
+ * <p>把这两条写进「职责」会让人以为改 {@code @ToolMeta(requiresApproval = true)}
+ * 就能拦住一个高危工具，而实际上那个字段在这条路径上没有任何效果。</p>
  * <p>
  * 设计原则：
  * - 单一职责：只管治理，不管业务逻辑
@@ -478,8 +490,11 @@ public class ToolRuntimeManager {
             // 失败率 > 50% 且至少 5 次调用，开启熔断
             if (totalCalls >= 5 && (double) failedCalls / totalCalls > 0.5) {
                 open = true;
-                log.warn("🔴 [CircuitBreaker] 熔断器开启 | total={} | failed={} | rate={:.2f}%",
-                        totalCalls, failedCalls, (double) failedCalls / totalCalls * 100);
+                // SLF4J 只认 {}，不支持 {:.2f} 之类格式说明符——原写法会原样打印占位符
+                // 且参数错位，等于熔断告警从未生效。数值格式化必须在参数侧完成。
+                log.warn("🔴 [CircuitBreaker] 熔断器开启 | total={} | failed={} | rate={}%",
+                        totalCalls, failedCalls,
+                        String.format("%.2f", (double) failedCalls / totalCalls * 100));
             }
         }
 

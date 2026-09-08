@@ -1,5 +1,6 @@
 package com.devops.agent.domain.notify;
 
+import jakarta.annotation.PreDestroy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 钉钉自定义机器人通知发送器（L2 通知渠道，方向二）
@@ -46,7 +46,7 @@ import java.util.concurrent.Executors;
  */
 @Slf4j
 @Component
-public class DingTalkNotifier {
+public class DingTalkNotifier implements Notifier {
 
     /** 通知总开关。默认关闭——需运维显式填 webhook 并开启 */
     @Value("${devops.notify.dingtalk.enabled:false}")
@@ -62,16 +62,39 @@ public class DingTalkNotifier {
 
     private final ObjectMapper objectMapper;
 
-    /** 发送专用 daemon 线程池：单线程够用（通知量小），daemon 不阻止 JVM 退出 */
-    private final ExecutorService sendExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "dingtalk-notify");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * 发送专用线程池：单线程够用（通知量小）。
+     *
+     * <p>改用 {@link com.devops.agent.infrastructure.concurrent.ManagedExecutors#forBestEffort}
+     * 而非 {@code Executors.newSingleThreadExecutor}：后者内部是<b>无界队列</b>
+     * （容量 {@code Integer.MAX_VALUE}），钉钉侧持续超时时任务会无限堆积直到 OOM，
+     * 且堆积期间毫无征兆。</p>
+     *
+     * <p>选 best-effort 而非 critical-writes：通知丢了只影响体验，
+     * 不该用 CallerRuns 把主链路（告警回调、定时扫描）拖慢。
+     * 这与审计池的取舍相反，依据是<b>丢掉这个任务的代价</b>。</p>
+     */
+    private final ExecutorService sendExecutor =
+            com.devops.agent.infrastructure.concurrent.ManagedExecutors
+                    .forBestEffort("dingtalk-notify", 1, 200);
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
+
+    /**
+     * 优雅停机：给在途通知留出发送时间
+     *
+     * <p>daemon 线程不阻塞 JVM 退出，队列里排队的通知会随进程消失。
+     * 对通知而言丢失的代价低于审计，故等待时间取 3 秒（审计是 5 秒）——
+     * 但仍要等：应用停止往往伴随发布或故障处置，
+     * 此刻积压的恰恰是「服务即将不可用」这类最该送达的消息。</p>
+     */
+    @PreDestroy
+    public void shutdown() {
+        com.devops.agent.infrastructure.concurrent.ManagedExecutors
+                .shutdownGracefully(sendExecutor, "dingtalk-notify", 3);
+    }
 
     public DingTalkNotifier(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -88,11 +111,30 @@ public class DingTalkNotifier {
         }
     }
 
+    /** 渠道标识：多渠道并存时按此选用，日志与审计里标明发到了哪 */
+    @Override
+    public String channel() {
+        return "dingtalk";
+    }
+
+    /**
+     * 是否真正可用：开关已开且 webhook 已配。
+     *
+     * <p>与「发送成功」是两回事——这里只回答「配没配」，
+     * 连通性由实际发送时的响应判断。区分这两者是为了让
+     * 健康检查能说清「没配」还是「配了但连不通」。</p>
+     */
+    @Override
+    public boolean available() {
+        return enabled && webhook != null && !webhook.isBlank();
+    }
+
     /**
      * 异步发送通知（失败旁路，不阻塞调用方）
      *
      * @param msg 通知消息
      */
+    @Override
     public void send(NotifyMessage msg) {
         if (msg == null) return;
         // 异步：不占用调用方线程（告警回调线程/定时扫描线程）

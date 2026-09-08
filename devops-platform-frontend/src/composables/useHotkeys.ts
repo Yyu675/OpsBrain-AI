@@ -45,7 +45,7 @@ export function formatCombo(hk: Hotkey): string {
   return parts.join(' + ')
 }
 
-export interface HotkeyHint {
+interface HotkeyHint {
   combo: string
   description: string
 }

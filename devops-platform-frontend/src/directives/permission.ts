@@ -81,9 +81,8 @@ const apply = (el: HTMLElement, binding: DirectiveBinding) => {
   }
 }
 
+// 唯一出口：named export（main.ts 注册走 named，default 是历史双份的重复出口）
 export const permission: Directive = {
   mounted(el: HTMLElement, binding) { apply(el, binding) },
   updated(el: HTMLElement, binding) { apply(el, binding) }
 }
-
-export default permission

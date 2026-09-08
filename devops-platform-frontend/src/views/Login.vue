@@ -7,10 +7,11 @@
  */
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Bot, User, Lock, Loader2 } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
-import { handleServerError } from '@/utils/notify'
+import { notify, handleServerError } from '@/utils/notify'
+import { safeInternalPath } from '@/utils/safeRedirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,26 +21,25 @@ const username = ref('')
 const password = ref('')
 const submitting = ref(false)
 
-const redirectTarget = (): string => {
-  const r = route.query.redirect
-  const target = Array.isArray(r) ? r[0] : r
-  // 只接受站内相对路径，防开放重定向
-  if (target && typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')) {
-    return target
-  }
-  return '/'
-}
+/**
+ * 登录后的回跳目标。
+ *
+ * 校验交给 safeInternalPath——原先的 `startsWith('/') && !startsWith('//')`
+ * 挡不住 `/\evil.com` 与 `/\t/evil.com`（反斜杠按正斜杠解析、
+ * 制表符被剥离后重解析），二者都会被浏览器当成 https://evil.com。
+ */
+const redirectTarget = (): string => safeInternalPath(route.query.redirect)
 
 const doLogin = async () => {
   if (submitting.value) return
   if (!username.value.trim() || !password.value) {
-    ElMessage.warning('请输入用户名和密码')
+    notify.warning('请输入用户名和密码')
     return
   }
   submitting.value = true
   try {
     await app.login(username.value.trim(), password.value)
-    ElMessage.success('登录成功')
+    notify.success('登录成功')
     router.replace(redirectTarget())
   } catch (e) {
     handleServerError(e, { action: '登录' })
@@ -113,7 +113,7 @@ onMounted(() => {
 .login-card {
   width: 100%;
   max-width: 380px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   border-radius: 16px;
   padding: 40px 32px 28px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -129,7 +129,7 @@ onMounted(() => {
   height: 56px;
   margin: 0 auto 12px;
   border-radius: 14px;
-  background: var(--color-primary, #409eff);
+  background: var(--color-primary, var(--brand));
   color: #fff;
   display: flex;
   align-items: center;
@@ -140,13 +140,13 @@ onMounted(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--text-1);
 }
 
 .brand-sub {
   margin: 4px 0 0;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--text-3);
 }
 
 .login-form {
@@ -160,17 +160,17 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-1);
   border-radius: 10px;
   transition: border-color 0.15s;
 
   &:focus-within {
-    border-color: var(--color-primary, #409eff);
+    border-color: var(--color-primary, var(--brand));
   }
 }
 
 .field-icon {
-  color: #9ca3af;
+  color: var(--text-3);
   flex-shrink: 0;
 }
 
@@ -181,7 +181,7 @@ onMounted(() => {
   padding: 12px 0;
   font-size: 14px;
   background: transparent;
-  color: #1f2937;
+  color: var(--text-1);
 
   &::placeholder {
     color: #b0b7c3;
@@ -193,7 +193,7 @@ onMounted(() => {
   height: 44px;
   border: none;
   border-radius: 10px;
-  background: var(--color-primary, #409eff);
+  background: var(--color-primary, var(--brand));
   color: #fff;
   font-size: 15px;
   font-weight: 600;
@@ -219,7 +219,7 @@ onMounted(() => {
   margin: 18px 0 0;
   text-align: center;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-3);
 }
 
 .spin {

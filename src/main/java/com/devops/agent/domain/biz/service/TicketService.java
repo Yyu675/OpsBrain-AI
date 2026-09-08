@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -44,7 +45,8 @@ public class TicketService {
     private final TicketTagRepository tagRepository;
     private final com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository;
     private final com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository;
-    private final com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
+    /** 通知渠道：依赖接口而非具体厂商实现——换 Slack/Teams 只需换实现类，本类不动 */
+    private final com.devops.agent.domain.notify.Notifier notifier;
     private final StringRedisTemplate redisTemplate;
 
     public TicketService(DevOpsTicketRepository ticketRepository,
@@ -53,7 +55,7 @@ public class TicketService {
                         TicketTagRepository tagRepository,
                         com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository,
                         com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository,
-                        com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier,
+                        com.devops.agent.domain.notify.Notifier notifier,
                         StringRedisTemplate redisTemplate) {
         this.ticketRepository = ticketRepository;
         this.replyRepository = replyRepository;
@@ -61,7 +63,7 @@ public class TicketService {
         this.tagRepository = tagRepository;
         this.actionRepository = actionRepository;
         this.postmortemRepository = postmortemRepository;
-        this.dingTalkNotifier = dingTalkNotifier;
+        this.notifier = notifier;
         this.redisTemplate = redisTemplate;
     }
 
@@ -76,6 +78,9 @@ public class TicketService {
      * @param sourceTraceId 来源追踪 ID
      * @return 工单流水号
      */
+    // 事务：工单 + 标签 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public String saveTicket(String title, String priority, String module, String description, String stackTrace, String sourceTraceId) {
         log.info("📥 [TicketService] 开始创建工单 - title: {}, priority: {}, module: {}, sourceTraceId: {}",
                 title, priority, module, sourceTraceId);
@@ -273,6 +278,9 @@ public class TicketService {
      * @throws IllegalStateException     工单不存在
      * @throws OptimisticLockException   版本冲突（已被他人修改）
      */
+    // 事务：工单 + 标签 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket updateTicket(String ticketId, DevOpsTicket patch) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
@@ -417,6 +425,9 @@ public class TicketService {
      * @param status   目标状态 PENDING/PROCESSING/RESOLVED/CLOSED/VOID
      * @return 更新后的工单
      */
+    // 事务：工单 + 活动流 + 首响。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket updateStatus(String ticketId, String status) {
         if (status == null || status.isBlank()) {
             throw new IllegalArgumentException("状态不能为空");
@@ -435,6 +446,17 @@ public class TicketService {
         if (target.equals(existing.getStatus())) {
             log.debug("ℹ️ [TicketService] 状态未变化，跳过 | ticketId={} | status={}", ticketId, target);
             return existing;
+        }
+
+        // 流转合法性校验。
+        // 此前只校验「目标值是不是合法枚举」，不校验「能不能从当前状态走过去」——
+        // 于是 CLOSED 可以被改回 PENDING、VOID（作废）可以被复活，
+        // 导致 SLA 统计、首响计时、复盘归档全部失真，且无任何报错。
+        if (!TicketEnums.Status.canTransition(existing.getStatus(), target)) {
+            throw new IllegalStateException(String.format(
+                    "非法状态流转：%s → %s。当前状态允许流转到 %s",
+                    statusLabel(existing.getStatus()), statusLabel(target),
+                    TicketEnums.Status.nextStates(existing.getStatus())));
         }
 
         ticketRepository.updateStatus(ticketId, target);
@@ -465,6 +487,9 @@ public class TicketService {
      * @param assignee 新负责人
      * @return 更新后的工单
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket transferTicket(String ticketId, String assignee) {
         if (assignee == null || assignee.isBlank()) {
             throw new IllegalArgumentException("负责人不能为空");
@@ -499,6 +524,9 @@ public class TicketService {
      * @return 被删除的工单（供前端撤销时回填）
      * @throws IllegalStateException 工单不存在
      */
+    // 事务：工单 + 回复 + 活动流 + 标签 + 处置 + 复盘（6 张表）。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket deleteTicket(String ticketId) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
@@ -615,13 +643,30 @@ public class TicketService {
      * @param assignee 可选：确认的同时接单给自己
      * @return 更新后的工单
      */
+    // 事务：本方法内部串联 markFirstResponse + transferTicket + updateStatus，
+    // 最多写 4 张表（工单、活动流 ×3）。
+    //
+    // 这里的 @Transactional 是**必须**的，原因不只是「多表要原子」：
+    // transferTicket 与 updateStatus 各自都标了 @Transactional，但它们是被
+    // this.xxx() 直接调用的——Spring 的事务由 AOP 代理织入，
+    // 自调用不经过代理，那两个注解在这条路径上**完全不生效**。
+    //
+    // 也就是说，修复前这里是「三次独立的自动提交写入」：
+    // 转派成功但状态变更失败时，工单会停在
+    // 「负责人已改、状态仍是待处理、活动流只留了转派记录」的半截状态，
+    // 而调用方收到异常会以为整个操作都没发生。
+    //
+    // 加在最外层方法上之后，内层自调用共用同一个事务，任一步失败整体回滚。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket acknowledgeTicket(String ticketId, String responder, String assignee) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法确认接单: " + ticketId);
+        // 只有 VOID（作废）才禁止操作。RESOLVED 工单仍可被重新接手——
+        // 问题重现时直接在原单上继续，比新建一张丢掉全部上下文更合理
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法确认接单: " + ticketId);
         }
 
         boolean isFirst = markFirstResponse(ticketId, responder);
@@ -652,6 +697,9 @@ public class TicketService {
      *
      * @param reason 升级原因，必填——无理由的升级无法追溯，也无法据此改进流程
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket escalateTicket(String ticketId, String reason, String operator) {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("升级原因不能为空");
@@ -672,21 +720,27 @@ public class TicketService {
                 ticketId, who, reason.trim());
 
         // L2 钉钉通知（方向二）：升级上报是「需要更多人关注」的强信号，@所有人。
-        // 旁路——DingTalkNotifier 内部异步 + 失败仅 WARN，不影响升级主流程。
         // 只在升级这一个工单事件推送：普通状态流转有活动流+列表可见即可，
         // 群机器人 @所有人 不适合逐条状态变更（会刷屏）。
-        try {
-            String title = "⬆️ 工单升级 " + existing.getPriority() + " · " + existing.getTitle();
-            String md = "### " + title + "\n\n"
-                    + "- **工单**：" + ticketId + "\n"
-                    + "- **优先级**：" + existing.getPriority() + "\n"
-                    + "- **升级人**：" + who + "\n"
-                    + "- **升级原因**：" + reason.trim() + "\n"
-                    + "- **负责人**：" + (existing.getAssignee() != null ? existing.getAssignee() : "待分配") + "\n";
-            dingTalkNotifier.send(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md));
-        } catch (Exception e) {
-            log.warn("⚠️ [TicketService] 升级通知构造失败（已忽略）| ticketId={} | {}", ticketId, e.getMessage());
-        }
+        //
+        // ⚠️ 必须等事务提交后再发（sendAfterCommit）。
+        // Notifier.send 是<b>立即异步投递</b>，不等事务结束；而本方法带
+        // @Transactional(rollbackFor = Exception.class)，下面 findById
+        // 或提交阶段任何一步失败都会整体回滚。
+        // 若在事务内直接发，就会出现「群里通报工单已升级 P0，
+        // 库里却查无此次升级」——收到 @所有人 的人赶来处理，
+        // 打开工单发现状态没变，而这种不一致<b>没有任何报错</b>，
+        // 事后也无从复现。与 TicketAttachmentService 删对象存储是同一类问题，
+        // 沿用同一套 afterCommit 范式。
+        String title = "⬆️ 工单升级 " + existing.getPriority() + " · " + existing.getTitle();
+        String md = "### " + title + "\n\n"
+                + "- **工单**：" + ticketId + "\n"
+                + "- **优先级**：" + existing.getPriority() + "\n"
+                + "- **升级人**：" + who + "\n"
+                + "- **升级原因**：" + reason.trim() + "\n"
+                + "- **负责人**：" + (existing.getAssignee() != null ? existing.getAssignee() : "待分配") + "\n";
+        sendAfterCommit(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md), ticketId);
+
         return ticketRepository.findById(ticketId);
     }
 
@@ -736,14 +790,18 @@ public class TicketService {
      *
      * @return 入库后的动作（含 id）
      */
+    // 事务：处置记录 + 工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public TicketAction addAction(String ticketId, String actionType, String summary,
                                  String detail, String operator, Boolean effective) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法记录处置动作: " + ticketId);
+        // 同上：RESOLVED 后补记处置动作是常见的（当时忙着救火，事后补录）
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法记录处置动作: " + ticketId);
         }
         if (summary == null || summary.isBlank()) {
             throw new IllegalArgumentException("处置摘要不能为空");
@@ -791,6 +849,9 @@ public class TicketService {
      * 若工单仍为 PENDING，同时推进为 PROCESSING——处置阶段只在处理中才有意义。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket updateStage(String ticketId, String stage, String operator) {
         String s = stage != null ? stage.trim().toUpperCase() : "";
         if (!VALID_STAGES.contains(s)) {
@@ -800,8 +861,9 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法切换处置阶段: " + ticketId);
+        // RESOLVED 工单验证失败需要退回 FIXING，这条路径必须放行
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法切换处置阶段: " + ticketId);
         }
 
         // 若仍是 PENDING，同时推进为 PROCESSING
@@ -833,6 +895,9 @@ public class TicketService {
      * MTTM（止损耗时）= mitigated_at - create_time。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket markMitigated(String ticketId, String operator) {
         return updateStage(ticketId, STAGE_MITIGATED, operator);
     }
@@ -880,6 +945,9 @@ public class TicketService {
      *
      * @param category 根因分类（CONFIG/CAPACITY/CODE/.../UNKNOWN），空则 UNKNOWN
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket confirmRootCause(String ticketId, String rootCause,
                                         String category, String operator) {
         if (rootCause == null || rootCause.isBlank()) {
@@ -928,6 +996,9 @@ public class TicketService {
      * 跳过验证的工单不计入 MTTR（6.41 契约）。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket submitVerification(String ticketId, String method, String conclusion,
                                           String verifier) {
         if (method == null || method.isBlank()) {
@@ -942,8 +1013,11 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结，无法验证: " + ticketId);
+        // 这里原本用 isTerminalStatus()，把 RESOLVED 也挡在门外，
+        // 导致「先标已解决、后补做验证」这条真实流程根本走不通，
+        // 也让下面「已是 RESOLVED 就不重复改状态」那段判断变成死代码
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废，无法验证: " + ticketId);
         }
 
         String who = (verifier == null || verifier.isBlank()) ? "未知" : verifier.trim();
@@ -980,6 +1054,9 @@ public class TicketService {
      * MTTR 统计时排除这些工单——否则"点一下已解决"就能刷低 MTTR，考核数据失真。
      * </p>
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket skipVerification(String ticketId, String reason, String operator) {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("跳过验证的理由不能为空");
@@ -991,8 +1068,9 @@ public class TicketService {
         if (existing == null) {
             throw new IllegalStateException("工单不存在: " + ticketId);
         }
-        if (existing.isTerminalStatus()) {
-            throw new IllegalStateException("工单已终结: " + ticketId);
+        // 同 submitVerification：RESOLVED 工单仍可补记「跳过验证」及其理由
+        if (existing.isImmutableStatus()) {
+            throw new IllegalStateException("工单已作废: " + ticketId);
         }
 
         String who = (operator == null || operator.isBlank()) ? "未知" : operator.trim();
@@ -1079,6 +1157,9 @@ public class TicketService {
      * @throws IllegalStateException    工单不存在
      * @throws IllegalArgumentException 参数非法
      */
+    // 事务：回复 + 工单 + 活动流 + 首响。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public TicketReply addReply(String ticketId, String role, String author,
                                 String authorColor, String content) {
         if (content == null || content.isBlank()) {
@@ -1237,6 +1318,44 @@ public class TicketService {
     }
 
     /**
+     * 事务提交成功后再发通知；无事务上下文时立即发送
+     * <p>
+     * 通知一旦投递就<b>收不回来</b>，因此它必须在数据库那边板上钉钉之后才执行。
+     * 事务回滚时注册的回调不会触发，也就不会发出与库内状态矛盾的通知。
+     * </p>
+     * <p>
+     * 无事务上下文（被非事务方法直接调用）时退化为立即发送，
+     * 保持行为可预期，而不是静默什么都不做——后者会让通知在某些
+     * 调用路径上「无声消失」，比发早了更难查。
+     * </p>
+     */
+    private void sendAfterCommit(com.devops.agent.domain.notify.NotifyMessage msg, String ticketId) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager
+                .isSynchronizationActive()) {
+            silentSend(msg, ticketId);
+            return;
+        }
+        org.springframework.transaction.support.TransactionSynchronizationManager
+                .registerSynchronization(
+                        new org.springframework.transaction.support.TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                silentSend(msg, ticketId);
+                            }
+                        });
+    }
+
+    /** 发通知，任何异常只告警——通知是旁路，不得影响已提交的业务结果 */
+    private void silentSend(com.devops.agent.domain.notify.NotifyMessage msg, String ticketId) {
+        try {
+            notifier.send(msg);
+        } catch (Exception e) {
+            log.warn("⚠️ [TicketService] 升级通知发送失败（已忽略）| ticketId={} | {}",
+                    ticketId, e.getMessage());
+        }
+    }
+
+    /**
      * 状态对应的活动流圆点颜色
      */
     private String statusColor(String status) {
@@ -1304,6 +1423,9 @@ public class TicketService {
      * @return 作废结果描述
      * @throws IllegalStateException 工单不存在时抛出（补偿失败需人工介入）
      */
+    // 事务：工单 + 活动流。任一步失败必须整体回滚，
+    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    @Transactional(rollbackFor = Exception.class)
     public String voidTicket(String ticketId, String reason) {
         if (ticketId == null || ticketId.isBlank()) {
             throw new IllegalArgumentException("工单号不能为空，无法作废");

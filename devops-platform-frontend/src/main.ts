@@ -1,18 +1,28 @@
+import { notify } from '@/utils/notify'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { ElMessage } from 'element-plus'
+
 import 'element-plus/theme-chalk/base.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 import 'element-plus/theme-chalk/el-overlay.css'
 import 'element-plus/theme-chalk/el-button.css'
 import 'element-plus/theme-chalk/el-icon.css'
+// 设计令牌层必须在 variables.css **之前**引入：
+// theme.css 定义语义令牌（--surface-1 / --text-1 ...），
+// variables.css 里的旧变量随后可以引用它们做桥接，
+// 顺序反了会让桥接变量取到未定义值。
+import './assets/styles/theme.css'
 import './assets/styles/variables.css'
+// 桥接层必须在 variables.css **之后**：它把旧变量名重新指向新令牌，
+// 顺序反了会被 variables.css 里的静态值覆盖，暗色就不生效了。
+import './assets/styles/theme-bridge.css'
 import App from './App.vue'
 import router from './router'
 import { permission } from './directives/permission'
 import { toFriendlyError, HttpError } from './utils/http'
 import { useAppStore } from './stores/app'
+import { onPersistWriteFailure } from './utils/persist'
 import { VueQueryPlugin, vueQueryOptions } from './config/queryClient'
 
 const app = createApp(App)
@@ -52,12 +62,7 @@ app.config.errorHandler = (err, _instance, info) => {
   const key = `errorHandler:${friendly.title}`
   if (!shouldShowError(key)) return
   try {
-    ElMessage.error({
-      message: `${friendly.title}：${friendly.detail}`,
-      duration: 5000,
-      grouping: true,
-      showClose: true
-    })
+    notify.error(`${friendly.title}：${friendly.detail}`, { duration: 5000, grouping: true, showClose: true })
   } catch { /* toast unavailable during boot */ }
 }
 
@@ -82,12 +87,7 @@ window.addEventListener('unhandledrejection', (e) => {
     const friendly = toFriendlyError(e.reason)
     const key = `unhandled:${friendly.title}`
     if (shouldShowError(key)) {
-      ElMessage.error({
-        message: `${friendly.title}：${friendly.detail}${friendly.hint ? `（${friendly.hint}）` : ''}`,
-        duration: 6000,
-        grouping: true,
-        showClose: true
-      })
+      notify.error(`${friendly.title}：${friendly.detail}${friendly.hint ? `（${friendly.hint}）` : ''}`, { duration: 6000, grouping: true, showClose: true })
     }
     e.preventDefault()
     return
@@ -97,12 +97,7 @@ window.addEventListener('unhandledrejection', (e) => {
   const msg = reasonStr || '未知错误'
   const key = `unhandled:${msg}`
   if (shouldShowError(key)) {
-    ElMessage.error({
-      message: `发生意外错误：${msg}`,
-      duration: 5000,
-      grouping: true,
-      showClose: true
-    })
+    notify.error(`发生意外错误：${msg}`, { duration: 5000, grouping: true, showClose: true })
   }
 })
 
@@ -110,6 +105,25 @@ window.addEventListener('error', (e) => {
   if (e.message?.includes('ResizeObserver loop')) {
     e.stopImmediatePropagation()
   }
+})
+
+/**
+ * 本地偏好写入失败时告知用户。
+ *
+ * 此前 persist 层把 QuotaExceededError / 隐私模式异常整个吞掉，
+ * 用户调好的列宽、切换的主题、标记的已读会「看似保存成功、刷新后复原」，
+ * 既没有提示也没有控制台线索——只会被当成「这功能坏了」。
+ *
+ * 只在配额超限时提示：隐私模式下每次写入都会失败，逐次弹窗是骚扰，
+ * 何况用户自己选择了隐私模式，本就预期不保留数据。
+ * notify 自带 1 秒冷却去重，批量写入不会刷屏。
+ */
+onPersistWriteFailure(({ quotaExceeded }) => {
+  if (!quotaExceeded) return
+  notify.warning('本地存储空间已满，界面偏好（列宽、主题等）暂时无法保存。清理浏览器数据后可恢复。', {
+    key: 'persist-quota',
+    cooldown: 60000
+  })
 })
 
 // 方向三：挂载前恢复登录态——本地有 token 则调 /auth/me 验证。

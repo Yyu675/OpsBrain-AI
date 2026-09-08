@@ -1,0 +1,307 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 批 64:失败步借 commit comment 回帖取证(沙箱侧读 CDN 日志被墙)
+  pull-requests: write  # 4-3.5：PR 评论贴评测对比结果
+
+# 同一分支的新提交取消尚在跑的旧任务，避免排队浪费
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端 · 编译与测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # 三个测试类需要真实 Spring 上下文（@SpringBootTest）：
+    #   DevopsPlatformBackendApplicationTests / HybridRetrieverIntegrationTest
+    #   / KnowledgeDocRepositorySortTest
+    # 它们跑在 dev profile 上，因此这里的端口与口令必须与
+    # application-dev.yml、docker-compose.dev.yml 完全一致，否则连不上。
+    #   PostgreSQL: 25432 / devops / devops_password / devops_knowledge_db
+    #   Redis:      26379 / devops_redis_pwd
+    # 只起这两个（不用 docker-compose.dev.yml 整套）——MinIO/Prometheus/Adminer
+    # 在 CI 里用不到，起了只拖慢。
+    services:
+      postgres:
+        image: ankane/pgvector:v0.5.1
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops_password
+          POSTGRES_DB: devops_knowledge_db
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d devops_knowledge_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.0-alpine
+        ports:
+          - 26379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 校验 Maven Wrapper 可用
+        # mvnw 曾长期未提交，导致 clone 下来无法开箱构建。
+        # 这一步保证它不会再次丢失或丢掉可执行位。
+        run: |
+          test -x ./mvnw || { echo "::error::mvnw 缺失或没有可执行权限"; exit 1; }
+          ./mvnw -B -ntp --version
+
+      - name: 迁移校验与空库全量建账（Flyway migrate+validate，路线图步骤 0-1.6/0-1 验收）
+        id: flywaycheck
+        # 双保险的内层：应用启动 validate-on-migrate=true 是运行时防线（防 prod 库漂移）；
+        # 本步骤用一次性零障库走「migrate→validate→库账」完整三段，证明:
+        #   ① 仓库内 V1..V11 空库一次建出全部表（路线图 0-1 验收第一条）;
+        #   ② flyway:validate 对已应用账逐项 checksum 核验（0-1 验收第三条的 CI 面）;
+        #   ③ 与后段「初始化数据库 Schema」走的主库物理隔离(取 scratch 名义),
+        #      互不干扰、可重跑。
+        run: |
+          set -o pipefail
+          {
+          PGPASSWORD=devops_password psql -h localhost -p 25432 -U devops -d postgres \
+            -c "DROP DATABASE IF EXISTS flyway_ci_scratch;" -c "CREATE DATABASE flyway_ci_scratch;"
+          ./mvnw -B -ntp flyway:migrate \
+            -Dflyway.url=jdbc:postgresql://localhost:25432/flyway_ci_scratch \
+            -Dflyway.user=devops -Dflyway.password=devops_password
+          ./mvnw -B -ntp flyway:validate \
+            -Dflyway.url=jdbc:postgresql://localhost:25432/flyway_ci_scratch \
+            -Dflyway.user=devops -Dflyway.password=devops_password
+          TABLES=$(PGPASSWORD=devops_password psql -h localhost -p 25432 -U devops -d flyway_ci_scratch -tA \
+            -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';")
+          echo "::notice::空库全量建账表数=$TABLES"
+          [ "$TABLES" -ge 27 ] || { echo "::error::空库 migrate 后表数 $TABLES < 27(期望 V1..V11 全建账)"; exit 1; }
+          } 2>&1 | tee /tmp/flyway-check.log
+
+      - name: Flyway 步失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道，批 64）
+        if: failure() && steps.flywaycheck.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-flyway-diag -->"
+            echo "### 🔴 后端腿「迁移校验与空库全量建账」步骤取证（批 64 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -120 /tmp/flyway-check.log 2>/dev/null || echo "(日志文件缺失——步骤在 tee 前即炸,如网络/psql 客户端缺位)"
+            echo '```'
+          } > /tmp/flyway-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/flyway-diag.md --silent || true
+
+      - name: 初始化数据库 Schema
+        # @SpringBootTest 不建表（JPA ddl-auto 非 create），需先执行建表脚本。
+        # 迁移脚本按文件名排序执行——因此新增迁移必须保持编号递增，
+        # 这与 AGENTS.md 里「禁止修改已提交迁移」的约定是同一件事。
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f src/main/resources/db/migration/V1__baseline.sql
+          for f in $(ls sql/migration_v*.sql | sort -V); do
+            echo "==> $f"
+            psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Redis 密码配置
+        # dev profile 期望 Redis 有密码，而官方镜像默认无密码。
+        # 用 CONFIG SET 在运行时设上，避免为此单独构建镜像。
+        run: |
+          sudo apt-get install -y --no-install-recommends redis-tools >/dev/null 2>&1 || true
+          redis-cli -h localhost -p 26379 CONFIG SET requirepass devops_redis_pwd
+          redis-cli -h localhost -p 26379 -a devops_redis_pwd PING
+
+      - name: 编译与测试
+        # AI_MODE=MOCK：不调真实模型，CI 不烧额度也不依赖外网
+        env:
+          AI_MODE: MOCK
+          SPRING_PROFILES_ACTIVE: dev
+          # 开启 Schema 自检的严格模式：迁移漏执行会让 @SpringBootTest 直接失败，
+          # 而不是等到运行时用户点检索才发现
+          SCHEMA_FAIL_FAST: 'true'
+        # tee 留档：下一「失败诊断回帖」步从 /tmp/mvn-verify.log 取材。
+        # GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉。
+        run: ./mvnw -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
+
+      - name: 失败诊断回帖（沙箱日志取证道 · 批 45 红案催生）
+        # 背景：托管 runner 日志归档在 azure blob，开发沙箱 egress 不通该域，
+        # gh api/gh run view --log 都取不到失败日志（批 45 红案两度空跑）。
+        # PR 评论走 api.github.com 是沙箱唯一稳定通道——失败时把编译错误
+        # 指纹 + 红测报告摘要 + maven 日志尾段回帖本 PR，取证不求日志。
+        # 只有失败且 PR 触发时执行，绿案零开销零噪声；本步常驻不拆。
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "<!-- opsbrain-red-diagnosis -->"
+            echo "### 🔴 后端腿失败诊断（tee 取证道）"
+            echo
+            echo "**编译错误指纹**："
+            echo '```'
+            (grep -E "\[ERROR\]|cannot find symbol|COMPILATION ERROR" /tmp/mvn-verify.log | head -25) || echo "(无编译错误——为测试阶段红)"
+            echo '```'
+            echo
+            echo "**失败测试摘要**："
+            echo '```'
+            grep -rl -E "FAILURE!|Failures: [1-9]|Errors: [1-9]" target/surefire-reports/*.txt 2>/dev/null | head -4 | while read -r f; do
+              echo "== $f =="
+              grep -E -B2 -A10 "FAILURE!|Failures: [1-9]|Errors: [1-9]" "$f" | head -22
+            done
+            echo '```'
+            echo
+            echo "**mvn 日志尾段**："
+            echo '```'
+            tail -50 /tmp/mvn-verify.log
+            echo '```'
+          } > /tmp/red-diag.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md
+
+      - name: 评测指标基线对比（S4-3 CI 回归门禁）
+        # 接线批次 18（报告 121）。契约层指标由 AgentEvaluationTest 常驻落盘
+        # （MOCK 下同样覆盖）；RAG/LLM 层指标在 EVAL_RAG/EVAL_LLM 门内——
+        # eval_compare 只比双侧共有指标，层缺席不判负（语义见报告 118 §一）。
+        # 本步骤依赖 ubuntu-latest 托管 runner 预装的 node——评测工具链本来
+        # 就是 node 单文件脚本，不为此引 setup-node 增加供应链面。
+        # 前置（4-3.2 首跑即基线）：tools/audit/eval_baseline.json 须由
+        # EVAL_RAG 真实窗口首跑生成并人工 --update 提交后，本门禁才真正亮剑；
+        # 无基线时对比按首跑语义 rc=0 放行并打印引导，不会误红门禁。
+        run: |
+          node tools/audit/eval_compare.js \
+            --current target/eval-metrics.json \
+            --baseline tools/audit/eval_baseline.json | tee eval-compare.txt
+
+      - name: 贴评测对比到 PR（4-3.5）
+        # 只在本 job 是 PR 触发时执行；marker 幂等：同一 PR 反复 push 更新同一条
+        # 评论而不是堆积（对比是「最近一次状态」不是流水账——审计语义）。
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const file = 'eval-compare.txt'
+            const body = fs.existsSync(file)
+              ? fs.readFileSync(file, 'utf8').trim()
+              : '（基线对比 step 未产出输出——查看本 job 日志）'
+            const marker = '<!-- opsbrain-eval-compare -->'
+            const text = marker + '\n### 📊 评测指标 vs 基线（S4-3）\n\n```\n' + body + '\n```'
+            const { owner, repo } = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 })
+            const prev = comments.data.find(c => c.body.includes(marker))
+            if (prev) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: prev.id, body: text })
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: text })
+            }
+
+      - name: 上传评测指标
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-eval-metrics
+          path: |
+            target/eval-metrics.json
+            eval-compare.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend:
+    name: 前端 · 类型/规范/测试/构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: devops-platform-frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: devops-platform-frontend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 依赖漏洞审计（门禁）
+        # S5-3.3（批次 36 / 报告 139）：prod 依赖 HIGH+ 即红；dev 依赖不在门禁口径
+        # （构建侧风险等位较低、变异噪声高）——全量含 dev 的账本随 Trivy 周巡件。
+        # 2026-09-08 量：prod 0 / 全量 0，门禁从干净地板起步，回弹即出警。
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 代码规范
+        run: npm run lint
+
+      - name: 单元测试
+        run: npm run test
+
+      - name: 死代码检测（门禁）
+        # 退出条件已达成（批次 19-26 / 报告 122~129）：存量经四波清零——
+        # duplicate/exports/types 三域真账归零，21 条 @public 假阳逐条存证
+        # 随证据注释，codemirror 17 依赖从「侥幸传递」归位正式声明。
+        # 本步自此转正为正式门禁：新增死代码/未声明依赖即红。
+        id: knipgate
+        run: |
+          set -o pipefail
+          npm run knip 2>&1 | tee /tmp/knip.log
+      - name: knip 门禁失败时回 commit 取证帖（同款 tee 道）
+        if: failure() && steps.knipgate.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-knip-diag -->"
+            echo "### 🔴 前端腿 knip 门禁取证（批 67 修红 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -120 /tmp/knip.log 2>/dev/null || echo "(日志缺失)"
+            echo '```'
+          } > /tmp/knip-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/knip-diag.md --silent || true
+
+      - name: 生产构建
+        run: npm run build
+
+      - name: 体积预算（门禁）
+        # F-4（批次 32 / 报告 135）：F-2 语言包裁剪的省线之上立闸——总量/单件
+        # 双维超 budget 即红，防体积静默回弹。口径=未压缩字节（与构建产物同源）。
+        # 预算源 tools/audit/bundle_budget.json；抬预算用 --update + commit 写理由。
+        run: node ../tools/audit/check_bundle_budget.js

@@ -8,6 +8,7 @@
 /**
  * 统一响应包装（非流式接口）
  */
+/** @public knip 假阳存证：%s */
 export interface ApiResponse<T = unknown> {
   code: number
   message: string
@@ -16,36 +17,16 @@ export interface ApiResponse<T = unknown> {
   timestamp: number
 }
 
-/**
- * 错误码常量
- */
-export const ErrorCode = {
-  SUCCESS: 0,
-  PARAM_ERROR: 40001,           // 参数校验失败
-  SECURITY_BLOCK: 40301,        // 输入安全拦截
-  RATE_LIMIT: 42901,            // 上游大模型限流
-  INTERNAL_ERROR: 50001,        // 服务内部异常
-  SERVICE_UNAVAILABLE: 50301,   // 上游全链路不可用
-} as const
-
 // ==================== SSE 流式事件 ====================
 
-/**
- * SSE 事件类型
- */
-export type SSEEventType = 'start' | 'tool_status' | 'token' | 'complete' | 'error'
-
+// （SSEEventType/SSEEvent 成对死链已随批次 25 整删：EventType 的唯一消费者
+// 就是那个零引用的 SSEEvent 接口——链断即双删，详见报告 128）
 /**
  * SSE 基础事件
  *
  * data 的具体形状由 event 决定（见下方 SSEStartEvent / SSETokenEvent 等）。
  * 用 unknown 强制消费方先按 event 分支再窄化，避免直接当作某一类事件误读字段。
  */
-export interface SSEEvent {
-  event: SSEEventType
-  data: unknown
-}
-
 /**
  * start 事件 - 会话开始
  */

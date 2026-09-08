@@ -8,7 +8,7 @@
  * SLA 风险面板等多处，各写一遍必然在「已超时」的措辞与降级口径上漂移。
  */
 
-export interface SlaLike {
+interface SlaLike {
   slaRemainingMinutes?: number | null
   slaProgress?: number
   slaBreached?: boolean
@@ -50,7 +50,7 @@ export function slaRemainText(row: SlaLike): string {
 }
 
 /** SLA 紧急度分档，用于配色（超时红 / ≥70% 橙 / 其余正常） */
-export type SlaSeverity = 'breached' | 'warning' | 'normal'
+type SlaSeverity = 'breached' | 'warning' | 'normal'
 
 export function slaSeverity(row: SlaLike): SlaSeverity {
   if (row.slaBreached) return 'breached'
@@ -60,7 +60,7 @@ export function slaSeverity(row: SlaLike): SlaSeverity {
 
 // ==================== 首响状态（B1） ====================
 
-export type FirstResponseState = 'RESPONDED' | 'BREACHED' | 'AT_RISK' | 'WAITING'
+type FirstResponseState = 'RESPONDED' | 'BREACHED' | 'AT_RISK' | 'WAITING'
 
 const FIRST_RESPONSE_LABELS: Record<FirstResponseState, string> = {
   RESPONDED: '已首响',

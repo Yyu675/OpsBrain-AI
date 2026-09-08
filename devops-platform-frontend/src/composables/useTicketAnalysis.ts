@@ -11,8 +11,9 @@
  * - 相似工单 / 相关文档加载
  */
 
+import { notify } from '@/utils/notify'
 import { ref, computed, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { chatStream } from '@/api/chat'
 import { fetchTickets } from '@/api/tickets'
 // 策略 B：AI 分析存独立表（结构化 + 多版本 + 反馈），替换策略 A 的 role='ai' 回复
@@ -208,6 +209,26 @@ export function useTicketAnalysis(
   const relatedDocs = ref<KnowledgeDocListItem[]>([])
   const relatedLoading = ref(false)
 
+  /**
+   * 引用文档的可跳转形态：对 citations 标题逐个查知识库，解析出 {id, title}。
+   * <p>AnalysisCard 用它在「引用文档」区渲染 RouterLink（跳 /knowledge/{id}）。
+   * 查不到（知识库无该文档 / 标题为自由文本）时该项为 null，前端回退纯文本标题。</p>
+   */
+  const citationDocs = ref<Array<{ id: string | number; title: string } | null>>([])
+
+  /** 解析引用 → 可跳转文档（并发查询，任一失败仅该项降级为纯文本，不阻塞） */
+  const resolveCitations = async (titles: string[]) => {
+    const uniq = [...new Set(titles.map(t => t.trim()).filter(Boolean))]
+    if (!uniq.length) { citationDocs.value = []; return }
+    citationDocs.value = await Promise.all(uniq.map(async (title) => {
+      try {
+        const res = await fetchKnowledgeDocs({ keyword: title, size: 1, page: 1, status: 'PUBLISHED' })
+        const hit = (res.content ?? []).find(d => d.title === title || title.includes(d.title) || d.title.includes(title))
+        return hit ? { id: hit.id, title: hit.title } : null
+      } catch { return null }
+    }))
+  }
+
   let abortController: AbortController | null = null
 
   const structured = computed(() => parseStructuredAnalysis(analysisContent.value))
@@ -351,6 +372,7 @@ export function useTicketAnalysis(
         const fromText = extractCitationsFromText(latest.content)
         if (fromText.length) citations.value = fromText
       }
+      void resolveCitations(citations.value)
       return true
     } catch (e) {
       console.warn('[useTicketAnalysis] 读取分析存档失败，将走实时分析', e)
@@ -365,7 +387,7 @@ export function useTicketAnalysis(
   const submitFeedback = async (helpful: boolean) => {
     const aid = analysisId.value
     if (aid == null) {
-      ElMessage.warning('分析尚未存档，暂时无法评价')
+      notify.warning('分析尚未存档，暂时无法评价')
       return
     }
     // 乐观更新：先反映到 UI，失败回滚
@@ -373,11 +395,11 @@ export function useTicketAnalysis(
     analysisFeedback.value = helpful ? 'HELPFUL' : 'UNHELPFUL'
     try {
       await submitAiAnalysisFeedback(aid, helpful)
-      ElMessage.success(helpful ? '感谢反馈，已记录「有用」' : '已记录「没用」，我们会持续改进')
+      notify.success(helpful ? '感谢反馈，已记录「有用」' : '已记录「没用」，我们会持续改进')
     } catch (e) {
       analysisFeedback.value = prev
       console.error('[useTicketAnalysis] 反馈提交失败', e)
-      ElMessage.error('反馈提交失败，请稍后重试')
+      notify.error('反馈提交失败，请稍后重试')
     }
   }
 
@@ -410,6 +432,7 @@ export function useTicketAnalysis(
             const fromText = extractCitationsFromText(analysisContent.value)
             if (fromText.length) citations.value = fromText
           }
+          void resolveCitations(citations.value)
           analysisDone.value = true
           analysisStreaming.value = false
           // 仅成功完成才存档：失败/中断的内容存下来会在下次被当作有效分析复用，
@@ -418,6 +441,26 @@ export function useTicketAnalysis(
         },
         onError: (data: SSEErrorEvent) => {
           analysisContent.value += `\n\n❌ ${data.message || '分析请求失败，请稍后重试'}`
+          analysisDone.value = true
+          analysisStreaming.value = false
+        },
+
+        /**
+         * 服务端未发 complete 就关流时的兜底。
+         *
+         * fetchEventSource 在流关闭时**正常 resolve**——不抛错、不进 catch、
+         * 不触发 onError。只在 complete/error 里复位 analysisStreaming 的话，
+         * 后端超时切断 / 网关 502 / Nginx proxy_read_timeout 到期这几种情况下
+         * 它会永远停在 true：「停止生成」按钮一直显示、「重新分析」点不动，
+         * 用户只能刷新整个工单详情页。
+         *
+         * 与 ChatMode 是同一个缺陷，上一轮只修了那一处——这里是同类漏网。
+         */
+        onClose: () => {
+          if (!analysisStreaming.value) return   // 已由 complete/error 正常收尾
+          analysisContent.value += analysisContent.value
+            ? '\n\n_（连接已中断，以上为已生成内容）_'
+            : '❌ 连接意外中断，未收到分析结果，请重试'
           analysisDone.value = true
           analysisStreaming.value = false
         }
@@ -446,7 +489,7 @@ export function useTicketAnalysis(
 
   const generateReply = async (): Promise<string | null> => {
     if (analysisStreaming.value) {
-      ElMessage.warning('AI 正在分析中，请稍候')
+      notify.warning('AI 正在分析中，请稍候')
       return null
     }
 
@@ -477,6 +520,20 @@ export function useTicketAnalysis(
           analysisContent.value = replyText
           analysisDone.value = true
           analysisStreaming.value = false
+        },
+
+        // 同 runAnalysis：流被关闭但没收到 complete 时兜底收尾，
+        // 否则 analysisStreaming 永远为 true，整个 AI 面板卡死
+        onClose: () => {
+          if (!analysisStreaming.value) return
+          if (replyText) {
+            replyText += '\n\n_（连接已中断，以上为已生成内容）_'
+            analysisContent.value = replyText
+          } else {
+            analysisContent.value = '❌ 连接意外中断，未收到回复草稿，请重试'
+          }
+          analysisDone.value = true
+          analysisStreaming.value = false
         }
       }, abortController)
       return replyText
@@ -500,14 +557,14 @@ export function useTicketAnalysis(
 
   const copyCommand = async (cmd: string) => {
     const ok = await copyText(cmd)
-    if (ok) ElMessage.success('命令已复制')
-    else ElMessage.warning('复制失败，请手动选择')
+    if (ok) notify.success('命令已复制')
+    else notify.warning('复制失败，请手动选择')
   }
 
   const copyAnalysis = async () => {
     const ok = await copyText(analysisContent.value)
-    if (ok) ElMessage.success('已复制到剪贴板')
-    else ElMessage.warning('复制失败，请手动选择文本')
+    if (ok) notify.success('已复制到剪贴板')
+    else notify.warning('复制失败，请手动选择文本')
   }
 
   // ==================== 生命周期 ====================
@@ -517,6 +574,12 @@ export function useTicketAnalysis(
       abortController.abort()
       abortController = null
     }
+    // 只 abort 不够：abort 走的是 catch 分支，而组件已卸载、
+    // 那段 catch 未必来得及执行。显式收尾保证状态不会残留为「分析中」
+    if (analysisStreaming.value) {
+      analysisStreaming.value = false
+      analysisDone.value = true
+    }
   })
 
   return {
@@ -525,6 +588,7 @@ export function useTicketAnalysis(
     analysisStreaming,
     analysisDone,
     citations,
+    citationDocs,
     analysisCost,
     // 存档来源标识（供卡片标注「上次分析结果」及时间）
     analysisFromArchive,

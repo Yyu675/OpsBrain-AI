@@ -56,8 +56,9 @@ public class KnowledgeDocRepository {
                  status, index_status, chunk_count,
                  effective_at, expired_at, knowledge_source,
                  source_ticket_id, source_type,
+                 visibility, owner_dept,
                  create_time, update_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """;
 
@@ -93,6 +94,9 @@ public class KnowledgeDocRepository {
                 ps.setNull(16, java.sql.Types.BIGINT);
             }
             ps.setString(17, doc.getSourceType());
+            // C1 可见性。列 NOT NULL，null 兜底为 PUBLIC（与存量语义一致）
+            ps.setString(18, doc.getVisibility() != null ? doc.getVisibility() : "PUBLIC");
+            ps.setString(19, doc.getOwnerDept());
             return ps;
         }, keyHolder);
 
@@ -116,6 +120,7 @@ public class KnowledgeDocRepository {
                    index_status = ?, index_error = NULL,
                    effective_at = ?, expired_at = ?, knowledge_source = ?,
                    source_ticket_id = ?, source_type = ?,
+                   visibility = ?, owner_dept = ?,
                    version = version + 1, update_time = CURRENT_TIMESTAMP
              WHERE id = ? AND version = ?
             """ : """
@@ -125,6 +130,7 @@ public class KnowledgeDocRepository {
                    index_status = ?, index_error = NULL,
                    effective_at = ?, expired_at = ?, knowledge_source = ?,
                    source_ticket_id = ?, source_type = ?,
+                   visibility = ?, owner_dept = ?,
                    version = version + 1, update_time = CURRENT_TIMESTAMP
              WHERE id = ?
             """;
@@ -145,6 +151,8 @@ public class KnowledgeDocRepository {
         args.add(doc.getKnowledgeSource());
         args.add(doc.getSourceTicketId());
         args.add(doc.getSourceType());
+        args.add(doc.getVisibility() != null ? doc.getVisibility() : "PUBLIC");
+        args.add(doc.getOwnerDept());
         args.add(doc.getId());
         if (withCas) {
             args.add(expectedVersion);
@@ -485,6 +493,11 @@ public class KnowledgeDocRepository {
             long stid = rs.getLong("source_ticket_id");
             d.setSourceTicketId(rs.wasNull() ? null : stid);
             d.setSourceType(rs.getString("source_type"));
+            // C1 可见性。列由 v24 迁移新增，存量行由 DEFAULT 填为 PUBLIC。
+            // 这里仍对 null 兜底：mapper 也被历史快照/视图复用时列可能缺省。
+            String vis = rs.getString("visibility");
+            d.setVisibility(vis != null ? vis : "PUBLIC");
+            d.setOwnerDept(rs.getString("owner_dept"));
             d.setCreateTime(rs.getObject("create_time", LocalDateTime.class));
             d.setUpdateTime(rs.getObject("update_time", LocalDateTime.class));
             return d;

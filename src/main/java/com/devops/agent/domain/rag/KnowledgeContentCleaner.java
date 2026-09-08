@@ -122,8 +122,9 @@ public class KnowledgeContentCleaner {
         // 关卡 7：重复段落检测（仅告警，不自动删）
         DupeWarning dupeWarn = detectDuplicateParagraphs(result);
         if (dupeWarn != null) {
-            log.warn("⚠️ [ContentCleaner] 检测到重复段落 | 占比={:.1%} | 相邻重复={} 组 | 文档内容可能含连续粘贴",
-                    dupeWarn.ratio(), dupeWarn.groupCount());
+            // SLF4J 不支持 {:.1%} 格式说明符，须在参数侧格式化（见 CostQuotaManager 同类修复）
+            log.warn("⚠️ [ContentCleaner] 检测到重复段落 | 占比={}% | 相邻重复={} 组 | 文档内容可能含连续粘贴",
+                    String.format("%.1f", dupeWarn.ratio() * 100), dupeWarn.groupCount());
         }
 
         // 清洗后二次检查：如果剥离 HTML 后变成空内容

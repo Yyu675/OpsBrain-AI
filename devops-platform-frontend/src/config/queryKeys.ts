@@ -13,7 +13,7 @@
  */
 
 /** 工单列表查询参数（与 store 的 TicketQueryParams 对齐） */
-export interface TicketListParams {
+interface TicketListParams {
   page?: number
   size?: number
   keyword?: string
@@ -57,7 +57,7 @@ export const ticketKeys = {
   firstResponseStats: () => [...ticketKeys.all, 'first-response-stats'] as const,
 }
 
-export interface AlertListParams {
+interface AlertListParams {
   page?: number
   size?: number
   status?: string
@@ -72,7 +72,7 @@ export const alertKeys = {
   detail: (id: string) => [...alertKeys.details(), id] as const,
 }
 
-export interface KnowledgeListParams {
+interface KnowledgeListParams {
   page?: number
   size?: number
   keyword?: string
@@ -101,6 +101,10 @@ export const dashboardKeys = {
   /** 趋势。天数与服务下钻维度进 key */
   trends: (days: number, module?: string) =>
     [...dashboardKeys.all, 'trends', days, module ?? null] as const,
+  /** 诊断区看板窗口天数（S4-4.2） */
+  diagnosisBoard: (days: number) => [...dashboardKeys.all, 'diagnosis-board', days] as const,
+  /** AI 效果区：根因分析反馈统计（4-4.1 半部先行，反馈闭环数据） */
+  aiEffectStats: () => [...dashboardKeys.all, 'ai-effect-stats'] as const,
 }
 
 export const approvalKeys = {

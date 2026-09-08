@@ -96,6 +96,18 @@ public class DashboardController {
      * @param days   统计窗口天数，默认 7，兜底至 [1, 90]
      * @param module 服务模块下钻（K8S/MYSQL/NETWORK 等），省略=全局口径
      */
+    /**
+     * S4-4.2 诊断区看板（批次 16）：诊断次数/状态分布/平均耗时/
+     * 充分性/方向四态/源故障点名。窗口同 /trends 的 [1,90] 夹紧。
+     */
+    @GetMapping("/diagnosis-board")
+    public ApiResponse<Map<String, Object>> getDiagnosisBoard(
+            @RequestParam(defaultValue = "7") int days) {
+        log.info("📊 [Dashboard] 请求诊断区看板 | days={}", days);
+        // 夹紧下沉在实现层（单点口径，不外散到端点）
+        return ApiResponse.success(dashboardService.getDiagnosisBoard(days));
+    }
+
     @GetMapping("/trends")
     public ApiResponse<Map<String, Object>> getTrends(
             @RequestParam(defaultValue = "7") int days,

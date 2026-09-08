@@ -25,7 +25,10 @@ vi.mock('@/api/tickets', () => mocks)
 vi.mock('element-plus', () => ({
   ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }))
-vi.mock('@/utils/notify', () => ({ handleServerError: vi.fn() }))
+vi.mock('@/utils/notify', () => ({
+  handleServerError: vi.fn(),
+  notify: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
+}))
 
 /** 构造复盘记录 */
 function pmRecord(overrides: Partial<PostmortemData> = {}): PostmortemData {

@@ -1,7 +1,8 @@
 package com.devops.agent.controller;
 
+import com.devops.agent.controller.dto.TicketDto;
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
-import com.devops.agent.common.exception.OptimisticLockException;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
 import com.devops.agent.domain.biz.entity.TicketAction;
 import com.devops.agent.domain.biz.entity.TicketActivity;
@@ -12,6 +13,9 @@ import com.devops.agent.domain.biz.repository.TicketQuery;
 import com.devops.agent.domain.biz.service.TicketAttachmentService;
 import com.devops.agent.domain.biz.service.TicketAiAnalysisService;
 import com.devops.agent.domain.biz.service.TicketService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,7 +69,7 @@ public class TicketController {
      * @return 工单列表分页数据
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> getTickets(
+    public ApiResponse<TicketDto.TicketPage> getTickets(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String keyword,
@@ -100,14 +104,11 @@ public class TicketController {
         // 批量装填标签（一次查询，避免 N+1）
         ticketService.fillTags(tickets);
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("tickets", tickets);
-        result.put("total", total);
-        result.put("page", safePage);
-        result.put("size", safeSize);
-        result.put("totalPages", (int) Math.ceil((double) total / safeSize));
-
-        return ApiResponse.success(result);
+        // 用 record 而非 Map（P0-2 第二步）：
+        // Map 让 OpenAPI 只能生成 additionalProperties:true，前端拿不到类型；
+        // 且 map.put("totalPages", ...) 改成 "total_pages" 不会有任何编译信号，
+        // 只是前端悄悄读到 undefined。record 的字段改名会直接编译失败。
+        return ApiResponse.success(TicketDto.TicketPage.of(tickets, total, safePage, safeSize));
     }
 
     /**
@@ -123,7 +124,7 @@ public class TicketController {
         // 走 Service 以自动装填标签
         DevOpsTicket ticket = ticketService.getTicketWithTags(id);
         if (ticket == null) {
-            return ApiResponse.error(40004, "工单不存在");
+            return ApiResponse.error(ApiCode.NOT_FOUND, "工单不存在");
         }
 
         return ApiResponse.success(ticket);
@@ -141,7 +142,7 @@ public class TicketController {
 
         DevOpsTicket ticket = ticketService.findByTraceId(traceId);
         if (ticket == null) {
-            return ApiResponse.error(40004, "工单不存在");
+            return ApiResponse.error(ApiCode.NOT_FOUND, "工单不存在");
         }
 
         return ApiResponse.success(ticket);
@@ -154,20 +155,13 @@ public class TicketController {
      * @return 创建后的完整工单（含生成的工单号）
      */
     @PostMapping
-    public ApiResponse<DevOpsTicket> createTicket(@RequestBody CreateTicketRequest req) {
+    public ApiResponse<DevOpsTicket> createTicket(@Valid @RequestBody CreateTicketRequest req) {
         log.info("[TicketController] 创建工单: title={}, priority={}, module={}",
                 req.title(), req.priority(), req.module());
-        try {
-            DevOpsTicket created = ticketService.createTicket(
-                    req.title(), req.priority(), req.module(), req.description(),
-                    req.assignee(), req.category(), req.sla(), req.creator(), req.tags());
-            return ApiResponse.success(created);
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 创建工单失败", e);
-            return ApiResponse.error(50001, "创建工单失败: " + e.getMessage());
-        }
+        DevOpsTicket created = ticketService.createTicket(
+                req.title(), req.priority(), req.module(), req.description(),
+                req.assignee(), req.category(), req.sla(), req.creator(), req.tags());
+        return ApiResponse.success(created);
     }
 
     /**
@@ -182,34 +176,21 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> updateTicket(@PathVariable String id,
                                                   @RequestBody UpdateTicketRequest req) {
         log.info("[TicketController] 更新工单: id={}, version={}", id, req.version());
-        try {
-            DevOpsTicket patch = new DevOpsTicket();
-            patch.setTitle(req.title());
-            patch.setDescription(req.description());
-            patch.setPriority(req.priority());
-            patch.setModule(req.module());
-            patch.setStatus(req.status());
-            patch.setAssignee(req.assignee());
-            patch.setCategory(req.category());
-            patch.setSla(req.sla());
-            patch.setStackTrace(req.stackTrace());
-            patch.setVersion(req.version());   // P1-4 并发校验，为空则退化为无锁覆盖
-            patch.setTags(req.tags());         // null=不改标签，空数组=清空
+        DevOpsTicket patch = new DevOpsTicket();
+        patch.setTitle(req.title());
+        patch.setDescription(req.description());
+        patch.setPriority(req.priority());
+        patch.setModule(req.module());
+        patch.setStatus(req.status());
+        patch.setAssignee(req.assignee());
+        patch.setCategory(req.category());
+        patch.setSla(req.sla());
+        patch.setStackTrace(req.stackTrace());
+        patch.setVersion(req.version());   // P1-4 并发校验，为空则退化为无锁覆盖
+        patch.setTags(req.tags());         // null=不改标签，空数组=清空
 
-            DevOpsTicket updated = ticketService.updateTicket(id, patch);
-            return ApiResponse.success(updated);
-        } catch (OptimisticLockException e) {
-            // 版本冲突独立错误码：前端需据此提示刷新而非重试
-            log.warn("[TicketController] 版本冲突 | id={} | {}", id, e.getMessage());
-            return ApiResponse.error(OptimisticLockException.CODE, e.getMessage());
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 更新工单失败 | id={}", id, e);
-            return ApiResponse.error(50001, "更新工单失败: " + e.getMessage());
-        }
+        DevOpsTicket updated = ticketService.updateTicket(id, patch);
+        return ApiResponse.success(updated);
     }
 
     /**
@@ -223,17 +204,8 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> updateStatus(@PathVariable String id,
                                                   @RequestBody StatusRequest req) {
         log.info("[TicketController] 变更工单状态: id={}, status={}", id, req.status());
-        try {
-            DevOpsTicket updated = ticketService.updateStatus(id, req.status());
-            return ApiResponse.success(updated);
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 变更状态失败 | id={}", id, e);
-            return ApiResponse.error(50001, "变更状态失败: " + e.getMessage());
-        }
+        DevOpsTicket updated = ticketService.updateStatus(id, req.status());
+        return ApiResponse.success(updated);
     }
 
     // ==================== B1 首响 / 派单 / SLA 风险 ====================
@@ -248,16 +220,7 @@ public class TicketController {
         String responder = req != null ? req.responder() : null;
         String assignee = req != null ? req.assignee() : null;
         log.info("[TicketController] 确认接单: id={}, responder={}, assignee={}", id, responder, assignee);
-        try {
-            return ApiResponse.success(ticketService.acknowledgeTicket(id, responder, assignee));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 确认接单失败 | id={}", id, e);
-            return ApiResponse.error(50001, "确认接单失败");
-        }
+        return ApiResponse.success(ticketService.acknowledgeTicket(id, responder, assignee));
     }
 
     /**
@@ -268,18 +231,9 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> escalate(@PathVariable String id,
                                               @RequestBody EscalateRequest req) {
         log.info("[TicketController] 升级工单: id={}, reason={}", id, req == null ? null : req.reason());
-        try {
-            String reason = req != null ? req.reason() : null;
-            String operator = req != null ? req.operator() : null;
-            return ApiResponse.success(ticketService.escalateTicket(id, reason, operator));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 升级失败 | id={}", id, e);
-            return ApiResponse.error(50001, "升级失败");
-        }
+        String reason = req != null ? req.reason() : null;
+        String operator = req != null ? req.operator() : null;
+        return ApiResponse.success(ticketService.escalateTicket(id, reason, operator));
     }
 
     /**
@@ -292,17 +246,12 @@ public class TicketController {
     public ApiResponse<Map<String, Object>> slaAtRisk(
             @RequestParam(defaultValue = "30") int withinMinutes,
             @RequestParam(defaultValue = "50") int size) {
-        try {
-            List<DevOpsTicket> list = ticketService.findSlaAtRisk(withinMinutes, size);
-            Map<String, Object> data = new HashMap<>();
-            data.put("total", list.size());
-            data.put("withinMinutes", Math.max(0, withinMinutes));
-            data.put("tickets", list);
-            return ApiResponse.success(data);
-        } catch (Exception e) {
-            log.error("[TicketController] 查询 SLA 风险清单失败", e);
-            return ApiResponse.error(50001, "查询 SLA 风险清单失败");
-        }
+        List<DevOpsTicket> list = ticketService.findSlaAtRisk(withinMinutes, size);
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", list.size());
+        data.put("withinMinutes", Math.max(0, withinMinutes));
+        data.put("tickets", list);
+        return ApiResponse.success(data);
     }
 
     /**
@@ -310,12 +259,7 @@ public class TicketController {
      */
     @GetMapping("/sla/first-response-stats")
     public ApiResponse<Map<String, Object>> firstResponseStats() {
-        try {
-            return ApiResponse.success(ticketService.getFirstResponseStats());
-        } catch (Exception e) {
-            log.error("[TicketController] 查询首响统计失败", e);
-            return ApiResponse.error(50001, "查询首响统计失败");
-        }
+        return ApiResponse.success(ticketService.getFirstResponseStats());
     }
 
     // ==================== B2 现场处置 ====================
@@ -328,18 +272,9 @@ public class TicketController {
     public ApiResponse<Map<String, Object>> addAction(@PathVariable String id,
                                                      @RequestBody ActionRequest req) {
         log.info("[TicketController] 记录处置动作: id={}, type={}", id, req.actionType());
-        try {
-            var action = ticketService.addAction(id, req.actionType(), req.summary(),
-                    req.detail(), req.operator(), req.effective());
-            return ApiResponse.success(Map.of("id", action.getId(), "action", action));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 记录处置动作失败 | id={}", id, e);
-            return ApiResponse.error(50001, "记录处置动作失败");
-        }
+        var action = ticketService.addAction(id, req.actionType(), req.summary(),
+                req.detail(), req.operator(), req.effective());
+        return ApiResponse.success(Map.of("id", action.getId(), "action", action));
     }
 
     /**
@@ -348,12 +283,7 @@ public class TicketController {
     @GetMapping("/{id}/actions")
     public ApiResponse<List<com.devops.agent.domain.biz.entity.TicketAction>> listActions(
             @PathVariable String id) {
-        try {
-            return ApiResponse.success(ticketService.listActions(id));
-        } catch (Exception e) {
-            log.error("[TicketController] 查询处置动作失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询处置动作失败");
-        }
+        return ApiResponse.success(ticketService.listActions(id));
     }
 
     /**
@@ -364,16 +294,7 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> updateStage(@PathVariable String id,
                                                   @RequestBody StageRequest req) {
         log.info("[TicketController] 切换处置阶段: id={}, stage={}", id, req.stage());
-        try {
-            return ApiResponse.success(ticketService.updateStage(id, req.stage(), req.operator()));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 切换处置阶段失败 | id={}", id, e);
-            return ApiResponse.error(50001, "切换处置阶段失败");
-        }
+        return ApiResponse.success(ticketService.updateStage(id, req.stage(), req.operator()));
     }
 
     /**
@@ -384,17 +305,8 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> markMitigated(@PathVariable String id,
                                                     @RequestBody(required = false) OperatorRequest req) {
         log.info("[TicketController] 标记止损: id={}", id);
-        try {
-            String operator = req != null ? req.operator() : null;
-            return ApiResponse.success(ticketService.markMitigated(id, operator));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 标记止损失败 | id={}", id, e);
-            return ApiResponse.error(50001, "标记止损失败");
-        }
+        String operator = req != null ? req.operator() : null;
+        return ApiResponse.success(ticketService.markMitigated(id, operator));
     }
 
     // ==================== B3 根因分析 + 修复验证 ====================
@@ -407,17 +319,8 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> confirmRootCause(@PathVariable String id,
                                                       @RequestBody RootCauseRequest req) {
         log.info("[TicketController] 确认根因: id={}, category={}", id, req.category());
-        try {
-            return ApiResponse.success(ticketService.confirmRootCause(
-                    id, req.rootCause(), req.category(), req.operator()));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 确认根因失败 | id={}", id, e);
-            return ApiResponse.error(50001, "确认根因失败");
-        }
+        return ApiResponse.success(ticketService.confirmRootCause(
+                id, req.rootCause(), req.category(), req.operator()));
     }
 
     /**
@@ -425,12 +328,7 @@ public class TicketController {
      */
     @GetMapping("/root-cause/stats")
     public ApiResponse<Map<String, Object>> rootCauseStats() {
-        try {
-            return ApiResponse.success(ticketService.getRootCauseStats());
-        } catch (Exception e) {
-            log.error("[TicketController] 根因统计失败", e);
-            return ApiResponse.error(50001, "根因统计失败");
-        }
+        return ApiResponse.success(ticketService.getRootCauseStats());
     }
 
     /**
@@ -441,17 +339,8 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> submitVerification(@PathVariable String id,
                                                          @RequestBody VerifyRequest req) {
         log.info("[TicketController] 提交验证: id={}, method={}", id, req.method());
-        try {
-            return ApiResponse.success(ticketService.submitVerification(
-                    id, req.method(), req.conclusion(), req.verifier()));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 提交验证失败 | id={}", id, e);
-            return ApiResponse.error(50001, "提交验证失败");
-        }
+        return ApiResponse.success(ticketService.submitVerification(
+                id, req.method(), req.conclusion(), req.verifier()));
     }
 
     /**
@@ -463,17 +352,8 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> skipVerification(@PathVariable String id,
                                                      @RequestBody VerifySkipRequest req) {
         log.info("[TicketController] 跳过验证: id={}", id);
-        try {
-            return ApiResponse.success(ticketService.skipVerification(
-                    id, req.reason(), req.operator()));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 跳过验证失败 | id={}", id, e);
-            return ApiResponse.error(50001, "跳过验证失败");
-        }
+        return ApiResponse.success(ticketService.skipVerification(
+                id, req.reason(), req.operator()));
     }
 
     /**
@@ -481,12 +361,7 @@ public class TicketController {
      */
     @GetMapping("/metrics/closure")
     public ApiResponse<Map<String, Object>> closureMetrics() {
-        try {
-            return ApiResponse.success(ticketService.getClosureMetrics());
-        } catch (Exception e) {
-            log.error("[TicketController] 闭环度量查询失败", e);
-            return ApiResponse.error(50001, "闭环度量查询失败");
-        }
+        return ApiResponse.success(ticketService.getClosureMetrics());
     }
 
     /**
@@ -500,17 +375,8 @@ public class TicketController {
     public ApiResponse<DevOpsTicket> transferTicket(@PathVariable String id,
                                                     @RequestBody AssigneeRequest req) {
         log.info("[TicketController] 转派工单: id={}, assignee={}", id, req.assignee());
-        try {
-            DevOpsTicket updated = ticketService.transferTicket(id, req.assignee());
-            return ApiResponse.success(updated);
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 转派失败 | id={}", id, e);
-            return ApiResponse.error(50001, "转派失败: " + e.getMessage());
-        }
+        DevOpsTicket updated = ticketService.transferTicket(id, req.assignee());
+        return ApiResponse.success(updated);
     }
 
     /**
@@ -527,29 +393,22 @@ public class TicketController {
     @cn.dev33.satoken.annotation.SaCheckRole("ADMIN")   // 方向 F：工单物理删除不可逆，限管理员（作废用 /void，OPS 可用）
     public ApiResponse<DevOpsTicket> deleteTicket(@PathVariable String id) {
         log.warn("[TicketController] 删除工单: id={}", id);
-        try {
-            // 先清附件（含 MinIO 对象），再删工单主体。
-            // 顺序原因：删完工单后 attachmentService 内部记活动流会
-            // 因工单不存在而失败，且已无从查证附件归属
-            int attachments = attachmentService.deleteAllByTicketId(id);
-            if (attachments > 0) {
-                log.info("[TicketController] 已级联清理附件 | id={} | count={}", id, attachments);
-            }
-
-            // 级联清理 AI 分析（表无外键约束，需应用层保证，否则积累孤儿数据）
-            int analyses = aiAnalysisService.deleteByTicketId(id);
-            if (analyses > 0) {
-                log.info("[TicketController] 已级联清理 AI 分析 | id={} | count={}", id, analyses);
-            }
-
-            DevOpsTicket deleted = ticketService.deleteTicket(id);
-            return ApiResponse.success(deleted);
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 删除工单失败 | id={}", id, e);
-            return ApiResponse.error(50001, "删除工单失败: " + e.getMessage());
+        // 先清附件（含 MinIO 对象），再删工单主体。
+        // 顺序原因：删完工单后 attachmentService 内部记活动流会
+        // 因工单不存在而失败，且已无从查证附件归属
+        int attachments = attachmentService.deleteAllByTicketId(id);
+        if (attachments > 0) {
+            log.info("[TicketController] 已级联清理附件 | id={} | count={}", id, attachments);
         }
+
+        // 级联清理 AI 分析（表无外键约束，需应用层保证，否则积累孤儿数据）
+        int analyses = aiAnalysisService.deleteByTicketId(id);
+        if (analyses > 0) {
+            log.info("[TicketController] 已级联清理 AI 分析 | id={} | count={}", id, analyses);
+        }
+
+        DevOpsTicket deleted = ticketService.deleteTicket(id);
+        return ApiResponse.success(deleted);
     }
 
     /**
@@ -565,20 +424,11 @@ public class TicketController {
         String reason = (req != null && req.reason() != null && !req.reason().isBlank())
                 ? req.reason() : "人工作废";
         log.warn("[TicketController] 作废工单: id={}, reason={}", id, reason);
-        try {
-            String message = ticketService.voidTicket(id, reason);
-            Map<String, Object> data = new HashMap<>();
-            data.put("ticketId", id);
-            data.put("message", message);
-            return ApiResponse.success(data);
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 作废工单失败 | id={}", id, e);
-            return ApiResponse.error(50001, "作废工单失败: " + e.getMessage());
-        }
+        String message = ticketService.voidTicket(id, reason);
+        Map<String, Object> data = new HashMap<>();
+        data.put("ticketId", id);
+        data.put("message", message);
+        return ApiResponse.success(data);
     }
 
     /**
@@ -609,9 +459,40 @@ public class TicketController {
      * @param creator     创建人，空则 devops-admin
      */
     public record CreateTicketRequest(
-            String title, String priority, String module, String description,
-            String assignee, String category, String sla, String creator,
+            @NotBlank(message = "工单标题不能为空")
+            @Size(max = 255, message = "工单标题不能超过 255 字")
+            String title,
+
+            /**
+             * 优先级。<b>刻意不加 @Pattern</b>：
+             * {@code TicketEnums.Priority.normalize} 兼容旧三档
+             * （HIGH/MEDIUM/LOW）与 URGENT 别名，且非法值兜底 P2。
+             * 在此处收严会直接打死存量客户端与 AI 工具的历史提示词。
+             */
+            @Size(max = 16, message = "优先级取值过长")
+            String priority,
+
+            @Size(max = 64, message = "所属模块不能超过 64 字")
+            String module,
+
+            @NotBlank(message = "问题描述不能为空")
+            @Size(max = 20000, message = "问题描述过长（上限 2 万字），请精简或改用附件")
+            String description,
+
+            @Size(max = 64, message = "负责人名称不能超过 64 字")
+            String assignee,
+
+            @Size(max = 64, message = "分类不能超过 64 字")
+            String category,
+
+            @Size(max = 32, message = "SLA 取值过长")
+            String sla,
+
+            @Size(max = 64, message = "创建人名称不能超过 64 字")
+            String creator,
+
             /** 标签列表，可为 null。此前用户输入的标签在提交时被丢弃 */
+            @Size(max = 20, message = "标签最多 20 个")
             List<String> tags) {
     }
 
@@ -633,18 +514,7 @@ public class TicketController {
         log.info("[TicketController] 上传附件 | id={} | name={} | size={}",
                 id, file != null ? file.getOriginalFilename() : null,
                 file != null ? file.getSize() : 0);
-        try {
-            return ApiResponse.success(attachmentService.upload(id, file, uploader));
-        } catch (IllegalArgumentException e) {
-            // 校验类失败：文件类型/大小/文件名非法
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (IllegalStateException e) {
-            // 状态类失败：工单不存在/数量超限/重复/存储不可用
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 上传附件失败 | id={}", id, e);
-            return ApiResponse.error(50001, "上传附件失败: " + e.getMessage());
-        }
+        return ApiResponse.success(attachmentService.upload(id, file, uploader));
     }
 
     /**
@@ -652,12 +522,7 @@ public class TicketController {
      */
     @GetMapping("/{id}/attachments")
     public ApiResponse<List<TicketAttachment>> listAttachments(@PathVariable String id) {
-        try {
-            return ApiResponse.success(attachmentService.list(id));
-        } catch (Exception e) {
-            log.error("[TicketController] 查询附件失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询附件失败: " + e.getMessage());
-        }
+        return ApiResponse.success(attachmentService.list(id));
     }
 
     /**
@@ -669,18 +534,11 @@ public class TicketController {
      */
     @GetMapping("/attachments/{attachmentId}/download-url")
     public ApiResponse<Map<String, Object>> attachmentDownloadUrl(@PathVariable Long attachmentId) {
-        try {
-            String url = attachmentService.presignDownloadUrl(attachmentId);
-            Map<String, Object> data = new HashMap<>();
-            data.put("url", url);
-            data.put("expiresInSeconds", 300);
-            return ApiResponse.success(data);
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 生成下载链接失败 | id={}", attachmentId, e);
-            return ApiResponse.error(50001, "生成下载链接失败: " + e.getMessage());
-        }
+        String url = attachmentService.presignDownloadUrl(attachmentId);
+        Map<String, Object> data = new HashMap<>();
+        data.put("url", url);
+        data.put("expiresInSeconds", 300);
+        return ApiResponse.success(data);
     }
 
     /**
@@ -689,14 +547,7 @@ public class TicketController {
     @DeleteMapping("/attachments/{attachmentId}")
     public ApiResponse<TicketAttachment> deleteAttachment(@PathVariable Long attachmentId) {
         log.info("[TicketController] 删除附件 | id={}", attachmentId);
-        try {
-            return ApiResponse.success(attachmentService.delete(attachmentId));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 删除附件失败 | id={}", attachmentId, e);
-            return ApiResponse.error(50001, "删除附件失败: " + e.getMessage());
-        }
+        return ApiResponse.success(attachmentService.delete(attachmentId));
     }
 
     // ==================== 标签 ====================
@@ -709,14 +560,7 @@ public class TicketController {
     public ApiResponse<List<String>> replaceTags(@PathVariable String id,
                                                  @RequestBody TagsRequest req) {
         log.info("[TicketController] 替换标签 | id={} | tags={}", id, req.tags());
-        try {
-            return ApiResponse.success(ticketService.replaceTags(id, req.tags()));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 替换标签失败 | id={}", id, e);
-            return ApiResponse.error(50001, "替换标签失败: " + e.getMessage());
-        }
+        return ApiResponse.success(ticketService.replaceTags(id, req.tags()));
     }
 
     /**
@@ -728,17 +572,12 @@ public class TicketController {
     @GetMapping("/tags/hot")
     public ApiResponse<Map<String, Object>> hotTags(
             @RequestParam(defaultValue = "20") int limit) {
-        try {
-            var hot = ticketService.getHotTags(limit);
-            Map<String, Object> data = new HashMap<>();
-            // 保序输出：按热度降序的标签名列表
-            data.put("tags", new ArrayList<>(hot.keySet()));
-            data.put("counts", hot);
-            return ApiResponse.success(data);
-        } catch (Exception e) {
-            log.error("[TicketController] 查询热门标签失败", e);
-            return ApiResponse.error(50001, "查询热门标签失败: " + e.getMessage());
-        }
+        var hot = ticketService.getHotTags(limit);
+        Map<String, Object> data = new HashMap<>();
+        // 保序输出：按热度降序的标签名列表
+        data.put("tags", new ArrayList<>(hot.keySet()));
+        data.put("counts", hot);
+        return ApiResponse.success(data);
     }
 
     /**
@@ -756,12 +595,7 @@ public class TicketController {
      */
     @GetMapping("/{id}/replies")
     public ApiResponse<List<TicketReply>> listReplies(@PathVariable String id) {
-        try {
-            return ApiResponse.success(ticketService.listReplies(id));
-        } catch (Exception e) {
-            log.error("[TicketController] 查询回复失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询回复失败: " + e.getMessage());
-        }
+        return ApiResponse.success(ticketService.listReplies(id));
     }
 
     /**
@@ -771,18 +605,9 @@ public class TicketController {
     public ApiResponse<TicketReply> addReply(@PathVariable String id,
                                              @RequestBody AddReplyRequest req) {
         log.info("[TicketController] 新增回复 | id={} | role={} | author={}", id, req.role(), req.author());
-        try {
-            TicketReply reply = ticketService.addReply(
-                    id, req.role(), req.author(), req.authorColor(), req.content());
-            return ApiResponse.success(reply);
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 新增回复失败 | id={}", id, e);
-            return ApiResponse.error(50001, "新增回复失败: " + e.getMessage());
-        }
+        TicketReply reply = ticketService.addReply(
+                id, req.role(), req.author(), req.authorColor(), req.content());
+        return ApiResponse.success(reply);
     }
 
     /**
@@ -790,12 +615,7 @@ public class TicketController {
      */
     @GetMapping("/{id}/activities")
     public ApiResponse<List<TicketActivity>> listActivities(@PathVariable String id) {
-        try {
-            return ApiResponse.success(ticketService.listActivities(id));
-        } catch (Exception e) {
-            log.error("[TicketController] 查询活动流失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询活动流失败: " + e.getMessage());
-        }
+        return ApiResponse.success(ticketService.listActivities(id));
     }
 
     // ==================== AI 分析（策略 B：结构化 + 多版本 + 反馈） ====================
@@ -810,17 +630,10 @@ public class TicketController {
     @PostMapping("/{id}/ai-analysis")
     public ApiResponse<TicketAiAnalysis> saveAiAnalysis(@PathVariable String id,
                                                         @RequestBody SaveAnalysisRequest req) {
-        try {
-            TicketAiAnalysis saved = aiAnalysisService.save(
-                    id, req.content(), req.reasons(), req.commands(),
-                    req.citations(), req.confidence(), req.costRmb());
-            return ApiResponse.success(saved);
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[TicketController] 保存 AI 分析失败 | id={}", id, e);
-            return ApiResponse.error(50001, "保存 AI 分析失败: " + e.getMessage());
-        }
+        TicketAiAnalysis saved = aiAnalysisService.save(
+                id, req.content(), req.reasons(), req.commands(),
+                req.citations(), req.confidence(), req.costRmb());
+        return ApiResponse.success(saved);
     }
 
     /**
@@ -829,12 +642,7 @@ public class TicketController {
      */
     @GetMapping("/{id}/ai-analysis/latest")
     public ApiResponse<TicketAiAnalysis> latestAiAnalysis(@PathVariable String id) {
-        try {
-            return ApiResponse.success(aiAnalysisService.getLatest(id));
-        } catch (Exception e) {
-            log.error("[TicketController] 查询最新 AI 分析失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询 AI 分析失败: " + e.getMessage());
-        }
+        return ApiResponse.success(aiAnalysisService.getLatest(id));
     }
 
     /**
@@ -842,12 +650,7 @@ public class TicketController {
      */
     @GetMapping("/{id}/ai-analysis/versions")
     public ApiResponse<List<TicketAiAnalysis>> aiAnalysisVersions(@PathVariable String id) {
-        try {
-            return ApiResponse.success(aiAnalysisService.listVersions(id));
-        } catch (Exception e) {
-            log.error("[TicketController] 查询 AI 分析版本失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询 AI 分析版本失败: " + e.getMessage());
-        }
+        return ApiResponse.success(aiAnalysisService.listVersions(id));
     }
 
     /**
@@ -856,16 +659,11 @@ public class TicketController {
     @PostMapping("/ai-analysis/{analysisId}/feedback")
     public ApiResponse<Map<String, Object>> aiAnalysisFeedback(@PathVariable Long analysisId,
                                                                @RequestBody FeedbackRequest req) {
-        try {
-            boolean ok = aiAnalysisService.recordFeedback(analysisId, req.helpful());
-            if (!ok) {
-                return ApiResponse.error(40004, "分析不存在: " + analysisId);
-            }
-            return ApiResponse.success(Map.of("analysisId", analysisId, "helpful", req.helpful()));
-        } catch (Exception e) {
-            log.error("[TicketController] 记录 AI 分析反馈失败 | analysisId={}", analysisId, e);
-            return ApiResponse.error(50001, "记录反馈失败: " + e.getMessage());
+        boolean ok = aiAnalysisService.recordFeedback(analysisId, req.helpful());
+        if (!ok) {
+            return ApiResponse.error(ApiCode.NOT_FOUND, "分析不存在: " + analysisId);
         }
+        return ApiResponse.success(Map.of("analysisId", analysisId, "helpful", req.helpful()));
     }
 
     /**
@@ -873,12 +671,7 @@ public class TicketController {
      */
     @GetMapping("/ai-analysis/stats")
     public ApiResponse<Map<String, Object>> aiAnalysisStats() {
-        try {
-            return ApiResponse.success(aiAnalysisService.accuracyStats());
-        } catch (Exception e) {
-            log.error("[TicketController] 查询 AI 分析统计失败", e);
-            return ApiResponse.error(50001, "查询统计失败: " + e.getMessage());
-        }
+        return ApiResponse.success(aiAnalysisService.accuracyStats());
     }
 
     /**

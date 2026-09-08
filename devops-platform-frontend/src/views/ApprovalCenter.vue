@@ -7,8 +7,9 @@
  *
  * 对齐蓝图 §二：P0/P1 高危动作必须人工审查确认后才执行。
  */
+import { notify } from '@/utils/notify'
 import { ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { ShieldCheck, RefreshCw, Check, X, Clock, AlertTriangle } from 'lucide-vue-next'
 import {
   useApprovalListQuery,
@@ -16,8 +17,7 @@ import {
   type ApprovalRequest,
 } from '@/api/queries/approval.query'
 import RelativeTime from '@/components/common/RelativeTime.vue'
-import AppEmpty from '@/components/common/AppEmpty.vue'
-import ApiErrorState from '@/components/common/ApiErrorState.vue'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 
 const STATUS_TABS = [
   { value: 'PENDING', label: '待审批' },
@@ -82,7 +82,17 @@ const switchTab = (tab: string) => {
   activeTab.value = tab
 }
 
+/**
+ * 是否有任意审批正在处理中。
+ *
+ * 用它而非 `actingId === row.id` 做禁用判据——审批批准会触发真实的
+ * 自动化执行，并行下发无法保证顺序，详见模板处的说明。
+ */
+const acting = computed(() => actingId.value !== null)
+
 const doApprove = async (row: ApprovalRequest) => {
+  // 双保险：模板已禁用，但快捷键/程序化调用仍可能绕过
+  if (acting.value) return
   try {
     await ElMessageBox.confirm(
       `确认批准并执行「${row.summary}」吗？批准后系统将立即执行该动作。`,
@@ -96,9 +106,9 @@ const doApprove = async (row: ApprovalRequest) => {
     // 批准成功但执行失败必须如实区分（6.57 契约：人的决策已成事实，
     // 执行失败标 EXECUTE_FAILED 供人工介入，不能笼统报「已批准」）
     if (updated.status === 'EXECUTE_FAILED') {
-      ElMessage.warning(`已批准，但执行失败：${updated.executeResult || '未知原因'}`)
+      notify.warning(`已批准，但执行失败：${updated.executeResult || '未知原因'}`)
     } else {
-      ElMessage.success(`已批准并执行：${updated.executeResult || '成功'}`)
+      notify.success(`已批准并执行：${updated.executeResult || '成功'}`)
     }
     // 列表与导航栏待审角标由 mutation 的 invalidateQueries 一并刷新，
     // 不再需要手动 fetchList + emit('approval-decided')
@@ -110,6 +120,7 @@ const doApprove = async (row: ApprovalRequest) => {
 }
 
 const doReject = async (row: ApprovalRequest) => {
+  if (acting.value) return
   let reason: string
   try {
     const r = await ElMessageBox.prompt(
@@ -127,7 +138,7 @@ const doReject = async (row: ApprovalRequest) => {
   actingId.value = row.id
   try {
     await rejectMutation.mutateAsync({ id: row.id, reason })
-    ElMessage.success('已驳回')
+    notify.success('已驳回')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   } finally {
@@ -177,17 +188,22 @@ const forbidden = computed(() => {
         <h3>无审批权限</h3>
         <p>审批为管理员专属操作，当前账号无权访问。</p>
       </div>
-      <div v-else-if="loading && items.length === 0" class="skeleton-wrap">
-        <div v-for="n in 5" :key="n" class="skeleton-bar" />
-      </div>
-      <div v-else-if="loadError" class="state-wrap">
-        <ApiErrorState :error="loadError" compact retry-label="重试" @retry="fetchList" />
-      </div>
-      <div v-else-if="items.length === 0" class="state-wrap">
-        <AppEmpty size="sm" :description="activeTab === 'PENDING' ? '暂无待审批事项' : '无记录'" />
-      </div>
-
-      <div v-else class="table-container">
+      <!--
+        四态统一（与 TicketList / AlertList 共用）。
+        注意原实现的错误分支没有 `items.length === 0` 条件：切 tab 时
+        若请求失败，已加载的列表会被整个换成错误页。Boundary 改为保留旧数据
+        并在顶部给可重试的提示条——审批场景下让手上的待办凭空消失是不可接受的。
+      -->
+      <DataStateBoundary
+        v-else
+        :loading="loading"
+        :error="loadError"
+        :count="items.length"
+        :empty-description="activeTab === 'PENDING' ? '暂无待审批事项' : '无记录'"
+        :skeleton-rows="5"
+        @retry="fetchList"
+      >
+      <div class="table-container">
         <el-table :data="items" border stripe row-key="id">
           <el-table-column label="风险" width="96" align="center">
             <template #default="{ row }">
@@ -229,10 +245,30 @@ const forbidden = computed(() => {
           <el-table-column label="操作" width="170" fixed="right">
             <template #default="{ row }">
               <div v-if="isPending(row)" class="actions">
-                <button class="act act-approve" :disabled="actingId === row.id" @click="doApprove(row)">
-                  <Check :size="14" /> 批准
+                <!--
+                  禁用条件是 `acting`（有任意审批在处理中）而非 `actingId === row.id`。
+
+                  原写法只锁住当前行：用户批准 A 之后（A 正在后端执行动作），
+                  可以立刻点 B 的批准。审批批准即**触发真实的自动化执行**，
+                  两个动作并行下发时，若它们操作同一资源（如同时重启同一服务），
+                  结果不可预测，而审批中心恰恰是「中高风险动作」的闸门。
+
+                  串行化的代价只是多等几秒，收益是执行顺序确定、审计时间线清晰。
+                -->
+                <button
+                  class="act act-approve"
+                  :disabled="acting"
+                  :title="acting && actingId !== row.id ? '有其它审批正在处理，请稍候' : ''"
+                  @click="doApprove(row)"
+                >
+                  <Check :size="14" /> {{ actingId === row.id ? '处理中…' : '批准' }}
                 </button>
-                <button class="act act-reject" :disabled="actingId === row.id" @click="doReject(row)">
+                <button
+                  class="act act-reject"
+                  :disabled="acting"
+                  :title="acting && actingId !== row.id ? '有其它审批正在处理，请稍候' : ''"
+                  @click="doReject(row)"
+                >
                   <X :size="14" /> 驳回
                 </button>
               </div>
@@ -241,6 +277,7 @@ const forbidden = computed(() => {
           </el-table-column>
         </el-table>
       </div>
+      </DataStateBoundary>
     </main>
   </div>
 </template>
@@ -257,10 +294,7 @@ const forbidden = computed(() => {
 .tabs { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .tab { padding: 6px 16px; border: 1px solid var(--color-border-light); border-radius: 20px; background: var(--color-surface); font-size: var(--text-sm); font-family: var(--font-body); color: var(--color-text-secondary); cursor: pointer; transition: all .15s; &:hover{color: var(--color-primary);} &.active{background: var(--color-primary); border-color: var(--color-primary); color:#fff;} }
 .state-wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:240px; background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding:32px; h3{margin:0; color: var(--color-text-primary);} p{margin:0; font-size: var(--text-sm); color: var(--color-text-secondary);} }
-.state-icon-warn { color: var(--color-warning, #e6a23c); }
-.skeleton-wrap { display:flex; flex-direction:column; gap:12px; background: var(--color-surface); border-radius: var(--radius-lg); padding:24px; box-shadow: var(--shadow-sm); }
-.skeleton-bar { height:20px; border-radius:6px; background: linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 37%,#f1f5f9 63%); background-size:400% 100%; animation: shimmer 1.4s ease infinite; }
-@keyframes shimmer { 0%{background-position:100% 50%;} 100%{background-position:0 50%;} }
+.state-icon-warn { color: var(--color-warning, var(--warning)); }
 @keyframes spin { from{transform:rotate(0);} to{transform:rotate(360deg);} }
 .table-container { background: var(--color-surface); border-radius: var(--radius-lg); padding:8px; box-shadow: var(--shadow-sm); overflow:hidden; }
 .summary-cell { display:flex; flex-direction:column; gap:2px; }
@@ -268,11 +302,11 @@ const forbidden = computed(() => {
 .summary-meta { font-size: var(--text-xs); color: var(--color-text-tertiary); font-family: var(--font-mono, monospace); }
 .result-cell { display:flex; flex-direction:column; gap:2px; font-size: var(--text-xs); color: var(--color-text-secondary); }
 .result-line { word-break: break-word; }
-.result-line.fail { color: var(--state-error, #f56c6c); }
+.result-line.fail { color: var(--state-error, var(--danger)); }
 .result-muted { color: var(--color-text-tertiary); }
 .actions { display:flex; gap:6px; }
 .act { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1px solid var(--color-border-light); border-radius: var(--radius-sm); font-size: var(--text-xs); font-family: var(--font-body); background: var(--color-surface); cursor:pointer; transition: all .15s; &:disabled{opacity:.5; cursor:not-allowed;} }
-.act-approve:hover:not(:disabled){ border-color: var(--state-success,#67c23a); color: var(--state-success,#67c23a); background: rgba(103,194,58,.08);}
-.act-reject:hover:not(:disabled){ border-color: var(--state-error,#f56c6c); color: var(--state-error,#f56c6c); background: rgba(245,108,108,.08);}
+.act-approve:hover:not(:disabled){ border-color: var(--state-success,var(--success)); color: var(--state-success,var(--success)); background: rgba(103,194,58,.08);}
+.act-reject:hover:not(:disabled){ border-color: var(--state-error,var(--danger)); color: var(--state-error,var(--danger)); background: rgba(245,108,108,.08);}
 .act-done { display:inline-flex; align-items:center; gap:4px; font-size: var(--text-xs); color: var(--color-text-tertiary); }
 </style>

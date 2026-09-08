@@ -28,6 +28,15 @@ import java.util.Map;
 @Service
 public class KnowledgeDocService {
 
+    /**
+     * 单次补偿向量化的文档数上限。
+     *
+     * <p>与 {@code SagaController.listNeedingAttention}、{@code AlertController.listAlerts}
+     * 等既有分页入口取同一口径（200）。这里的每一条都比普通分页昂贵得多——
+     * 一次远程 embedding 调用 + 一次语义缓存清空，故不能更宽松。</p>
+     */
+    static final int MAX_REINDEX_BATCH = 200;
+
     private final KnowledgeDocRepository docRepo;
     private final KnowledgeDocHistoryRepository historyRepo;
     private final KnowledgeDocTagRepository tagRepo;
@@ -161,7 +170,8 @@ public class KnowledgeDocService {
                 log.debug("🧹 [KnowledgeDoc] 更新内容已清洗 | docId={} | 清洗后长度={}", docId, cr.content().length());
             }
             if (cr.dupeWarning() != null) {
-                log.warn("⚠️ [KnowledgeDoc] 更新内容含重复段落（仅告警）| docId={} | 占比={:.1%}", docId, cr.dupeWarning().ratio());
+                log.warn("⚠️ [KnowledgeDoc] 更新内容含重复段落（仅告警）| docId={} | 占比={}%",
+                        docId, String.format("%.1f", cr.dupeWarning().ratio() * 100));
             }
             newContent = cr.content();
         }
@@ -193,6 +203,18 @@ public class KnowledgeDocService {
         if (patch.getExpiredAt() != null) existing.setExpiredAt(patch.getExpiredAt());
         if (patch.getKnowledgeSource() != null) existing.setKnowledgeSource(patch.getKnowledgeSource());
         if (patch.getStatus() != null) existing.setStatus(patch.getStatus());
+        // C1：可见性变更需要记录下来，供下方判断是否重建切片
+        boolean visibilityChanged = false;
+        if (patch.getVisibility() != null
+                && !patch.getVisibility().equals(existing.getVisibility())) {
+            existing.setVisibility(patch.getVisibility());
+            visibilityChanged = true;
+        }
+        if (patch.getOwnerDept() != null
+                && !patch.getOwnerDept().equals(existing.getOwnerDept())) {
+            existing.setOwnerDept(patch.getOwnerDept());
+            visibilityChanged = true;
+        }
         existing.setContent(newContent);
         existing.setContentHash(newHash);
 
@@ -202,7 +224,11 @@ public class KnowledgeDocService {
         // 文档显示已发布实则不可检索（6.22 联调发现的真实缺陷）。
         boolean shouldIndexNow = KnowledgeDocLifecycle.shouldBeIndexed(existing.getStatus());
         boolean currentlyIndexed = KnowledgeDocLifecycle.INDEX_INDEXED.equals(existing.getIndexStatus());
-        boolean needReindex = shouldIndexNow && (contentChanged || !currentlyIndexed);
+        // C1：可见性变更也必须重建切片。切片表冗余了 visibility/owner_dept
+        // 供检索层免 JOIN 过滤，若只改文档不刷切片，切片上仍是旧的宽松权限——
+        // 表现为「文档已设为受限，但 AI 与检索接口仍能读到它」，是无声的越权。
+        boolean needReindex = shouldIndexNow
+                && (contentChanged || visibilityChanged || !currentlyIndexed);
         if (needReindex) {
             existing.setIndexStatus(KnowledgeDocLifecycle.INDEX_PENDING);
         }
@@ -561,9 +587,40 @@ public class KnowledgeDocService {
     /**
      * 补偿向量化失败的文档（定时任务）。
      * 没有这一步，一次网络抖动就会让文档永久不可检索。
+     *
+     * <h3>为什么必须钳制 limit</h3>
+     * <p>
+     * 这个入参此前一路裸传到 {@code findNeedingIndex} 的 {@code LIMIT ?}，
+     * 全链路无任何上界。而它与普通列表分页不是一回事——
+     * <b>每一条待处理文档都会触发一次远程 embedding 调用</b>
+     * （{@code indexIfNeeded} → {@code indexer.reindex}），
+     * 且每条成功后还会 {@code clearAllCache} 清空语义缓存。
+     * </p>
+     * <p>
+     * 暴露它的 {@code POST /reindex/pending} 是无参数校验的公开端点，
+     * 一次 {@code ?limit=100000} 就能把库里全部待索引文档一次性拉起重嵌：
+     * 用户可见后果是 <b>embedding 账单被打爆 + 请求长时间挂起直至超时 +
+     * 语义缓存被反复清空导致全站问答退化到无缓存状态</b>。
+     * 这不是「查得慢一点」，是真实的成本与可用性事故。
+     * </p>
+     * <p>
+     * 上界取 200，与 {@code SagaController.listNeedingAttention}、
+     * {@code AlertController.listAlerts} 等既有分页入口同一口径；
+     * 下界取 1——{@code limit=0} 会静默地一条都不处理，
+     * 让调用方以为「没有待索引文档」，而真相是参数写错了。
+     * </p>
+     * <p>
+     * 剩余量不静默丢弃：本轮处理不完的下一轮继续，日志如实报告（6.24）。
+     * </p>
      */
     public int retryFailedIndexing(int limit) {
-        List<KnowledgeDoc> pending = docRepo.findNeedingIndex(limit);
+        int safeLimit = Math.min(Math.max(1, limit), MAX_REINDEX_BATCH);
+        if (safeLimit != limit) {
+            log.warn("⚠️ [KnowledgeDoc] 补偿向量化 limit 越界已钳制 | 传入={} | 生效={} | 上限={}"
+                    + "（每条都会触发远程 embedding 调用，不设上界会打爆账单）",
+                    limit, safeLimit, MAX_REINDEX_BATCH);
+        }
+        List<KnowledgeDoc> pending = docRepo.findNeedingIndex(safeLimit);
         int succeeded = 0;
         for (KnowledgeDoc doc : pending) {
             IndexOutcome outcome = indexIfNeeded(doc);
@@ -599,8 +656,9 @@ public class KnowledgeDocService {
                     doc.getId(), doc.getTitle(), cr.content().length());
         }
         if (cr.dupeWarning() != null) {
-            log.warn("⚠️ [KnowledgeDoc] 内容含重复段落（仅告警）| id={} | title={} | 占比={:.1%}",
-                    doc.getId(), doc.getTitle(), cr.dupeWarning().ratio());
+            log.warn("⚠️ [KnowledgeDoc] 内容含重复段落（仅告警）| id={} | title={} | 占比={}%",
+                    doc.getId(), doc.getTitle(),
+                    String.format("%.1f", cr.dupeWarning().ratio() * 100));
         }
     }
 

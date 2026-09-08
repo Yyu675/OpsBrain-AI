@@ -353,16 +353,42 @@ public class DevOpsTicket implements Serializable {
     }
 
     /**
-     * 是否终态（SLA 计时已停止）
+     * 是否<b>计时终态</b>——SLA / 首响计时已停止。
      * <p>
-     * B1 起改为 public：Service 层判断「工单已终结，不允许确认接单/升级」时需要，
-     * 让每个调用方各写一遍 status 字符串比较会造成终态定义散落多处而漂移。
+     * 包含 RESOLVED / CLOSED / VOID：问题已解决就不该继续累计响应时长。
      * </p>
+     *
+     * <p><b>⚠️ 不要用它做「能不能继续操作」的门禁</b>。
+     * 「计时停止」与「不允许再操作」是两件事：
+     * RESOLVED 的工单仍然可以补做验证、可以重开、可以补根因——
+     * 只有 VOID（作废）才是真正不可再操作的。
+     * 判断后者请用 {@link #isImmutableStatus()}。</p>
+     *
+     * <p>历史教训：此前 5 处写操作把本方法当作操作门禁，
+     * 导致 RESOLVED 工单无法补做验证，而 {@code submitVerification} 里
+     * 「已是 RESOLVED 就不重复改状态」那段判断因此成了永远为真的死代码——
+     * 代码自身就暴露了作者预期 RESOLVED 能走到那里。</p>
      */
     public boolean isTerminalStatus() {
         if (status == null) return false;
         String s = status.toUpperCase();
         return "RESOLVED".equals(s) || "CLOSED".equals(s) || "VOID".equals(s);
+    }
+
+    /**
+     * 是否<b>不可变更态</b>——不允许再做任何写操作。
+     * <p>
+     * 只有 VOID（已作废）。作废是审计事实，复活会让
+     * 「这张单到底存不存在」变得不可判定，因此它是唯一真正的终点。
+     * </p>
+     * <p>
+     * 与 {@link #isTerminalStatus()} 的区别见后者的说明。
+     * 语义与 {@code TicketEnums.Status.isTerminal(String)} 一致，
+     * 此处提供实例方法版本，避免调用方各自写 status 字符串比较。
+     * </p>
+     */
+    public boolean isImmutableStatus() {
+        return TicketEnums.Status.isTerminal(status);
     }
 
     /**

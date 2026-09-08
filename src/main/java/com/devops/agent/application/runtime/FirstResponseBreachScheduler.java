@@ -51,7 +51,8 @@ public class FirstResponseBreachScheduler {
 
     private final DevOpsTicketRepository ticketRepository;
     private final TicketService ticketService;
-    private final com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier;
+    /** 通知渠道：依赖接口而非具体厂商实现（可插拔） */
+    private final com.devops.agent.domain.notify.Notifier notifier;
 
     /**
      * 开关：允许运维在数据迁移或压测期间临时停用，
@@ -62,10 +63,10 @@ public class FirstResponseBreachScheduler {
 
     public FirstResponseBreachScheduler(DevOpsTicketRepository ticketRepository,
                                         TicketService ticketService,
-                                        com.devops.agent.domain.notify.DingTalkNotifier dingTalkNotifier) {
+                                        com.devops.agent.domain.notify.Notifier notifier) {
         this.ticketRepository = ticketRepository;
         this.ticketService = ticketService;
-        this.dingTalkNotifier = dingTalkNotifier;
+        this.notifier = notifier;
     }
 
     /**
@@ -152,7 +153,7 @@ public class FirstResponseBreachScheduler {
                     + "- **首响时限**：" + t.getSla() + "\n"
                     + (overdue != null ? "- **已超时**：" + Math.abs(overdue) + " 分钟\n" : "")
                     + "- **负责人**：" + (t.getAssignee() != null ? t.getAssignee() : "待分配") + "\n";
-            dingTalkNotifier.send(high
+            notifier.send(high
                     ? com.devops.agent.domain.notify.NotifyMessage.urgent(title, md)
                     : com.devops.agent.domain.notify.NotifyMessage.normal(title, md));
         } catch (Exception e) {

@@ -1,0 +1,32 @@
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -101,6 +101,29 @@
+           SCHEMA_FAIL_FAST: 'true'
+         run: ./mvnw -B -ntp verify
+ 
++      - name: 评测指标基线对比（S4-3 CI 回归门禁）
++        # 接线批次 18（报告 121）。契约层指标由 AgentEvaluationTest 常驻落盘
++        # （MOCK 下同样覆盖）；RAG/LLM 层指标在 EVAL_RAG/EVAL_LLM 门内——
++        # eval_compare 只比双侧共有指标，层缺席不判负（语义见报告 118 §一）。
++        # 本步骤依赖 ubuntu-latest 托管 runner 预装的 node——评测工具链本来
++        # 就是 node 单文件脚本，不为此引 setup-node 增加供应链面。
++        # 前置（4-3.2 首跑即基线）：tools/audit/eval_baseline.json 须由
++        # EVAL_RAG 真实窗口首跑生成并人工 --update 提交后，本门禁才真正亮剑；
++        # 无基线时对比按首跑语义 rc=0 放行并打印引导，不会误红门禁。
++        run: |
++          node tools/audit/eval_compare.js \
++            --current target/eval-metrics.json \
++            --baseline tools/audit/eval_baseline.json
++
++      - name: 上传评测指标
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: backend-eval-metrics
++          path: target/eval-metrics.json
++          if-no-files-found: ignore
++          retention-days: 30
++
+       - name: 上传测试报告
+         if: always()
+         uses: actions/upload-artifact@v4

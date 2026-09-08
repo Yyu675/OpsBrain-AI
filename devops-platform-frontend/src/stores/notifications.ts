@@ -17,10 +17,23 @@ const VERSION = 1
 const MIGRATIONS: Record<number, Migrator> = {}
 
 /**
- * dismissedIds 有界上限：只保留最近 N 条已 dismiss 的告警 id，
- * 防止长时间运行后该数组无界增长（每次 dismiss 都 push）。
+ * dismissedIds / readIds 的有界上限。
+ *
+ * 两者都必须有界。此前只有 dismissedIds 做了截断，readIds 是纯 push——
+ * 而「已读」比「已忽略」高频得多（点一次「全部已读」就批量灌入 20 条），
+ * 值守人员长期使用同一浏览器，这个数组只增不减地写进 localStorage。
+ *
+ * 后果不只是占空间：persist 的 safeSet 对 QuotaExceededError 是**静默吞掉**的，
+ * 超限后所有偏好（列宽、主题、通知状态）都会看似保存成功实则丢失，
+ * 用户完全无从察觉。上限设为「显著大于一屏通知数」即可——
+ * 更早的告警早已不在通知列表里，记它的已读状态没有意义。
  */
 const MAX_DISMISSED_IDS = 200
+const MAX_READ_IDS = 500
+
+/** 只保留数组尾部（最近）的 max 项 */
+const capTail = (ids: number[], max: number): number[] =>
+  ids.length > max ? ids.slice(-max) : ids
 
 /** 挂载时从后端拉取的告警数（通知中心展示最近告警，非全量）。 */
 const BACKEND_PULL_SIZE = 20
@@ -56,6 +69,10 @@ export const useNotificationsStore = defineStore('notifications', {
   },
   actions: {
     _persist() {
+      // 在写盘这一个收口点做截断：各 action 只管 push，不必各自记得限长
+      // （此前 dismiss 记得、markRead/markAllRead 忘了，正是分散处理的代价）
+      this.readIds = capTail(this.readIds, MAX_READ_IDS)
+      this.dismissedIds = capTail(this.dismissedIds, MAX_DISMISSED_IDS)
       persist({
         readIds: this.readIds,
         dismissedIds: this.dismissedIds
@@ -123,13 +140,8 @@ export const useNotificationsStore = defineStore('notifications', {
     dismiss(id: number) {
       const idx = this.items.findIndex(n => n.id === id)
       if (idx >= 0) this.items.splice(idx, 1)
-      if (!this.dismissedIds.includes(id)) {
-        this.dismissedIds.push(id)
-        // 有界：仅保留最近 MAX_DISMISSED_IDS 条，防止无界增长
-        if (this.dismissedIds.length > MAX_DISMISSED_IDS) {
-          this.dismissedIds = this.dismissedIds.slice(-MAX_DISMISSED_IDS)
-        }
-      }
+      // 截断统一在 _persist 里做（见其注释），此处只管登记
+      if (!this.dismissedIds.includes(id)) this.dismissedIds.push(id)
       this._persist()
     },
     /**

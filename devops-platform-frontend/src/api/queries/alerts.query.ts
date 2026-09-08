@@ -18,7 +18,7 @@ import { handleServerError } from '@/utils/notify'
  * - loading/error 由 Query 维护，与三态渲染直接对接
  */
 
-export interface AlertListFilters {
+interface AlertListFilters {
   page: Ref<number>
   size: Ref<number>
   status: Ref<AlertStatus | ''>
@@ -91,4 +91,5 @@ export function useAlertMutations() {
   return { acknowledge, resolve, invalidateAll }
 }
 
+/** @public knip 假阳存证：re-export 给视图直接 import type 用（5.88.1 对该形态解析盲区，报告 128 §三）——版本收敛后删行复查 */
 export type { AlertsResponse }

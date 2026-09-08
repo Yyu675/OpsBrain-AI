@@ -12,7 +12,7 @@ import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz } from '../utils/http'
 
 /** 后端 sys_ticket_ai_analysis 记录 */
-export interface TicketAiAnalysis {
+interface TicketAiAnalysis {
   id: number
   ticketId: string
   version: number
@@ -29,7 +29,7 @@ export interface TicketAiAnalysis {
 }
 
 /** 保存分析的入参（结构化字段由前端解析） */
-export interface SaveAnalysisPayload {
+interface SaveAnalysisPayload {
   content: string
   reasons: string[]
   commands: string[]
@@ -60,7 +60,10 @@ export async function fetchLatestTicketAiAnalysis(ticketId: string): Promise<Tic
 }
 
 /**
- * 查询工单全部 AI 分析版本（version 倒序，供历史对比）
+ * 查询工单全部 AI 分析版本（version 倒序，供历史对比）。
+ *
+ * @public 与在用的 submitAiAnalysisFeedback 同域成对；后端 TICKET_AI_ANALYSIS_VERSIONS
+ * 路由在服务，「AI 分析历史对比」面板待接。
  */
 export async function fetchTicketAiAnalysisVersions(ticketId: string): Promise<TicketAiAnalysis[]> {
   const raw = await http.get<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_VERSIONS(ticketId))
@@ -76,7 +79,14 @@ export async function submitAiAnalysisFeedback(analysisId: number, helpful: bool
   unwrapBiz<unknown>(raw, '反馈提交失败')
 }
 
-/** AI 分析准确率统计 */
+/**
+ * AI 分析准确率统计（批次 27 恢复 export：4-4.1 AI 效果区真消费——
+ * 批 24 去化纪律的双向性范例：去化不是永别，需求出现即加回）。
+ *
+ * @public 消费面是「返回类型推断」：useAiAnalysisStatsQuery 不显式 import
+ * 本类型名（TS 由 queryFn 返回值推断），knip 看不见→假阳；批 29 在此定型
+ * 第四种豁免形态（返回类型推断消费）。
+ */
 export interface AiAnalysisStats {
   total: number
   rated: number
@@ -86,7 +96,10 @@ export interface AiAnalysisStats {
 }
 
 /**
- * AI 分析准确率统计（供数据概览展示）
+ * AI 分析准确率统计（供数据概览展示）。
+ *
+ * @public 与同文件 submitAiAnalysisFeedback 构成「反馈→统计」闭环对；
+ * 后端统计路由在服务，概览页接入面待接。
  */
 export async function fetchAiAnalysisStats(): Promise<AiAnalysisStats> {
   const raw = await http.get<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_STATS)

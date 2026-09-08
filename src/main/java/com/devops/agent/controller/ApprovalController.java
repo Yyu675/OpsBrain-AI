@@ -3,6 +3,7 @@ package com.devops.agent.controller;
 import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.dev33.satoken.stp.StpUtil;
 import com.devops.agent.application.runtime.ApprovalOrchestrator;
+import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.approval.ApprovalRequest;
 import com.devops.agent.domain.approval.ApprovalService;
@@ -62,16 +63,11 @@ public class ApprovalController {
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        try {
-            if (status == null || status.isBlank() || "PENDING".equalsIgnoreCase(status)) {
-                return ApiResponse.success(approvalService.listPending(page, size));
-            }
-            String filter = "ALL".equalsIgnoreCase(status) ? null : status.trim().toUpperCase();
-            return ApiResponse.success(approvalService.listByStatus(filter, page, size));
-        } catch (Exception e) {
-            log.error("❌ [ApprovalController] 查询审批列表失败", e);
-            return ApiResponse.error(50001, "查询审批列表失败");
+        if (status == null || status.isBlank() || "PENDING".equalsIgnoreCase(status)) {
+            return ApiResponse.success(approvalService.listPending(page, size));
         }
+        String filter = "ALL".equalsIgnoreCase(status) ? null : status.trim().toUpperCase();
+        return ApiResponse.success(approvalService.listByStatus(filter, page, size));
     }
 
     /** 待审数（前端角标） */
@@ -86,10 +82,10 @@ public class ApprovalController {
         try {
             return ApiResponse.success(approvalService.getById(id));
         } catch (ApprovalService.ApprovalException e) {
-            return ApiResponse.error(40004, e.getMessage());
+            return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 查询审批单失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询审批单失败");
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "查询审批单失败");
         }
     }
 
@@ -111,11 +107,11 @@ public class ApprovalController {
             return ApiResponse.success(result, msg);
         } catch (ApprovalService.ApprovalException e) {
             // 不存在 / 已被他人处理
-            int code = e.getMessage() != null && e.getMessage().contains("不存在") ? 40004 : 40102;
+            int code = e.getMessage() != null && e.getMessage().contains("不存在") ? ApiCode.NOT_FOUND : ApiCode.APPROVAL_ALREADY_DECIDED;
             return ApiResponse.error(code, e.getMessage());
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 批准失败 | id={}", id, e);
-            return ApiResponse.error(50001, "批准失败，请稍后重试");
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "批准失败，请稍后重试");
         }
     }
 
@@ -129,13 +125,13 @@ public class ApprovalController {
             return ApiResponse.success(orchestrator.reject(id, approver, reason), "已驳回");
         } catch (ApprovalService.ApprovalException e) {
             String msg = e.getMessage() != null ? e.getMessage() : "驳回失败";
-            int code = msg.contains("不存在") ? 40004
-                    : msg.contains("理由") ? 40001
-                    : 40102;
+            int code = msg.contains("不存在") ? ApiCode.NOT_FOUND
+                    : msg.contains("理由") ? ApiCode.BAD_REQUEST
+                    : ApiCode.APPROVAL_ALREADY_DECIDED;
             return ApiResponse.error(code, msg);
         } catch (Exception e) {
             log.error("❌ [ApprovalController] 驳回失败 | id={}", id, e);
-            return ApiResponse.error(50001, "驳回失败，请稍后重试");
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "驳回失败，请稍后重试");
         }
     }
 

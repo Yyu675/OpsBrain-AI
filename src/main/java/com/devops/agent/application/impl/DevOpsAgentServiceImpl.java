@@ -1,5 +1,7 @@
 package com.devops.agent.application.impl;
 
+import com.devops.agent.common.dto.ApiCode;
+
 import cn.dev33.satoken.stp.StpUtil;
 
 import com.devops.agent.application.runtime.CostQuotaManager;
@@ -12,6 +14,9 @@ import com.devops.agent.application.DevOpsAgentService;
 import com.devops.agent.application.router.DevOpsAgentEngine;
 import com.devops.agent.application.router.DevOpsIntentRouter;
 import com.devops.agent.common.context.TraceContext;
+import com.devops.agent.domain.rag.AgentKnowledgeScopeHolder;
+import com.devops.agent.domain.rag.KnowledgeScope;
+import com.devops.agent.domain.rag.KnowledgeScopeResolver;
 import com.devops.agent.common.exception.SecurityGuardException;
 import com.devops.agent.common.guard.SecurityInputGuard;
 import com.devops.agent.application.memory.AgentMemoryManager;
@@ -46,10 +51,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutionException;
+import com.devops.agent.infrastructure.concurrent.ManagedExecutors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -126,7 +134,13 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      * 与会话执行器物理隔离，避免记账高峰挤占会话线程导致 SSE 延迟。
      * </p>
      */
-    private final Executor auditExecutor = Executors.newFixedThreadPool(2);
+    // F4：改用有界队列。Executors.newFixedThreadPool 内部是无参
+    // LinkedBlockingQueue（容量 Integer.MAX_VALUE），审计任务堆积时会
+    // 无声无息地涨到 OOM——线程池指标一切正常，直到内存耗尽。
+    // 审计属「丢了就是证据缺失」，故队列满时用 CallerRuns 退化为同步写，
+    // 宁可让这次请求慢一点，也不丢记账。
+    private final ExecutorService auditExecutor =
+            ManagedExecutors.forCriticalWrites("agent-audit", 2, 1000);
 
     /**
      * 取消标记表（P2-25）。
@@ -140,6 +154,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
     /** 审批服务（方向 D）：高危工单落审批单，替代此前的「丢弃」 */
     private final com.devops.agent.domain.approval.ApprovalService approvalService;
+
+    /** C1：知识可见范围解析器。必须在请求线程调用（依赖 Sa-Token ThreadLocal） */
+    private final KnowledgeScopeResolver knowledgeScopeResolver;
 
     public DevOpsAgentServiceImpl(SecurityInputGuard securityGuard,
                                    SemanticCacheService cacheService,
@@ -156,7 +173,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                                    SagaCompensationManager sagaManager,
                                    TicketDraftParser draftParser,
                                    com.devops.agent.domain.approval.ApprovalService approvalService,
-                                   ChatMemoryProvider chatMemoryProvider) {
+                                   ChatMemoryProvider chatMemoryProvider,
+                                   KnowledgeScopeResolver knowledgeScopeResolver) {
         this.securityGuard = securityGuard;
         this.cacheService = cacheService;
         this.intentRouter = intentRouter;
@@ -173,6 +191,18 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         this.draftParser = draftParser;
         this.approvalService = approvalService;
         this.chatMemoryProvider = chatMemoryProvider;
+        this.knowledgeScopeResolver = knowledgeScopeResolver;
+    }
+
+    /**
+     * 优雅停机（F4）：重新部署时把队列里待写的审计落完再退出。
+     * <p>此前无 @PreDestroy，重启会静默丢弃在途记账。</p>
+     * <p>sessionExecutor 是虚拟线程 per-task 执行器，无队列可积压，
+     * 且 SSE 连接本身会被容器关闭，无需额外处理。</p>
+     */
+    @jakarta.annotation.PreDestroy
+    public void shutdownExecutors() {
+        ManagedExecutors.shutdownGracefully(auditExecutor, "agent-audit", 5);
     }
 
     @Override
@@ -193,10 +223,18 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         // （与 6.6 traceId 跨线程同源）。解析为 final 供异步闭包捕获，优先 userId 回退 sessionId。
         final String quotaKey = resolveQuotaKey(sessionId);
 
+        // C1：知识可见范围同样必须在请求线程解析——Sa-Token 登录态是 ThreadLocal，
+        // 切到 sessionExecutor 虚拟线程后就取不到了（与 quotaKey 同源约束）。
+        final KnowledgeScope knowledgeScope = knowledgeScopeResolver.resolveCurrent();
+
         CompletableFuture.runAsync(() -> {
             try {
                 // 设置 traceId 到 ThreadLocal(供工单创建时使用)
                 TraceContext.setTraceId(traceId);
+                // 把可见范围放进本线程，供工具检索取用。
+                // 注意：工具多数时候跑在模型 HTTP 回调线程，取不到本值，
+                // 届时会退化为「仅 PUBLIC」——这是刻意的保守失败方向。
+                AgentKnowledgeScopeHolder.set(knowledgeScope);
 
                 // 初始化会话状态（getOrCreateSession 已置初始态 NEW，无需再迁移到 NEW）
                 stateManager.getOrCreateSession(traceId, sessionId);
@@ -213,35 +251,52 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 }
 
                 // 预算分配：必选项 + 历史（按预算裁剪）
+                //
+                // ⚠️ 这里拿到的 includedHistory 是「按 token 预算裁剪后」的结果，
+                // 必须真正用出去。此前只取了 isWithinBudget() 做通过/拒绝判断，
+                // 裁剪结果被整个丢弃——预算管理器等于空转，
+                // 真正生效的只有 MessageWindowChatMemory 的<b>按条数</b>截断（20 条）。
+                // 二者不等价：运维场景里贴一段 5000 字符的日志/堆栈很常见，
+                // 20 条这样的消息约 6.7 万 token，是 32k 窗口的 2 倍多。
+                // 溢出后由模型侧静默截断，被切掉的往往是最早的关键前提，
+                // 表现为「AI 忘了前面说过的约束」——而系统这边毫无察觉。
                 var budgetCheck = budgetManager.allocate(query, history, List.of(), List.of());
                 if (!budgetCheck.isWithinBudget()) {
                     log.warn("⚠️ [Budget] 查询超出预算 | traceId={} | reason={}", traceId, budgetCheck.getDegradationReason());
-                    stateManager.transition(traceId, AgentState.FAILED,
-                            AgentStateTransition.TriggerType.FAILED, "预算超限: " + budgetCheck.getDegradationReason(), "SYSTEM", null);
+                    transitionOrWarn(traceId, AgentState.FAILED,
+                            AgentStateTransition.TriggerType.FAILED, "预算超限: " + budgetCheck.getDegradationReason());
                     recordLogAsync(traceId, query, "预算超限: " + budgetCheck.getDegradationReason(),
                             "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                             "REJECTED_BUDGET", "[]", "SYSTEM");
                     sendStartEvent(emitter, traceId, "budget_exceeded");
-                    sendErrorEvent(emitter, traceId, 40006, "问题过长，超出模型上下文窗口限制，请精简问题后重试");
+                    sendErrorEvent(emitter, traceId, ApiCode.BUDGET_EXCEEDED, "问题过长，超出模型上下文窗口限制，请精简问题后重试");
                     emitter.complete();
                     return;
+                }
+                // 采纳裁剪结果：后续注入模型的记忆锚点只用预算内的部分
+                List<String> budgetedHistory = budgetCheck.getIncludedHistory();
+                if (budgetedHistory.size() < history.size()) {
+                    log.info("✂️ [Budget] 历史已按 token 预算裁剪 | {} → {} 条 | traceId={}",
+                            history.size(), budgetedHistory.size(), traceId);
                 }
                 log.debug("📊 [Budget] 预检通过 | used={}/{} tokens", budgetCheck.getUsedTokens(), budgetCheck.getTotalBudget());
 
                 // ========== 步骤 1: 安全门卫拦截 ==========
                 log.debug("🔍 [Step 1/7] 安全门卫检查 | traceId={}", traceId);
                 securityGuard.check(query);
-                stateManager.transition(traceId, AgentState.CONTEXT_PREPARED,
-                        AgentStateTransition.TriggerType.SECURITY_PASSED, "安全检查通过", "SYSTEM", null);
+                transitionOrWarn(traceId, AgentState.CONTEXT_PREPARED,
+                        AgentStateTransition.TriggerType.SECURITY_PASSED, "安全检查通过");
 
                 // ========== 步骤 2: 语义缓存检查 ==========
                 log.debug("🔍 [Step 2/7] 语义缓存检查 | traceId={}", traceId);
-                String cachedAnswer = cacheService.tryHitCache(query);
+                // C2：缓存按权限域隔离。不带 scope 的话，高权限用户问出的答案
+                // 会被低权限用户用一个语义相近的问题命中，绕过全部权限检查。
+                String cachedAnswer = cacheService.tryHitCache(query, knowledgeScope.cacheScopeKey());
 
                 if (cachedAnswer != null) {
                     log.info("⚡ [CacheHit] 命中缓存 | traceId={}", traceId);
-                    stateManager.transition(traceId, AgentState.SUCCESS,
-                            AgentStateTransition.TriggerType.CACHE_HIT, "语义缓存命中", "SYSTEM", null);
+                    transitionOrWarn(traceId, AgentState.SUCCESS,
+                            AgentStateTransition.TriggerType.CACHE_HIT, "语义缓存命中");
                     // 记账（缓存命中）
                     recordLogAsync(traceId, query, cachedAnswer, "cache", true,
                             (int)(System.currentTimeMillis() - startTime), 0.0, "[]",
@@ -289,13 +344,13 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 var quotaCheck = quotaManager.preCheck(quotaKey, estimatedTokens, modelType);
                 if (!quotaCheck.isAllowed()) {
                     log.warn("⚠️ [Quota] 配额超限 | traceId={} | reason={} | detail={}", traceId, quotaCheck.getReason(), quotaCheck.getDetail());
-                    stateManager.transition(traceId, AgentState.FAILED,
-                            AgentStateTransition.TriggerType.FAILED, "配额超限: " + quotaCheck.getReason(), "SYSTEM", null);
+                    transitionOrWarn(traceId, AgentState.FAILED,
+                            AgentStateTransition.TriggerType.FAILED, "配额超限: " + quotaCheck.getReason());
                     recordLogAsync(traceId, query, quotaCheck.getReason() + " | " + quotaCheck.getDetail(),
                             routedModel, false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                             "REJECTED_QUOTA", "[]", "SYSTEM");
                     sendStartEvent(emitter, traceId, "quota_exceeded");
-                    sendErrorEvent(emitter, traceId, 40005, "请求超出配额限制: " + quotaCheck.getReason() + "，请稍后重试或联系管理员");
+                    sendErrorEvent(emitter, traceId, ApiCode.QUOTA_EXCEEDED, "请求超出配额限制: " + quotaCheck.getReason() + "，请稍后重试或联系管理员");
                     emitter.complete();
                     return;
                 }
@@ -309,12 +364,13 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                 // ========== 步骤 4: 流式执行 Agent 引擎 ==========
                 log.debug("🔍 [Step 4/7] 流式执行 Agent 引擎 | model={} | traceId={}", routedModel, traceId);
-                streamAgent(engine, query, traceId, sessionId, routedModel, startTime, emitter, modelType, quotaKey);
+                streamAgent(engine, query, traceId, sessionId, routedModel, startTime, emitter, modelType, quotaKey,
+                        knowledgeScope, memCtx.keyFactsText());
 
             } catch (SecurityGuardException e) {
                 log.warn("🚫 [SecurityGuard] 拦截 | traceId={} | reason={}", traceId, e.getMessage());
-                stateManager.transition(traceId, AgentState.FAILED,
-                        AgentStateTransition.TriggerType.FAILED, "安全拦截: " + e.getMessage(), "SYSTEM", null);
+                transitionOrWarn(traceId, AgentState.FAILED,
+                        AgentStateTransition.TriggerType.FAILED, "安全拦截: " + e.getMessage());
                 // 安全拦截必须留痕：记录攻击特征供红队复盘与规则调优
                 recordLogAsync(traceId, query, "[" + e.getCode() + "] " + e.getMessage(),
                         "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
@@ -324,16 +380,45 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
             } catch (Exception e) {
                 log.error("❌ [AgentService] 异常 | traceId={}", traceId, e);
-                stateManager.transition(traceId, AgentState.FAILED,
-                        AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + e.getMessage(), "SYSTEM", null);
-                recordLogAsync(traceId, query, "系统异常: " + e.getMessage(),
+                // 审计里必须带上**异常类型**，不能只写 getMessage()。
+                // NPE 这类异常 message 恒为 null，只记消息的话审计表里
+                // 只剩一句「系统异常: null」——等于什么都没记，
+                // 而客户端拿到的又是兜底的 50001，两头都看不出原因。
+                String detail = e.getClass().getSimpleName()
+                        + (e.getMessage() != null ? ": " + e.getMessage() : "");
+                // 带上首个业务栈帧：异常类型本身往往不足以定位
+                // （ConcurrentModificationException 可能来自任何一处共享集合遍历）。
+                // 只取 com.devops 包内的第一帧，避免把框架栈全塞进审计字段。
+                // 取前 4 帧且**不限包名**。
+                //
+                // 只取 com.devops 帧看起来更"干净"，但异常发生在第三方库内部时
+                // 就只能看到「调用它的那一行」——本项目为此多花了两轮 CI：
+                // 先报 streamAgent:681，修掉一处后变成 streamAgent:467，
+                // 两者都只是调用点。放开包名限制后一次就看到了真正的
+                // AbstractGuardrailService.hasInputGuardrails（LangChain4j 框架缺陷）。
+                //
+                // 4 帧是权衡：足够穿透一层框架封装，又不至于把整个栈塞进审计字段。
+                StringBuilder frames = new StringBuilder();
+                StackTraceElement[] st = e.getStackTrace();
+                for (int i = 0; i < Math.min(4, st.length); i++) {
+                    StackTraceElement f = st[i];
+                    String cls = f.getClassName();
+                    frames.append(" @").append(cls.substring(cls.lastIndexOf('.') + 1))
+                            .append('.').append(f.getMethodName())
+                            .append(':').append(f.getLineNumber());
+                }
+                detail += frames;
+                transitionOrWarn(traceId, AgentState.FAILED,
+                        AgentStateTransition.TriggerType.SYSTEM_ERROR, "系统异常: " + detail);
+                recordLogAsync(traceId, query, "系统异常: " + detail,
                         "none", false, (int) (System.currentTimeMillis() - startTime), 0.0, "[]",
                         "FAILED_SYSTEM", "[]", "SYSTEM");
-                sendErrorEvent(emitter, traceId, 50001, "服务内部异常，请稍后重试或联系管理员");
+                sendErrorEvent(emitter, traceId, ApiCode.INTERNAL_ERROR, "服务内部异常，请稍后重试或联系管理员");
                 emitter.complete();
             } finally {
-                // 清理 ThreadLocal 防止内存泄漏
+                // 清理 ThreadLocal 防止内存泄漏与跨请求串号
                 TraceContext.clear();
+                AgentKnowledgeScopeHolder.clear();
             }
         }, sessionExecutor);
     }
@@ -368,27 +453,106 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         return sessionId;
     }
 
+    /**
+     * @param knowledgeScope 请求线程解析出的可见范围。<b>必须由调用方传入</b>——
+     *                       本方法的回调运行在模型 HTTP 线程，Sa-Token 的
+     *                       ThreadLocal 早已丢失，在这里现取只会得到 null，
+     *                       进而让语义缓存退化成不分权限域的共享缓存
+     *                       （高权限用户的答案会被低权限用户命中）。
+     */
+    /**
+     * 温记忆锚点最大字符数。
+     *
+     * <p>锚点自身也占上下文，不设上限等于把「防溢出」的口子重新开在这里。
+     * 1200 字符按 CHARS_PER_TOKEN=1.5 折算约 800 token，相对 32k 窗口占比 2.5%，
+     * 既装得下十来条关键事实，又不至于挤占检索证据的空间。</p>
+     */
+    private static final int MAX_MEMORY_ANCHOR_CHARS = 1200;
+
+    /**
+     * 把温记忆（跨会话关键事实）拼成「记忆锚点」前缀
+     *
+     * <h3>为什么必须显式标注这是"已确认事实"</h3>
+     * 不加说明直接把事实丢进用户消息，模型会把它当成<b>用户本轮说的话</b>，
+     * 可能复述"你刚才说集群是 prod-a"——而用户这轮根本没提。
+     * 明确标注来源与用途，模型才会把它当背景而非当前输入。
+     *
+     * @param query        用户本轮提问
+     * @param keyFactsText 温记忆蒸馏出的关键事实，可为 null/空
+     * @return 拼装后的提示词；无事实时原样返回 query
+     */
+    private String buildPromptWithMemoryAnchor(String query, String keyFactsText) {
+        if (keyFactsText == null || keyFactsText.isBlank()) {
+            return query;
+        }
+        String facts = keyFactsText.trim();
+        if (facts.length() > MAX_MEMORY_ANCHOR_CHARS) {
+            // 截断而非丢弃：保留前段（蒸馏器按重要度排序，靠前的更关键）。
+            // 显式标注被截断，避免模型把残句当完整事实
+            facts = facts.substring(0, MAX_MEMORY_ANCHOR_CHARS) + "…（已截断）";
+            log.debug("✂️ [Memory] 温记忆锚点超长，已截断至 {} 字符", MAX_MEMORY_ANCHOR_CHARS);
+        }
+        return """
+                【历史会话已确认的事实（供参考，非本轮提问内容）】
+                %s
+
+                【本轮提问】
+                %s""".formatted(facts, query);
+    }
+
     private void streamAgent(DevOpsAgentEngine engine, String query, String traceId,
                              String sessionId, String routedModel, long startTime,
-                             SseEmitter emitter, CostQuotaManager.ModelType modelType, String quotaKey) {
+                             SseEmitter emitter, CostQuotaManager.ModelType modelType, String quotaKey,
+                             KnowledgeScope knowledgeScope, String keyFactsText) {
         // 注：会话与 CONTEXT_PREPARED 迁移已由 handleStreamChat 完成，此处不重复
 
         // 收集流式过程中的状态（工具结果、完整答案、引用出处）
-        StringBuilder answerBuilder = new StringBuilder();
-        List<Map<String, Object>> toolResults = new ArrayList<>();
-        List<String> citations = new ArrayList<>();
+        //
+        // ⚠️ 必须用线程安全容器：这三者由**不同线程**读写。
+        //
+        //   写：onPartialResponse / onToolExecuted 跑在模型的 HTTP 回调线程；
+        //   读：onCompleteResponse 里 toolResults.stream()、citations.stream()
+        //       以及 answerBuilder.toString()。
+        //
+        // LangChain4j 不保证这些回调在同一条线程上，也不保证 onToolExecuted
+        // 一定在 onCompleteResponse 之前**完全**结束——多工具场景下尤其如此。
+        // 用普通 ArrayList 时，遍历与 add 撞车会抛 ConcurrentModificationException，
+        // 被外层兜底 catch 吞成一句「50001 服务内部异常」，
+        // 用户看到的是「AI 挂了」，而日志里连出事的集合都指不出来。
+        //
+        // 这个缺陷单请求下几乎撞不到（回调间隔远大于执行时间），
+        // 只有并发或工具较多时才暴露——正是 SSE 并发集成测试抓出来的那一个。
+        //
+        // StringBuilder → StringBuffer：后者方法级 synchronized。
+        // token 逐字追加与最终 toString() 同样跨线程。
+        StringBuffer answerBuilder = new StringBuffer();
+        List<Map<String, Object>> toolResults = new CopyOnWriteArrayList<>();
+        List<String> citations = new CopyOnWriteArrayList<>();
         // P2-17：匹配工具结果中的引用标记 【来源：文档标题 - 章节】
         Pattern citationPattern = Pattern.compile("【来源：[^】]+】");
         CompletableFuture<Void> done = new CompletableFuture<>();
 
-        // P0-1 多轮记忆注入：@MemoryId 绑定 sessionId，LangChain4j 自动按会话隔离对话历史
-        TokenStream tokenStream = engine.chat(sessionId, query);
+        // P0-1 多轮记忆注入：@MemoryId 绑定 sessionId，LangChain4j 自动按会话隔离对话历史（热记忆/近 N 轮）。
+        //
+        // 温记忆（跨会话关键事实）不在 @MemoryId 的窗口里——它由 SummaryDistiller
+        // 从历史轮次蒸馏而来，存在 PostgreSQL。此前它被 loadContext 加载出来后
+        // 只拼进了一个用于预算计算的局部 history 变量，**从未送进模型**：
+        // engine.chat(sessionId, query) 只带会话 ID 与当前问题。
+        // 后果是三层记忆的「温层」在读取侧空转——用户上一轮确认过的环境信息
+        // （集群名、版本、已排除的原因）在窗口滚动出去后彻底丢失，
+        // AI 会重复追问已经回答过的事，而系统这边看不出任何异常。
+        //
+        // 这里以「记忆锚点」前缀的形式拼进 userMessage，而不是改接口签名：
+        // LangChain4j 的 @SystemMessage 是编译期常量，无法按会话动态注入；
+        // 拼进用户消息是侵入最小且对所有模型一致的做法。
+        String promptWithMemory = buildPromptWithMemoryAnchor(query, keyFactsText);
+        TokenStream tokenStream = engine.chat(sessionId, promptWithMemory);
 
         // 状态：证据就绪（进入引擎，检索将在工具内完成）
         // P1-1：此处仍在 sessionExecutor 线程（streamAgent 由 handleStreamChat 同步调用），
         // TraceContext 可用，但为统一显式传 traceId 避免依赖线程上下文。
-        stateManager.transition(traceId, AgentState.EVIDENCE_READY,
-                AgentStateTransition.TriggerType.RETRIEVAL_COMPLETED, "进入 Agent 引擎", "SYSTEM", null);
+        transitionOrWarn(traceId, AgentState.EVIDENCE_READY,
+                AgentStateTransition.TriggerType.RETRIEVAL_COMPLETED, "进入 Agent 引擎");
 
         tokenStream
                 .onPartialResponse(partial -> {
@@ -407,6 +571,23 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         log.warn("🛑 [Tool] 工具已取消，跳过写库 | tool={} | traceId={}", toolName, traceId);
                         return;
                     }
+
+                    // 状态：工具执行中。
+                    //
+                    // ⚠️ 必须在 writeTicketFromDraft 之前迁移。
+                    // 这两次迁移原本写在整个回调的末尾，排在写库之后——
+                    // 而 writeTicketFromDraft 内部遇到高风险工单会迁往 WAITING_APPROVAL。
+                    // 于是真实顺序变成「先 WAITING_APPROVAL、后 TOOLS_RUNNING」，
+                    // 后者从 WAITING_APPROVAL 出发不合法，被静默丢弃；
+                    // 更糟的是 WAITING_APPROVAL 本身也是从 EVIDENCE_READY 发起的（同样非法），
+                    // 结果「需要审批」这件事根本没能进入状态机（P1-2）。
+                    //
+                    // 按真实发生顺序记录，才是状态机存在的意义：
+                    // 工具开始执行 → 工具返回 → （写库，可能转审批）。
+                    transitionOrWarn(traceId, AgentState.TOOLS_RUNNING,
+                            AgentStateTransition.TriggerType.TOOL_STARTED, "工具调用：" + toolName);
+                    transitionOrWarn(traceId, AgentState.TOOLS_COMPLETED,
+                            AgentStateTransition.TriggerType.TOOL_COMPLETED, "工具返回：" + toolName);
 
                     // P1-3 Single Writer：从工具结果解析草稿，编排层统一落库
                     String displayResult;
@@ -439,16 +620,6 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         }
                     }
 
-                    // 状态：工具执行中 -> 工具完成
-                    // P1-1：onToolExecuted 在模型 HTTP 回调线程执行，TraceContext ThreadLocal
-                    // 不跨线程（getTraceId 返回 null），3 参 transition 会静默丢失迁移。
-                    // 故显式传闭包捕获的 traceId。双工具场景下第二次调用同样合法
-                    // (TOOLS_COMPLETED → TOOLS_RUNNING 已在 AgentState.canTransition 补边)。
-                    stateManager.transition(traceId, AgentState.TOOLS_RUNNING,
-                            AgentStateTransition.TriggerType.TOOL_STARTED, "工具调用：" + toolName, "SYSTEM", null);
-                    stateManager.transition(traceId, AgentState.TOOLS_COMPLETED,
-                            AgentStateTransition.TriggerType.TOOL_COMPLETED, "工具返回：" + toolName, "SYSTEM", null);
-
                     // 发送 tool_status 事件（1.1.0 仅支持执行后回调，status=success）
                     // P2-35：tool_status 放在写操作之后，状态反映真实落库结果。
                     // 非草稿工具（只读）无写操作，直接标记 success。
@@ -465,14 +636,17 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 .onCompleteResponse(response -> {
                     try {
                         // 状态：草稿就绪
-                        stateManager.transition(traceId, AgentState.DRAFT_READY,
-                                AgentStateTransition.TriggerType.DRAFT_GENERATED, "模型生成回答草稿", "SYSTEM", null);
+                        transitionOrWarn(traceId, AgentState.DRAFT_READY,
+                                AgentStateTransition.TriggerType.DRAFT_GENERATED, "模型生成回答草稿");
 
                         String finalAnswer = answerBuilder.toString();
 
                         // 步骤 5: 写入语义缓存
                         log.debug("🔍 [Step 5/6] 写入语义缓存 | traceId={}", traceId);
-                        cacheService.putCache(query, finalAnswer);
+                        // 写缓存必须带 scope，且与上面 tryHitCache 用同一个 key 口径。
+                        // 读带 scope 而写不带，会把答案存进「无域」桶里，
+                        // 下一个任意权限的用户都能命中——等于绕过全部权限检查。
+                        cacheService.putCache(query, finalAnswer, knowledgeScope.cacheScopeKey());
 
                         // 步骤 6: 异步记账（MVP-4 审计增强 + MVP-7 成本记录）
                         log.debug("🔍 [Step 6/6] 异步记账 | traceId={}", traceId);
@@ -507,8 +681,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                                 "CHAT", affectedResources, "SYSTEM");
 
                         // 状态：成功终态
-                        stateManager.transition(traceId, AgentState.SUCCESS,
-                                AgentStateTransition.TriggerType.SUCCESS, "流程正常结束", "SYSTEM", null);
+                        transitionOrWarn(traceId, AgentState.SUCCESS,
+                                AgentStateTransition.TriggerType.SUCCESS, "流程正常结束");
 
                         // P1-1 记忆：AI 回答入热记忆 + 关键事实蒸馏入温记忆
                         memoryManager.recordCompletedTurn(sessionId, traceId, query, finalAnswer,
@@ -525,9 +699,18 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 .onError(error -> {
                     try {
                         log.error("❌ [AgentStream] 流式执行异常 | traceId={}", traceId, error);
-                        // 状态：失败终态
-                        stateManager.transition(traceId, AgentState.FAILED,
-                                AgentStateTransition.TriggerType.SYSTEM_ERROR, "异常：" + error.getMessage(), "SYSTEM", null);
+
+                        // ⚠️ 此处刻意不立即迁往 FAILED。
+                        //
+                        // 原实现在这里就把状态打成 FAILED，而 FAILED 是终态、拒绝一切迁出。
+                        // 紧接着下面的 triggerSagaCompensation 在补偿失败时要迁往
+                        // MANUAL_ESCALATED，那次迁移必然被拒并静默丢弃——
+                        // 于是「Saga 回滚失败、有脏数据残留、需要人工清理」这个
+                        // 最需要被看见的信号，在状态机里完全不存在，只剩一行 error 日志（P1-2）。
+                        //
+                        // 正确的时序是：先走完补偿流程（补偿本身可能改写状态为
+                        // COMPENSATING / MANUAL_ESCALATED），再由补偿结果决定终态。
+                        // 见下方 triggerSagaCompensation 调用处。
 
                         // 记账：保留已生成的部分回答，便于定位截断位置
                         String partial = answerBuilder.toString();
@@ -556,9 +739,22 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
 
                         // P1-2 Saga：流式失败时逆序回滚已成功的写操作，避免半残状态。
                         // 典型场景：工单已建但模型后续生成失败，此时工单应作废。
+                        // 补偿内部会把状态推进到 COMPENSATING，失败时再推进到 MANUAL_ESCALATED。
                         triggerSagaCompensation(traceId, "流式执行失败: " + errMsg);
 
-                        sendErrorEvent(emitter, traceId, 50001, "Agent 执行失败，请稍后重试");
+                        // 状态：失败终态。
+                        // 放在补偿之后，让补偿有机会先落下自己的状态轨迹。
+                        // 若补偿已把会话升级为 MANUAL_ESCALATED（需人工清理脏数据），
+                        // 就不再覆盖成 FAILED——「有残留待人工处理」比「失败了」信息量大得多，
+                        // 且 MANUAL_ESCALATED 后续还要能走到 CLOSED 归档。
+                        AgentState afterCompensation = stateManager.getCurrentState(traceId);
+                        if (afterCompensation != AgentState.MANUAL_ESCALATED) {
+                            transitionOrWarn(traceId, AgentState.FAILED,
+                                    AgentStateTransition.TriggerType.SYSTEM_ERROR,
+                                    "异常：" + error.getMessage());
+                        }
+
+                        sendErrorEvent(emitter, traceId, ApiCode.INTERNAL_ERROR, "Agent 执行失败，请稍后重试");
                         emitter.complete();
                     } finally {
                         done.completeExceptionally(error);
@@ -632,9 +828,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         if (draft.needsApproval() && approvalRequired) {
             log.warn("🛑 [SingleWriter] 高风险工单需审批，转入审批队列 | title={} | traceId={}",
                     draft.title(), traceId);
-            stateManager.transition(traceId, AgentState.WAITING_APPROVAL,
-                    AgentStateTransition.TriggerType.APPROVAL_REQUIRED,
-                    "HIGH 优先级工单待审批: " + draft.title(), "SYSTEM", null);
+            transitionOrWarn(traceId, AgentState.WAITING_APPROVAL,
+                    AgentStateTransition.TriggerType.APPROVAL_REQUIRED, "HIGH 优先级工单待审批: " + draft.title());
 
             // 登记为 SKIPPED：未写库，无需补偿
             recordSagaStepWithState(traceId, sessionId, toolName,
@@ -789,6 +984,41 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
     }
 
     /**
+     * 迁移状态，失败时告警而非静默吞掉
+     * <p>
+     * {@code AgentStateManager.transition} 在迁移非法或会话不存在时返回 {@code null}。
+     * 编排层此前 <b>14 处调用无一检查返回值</b>，导致状态机里任何一条边写错，
+     * 表现形式都不是报错，而是「会话轨迹悄悄少了一段」——
+     * 而这恰恰是状态机唯一的存在意义。
+     * </p>
+     * <p>
+     * 本方法把这条静默路径变成显式告警。<b>刻意不抛异常</b>：
+     * 状态记录是可观测性设施，不是业务前置条件，
+     * 为了记一条轨迹而让用户的对话请求失败是本末倒置。
+     * 但它必须<b>吵</b>——日志里带上当前状态与目标状态，
+     * 让「哪条边缺了」在第一次发生时就能被定位，而不是靠事后逐行重放代码去推。
+     * </p>
+     *
+     * @return true 表示迁移成功落地
+     */
+    private boolean transitionOrWarn(String traceId, AgentState toState,
+                                     AgentStateTransition.TriggerType trigger, String detail) {
+        AgentStateTransition t = stateManager.transition(
+                traceId, toState, trigger, detail, "SYSTEM", null);
+        if (t == null) {
+            AgentState current = stateManager.getCurrentState(traceId);
+            log.error("🚨 [StateMachine] 状态迁移未落地，会话轨迹将缺失一段 | traceId={} | "
+                            + "current={} | target={} | trigger={} | detail={} | "
+                            + "原因：{}",
+                    traceId, current, toState, trigger, detail,
+                    current == null ? "会话不存在（可能已被空闲清理，或 traceId 传错）"
+                            : "该迁移在状态机中非法，请检查 AgentState.canTransition");
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * 触发 Saga 补偿（流式失败时逆序回滚已成功的写操作）
      *
      * @param traceId 追踪 ID（= sagaId）
@@ -798,7 +1028,27 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         try {
             var result = sagaManager.compensateSaga(traceId, reason);
 
-            if (result.compensatedCount() > 0 || result.failedCount() > 0) {
+            // 「本次补偿是否真的动了东西」——compensateSaga 在无待补偿步骤时返回 noop。
+            //
+            // 状态迁移必须挂在这个判断里面，不能无条件执行。onError 是所有流式失败的
+            // 公共出口，绝大多数失败（模型超时、网络抖动、安全拦截后的异常）
+            // 根本没发生过写操作，此时会话还停在 EVIDENCE_READY 之类的早期状态，
+            // 而 COMPENSATING 的合法前驱只有 TOOLS_COMPLETED / DRAFT_READY
+            // （写操作只可能发生在工具阶段）。
+            //
+            // 若无条件迁移，这些「无事可补偿」的常规失败每次都会撞非法迁移，
+            // 被 transitionOrWarn 打成 ERROR 日志——本轮刚加的告警会立刻变成噪音，
+            // 而告警一旦开始狼来了，真正的问题就再也没人看了。
+            boolean compensationRan = result.compensatedCount() > 0 || result.failedCount() > 0;
+
+            if (compensationRan) {
+                // 「正在回滚」此前从未进入过状态机：唯一一次迁移是补偿失败时的
+                // MANUAL_ESCALATED，而那条边要求 from 是 WAITING_APPROVAL/COMPENSATING，
+                // 编排层却从没把状态设成过 COMPENSATING，于是必然被拒。
+                // 补上这一步，后续的人工升级才有合法起点。
+                transitionOrWarn(traceId, AgentState.COMPENSATING,
+                        AgentStateTransition.TriggerType.COMPENSATION_STARTED, "开始 Saga 补偿: " + reason);
+
                 // 补偿动作本身要留痕
                 recordLogAsync(traceId, "[Saga 补偿]",
                         String.format("回滚成功 %d 步%s", result.compensatedCount(),
@@ -812,9 +1062,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                 // 补偿失败：脏数据残留，自动化无法收敛
                 log.error("🚨🚨 [Saga] 补偿未完全成功，需人工介入 | traceId={} | 失败步骤={}",
                         traceId, result.failed());
-                stateManager.transition(traceId, AgentState.MANUAL_ESCALATED,
-                        AgentStateTransition.TriggerType.MANUAL_TAKEOVER,
-                        "Saga 补偿失败，需人工清理: " + result.failed(), "SYSTEM", null);
+                transitionOrWarn(traceId, AgentState.MANUAL_ESCALATED,
+                        AgentStateTransition.TriggerType.MANUAL_TAKEOVER, "Saga 补偿失败，需人工清理: " + result.failed());
             }
         } catch (Exception e) {
             log.error("🚨 [Saga] 触发补偿时异常 | traceId={} | {}", traceId, e.getMessage(), e);
@@ -905,14 +1154,16 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
     private void recordLogAsync(String traceId, String query, String answer, String model,
                                  boolean isCached, int latencyMs, double cost, String citations,
                                  String operationType, String affectedResources, String operatorId) {
-        CompletableFuture.runAsync(() -> {
+        // A5：审计线程池是独立线程，MDC 不会自动传播。用 TraceContext.wrap 搬运，
+        // 否则「记账失败」这类日志将不带 traceId，恰恰是最需要关联排查的场景。
+        CompletableFuture.runAsync(TraceContext.wrap(() -> {
             try {
                 logService.saveLog(traceId, query, answer, model, isCached, latencyMs, cost, citations,
                         operationType, affectedResources, operatorId);
             } catch (Exception e) {
                 log.error("❌ [AgentLog] 记账失败 | traceId={}", traceId, e);
             }
-        }, auditExecutor);
+        }), auditExecutor);
     }
 
     /**

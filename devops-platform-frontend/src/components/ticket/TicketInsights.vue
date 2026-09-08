@@ -138,47 +138,47 @@ const hasTrend = computed(() => !!props.trend && props.trend.days.length > 0)
 .insights-panel { display: flex; flex-direction: column; gap: 12px; }
 .insight-section { display: flex; flex-direction: column; gap: 6px; }
 .insight-header { display: flex; align-items: center; gap: 4px; font-size: 0.75rem; }
-.insight-label { font-weight: 500; color: var(--color-text-primary, #111827); }
+.insight-label { font-weight: 500; color: var(--color-text-primary, var(--text-1)); }
 .insight-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 16px; height: 16px; padding: 0 4px;
   font-size: 0.625rem; font-weight: 600;
-  background: var(--color-primary-lighter, #E8F0FC); color: var(--color-primary, #409eff);
+  background: var(--color-primary-lighter, var(--brand-subtle)); color: var(--color-primary, var(--brand));
   border-radius: 8px;
 }
 /* 口径标注：说明趋势是全局而非本工单所属服务，避免用户误读 */
 .insight-scope {
   padding: 0 5px; height: 15px; line-height: 15px;
   font-size: 0.5625rem; font-weight: 500;
-  color: var(--color-text-tertiary, #9ca3af);
-  background: var(--color-bg-sunken, #f1f5f9);
+  color: var(--color-text-tertiary, var(--text-3));
+  background: var(--color-bg-sunken, var(--surface-2));
   border-radius: 3px;
 }
-.insight-loading, .insight-empty { font-size: 0.6875rem; color: var(--color-text-tertiary, #9ca3af); }
+.insight-loading, .insight-empty { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); }
 .insight-list { display: flex; flex-direction: column; gap: 4px; }
 .insight-link {
   display: flex; align-items: center; gap: 4px;
-  font-size: 0.6875rem; color: var(--color-primary, #409eff);
+  font-size: 0.6875rem; color: var(--color-primary, var(--brand));
   text-decoration: none; padding: 2px 0;
   border-radius: 3px; transition: background 0.15s;
 }
-.insight-link:hover { background: var(--color-primary-lighter, #E8F0FC); }
+.insight-link:hover { background: var(--color-primary-lighter, var(--brand-subtle)); }
 .insight-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .insight-id { font-family: monospace; font-size: 0.625rem; opacity: 0.7; }
 
 .confidence-value { font-weight: 600; margin-left: auto; }
-.confidence-high { color: var(--state-success, #16A34A); }
-.confidence-mid { color: var(--state-warning, #D97706); }
-.confidence-low { color: var(--state-error, #DC2626); }
+.confidence-high { color: var(--state-success, var(--success)); }
+.confidence-mid { color: var(--state-warning, var(--warning)); }
+.confidence-low { color: var(--state-error, var(--danger)); }
 
 .confidence-bar {
   width: 100%; height: 3px; border-radius: 2px; overflow: hidden;
-  background: var(--color-bg-sunken, #EBEEF3);
+  background: var(--color-bg-sunken, var(--surface-2));
 }
 .confidence-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
-.confidence-fill.confidence-high { background: var(--state-success, #16A34A); }
-.confidence-fill.confidence-mid { background: var(--state-warning, #D97706); }
-.confidence-fill.confidence-low { background: var(--state-error, #DC2626); }
+.confidence-fill.confidence-high { background: var(--state-success, var(--success)); }
+.confidence-fill.confidence-mid { background: var(--state-warning, var(--warning)); }
+.confidence-fill.confidence-low { background: var(--state-error, var(--danger)); }
 
 /* 迷你趋势图例（图表本身关掉了图例，窄栏里会挤掉图形） */
 .trend-legend {
@@ -186,12 +186,12 @@ const hasTrend = computed(() => !!props.trend && props.trend.days.length > 0)
   gap: 12px;
   margin-top: 4px;
   font-size: 0.625rem;
-  color: var(--color-text-tertiary, #909399);
+  color: var(--color-text-tertiary, var(--text-3));
 }
 .legend-item { display: inline-flex; align-items: center; gap: 4px; }
 .legend-dot {
   width: 7px; height: 7px; border-radius: 2px; display: inline-block;
 }
-.legend-dot--created { background: #409eff; }
-.legend-dot--resolved { background: #67c23a; }
+.legend-dot--created { background: var(--brand); }
+.legend-dot--resolved { background: var(--success); }
 </style>

@@ -72,7 +72,22 @@ public class SagaCompensationManager {
             if (!record.isPendingCompensation()) {
                 continue;
             }
-            boolean ok = compensateStep(record);
+            // 单步的任何意外异常都不得中断整批补偿。
+            //
+            // compensateStep 内部只包住了「补偿动作调用」，而它之前的
+            // execRepo.updateState(id, COMPENSATING) 在 try 之外——
+            // 数据库瞬断时这一行会抛出，异常一路冒到这里，
+            // 后面几步的脏数据就再也没人清理了，且结果里也看不出它们被漏掉
+            // （只报了抛异常那一笔）。规则 2「尽力而为」此前只写在类注释里，
+            // 没有任何代码保证它。这里补上。
+            boolean ok;
+            try {
+                ok = compensateStep(record);
+            } catch (Exception e) {
+                log.error("🚨 [Saga] 补偿单步抛出意外异常，按失败计并继续后续补偿 | id={} | {}",
+                        record.getId(), e.toString());
+                ok = false;
+            }
             String label = record.getToolName() + "#" + record.getStepSeq()
                     + "(" + record.getBusinessKey() + ")";
             if (ok) {

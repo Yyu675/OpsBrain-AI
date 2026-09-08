@@ -16,5 +16,14 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "src/**/*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "src/**/*.d.ts"],
+  // 测试文件交给 tsconfig.vitest.json（它额外带 node 类型）。
+  // 不排除的话，测试里的 fs/path 导入会在这里报缺类型。
+  "exclude": [
+    "src/**/__tests__/**",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/test-setup.ts",
+    "src/test-utils/**"
+  ]
 }

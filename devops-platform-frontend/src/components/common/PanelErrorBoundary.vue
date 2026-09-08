@@ -79,7 +79,7 @@ const retry = () => {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--state-error-bg, #fef2f2);
+  background: var(--state-error-bg, var(--danger-subtle));
   color: var(--state-error, #ef4444);
   display: inline-flex;
   align-items: center;
@@ -117,7 +117,7 @@ const retry = () => {
   align-items: center;
   gap: 4px;
   padding: 6px 12px;
-  border: 1px solid var(--color-border-light, #e2e8f0);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-sm, 6px);
   background: var(--color-surface, #fff);
   color: var(--color-text-secondary, #64748b);
@@ -128,8 +128,8 @@ const retry = () => {
   white-space: nowrap;
 
   &:hover {
-    border-color: var(--color-primary, #3b82f6);
-    color: var(--color-primary, #3b82f6);
+    border-color: var(--color-primary, var(--brand));
+    color: var(--color-primary, var(--brand));
   }
 }
 </style>

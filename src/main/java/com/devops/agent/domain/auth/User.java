@@ -33,6 +33,12 @@ public class User {
     /** 状态：ACTIVE / DISABLED */
     private String status;
 
+    /**
+     * 所属部门（C1）：决定该用户能看到哪些 RESTRICTED 知识文档。
+     * <p>为 null 时看不到任何受限文档（最小权限）。</p>
+     */
+    private String dept;
+
     /** 末次登录时刻 */
     private LocalDateTime lastLoginAt;
 

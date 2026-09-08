@@ -1,0 +1,418 @@
+#!/bin/sh
+# ----------------------------------------------------------------------------
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Apache Maven Wrapper startup batch script, version 3.3.4
+#
+# Optional ENV vars
+# -----------------
+#   JAVA_HOME - location of a JDK home dir, required when download maven via java source
+#   MVNW_REPOURL - repo url base for downloading maven distribution
+#   MVNW_USERNAME/MVNW_PASSWORD - user and password for downloading maven
+#   MVNW_VERBOSE - true: enable verbose log; debug: trace the mvnw script; others: silence the output
+# ----------------------------------------------------------------------------
+
+set -euf
+[ "${MVNW_VERBOSE-}" != debug ] || set -x
+
+# OS specific support.
+native_path() { printf %s\\n "$1"; }
+case "$(uname)" in
+CYGWIN* | MINGW*)
+  [ -z "${JAVA_HOME-}" ] || JAVA_HOME="$(cygpath --unix "$JAVA_HOME")"
+  native_path() { cygpath --path --windows "$1"; }
+  ;;
+esac
+
+# set JAVACMD and JAVACCMD
+set_java_home() {
+  # For Cygwin and MinGW, ensure paths are in Unix format before anything is touched
+  if [ -n "${JAVA_HOME-}" ]; then
+    if [ -x "$JAVA_HOME/jre/sh/java" ]; then
+      # IBM's JDK on AIX uses strange locations for the executables
+      JAVACMD="$JAVA_HOME/jre/sh/java"
+      JAVACCMD="$JAVA_HOME/jre/sh/javac"
+    else
+      JAVACMD="$JAVA_HOME/bin/java"
+      JAVACCMD="$JAVA_HOME/bin/javac"
+
+      if [ ! -x "$JAVACMD" ] || [ ! -x "$JAVACCMD" ]; then
+        echo "The JAVA_HOME environment variable is not defined correctly, so mvnw cannot run." >&2
+        echo "JAVA_HOME is set to \"$JAVA_HOME\", but \"\$JAVA_HOME/bin/java\" or \"\$JAVA_HOME/bin/javac\" does not exist." >&2
+        return 1
+      fi
+    fi
+  else
+    JAVACMD="$(
+      'set' +e
+      'unset' -f command 2>/dev/null
+      'command' -v java
+    )" || :
+    JAVACCMD="$(
+      'set' +e
+      'unset' -f command 2>/dev/null
+      'command' -v javac
+    )" || :
+
+    if [ ! -x "${JAVACMD-}" ] || [ ! -x "${JAVACCMD-}" ]; then
+      echo "The java/javac command does not exist in PATH nor is JAVA_HOME set, so mvnw cannot run." >&2
+      return 1
+    fi
+  fi
+}
+
+# hash string like Java String::hashCode
+hash_string() {
+  str="${1:-}" h=0
+  while [ -n "$str" ]; do
+    char="${str%"${str#?}"}"
+    h=$(((h * 31 + $(LC_CTYPE=C printf %d "'$char")) % 4294967296))
+    str="${str#?}"
+  done
+  printf %x\\n $h
+}
+
+verbose() { :; }
+[ "${MVNW_VERBOSE-}" != true ] || verbose() { printf %s\\n "${1-}"; }
+
+die() {
+  printf %s\\n "$1" >&2
+  exit 1
+}
+
+trim() {
+  # MWRAPPER-139:
+  #   Trims trailing and leading whitespace, carriage returns, tabs, and linefeeds.
+  #   Needed for removing poorly interpreted newline sequences when running in more
+  #   exotic environments such as mingw bash on Windows.
+  printf "%s" "${1}" | tr -d '[:space:]'
+}
+
+# parse distributionUrl and optional distributionSha256Sum, requires .mvn/wrapper/maven-wrapper.properties
+while IFS="=" read -r key value; do
+  case "${key-}" in
+  distributionUrl) distributionUrl=$(trim "${value-}") ;;
+  distributionSha256Sum) distributionSha256Sum=$(trim "${value-}") ;;
+  esac
+done <"${0%/*}/.mvn/wrapper/maven-wrapper.properties"
+[ -n "${distributionUrl-}" ] || die "cannot read distributionUrl property in ${0%/*}/.mvn/wrapper/maven-wrapper.properties"
+
+case "${distributionUrl##*/}" in
+maven-mvnd-*bin.*)
+  MVN_CMD=mvnd.sh _MVNW_REPO_PATTERN=/maven/mvnd/
+  case "${PROCESSOR_ARCHITECTURE-}${PROCESSOR_ARCHITEW6432-}:$(uname -a)" in
+  *AMD64:CYGWIN* | *AMD64:MINGW*) distributionPlatform=windows-amd64 ;;
+  :Darwin*x86_64) distributionPlatform=darwin-amd64 ;;
+  :Darwin*arm64) distributionPlatform=darwin-aarch64 ;;
+  :Linux*x86_64*) distributionPlatform=linux-amd64 ;;
+  *)
+    echo "Cannot detect native platform for mvnd on $(uname)-$(uname -m), use pure java version" >&2
+    distributionPlatform=linux-amd64
+    ;;
+  esac
+  distributionUrl="${distributionUrl%-bin.*}-$distributionPlatform.zip"
+  ;;
+maven-mvnd-*) MVN_CMD=mvnd.sh _MVNW_REPO_PATTERN=/maven/mvnd/ ;;
+*) MVN_CMD="mvn${0##*/mvnw}" _MVNW_REPO_PATTERN=/org/apache/maven/ ;;
+esac
+
+# apply MVNW_REPOURL and calculate MAVEN_HOME
+# maven home pattern: ~/.m2/wrapper/dists/{apache-maven-<version>,maven-mvnd-<version>-<platform>}/<hash>
+[ -z "${MVNW_REPOURL-}" ] || distributionUrl="$MVNW_REPOURL$_MVNW_REPO_PATTERN${distributionUrl#*"$_MVNW_REPO_PATTERN"}"
+distributionUrlName="${distributionUrl##*/}"
+distributionUrlNameMain="${distributionUrlName%.*}"
+distributionUrlNameMain="${distributionUrlNameMain%-bin}"
+MAVEN_USER_HOME="${MAVEN_USER_HOME:-${HOME}/.m2}"
+MAVEN_HOME="${MAVEN_USER_HOME}/wrapper/dists/${distributionUrlNameMain-}/$(hash_string "$distributionUrl")"
+
+exec_maven() {
+  unset MVNW_VERBOSE MVNW_USERNAME MVNW_PASSWORD MVNW_REPOURL || :
+
+  # ---------------------------------------------------------------------
+  # CI 诊断增强（仅当 GITHUB_ACTIONS=true 时启用，本地行为完全不变）
+  #
+  # 背景：CI 的原始日志存放在 Azure blob，部分排障环境访问不到，
+  # 而 annotations API 默认只给一句 "Process completed with exit code 1"，
+  # 根本看不出是编译错、依赖解析失败还是测试失败。
+  #
+  # 这里在 CI 下改为「捕获输出 -> 失败时把关键行以 ::error:: 重放」，
+  # 让 GitHub 把它们转成 annotation，从而可通过 API 读取。
+  # 成功时原样输出、不加任何噪音。
+  # ---------------------------------------------------------------------
+  if [ "${GITHUB_ACTIONS-}" = "true" ]; then
+    _mvnw_log="${TMPDIR:-/tmp}/mvnw-ci-$$.log"
+    set +e
+    "$MAVEN_HOME/bin/$MVN_CMD" "$@" 2>&1 | tee "$_mvnw_log"
+    _mvnw_rc=${PIPESTATUS:-$?}
+    # POSIX sh 没有 PIPESTATUS，用 grep 兜底判定
+    if grep -qE "^\[ERROR\]|BUILD FAILURE" "$_mvnw_log"; then _mvnw_rc=1; fi
+    set -e
+    if [ "$_mvnw_rc" != "0" ]; then
+      # ⚠️ GitHub 对**单个 step 的 ::error:: 注解硬性上限是 10 条**，
+      # 超出的会被静默丢弃。此前这里先打 60 条 [ERROR]（其中前 10 条恰好是
+      # surefire 的「xxx <<< ERROR!」摘要行），把配额占满，
+      # 导致后面真正带异常类型与消息的详情一条都出不来——
+      # 上一轮误判成「网络取不到日志」，实际是自己的脚本把自己挤掉了。
+      #
+      # 因此改成：详情用 ::error:: （稀缺配额留给它），
+      # 概览一律用普通 echo 打进日志正文（不占注解配额）。
+      echo "::group::Maven 失败要点（自动提取）"
+      grep -E "^\[ERROR\]" "$_mvnw_log" \
+        | grep -vE "re-run Maven|Read the following|http://cwiki|To see the full stack|For more information about the errors" \
+        | head -60 \
+        | while IFS= read -r _line; do
+            printf '%s\n' "$_line"
+          done
+      echo "::endgroup::"
+
+      # 测试失败时补充断言详情。
+      #
+      # 上面只提取 [ERROR] 行，而 surefire 把「expected X but was Y」这类
+      # 关键信息放在 target/surefire-reports/*.txt 的堆栈里，不带 [ERROR] 前缀。
+      # 沙箱环境下 artifact 走 Azure blob 无法下载（防火墙），
+      # 只靠 [ERROR] 行会得到「9 个测试失败」却看不到任何一条失败原因。
+      # 探针：报告目录到底在哪。`verify` 会先跑 test 再打包，
+      # 若此处 PWD 与 Maven 的 basedir 不一致，相对路径就找不到东西。
+      # Maven 自身的 [ERROR] 摘要：编译错误、依赖解析失败等
+      # 不产生 surefire 报告的情况（编译错、依赖解析失败），只能靠这条通道看见。
+      #
+      # ⚠️ 但它**只在没有 surefire 报告时**才发注解。
+      # 注解配额只有 10 条，而 Maven 的 [ERROR] 摘要里前几条恰好是
+      # 「xxx <<< ERROR!」这类只说「哪个用例挂了」、不说「为什么」的行。
+      # 让它无条件发，就会把配额吃光，真正的异常类型一条都出不来——
+      # 本项目已因此多耗了两轮 CI（先是 SSE 定位，后是 KnowledgeDocService）。
+      #
+      # 有报告时这里退化为普通输出，配额整个让给下方的 surefire 详情。
+      # 探针：确认这段到底有没有跑、报告目录状态如何。
+      # 连自诊断断言消息都没出现，说明整个 surefire 重放块可能压根没执行。
+      _has_reports=0
+      if [ -d target/surefire-reports ] \
+         && [ -n "$(find target/surefire-reports -name '*.txt' -type f 2>/dev/null | head -1)" ]; then
+        _has_reports=1
+      fi
+      grep -E "^\[ERROR\]" "$_mvnw_log" \
+        | grep -vE "re-run Maven|Read the following|http://cwiki|To see the full stack|For more information" \
+        | head -6 \
+        | while IFS= read -r _e; do
+            _ec=$(printf '%s' "$_e" | sed 's/^\[ERROR\] *//; s/%/%25/g; s/\r/ /g' | cut -c1-300)
+            if [ -n "$_ec" ]; then
+              if [ "$_has_reports" = "1" ]; then
+                printf '%s\n' "$_ec"
+              else
+                echo "::error::$_ec"
+              fi
+            fi
+          done
+      # ── 编译错误专用通道（2026-08-26 新增）────────────────────────
+      # 编译失败时**不产生任何 surefire 报告**，上面那段 [ERROR] 概览
+      # 又因 _has_reports=0 走了注解通道、但 Maven 的编译错误摘要行
+      # 往往是「Compilation failure」这类无信息量的标题，
+      # 真正的 `路径:[行,列] 错误描述` 在其后的缩进行里，不带 [ERROR] 前缀。
+      #
+      # 上一轮就卡在这里：annotations 只有一句 exit code 1，
+      # 而完整日志与 artifact 都走 Azure blob（沙箱防火墙不可达），
+      # 导致「知道挂了、不知道为什么」，只能先 @Disabled 隔离。
+      #
+      # 这里直接从日志里捞 javac 的诊断行升级为注解，配额优先给它——
+      # 编译不过时根本没有测试详情要抢配额。
+      if ! [ -d target/surefire-reports ] \
+         || [ -z "$(find target/surefire-reports -name '*.xml' -type f 2>/dev/null | head -1)" ]; then
+        echo "----- 编译诊断（无 surefire 报告，疑似编译失败）-----"
+        grep -aE "\.java:\[[0-9]+,[0-9]+\]|COMPILATION ERROR|symbol:|location:|required:|found:" "$_mvnw_log" \
+          | head -8 \
+          | while IFS= read -r _l; do
+              _c=$(printf '%s' "$_l" | sed 's/^\[ERROR\] *//; s/%/%25/g; s/\r/ /g' | cut -c1-300)
+              if [ -n "$_c" ]; then echo "::error::$_c"; fi
+            done
+        echo "----- 编译诊断结束 -----"
+      fi
+
+      if [ -d target/surefire-reports ]; then
+        echo "----- 测试失败详情（surefire）-----"
+        # 只取失败/错误的报告，每个类最多 40 行，避免刷屏
+        # ⚠️ 必须用 find 而非 target/surefire-reports/*.txt。
+        # 本脚本开头是 `set -euf`，其中 -f 即 noglob——通配符**不会被展开**，
+        # grep 收到的是字面量 "*.txt"，匹配不到任何文件，整个循环空转。
+        # 这就是上一轮「详情凭空消失、且毫无报错」的真正原因：
+        # 不是网络、不是注解配额，是自己脚本里的 -f 把 glob 关掉了。
+        # ⚠️ 必须读 .xml 而非 .txt。
+        # 实测（CI 探针）：失败构建下 target/surefire-reports 有 64 个 .txt，
+        # 但 grep "FAILURE!|ERROR!" 匹配数为 0——失败详情只写进 .xml 的
+        # <failure>/<error> 节点，.txt 里那些是通过用例的摘要。
+        # 之前一直读 .txt，所以「找到了文件却一条详情都提取不出」。
+        #
+        # 本地仿真之所以一直是通的：我手工造的 txt 里塞了 "<<< ERROR!"，
+        # 与真实产物结构不同——这是仿真验证的固有盲区，
+        # 只有 CI 探针打出真实读数才能发现。
+        find target/surefire-reports -name '*.xml' -type f 2>/dev/null \
+          | xargs grep -lE "<(failure|error)" 2>/dev/null \
+          | head -10 \
+          | while IFS= read -r _rpt; do
+              # 文件名走普通输出：注解配额只有 10 条，必须全留给异常内容。
+              # 本轮排查 KnowledgeDocServiceWriteTest 时，8 个「xxx <<< ERROR!」
+              # 摘要行就把配额吃光了，真正的异常类型一条都没露出来。
+              printf '===== %s =====\n' "$(basename "$_rpt")"
+              # 取失败标记后紧跟的若干行：异常类型与消息在标记的**下一行**，
+              # 只 grep 关键词会漏掉它（上一轮因此只看到「9 个 ERROR」而无原因）。
+              # 只把「异常类型/消息」这类真正有信息量的行升级为注解，
+              # 摘要行（xxx <<< ERROR!）与栈帧走普通输出——
+              # 10 条注解配额必须花在能定位问题的内容上。
+              # XML 里失败信息形如：
+              #   <error message="..." type="java.lang.NullPointerException">
+              #     java.lang.NullPointerException: ...
+              #         at com.devops.X.y(X.java:1)
+              # 取 <failure/<error 标签行及其后续若干行
+              grep -A 6 -E "<(failure|error)( |$)" "$_rpt" \
+                | head -60 \
+                | while IFS= read -r _l; do
+                    _c=$(printf '%s' "$_l" | sed 's/%/%25/g; s/\r/ /g' | cut -c1-300)
+                    # 不能写 `[ -z "$_c" ] && continue`：脚本开头是 set -euf，
+                    # 该表达式在「行非空」时整体返回 1，会被 -e 判定为失败而中断
+                    # 整个 while 子 shell——表现为一条注解都发不出来，
+                    # 且没有任何报错（上一轮 CI 详情凭空消失即此原因）。
+                    if [ -n "$_c" ]; then
+                    case "$_c" in
+                      *"<<< ERROR!"*|*"<<< FAILURE!"*|"--"|*"	at "*|*"    at "*|"Tests run:"*|*"</"*)
+                        printf '%s\n' "$_c" ;;
+                      *)
+                        echo "::error::$_c" ;;
+                    esac
+                    fi
+                  done
+            done
+        echo "----- 详情结束 -----"
+      fi
+    fi
+    exit "$_mvnw_rc"
+  fi
+
+  exec "$MAVEN_HOME/bin/$MVN_CMD" "$@" || die "cannot exec $MAVEN_HOME/bin/$MVN_CMD"
+}
+
+if [ -d "$MAVEN_HOME" ]; then
+  verbose "found existing MAVEN_HOME at $MAVEN_HOME"
+  exec_maven "$@"
+fi
+
+case "${distributionUrl-}" in
+*?-bin.zip | *?maven-mvnd-?*-?*.zip) ;;
+*) die "distributionUrl is not valid, must match *-bin.zip or maven-mvnd-*.zip, but found '${distributionUrl-}'" ;;
+esac
+
+# prepare tmp dir
+if TMP_DOWNLOAD_DIR="$(mktemp -d)" && [ -d "$TMP_DOWNLOAD_DIR" ]; then
+  clean() { rm -rf -- "$TMP_DOWNLOAD_DIR"; }
+  trap clean HUP INT TERM EXIT
+else
+  die "cannot create temp dir"
+fi
+
+mkdir -p -- "${MAVEN_HOME%/*}"
+
+# Download and Install Apache Maven
+verbose "Couldn't find MAVEN_HOME, downloading and installing it ..."
+verbose "Downloading from: $distributionUrl"
+verbose "Downloading to: $TMP_DOWNLOAD_DIR/$distributionUrlName"
+
+# select .zip or .tar.gz
+if ! command -v unzip >/dev/null; then
+  distributionUrl="${distributionUrl%.zip}.tar.gz"
+  distributionUrlName="${distributionUrl##*/}"
+fi
+
+# verbose opt
+__MVNW_QUIET_WGET=--quiet __MVNW_QUIET_CURL=--silent __MVNW_QUIET_UNZIP=-q __MVNW_QUIET_TAR=''
+[ "${MVNW_VERBOSE-}" != true ] || __MVNW_QUIET_WGET='' __MVNW_QUIET_CURL='' __MVNW_QUIET_UNZIP='' __MVNW_QUIET_TAR=v
+
+# normalize http auth
+case "${MVNW_PASSWORD:+has-password}" in
+'') MVNW_USERNAME='' MVNW_PASSWORD='' ;;
+has-password) [ -n "${MVNW_USERNAME-}" ] || MVNW_USERNAME='' MVNW_PASSWORD='' ;;
+esac
+
+if [ -z "${MVNW_USERNAME-}" ] && command -v wget >/dev/null; then
+  verbose "Found wget ... using wget"
+  wget ${__MVNW_QUIET_WGET:+"$__MVNW_QUIET_WGET"} "$distributionUrl" -O "$TMP_DOWNLOAD_DIR/$distributionUrlName" || die "wget: Failed to fetch $distributionUrl"
+elif [ -z "${MVNW_USERNAME-}" ] && command -v curl >/dev/null; then
+  verbose "Found curl ... using curl"
+  curl ${__MVNW_QUIET_CURL:+"$__MVNW_QUIET_CURL"} -f -L -o "$TMP_DOWNLOAD_DIR/$distributionUrlName" "$distributionUrl" || die "curl: Failed to fetch $distributionUrl"
+elif set_java_home; then
+  verbose "Falling back to use Java to download"
+  javaSource="$TMP_DOWNLOAD_DIR/Downloader.java"
+  targetZip="$TMP_DOWNLOAD_DIR/$distributionUrlName"
+  cat >"$javaSource" <<-END
+	public class Downloader extends java.net.Authenticator
+	{
+	  protected java.net.PasswordAuthentication getPasswordAuthentication()
+	  {
+	    return new java.net.PasswordAuthentication( System.getenv( "MVNW_USERNAME" ), System.getenv( "MVNW_PASSWORD" ).toCharArray() );
+	  }
+	  public static void main( String[] args ) throws Exception
+	  {
+	    setDefault( new Downloader() );
+	    java.nio.file.Files.copy( java.net.URI.create( args[0] ).toURL().openStream(), java.nio.file.Paths.get( args[1] ).toAbsolutePath().normalize() );
+	  }
+	}
+	END
+  # For Cygwin/MinGW, switch paths to Windows format before running javac and java
+  verbose " - Compiling Downloader.java ..."
+  "$(native_path "$JAVACCMD")" "$(native_path "$javaSource")" || die "Failed to compile Downloader.java"
+  verbose " - Running Downloader.java ..."
+  "$(native_path "$JAVACMD")" -cp "$(native_path "$TMP_DOWNLOAD_DIR")" Downloader "$distributionUrl" "$(native_path "$targetZip")"
+fi
+
+# If specified, validate the SHA-256 sum of the Maven distribution zip file
+if [ -n "${distributionSha256Sum-}" ]; then
+  distributionSha256Result=false
+  if [ "$MVN_CMD" = mvnd.sh ]; then
+    echo "Checksum validation is not supported for maven-mvnd." >&2
+    echo "Please disable validation by removing 'distributionSha256Sum' from your maven-wrapper.properties." >&2
+    exit 1
+  elif command -v sha256sum >/dev/null; then
+    if echo "$distributionSha256Sum  $TMP_DOWNLOAD_DIR/$distributionUrlName" | sha256sum -c >/dev/null 2>&1; then
+      distributionSha256Result=true
+    fi
+  elif command -v shasum >/dev/null; then
+    if echo "$distributionSha256Sum  $TMP_DOWNLOAD_DIR/$distributionUrlName" | shasum -a 256 -c >/dev/null 2>&1; then
+      distributionSha256Result=true
+    fi
+  else
+    echo "Checksum validation was requested but neither 'sha256sum' or 'shasum' are available." >&2
+    echo "Please install either command, or disable validation by removing 'distributionSha256Sum' from your maven-wrapper.properties." >&2
+    exit 1
+  fi
+  if [ $distributionSha256Result = false ]; then
+    echo "Error: Failed to validate Maven distribution SHA-256, your Maven distribution might be compromised." >&2
+    echo "If you updated your Maven version, you need to update the specified distributionSha256Sum property." >&2
+    exit 1
+  fi
+fi
+
+# unzip and move
+if command -v unzip >/dev/null; then
+  unzip ${__MVNW_QUIET_UNZIP:+"$__MVNW_QUIET_UNZIP"} "$TMP_DOWNLOAD_DIR/$distributionUrlName" -d "$TMP_DOWNLOAD_DIR" || die "failed to unzip"
+else
+  tar xzf${__MVNW_QUIET_TAR:+"$__MVNW_QUIET_TAR"} "$TMP_DOWNLOAD_DIR/$distributionUrlName" -C "$TMP_DOWNLOAD_DIR" || die "failed to untar"
+fi
+printf %s\\n "$distributionUrl" >"$TMP_DOWNLOAD_DIR/$distributionUrlNameMain/mvnw.url"
+mv -- "$TMP_DOWNLOAD_DIR/$distributionUrlNameMain" "$MAVEN_HOME" || [ -d "$MAVEN_HOME" ] || die "fail to move MAVEN_HOME"
+
+clean || :
+exec_maven "$@"

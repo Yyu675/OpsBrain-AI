@@ -1,5 +1,7 @@
 package com.devops.agent.common.guard;
 
+import com.devops.agent.common.dto.ApiCode;
+
 import com.devops.agent.common.exception.SecurityGuardException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,12 +43,12 @@ public class SecurityInputGuard {
      */
     public void check(String userInput) {
         if (userInput == null || userInput.trim().isEmpty()) {
-            throw new SecurityGuardException(40001, "输入不能为空");
+            throw new SecurityGuardException(ApiCode.BAD_REQUEST, "输入不能为空");
         }
 
         // 长度校验(防止超长输入导致 Token 溢出)
         if (userInput.length() > 1500) {
-            throw new SecurityGuardException(40001, "输入超过最大长度限制(1500字符)");
+            throw new SecurityGuardException(ApiCode.BAD_REQUEST, "输入超过最大长度限制(1500字符)");
         }
 
         // MVP-6: Prompt 注入多层检测（高危直接阻断，中危清洗，低危监控）

@@ -1,5 +1,7 @@
 package com.devops.agent.common.exception;
 
+import com.devops.agent.common.dto.ApiCode;
+
 /**
  * 乐观锁版本冲突异常（P1-4）
  * <p>
@@ -19,7 +21,7 @@ public class OptimisticLockException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     /** 业务错误码：版本冲突 */
-    public static final int CODE = 40009;
+    public static final int CODE = ApiCode.OPTIMISTIC_LOCK;
 
     /** 冲突记录的业务标识 */
     private final String resourceId;

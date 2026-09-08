@@ -75,6 +75,8 @@ public class UserRepository {
             u.setDisplayName(rs.getString("display_name"));
             u.setRole(rs.getString("role"));
             u.setStatus(rs.getString("status"));
+            // C1：部门决定可见哪些 RESTRICTED 知识文档（v24 迁移新增列）
+            u.setDept(rs.getString("dept"));
             var last = rs.getTimestamp("last_login_at");
             if (last != null) u.setLastLoginAt(last.toLocalDateTime());
             var ct = rs.getTimestamp("create_time");

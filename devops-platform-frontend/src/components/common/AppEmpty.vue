@@ -100,7 +100,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: var(--color-bg-sunken, #f1f5f9);
+  background: var(--color-bg-sunken, var(--surface-2));
   color: var(--color-text-tertiary, #94a3b8);
   display: inline-flex;
   align-items: center;
@@ -113,13 +113,13 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
 
 .app-empty-network .app-empty-icon,
 .app-empty-error .app-empty-icon {
-  background: var(--state-error-bg, #fef2f2);
+  background: var(--state-error-bg, var(--danger-subtle));
   color: var(--state-error, #ef4444);
 }
 
 .app-empty-permission .app-empty-icon {
-  background: var(--state-warning-bg, #fef3c7);
-  color: var(--state-warning, #d97706);
+  background: var(--state-warning-bg, var(--warning-subtle));
+  color: var(--state-warning, var(--warning));
 }
 
 .app-empty-title {
@@ -151,7 +151,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--color-border-light, #e2e8f0);
+  border: 1px solid var(--color-border-light, var(--border-1));
   border-radius: var(--radius-md, 8px);
   background: var(--color-surface, #fff);
   color: var(--color-text-primary, #1e293b);
@@ -161,14 +161,14 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary, #3b82f6);
-    color: var(--color-primary, #3b82f6);
+    border-color: var(--color-primary, var(--brand));
+    color: var(--color-primary, var(--brand));
   }
 
   &.app-empty-btn-primary {
-    background: var(--color-primary, #3b82f6);
+    background: var(--color-primary, var(--brand));
     color: var(--color-text-inverse, #fff);
-    border-color: var(--color-primary, #3b82f6);
+    border-color: var(--color-primary, var(--brand));
 
     &:hover {
       background: var(--color-primary-light, #60a5fa);

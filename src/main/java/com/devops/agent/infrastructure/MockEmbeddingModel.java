@@ -13,7 +13,14 @@ import java.util.stream.Collectors;
 /**
  * Mock Embedding 模型（开发期替身）
  * <p>
- * 用途：devops.ai.mode = MOCK 时注册，返回假向量（1536 维确定性向量）
+ * 用途：devops.ai.mode = MOCK 时注册，返回假向量（确定性向量）
+ * </p>
+ * <p>
+ * <b>S0-2-J1 探针修复（2026-09-07）</b>：维度原硬编码为常量 1536，
+ * 完全绕过 {@code devops.ai.vector.dimension}——注入维度漂移（1536→512）
+ * 竟然 CI 全绿，证明向量维度红线在 MOCK 路径是死的。现改为构造器注入维度，
+ * 由 {@code AiModelConfig} 统一传入配置值，MOCK 与 REAL 的路径在维度铁律上
+ * 再也分家。
  * </p>
  * <p>
  * <b>P2-13 修复</b>：原实现返回 1536 维<b>零向量</b>，所有文本余弦相似度恒为 0.0，
@@ -33,14 +40,29 @@ import java.util.stream.Collectors;
 public class MockEmbeddingModel implements EmbeddingModel {
 
     /**
-     * 向量维度铁律：与 VectorStoreConfig.dimension() 和 init.sql 保持一致
+     * 向量维度铁律：必须与 {@code devops.ai.vector.dimension} 配置的维度一致。
+     * 不再硬编码——见类注释 S0-2-J1。实例化入口只有 {@code AiModelConfig}。
      */
-    private static final int DIMENSION = 1536;
+    private final int dimension;
+
+    /**
+     * @param dimension 输出向量维度；必须 >= 4（vectorFor 前 4 维放余弦系数，
+     *                  小于 4 会越界）。传入方是 AiModelConfig 的配置值。
+     */
+    public MockEmbeddingModel(int dimension) {
+        if (dimension < 4) {
+            // 比「默默越界挂掉」早一步死：配置写 0/负数时，把锅指回配置
+            throw new IllegalArgumentException(
+                    "MockEmbeddingModel 维度必须 >= 4，当前=" + dimension
+                            + "（检查 devops.ai.vector.dimension 配置）");
+        }
+        this.dimension = dimension;
+    }
 
     @Override
     public Response<List<Embedding>> embedAll(List<TextSegment> textSegments) {
         log.debug("[MockEmbeddingModel] 收到 {} 条文本向量化请求（返回 {} 维确定性向量）",
-                textSegments.size(), DIMENSION);
+                textSegments.size(), dimension);
 
         List<Embedding> embeddings = textSegments.stream()
                 .map(segment -> Embedding.from(vectorFor(segment.text())))
@@ -57,7 +79,7 @@ public class MockEmbeddingModel implements EmbeddingModel {
     @Override
     public Response<Embedding> embed(String text) {
         log.debug("[MockEmbeddingModel] 单条文本向量化: {} 字符（返回 {} 维确定性向量）",
-                text.length(), DIMENSION);
+                text.length(), dimension);
 
         return Response.from(Embedding.from(vectorFor(text)));
     }
@@ -76,7 +98,7 @@ public class MockEmbeddingModel implements EmbeddingModel {
         long h3 = fnv1a(text, 0x9E3779B9L);
         long h4 = fnv1a(text, 0x85EBCA6BL);
 
-        float[] vector = new float[DIMENSION];
+        float[] vector = new float[dimension];
         // 前 4 维：4 个独立哈希的归一化余弦系数（保证整体非零）
         vector[0] = (float) ((h1 & 0xFFFF) / 65535.0) * 2.0f - 1.0f;
         vector[1] = (float) ((h2 & 0xFFFF) / 65535.0) * 2.0f - 1.0f;
@@ -85,7 +107,7 @@ public class MockEmbeddingModel implements EmbeddingModel {
 
         // 其余维度：用内容哈希作种子生成确定性伪随机值（异或洗牌）
         long seed = h1 ^ (h2 << 7) ^ (h3 << 15) ^ (h4 << 23);
-        for (int i = 4; i < DIMENSION; i++) {
+        for (int i = 4; i < dimension; i++) {
             seed ^= seed << 13;
             seed ^= seed >>> 7;
             seed ^= seed << 17;

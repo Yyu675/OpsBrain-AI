@@ -68,7 +68,9 @@ export function withQueryClient<T>(
  *
  * 当前尚无组件级 Query 测试（只有 composable 测试走 withQueryClient），
  * 保留此函数是因为 SlaRiskPanel / AlertList 等组件迁移到 Query 后需要它——
- * knip 会报未使用，属预期。
+ * knip 会报未使用，属预期误报。
+ *
+ * @public 测试公共库 API：保留语见上，@public 显式标记防 knip 假阳入闸。
  */
 export function mountWithQuery(
   component: Parameters<typeof mount>[0],

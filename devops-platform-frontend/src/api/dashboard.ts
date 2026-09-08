@@ -107,3 +107,111 @@ export async function getTrends(days = 7, module?: string | null): Promise<Trend
     callTrendScope: data?.callTrendScope ?? 'GLOBAL'
   }
 }
+
+// ---- 诊断区看板（S4-4.2） ----
+
+interface DiagnosisSufficiencyStat {
+  sufficiency: string
+  count: number
+}
+
+export interface DiagnosisSessionsStats {
+  /** 窗口内会话总数（含 REJECTED 等所有状态） */
+  total: number
+  /** 状态分布 */
+  byStatus: { status: string; count: number }[]
+  /** 平均耗时秒（仅完成会话；无完成会话时为 null——null 与 0 必须区分） */
+  avgDurationSeconds: number | null
+  /** 单次诊断均价（¥，trace_id 归因成本/全部完成会话；无完成会话为 null，S4-4.3） */
+  avgCostRmb: number | null
+  /** 充分性分布（仅 COMPLETED 会话） */
+  sufficiency: DiagnosisSufficiencyStat[]
+}
+
+export interface DiagnosisDirectionStat {
+  type: string
+  total: number
+  success: number
+  noData: number
+  failed: number
+  unavailable: number
+  /** SUCCESS/total 四位小数；NO_DATA 计入分母不豁免 */
+  successRate: number
+}
+
+export interface DiagnosisSessionTrend {
+  /** 窗口逐日标签（MM-dd），长度恒等于 windowDays（后端正点补零） */
+  days: string[]
+  /** 当日发起诊断数（无数据日为 0 点，不跳接） */
+  created: number[]
+  /** 当日完成诊断数 */
+  completed: number[]
+}
+
+/** @public 载荷嵌套型消费：仅经 HypothesisCalibration.buckets 属性被页码推断消费，
+ *  无显式 import（knip 第四豁免形态「返回类型推断消费」，批 29 案卷；批 35 首次复用）。 */
+export interface CalibrationBucket {
+  index: number
+  count: number
+  meanConfidence: number | null
+  accuracy: number | null
+  gap: number | null
+}
+
+export interface HypothesisCalibration {
+  /** 判定集规模（HELPFUL=对 / WRONG=错；PARTIAL 豁免但计数，见后端类注） */
+  ratedTotal: number
+  helpful: number
+  wrong: number
+  excludedPartial: number
+  excludedUnknown: number
+  excludedInvalid: number
+  /** 校准误差 ECE（越低越好）；判定集空 → null（「还没人反馈」≠「误差 0」） */
+  ece: number | null
+  /** 经验正确率 helpful/ratedTotal；判定集空 → null */
+  empiricalAccuracy: number | null
+  meanConfidence: number | null
+  buckets: CalibrationBucket[]
+}
+
+export interface DiagnosisBoard {
+  windowDays: number
+  sessions: DiagnosisSessionsStats
+  /** 假设置信度校准读数（S4-2 数据面，批 35）；旧后端无此键 → null */
+  calibration?: HypothesisCalibration | null
+  /** 逐日诊断量趋势（S4-4.3） */
+  sessionTrend: DiagnosisSessionTrend
+  evidenceDirections: DiagnosisDirectionStat[]
+  /** 需关注方向：FAILED 或 UNAVAILABLE > 0 才点名；NO_DATA 不算源故障，点名=假警 */
+  attentionTypes: string[]
+}
+
+/**
+ * 诊断区看板聚合。
+ *
+ * @param days 窗口天数（后端夹紧到 [1,90]；进 queryKey）
+ */
+export async function getDiagnosisBoard(days = 7): Promise<DiagnosisBoard> {
+  const params = new URLSearchParams()
+  params.set('days', String(days))
+  const payload = await http.get<unknown>(`${API_ENDPOINTS.DASHBOARD_DIAGNOSIS_BOARD}?${params.toString()}`)
+  const data = unwrapBiz<Partial<DiagnosisBoard>>(payload, '获取诊断区看板失败')
+  return {
+    windowDays: data?.windowDays ?? days,
+    sessions: {
+      total: data?.sessions?.total ?? 0,
+      byStatus: data?.sessions?.byStatus ?? [],
+      avgDurationSeconds: data?.sessions?.avgDurationSeconds ?? null,
+      avgCostRmb: data?.sessions?.avgCostRmb ?? null,
+      sufficiency: data?.sessions?.sufficiency ?? []
+    },
+    sessionTrend: {
+      days: data?.sessionTrend?.days ?? [],
+      created: data?.sessionTrend?.created ?? [],
+      completed: data?.sessionTrend?.completed ?? []
+    },
+    evidenceDirections: data?.evidenceDirections ?? [],
+    attentionTypes: data?.attentionTypes ?? [],
+    calibration: data?.calibration ?? null
+  }
+}

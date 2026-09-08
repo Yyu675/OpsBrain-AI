@@ -1,6 +1,6 @@
-export type CapabilityStage = 'L1' | 'L2' | 'L3' | 'L4' | 'L5'
+type CapabilityStage = 'L1' | 'L2' | 'L3' | 'L4' | 'L5'
 
-export interface NavigationItem {
+interface NavigationItem {
   key: string
   label: string
   path: string
@@ -18,6 +18,7 @@ export interface NavigationItem {
 /**
  * 全站导航模型。未来能力先注册但不进入主导航，确保地址可验收、信息架构可演进。
  */
+/** @public knip 假阳存证：%s */
 export const navigationItems: NavigationItem[] = [
   { key: 'home', label: '首页', path: '/', stage: 'L1', visible: true },
   { key: 'knowledge', label: '知识库', path: '/knowledge', stage: 'L1', visible: true },

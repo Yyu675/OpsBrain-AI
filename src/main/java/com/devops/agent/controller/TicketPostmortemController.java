@@ -34,13 +34,8 @@ public class TicketPostmortemController {
      */
     @GetMapping("/{id}/postmortem")
     public ApiResponse<TicketPostmortem> getPostmortem(@PathVariable String id) {
-        try {
-            TicketPostmortem pm = pmService.getPostmortem(id);
-            return ApiResponse.success(pm);
-        } catch (Exception e) {
-            log.error("[PostmortemController] 查询复盘失败 | id={}", id, e);
-            return ApiResponse.error(50001, "查询复盘失败");
-        }
+        TicketPostmortem pm = pmService.getPostmortem(id);
+        return ApiResponse.success(pm);
     }
 
     /**
@@ -50,21 +45,14 @@ public class TicketPostmortemController {
     public ApiResponse<TicketPostmortem> savePostmortem(@PathVariable String id,
                                                         @RequestBody PostmortemRequest req) {
         log.info("[PostmortemController] 保存复盘: id={}", id);
-        try {
-            TicketPostmortem pm = new TicketPostmortem();
-            pm.setTicketId(id);
-            pm.setTimeline(req.timeline());
-            pm.setImpactScope(req.impactScope());
-            pm.setImpactDuration(req.impactDuration());
-            pm.setLessons(req.lessons());
-            pm.setDocId(req.docId());
-            return ApiResponse.success(pmService.savePostmortem(pm, req.author()));
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[PostmortemController] 保存复盘失败 | id={}", id, e);
-            return ApiResponse.error(50001, "保存复盘失败");
-        }
+        TicketPostmortem pm = new TicketPostmortem();
+        pm.setTicketId(id);
+        pm.setTimeline(req.timeline());
+        pm.setImpactScope(req.impactScope());
+        pm.setImpactDuration(req.impactDuration());
+        pm.setLessons(req.lessons());
+        pm.setDocId(req.docId());
+        return ApiResponse.success(pmService.savePostmortem(pm, req.author()));
     }
 
     /**
@@ -73,13 +61,8 @@ public class TicketPostmortemController {
      */
     @PostMapping("/{id}/postmortem/draft")
     public ApiResponse<Map<String, Object>> generateDraft(@PathVariable String id) {
-        try {
-            String timeline = pmService.generateTimelineDraft(id);
-            return ApiResponse.success(Map.of("timeline", timeline));
-        } catch (Exception e) {
-            log.error("[PostmortemController] 生成复盘草稿失败 | id={}", id, e);
-            return ApiResponse.error(50001, "生成复盘草稿失败");
-        }
+        String timeline = pmService.generateTimelineDraft(id);
+        return ApiResponse.success(Map.of("timeline", timeline));
     }
 
     // ==================== 改进项 ====================
@@ -96,12 +79,7 @@ public class TicketPostmortemController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String owner,
             @RequestParam(defaultValue = "false") boolean overdue) {
-        try {
-            return ApiResponse.success(pmService.findActionItems(status, owner, overdue));
-        } catch (Exception e) {
-            log.error("[PostmortemController] 查询改进项清单失败", e);
-            return ApiResponse.error(50001, "查询改进项失败");
-        }
+        return ApiResponse.success(pmService.findActionItems(status, owner, overdue));
     }
 
     /**
@@ -111,20 +89,13 @@ public class TicketPostmortemController {
     public ApiResponse<TicketActionItem> addActionItem(@PathVariable String id,
                                                        @RequestBody ActionItemRequest req) {
         log.info("[PostmortemController] 新建改进项: id={}", id);
-        try {
-            TicketActionItem item = new TicketActionItem();
-            item.setTicketId(id);
-            item.setPostmortemId(req.postmortemId());
-            item.setContent(req.content());
-            item.setOwner(req.owner());
-            item.setDueDate(req.dueDate() != null ? java.time.LocalDate.parse(req.dueDate()) : null);
-            return ApiResponse.success(pmService.addActionItem(item));
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[PostmortemController] 新建改进项失败 | id={}", id, e);
-            return ApiResponse.error(50001, "新建改进项失败");
-        }
+        TicketActionItem item = new TicketActionItem();
+        item.setTicketId(id);
+        item.setPostmortemId(req.postmortemId());
+        item.setContent(req.content());
+        item.setOwner(req.owner());
+        item.setDueDate(req.dueDate() != null ? java.time.LocalDate.parse(req.dueDate()) : null);
+        return ApiResponse.success(pmService.addActionItem(item));
     }
 
     /**
@@ -134,16 +105,7 @@ public class TicketPostmortemController {
     public ApiResponse<TicketActionItem> updateActionItem(@PathVariable long itemId,
                                                           @RequestBody ActionItemStatusRequest req) {
         log.info("[PostmortemController] 更新改进项状态: itemId={}, status={}", itemId, req.status());
-        try {
-            return ApiResponse.success(pmService.updateActionItemStatus(itemId, req.status()));
-        } catch (IllegalStateException e) {
-            return ApiResponse.error(40004, e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(40001, e.getMessage());
-        } catch (Exception e) {
-            log.error("[PostmortemController] 更新改进项失败 | itemId={}", itemId, e);
-            return ApiResponse.error(50001, "更新改进项失败");
-        }
+        return ApiResponse.success(pmService.updateActionItemStatus(itemId, req.status()));
     }
 
     // ==================== Request Records ====================
