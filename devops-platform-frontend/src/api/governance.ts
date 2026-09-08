@@ -332,6 +332,17 @@ export interface AutomationPolicy {
   effective: boolean | null
   /** 不生效的原因，可直接展示 */
   ineffectiveReason: string | null
+
+  /** S4-2 证据门（服务端装填；未装配证据服务时整组缺席） */
+  dryRunHits?: number | null
+  /** 连续零误执行场数（真执行阶段） */
+  successStreak?: number | null
+  /** 最近一次污点时间 */
+  lastAutoFailureAt?: string | null
+  /** dryRun=true 且演练命中场次达标 → 服务端判定「可转正」 */
+  promotable?: boolean | null
+  /** dryRun=false 且连续零误达标 → L5 证据门引用点 */
+  evidenceReady?: boolean | null
 }
 
 export interface PolicyStats {

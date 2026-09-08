@@ -23,7 +23,7 @@
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import {
+import { Award,
   AlertTriangle,
   ArrowDown,
   CheckCircle2,
@@ -599,6 +599,23 @@ const OUTCOME_LABELS: Record<string, string> = {
                     :title="row.ineffectiveReason ?? ''"
                   >
                     <AlertTriangle :size="10" /> 不生效
+                  </span>
+                  <!-- S4-2 证据门徽标：演练攒场 / 真执行连胜，服务端判定前端只展示 -->
+                  <span
+                    v-if="row.dryRun && row.dryRunHits != null"
+                    class="evidence"
+                    :class="{ 'is-ready': row.promotable === true }"
+                    :title="`演练命中 ${row.dryRunHits} 场${row.promotable ? '，场次达标可按需上线' : ''}`"
+                  >
+                    <Award v-if="row.promotable" :size="10" />{{ row.promotable ? ' 可转正' : `演练 ${row.dryRunHits} 场` }}
+                  </span>
+                  <span
+                    v-else-if="!row.dryRun && row.successStreak != null"
+                    class="evidence"
+                    :class="{ 'is-ready': row.evidenceReady === true }"
+                    :title="`连续零误执行 ${row.successStreak} 场；最近污点：${row.lastAutoFailureAt ?? '无'}`"
+                  >
+                    <Award v-if="row.evidenceReady" :size="10" />{{ row.evidenceReady ? ' 证据达标' : `连胜 ${row.successStreak}` }}
                   </span>
                 </td>
 
@@ -1225,7 +1242,7 @@ const OUTCOME_LABELS: Record<string, string> = {
 .col-pri { width: 92px; }
 .col-match { width: 240px; }
 .col-action { width: 220px; }
-.col-state { width: 150px; }
+.col-state { width: 168px; }
 .col-ops { width: 190px; }
 
 .pri-num {
@@ -1376,6 +1393,25 @@ const OUTCOME_LABELS: Record<string, string> = {
 }
 
 /* 「已启用但不生效」：界面说启用了、实际永远不会执行，必须显式提示 */
+.evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text-secondary, #8a94a6);
+  background: rgba(138, 148, 166, 0.12);
+  white-space: nowrap;
+}
+
+.evidence.is-ready {
+  color: #1a7f37;
+  background: rgba(26, 127, 55, 0.12);
+  font-weight: 600;
+}
+
 .ineffective {
   display: inline-flex;
   align-items: center;

@@ -66,6 +66,15 @@ public class AutomationGovernanceService {
         this.automationPolicyRepository = automationPolicyRepository;
     }
 
+    /**
+     * S4-2：策略证据门（可选装配）。
+     * <p>字段注入 + required=false：两个直连三参构造的既有测试
+     * （AutomationGovernanceServiceTest / AutomationPolicyServiceTest）
+     * 不装配它——证据字段整组缺席即为降级语义，构造面零破坏。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PolicyEvidenceService policyEvidenceService;
+
     // ==================================================================
     // 风险等级策略
     // ==================================================================
@@ -538,6 +547,7 @@ public class AutomationGovernanceService {
 
         for (AutomationPolicy p : result.items()) {
             applyActionState(p);
+            applyPolicyEvidence(p);
         }
         return result;
     }
@@ -547,6 +557,7 @@ public class AutomationGovernanceService {
         AutomationPolicy p = automationPolicyRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("策略不存在: " + id));
         applyActionState(p);
+        applyPolicyEvidence(p);
         return p;
     }
 
@@ -759,6 +770,22 @@ public class AutomationGovernanceService {
      * <p>与白名单的 effective 值同理：这个判断放在服务端，
      * 让前端各自去算必然与引擎漂移。</p>
      */
+    /**
+     * S4-2 证据门装填。服务缺席（最小构造的测试）静默跳过；
+     * 装填异常只 WARN——徽标列为空好过策略整页 500。
+     */
+    private void applyPolicyEvidence(AutomationPolicy p) {
+        if (policyEvidenceService == null) {
+            return;
+        }
+        try {
+            policyEvidenceService.decorate(p);
+        } catch (Exception e) {
+            log.warn("⚠️ [治理] 策略证据装填失败（不影响列表） | policyId={} | {}",
+                    p.getId(), e.getMessage());
+        }
+    }
+
     private void applyActionState(AutomationPolicy p) {
         Optional<ActionAllowlistEntry> found =
                 allowlistRepository.findByActionKey(p.getActionKey());

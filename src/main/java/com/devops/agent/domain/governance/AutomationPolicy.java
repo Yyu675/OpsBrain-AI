@@ -101,6 +101,25 @@ public class AutomationPolicy {
     private String actionRiskLevel;
     private Boolean actionEnabled;
 
+    // ==================== 证据门（S4-2，不落库） ====================
+    // 由 PolicyEvidenceService.decorate 装填；未装配证据服务（最小构造的测试）
+    // 时整组保持 null，前端按「—」降级显示。
+
+    /** 演练命中场次（auto + POLICY_DRYRUN 台账行数）——证明「匹配面符合预期」 */
+    private Integer dryRunHits;
+
+    /** 连续零误执行场数（FAILED/UNDO_FAILED/UNDONE 断连胜）——L5 证据门引用点 */
+    private Integer successStreak;
+
+    /** 最近一次污点时间（详情徽标 title 用） */
+    private LocalDateTime lastAutoFailureAt;
+
+    /** 可转正徽标：dryRun=true 且演练命中场次达标（服务端判定，前端只展示） */
+    private Boolean promotable;
+
+    /** 自治证据达标：dryRun=false 且连胜达标（供免审批升级门引用） */
+    private Boolean evidenceReady;
+
     /** 该策略当前是否真的会生效（自身启用 + 动作可用），由 Service 计算 */
     private Boolean effective;
 
@@ -271,4 +290,19 @@ public class AutomationPolicy {
 
     public String getIneffectiveReason() { return ineffectiveReason; }
     public void setIneffectiveReason(String v) { this.ineffectiveReason = v; }
+
+    public Integer getDryRunHits() { return dryRunHits; }
+    public void setDryRunHits(Integer v) { this.dryRunHits = v; }
+
+    public Integer getSuccessStreak() { return successStreak; }
+    public void setSuccessStreak(Integer v) { this.successStreak = v; }
+
+    public LocalDateTime getLastAutoFailureAt() { return lastAutoFailureAt; }
+    public void setLastAutoFailureAt(LocalDateTime v) { this.lastAutoFailureAt = v; }
+
+    public Boolean getPromotable() { return promotable; }
+    public void setPromotable(Boolean v) { this.promotable = v; }
+
+    public Boolean getEvidenceReady() { return evidenceReady; }
+    public void setEvidenceReady(Boolean v) { this.evidenceReady = v; }
 }

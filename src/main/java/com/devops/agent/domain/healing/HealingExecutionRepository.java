@@ -159,6 +159,60 @@ public class HealingExecutionRepository {
         return n == null ? 0 : n;
     }
 
+    /**
+     * S4-2 证据门：某策略的演练命中场次（auto + 门决策=POLICY_DRYRUN）。
+     * 策略与台账的关联键是引擎写入 params 的溯源键 __policyId（JSON LIKE 匹配——
+     * 台账行基数小、回放永远按执行维度取数，为统计拆列或上 jsonb 索引是过度工程）。
+     */
+    public int countPolicyDryRunHits(long policyId) {
+        Integer n = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) FROM sys_healing_execution
+                 WHERE requested_by = 'auto' AND gate_decision = 'POLICY_DRYRUN'
+                   AND params_json LIKE ?
+                """,
+                Integer.class, policyLikeKey(policyId));
+        return n == null ? 0 : n;
+    }
+
+    /**
+     * S4-2 证据门：某策略最近 auto 行的状态序列（新→旧），供连胜计算。
+     * limit 由调用方定（证据门只看近绩：策略一改配置，远古表现就没有证明力）。
+     */
+    public List<String> recentAutoStatuses(long policyId, int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT status FROM sys_healing_execution
+                 WHERE requested_by = 'auto' AND params_json LIKE ?
+                 ORDER BY id DESC
+                 LIMIT ?
+                """,
+                (rs, rowNum) -> rs.getString(1), policyLikeKey(policyId), limit);
+    }
+
+    /**
+     * S4-2 证据门：最近一次「污点」时间。FAILED / UNDO_FAILED / UNDONE 都算——
+     * 撤销过说明那次执行产生了后悔，同样是「非零误」的证据。
+     */
+    public Optional<LocalDateTime> lastAutoFailureAt(long policyId) {
+        List<LocalDateTime> rows = jdbcTemplate.query(
+                """
+                SELECT created_at FROM sys_healing_execution
+                 WHERE requested_by = 'auto' AND params_json LIKE ?
+                   AND status IN ('FAILED','UNDO_FAILED','UNDONE')
+                 ORDER BY id DESC
+                 LIMIT 1
+                """,
+                (rs, rowNum) -> rs.getTimestamp(1) == null ? null : rs.getTimestamp(1).toLocalDateTime(),
+                policyLikeKey(policyId));
+        return rows.isEmpty() ? Optional.empty() : Optional.ofNullable(rows.get(0));
+    }
+
+    /** 引擎写入 params 的溯源 LIKE 键（"__policyId":N —— Jackson 序列化数值不带引号）。 */
+    public static String policyLikeKey(long policyId) {
+        return "%\"__policyId\":" + policyId + "%";
+    }
+
     /** 按审批单 id 反查执行台账（审批中心批准回调的桥）。 */
     public Optional<HealingExecution> findByApprovalId(long approvalId) {
         List<HealingExecution> rows = jdbcTemplate.query(
