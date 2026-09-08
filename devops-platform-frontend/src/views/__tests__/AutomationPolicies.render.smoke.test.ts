@@ -90,6 +90,12 @@ type Row = {
   actionEnabled: boolean
   effective: boolean
   ineffectiveReason: string | null
+  // S4-2 证据门（服务端装填；缺省时整组为 null）
+  dryRunHits: number | null
+  successStreak: number | null
+  lastAutoFailureAt: string | null
+  promotable: boolean | null
+  evidenceReady: boolean | null
 }
 
 const row = (over: Partial<Row> = {}): Row => ({
@@ -117,6 +123,12 @@ const row = (over: Partial<Row> = {}): Row => ({
   actionEnabled: true,
   effective: true,
   ineffectiveReason: null,
+  // 证据字段默认缺席：既有用例的行不该平白多出徽标（降级语义也是契约）
+  dryRunHits: null,
+  successStreak: null,
+  lastAutoFailureAt: null,
+  promotable: null,
+  evidenceReady: null,
   ...over,
 })
 
@@ -208,6 +220,56 @@ beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
   confirmMock.mockResolvedValue('confirm')
+})
+
+describe('证据门徽标（S4-2 批次 10：服务端判定，页面只负责画对）', () => {
+  it('演练策略：场次达标 → 「可转正」点亮标绿，title 带命中场次', async () => {
+    const w = await mountPage([row({ dryRun: true, dryRunHits: 7, promotable: true })])
+    const badge = rowsOf(w)[0].find('.evidence')
+
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toContain('可转正')
+    expect(badge.classes()).toContain('is-ready')
+    expect(badge.attributes('title')).toContain('演练命中 7 场')
+  })
+
+  it('演练策略：场次未达标 → 只报「演练 N 场」，不点亮', async () => {
+    const w = await mountPage([row({ dryRun: true, dryRunHits: 2, promotable: false })])
+    const badge = rowsOf(w)[0].find('.evidence')
+
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toContain('演练 2 场')
+    expect(badge.text()).not.toContain('可转正')
+    expect(badge.classes()).not.toContain('is-ready')
+  })
+
+  it('真执行策略：连胜达标 → 「证据达标」点亮；title 带最近污点', async () => {
+    const w = await mountPage([row({
+      dryRun: false, successStreak: 3, evidenceReady: true,
+      lastAutoFailureAt: '2026-09-08T03:30:00',
+    })])
+    const badge = rowsOf(w)[0].find('.evidence')
+
+    expect(badge.text()).toContain('证据达标')
+    expect(badge.classes()).toContain('is-ready')
+    expect(badge.attributes('title')).toContain('连续零误执行 3 场')
+    expect(badge.attributes('title')).toContain('2026-09-08T03:30:00')
+  })
+
+  it('真执行策略：连胜未达标 → 只报「连胜 N」；无污点记录 title 说「无」', async () => {
+    const w = await mountPage([row({ dryRun: false, successStreak: 1, evidenceReady: false })])
+    const badge = rowsOf(w)[0].find('.evidence')
+
+    expect(badge.text()).toContain('连胜 1')
+    expect(badge.text()).not.toContain('证据达标')
+    expect(badge.attributes('title')).toContain('最近污点：无')
+  })
+
+  it('证据字段缺席 → 徽标整个不渲染（required=false 的降级语义即契约）', async () => {
+    const w = await mountPage([row()])  // 工厂默认五字段全 null
+
+    expect(rowsOf(w)[0].find('.evidence').exists()).toBe(false)
+  })
 })
 
 describe('页面骨架', () => {
