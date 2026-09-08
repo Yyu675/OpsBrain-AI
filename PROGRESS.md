@@ -476,3 +476,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 删:sql/init.sql(S0-1 收尾清偿,桩前提已被 CI 现状取代)+FutureCapability.vue(import 面零引用)+远支 arena/01a031f6(祖先链全含零丢失)。远程主力=main+当前。
 - 自救:本地 .git 被重建到 674429c,git reset --hard FETCH_HEAD 复位 87c569c 后三刀复切;铁律+1:git status 截头排查一律全列。报告 168。
 
+
+- 批 67 收官：`e4384b5` 双腿红（CI 两 workflow 仍 `psql -f sql/init.sql`；前端 knip 红因 ComingSoonPanel 成孤儿）→ `7caea5a`(schema 步桩→V1__baseline.sql 两 workflow+占位页复位隔离+knip tee 取证道）双腿绿 → `c7f4965` 重删占位页、取证帖实锤 ComingSoonPanel → 补同删后**双腿绿 ✓**。教训两条入档：删物前引用面全层含 workflows；桩内挂账语句=前提未灭。
