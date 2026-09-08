@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/vue-query'
 import {
   getClosureMetrics,
   getDashboardOverview,
+  getDiagnosisBoard,
   getRootCauseStats,
   getTrends,
   type ClosureMetrics,
+  type DiagnosisBoard,
   type TrendData,
 } from '@/api/dashboard'
 import type { DashboardOverview } from '@/api/types'
@@ -72,4 +74,16 @@ export function useTrendsQuery(days: Ref<number>, module?: Ref<string | undefine
   })
 }
 
-export type { ClosureMetrics, DashboardOverview, TrendData }
+/**
+ * 诊断区看板（S4-4.2）。
+ *
+ * @param days 窗口天数（进 queryKey，切换即自动重拉）
+ */
+export function useDiagnosisBoardQuery(days: Ref<number>) {
+  return useQuery({
+    queryKey: computed(() => dashboardKeys.diagnosisBoard(days.value)),
+    queryFn: () => getDiagnosisBoard(days.value),
+  })
+}
+
+export type { ClosureMetrics, DashboardOverview, DiagnosisBoard, TrendData }

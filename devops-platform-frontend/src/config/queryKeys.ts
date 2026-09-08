@@ -101,6 +101,8 @@ export const dashboardKeys = {
   /** 趋势。天数与服务下钻维度进 key */
   trends: (days: number, module?: string) =>
     [...dashboardKeys.all, 'trends', days, module ?? null] as const,
+  /** 诊断区看板窗口天数（S4-4.2） */
+  diagnosisBoard: (days: number) => [...dashboardKeys.all, 'diagnosis-board', days] as const,
 }
 
 export const approvalKeys = {

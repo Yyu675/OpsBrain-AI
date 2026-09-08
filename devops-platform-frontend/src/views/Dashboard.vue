@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-vue-next'
 import {
   useClosureMetricsQuery,
   useDashboardOverviewQuery,
+  useDiagnosisBoardQuery,
   useRootCauseStatsQuery,
   useTrendsQuery,
 } from '@/api/queries/dashboard.query'
@@ -36,6 +37,7 @@ const rootCauseQuery = useRootCauseStatsQuery()
  */
 const trendDays = ref(7)
 const trendQuery = useTrendsQuery(trendDays)
+const diagnosisQuery = useDiagnosisBoardQuery(trendDays)
 
 // KPI 主数据：它失败即整页错误态，其余区块都是它的补充
 const data = overviewQuery.data
@@ -45,6 +47,21 @@ const loadError = overviewQuery.error
 const closure = closureQuery.data
 const rootCauseStats = rootCauseQuery.stats
 const trend = trendQuery.data
+const diagnosis = diagnosisQuery.data
+
+/** 诊断区方向中文名：键与后端 evidence_type 一一对应，未知类型原样显示 */
+const DIR_LABELS: Record<string, string> = {
+  metrics: '指标', changes: '变更', logs: '日志', topology: '拓扑'
+}
+
+/** 按状态取会话数；窗口里可能没有某状态，缺省 0 */
+const sessionCount = (status: string) =>
+  diagnosis.value?.sessions.byStatus.find((s) => s.status === status)?.count ?? 0
+
+/** 点名方向中文串：metric、topology 这类原始键不出现在告警文案里 */
+const attentionText = computed(() =>
+  (diagnosis.value?.attentionTypes ?? []).map((t) => DIR_LABELS[t] ?? t).join('、')
+)
 
 /**
  * 数据更新时间：从 Query 的 dataUpdatedAt 派生。
@@ -61,12 +78,13 @@ const lastUpdated = computed(() => {
   return d ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : String(ts)
 })
 
-/** 刷新：四个查询一并重拉。refetch 会绕过 staleTime */
+/** 刷新：五个查询一并重拉。refetch 会绕过 staleTime */
 const loadDashboard = () => {
   void overviewQuery.refetch()
   void closureQuery.refetch()
   void rootCauseQuery.refetch()
   void trendQuery.refetch()
+  void diagnosisQuery.refetch()
 }
 
 /** 工单趋势：柱（新建）+ 折线（验证通过） */
@@ -312,6 +330,59 @@ const rootCauseTop = computed(() =>
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- B6 诊断区（S4-4.2 批次 16） -->
+          <div v-if="diagnosis" class="diagnosis-section">
+            <h3 class="section-heading">诊断区 · 近 {{ diagnosis.windowDays }} 日</h3>
+
+            <div class="closure-kpi-grid">
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">诊断会话</div>
+                <div class="closure-kpi-value">{{ diagnosis.sessions.total }}</div>
+              </div>
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">完成</div>
+                <div class="closure-kpi-value">{{ sessionCount('COMPLETED') }}</div>
+              </div>
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">平均耗时</div>
+                <div class="closure-kpi-value">{{ diagnosis.sessions.avgDurationSeconds === null ? '—' : diagnosis.sessions.avgDurationSeconds + 's' }}</div>
+              </div>
+              <div class="closure-kpi-card">
+                <div class="closure-kpi-label">需关注方向</div>
+                <div class="closure-kpi-value">{{ diagnosis.attentionTypes.length || '—' }}</div>
+              </div>
+            </div>
+
+            <div v-if="diagnosis.attentionTypes.length" class="diagnosis-attention">
+              需关注：{{ attentionText }} 方向存在 FAILED / UNAVAILABLE 取证失败——先查上游采集，再谈充分性
+            </div>
+
+            <div v-if="diagnosis.sessions.sufficiency.length" class="diagnosis-suff">
+              充分性分布（完成会话）：
+              <span v-for="s in diagnosis.sessions.sufficiency" :key="s.sufficiency" class="suff-chip">{{ s.sufficiency }} × {{ s.count }}</span>
+            </div>
+
+            <template v-if="diagnosis.evidenceDirections.length">
+              <table class="diagnosis-table">
+                <thead>
+                  <tr><th>方向</th><th>总数</th><th>成功</th><th>无数据</th><th>失败</th><th>不可用</th><th>成功率</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="d in diagnosis.evidenceDirections" :key="d.type">
+                    <td>{{ DIR_LABELS[d.type] ?? d.type }}</td>
+                    <td>{{ d.total }}</td>
+                    <td>{{ d.success }}</td>
+                    <td>{{ d.noData }}</td>
+                    <td>{{ d.failed }}</td>
+                    <td>{{ d.unavailable }}</td>
+                    <td>{{ (d.successRate * 100).toFixed(1) }}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <AppEmpty v-else size="sm" description="窗口内暂无取证记录" />
           </div>
 
           <!-- 统计信息 -->
@@ -657,4 +728,49 @@ const rootCauseTop = computed(() =>
 
 .rc-label { color: var(--text-2); }
 .rc-count { font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
+/* ── B6 诊断区（S4-4.2） ── */
+.diagnosis-section {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+.diagnosis-attention {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--el-color-danger-light-9);
+  border-left: 3px solid var(--el-color-danger);
+  border-radius: 4px;
+  color: var(--el-color-danger);
+  font-size: 13px;
+}
+.diagnosis-suff {
+  margin: 8px 0 12px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.suff-chip {
+  display: inline-block;
+  margin: 0 6px 4px 0;
+  padding: 2px 8px;
+  background: var(--el-fill-color-light);
+  border-radius: 10px;
+}
+.diagnosis-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.diagnosis-table th,
+.diagnosis-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.diagnosis-table th {
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+
 </style>

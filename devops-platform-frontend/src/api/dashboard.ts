@@ -107,3 +107,63 @@ export async function getTrends(days = 7, module?: string | null): Promise<Trend
     callTrendScope: data?.callTrendScope ?? 'GLOBAL'
   }
 }
+
+// ---- 诊断区看板（S4-4.2） ----
+
+export interface DiagnosisSufficiencyStat {
+  sufficiency: string
+  count: number
+}
+
+export interface DiagnosisSessionsStats {
+  /** 窗口内会话总数（含 REJECTED 等所有状态） */
+  total: number
+  /** 状态分布 */
+  byStatus: { status: string; count: number }[]
+  /** 平均耗时秒（仅完成会话；无完成会话时为 null——null 与 0 必须区分） */
+  avgDurationSeconds: number | null
+  /** 充分性分布（仅 COMPLETED 会话） */
+  sufficiency: DiagnosisSufficiencyStat[]
+}
+
+export interface DiagnosisDirectionStat {
+  type: string
+  total: number
+  success: number
+  noData: number
+  failed: number
+  unavailable: number
+  /** SUCCESS/total 四位小数；NO_DATA 计入分母不豁免 */
+  successRate: number
+}
+
+export interface DiagnosisBoard {
+  windowDays: number
+  sessions: DiagnosisSessionsStats
+  evidenceDirections: DiagnosisDirectionStat[]
+  /** 需关注方向：FAILED 或 UNAVAILABLE > 0 才点名；NO_DATA 不算源故障，点名=假警 */
+  attentionTypes: string[]
+}
+
+/**
+ * 诊断区看板聚合。
+ *
+ * @param days 窗口天数（后端夹紧到 [1,90]；进 queryKey）
+ */
+export async function getDiagnosisBoard(days = 7): Promise<DiagnosisBoard> {
+  const params = new URLSearchParams()
+  params.set('days', String(days))
+  const payload = await http.get<unknown>(`${API_ENDPOINTS.DASHBOARD_DIAGNOSIS_BOARD}?${params.toString()}`)
+  const data = unwrapBiz<Partial<DiagnosisBoard>>(payload, '获取诊断区看板失败')
+  return {
+    windowDays: data?.windowDays ?? days,
+    sessions: {
+      total: data?.sessions?.total ?? 0,
+      byStatus: data?.sessions?.byStatus ?? [],
+      avgDurationSeconds: data?.sessions?.avgDurationSeconds ?? null,
+      sufficiency: data?.sessions?.sufficiency ?? []
+    },
+    evidenceDirections: data?.evidenceDirections ?? [],
+    attentionTypes: data?.attentionTypes ?? []
+  }
+}

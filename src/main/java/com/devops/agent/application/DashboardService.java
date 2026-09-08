@@ -54,4 +54,10 @@ public interface DashboardService {
      * @return {@code { days[], cost[], cacheHitRate[] }} 三个等长对齐数组
      */
     Map<String, Object> getCallTrends(int days);
+
+    /**
+     * S4-4.2 诊断区看板：会话分布 / 平均耗时 / 充分性分布 /
+     * 各方向取证四态 / 源故障点名。days 由实现层夹紧 [1, 90]。
+     */
+    Map<String, Object> getDiagnosisBoard(int days);
 }

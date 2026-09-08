@@ -40,6 +40,7 @@ const api = vi.hoisted(() => ({
   getClosureMetrics: vi.fn(),
   getRootCauseStats: vi.fn(),
   getTrends: vi.fn(),
+  getDiagnosisBoard: vi.fn(),
   getSlaRisk: vi.fn(),
   getDashboardStats: vi.fn(),
 }))
@@ -97,11 +98,28 @@ const trends = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
+const diagnosisBoard = (over: Record<string, unknown> = {}) => ({
+  windowDays: 7,
+  sessions: {
+    total: 48,
+    byStatus: [{ status: 'COMPLETED', count: 40 }],
+    avgDurationSeconds: 12.35,
+    sufficiency: [{ sufficiency: 'SUFFICIENT', count: 30 }],
+  },
+  evidenceDirections: [
+    { type: 'metrics', total: 40, success: 30, noData: 6, failed: 4, unavailable: 0, successRate: 0.75 },
+    { type: 'logs', total: 10, success: 10, noData: 0, failed: 0, unavailable: 0, successRate: 1 },
+  ],
+  attentionTypes: ['metrics'],
+  ...over,
+})
+
 const mountPage = async (opts: {
   overview?: unknown
   closure?: unknown
   rootCause?: unknown
   trends?: unknown
+  diagnosis?: unknown
   overviewError?: unknown
   trendsError?: unknown
 } = {}) => {
@@ -122,6 +140,7 @@ const mountPage = async (opts: {
   } else {
     api.getTrends.mockResolvedValue('trends' in opts ? opts.trends : trends())
   }
+  api.getDiagnosisBoard.mockResolvedValue('diagnosis' in opts ? opts.diagnosis : diagnosisBoard())
   api.getSlaRisk.mockResolvedValue({ items: [], total: 0 })
   api.getDashboardStats.mockResolvedValue({})
 
@@ -367,5 +386,28 @@ describe('模型分布', () => {
 
     expect(w.findAll('.model-item')).toHaveLength(0)
     expect(w.findAllComponents({ name: 'AppEmpty' }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('诊断区看板（S4-4.2 批次 16）', () => {
+  it('渲染诊断会话 KPI 与方向表：成功率按 1 位小数显示，点名方向出现告警条', async () => {
+    const w = await mountPage()
+
+    expect(w.text()).toContain('诊断区')
+    expect(w.text()).toContain('75.0%') // metrics 30/40
+    expect(w.find('.diagnosis-attention').exists()).toBe(true)
+    expect(w.find('.diagnosis-attention').text()).toContain('指标') // 天文台说中文不说 metrics
+  })
+
+  it('attentionTypes 为空即不出现告警条——NO_DATA 不许把健康页涂红', async () => {
+    const w = await mountPage({ diagnosis: diagnosisBoard({ attentionTypes: [] }) })
+
+    expect(w.find('.diagnosis-attention').exists()).toBe(false)
+  })
+
+  it('窗口内无取证记录：方向表收起来走空态，不画一张全零的表', async () => {
+    const w = await mountPage({ diagnosis: diagnosisBoard({ evidenceDirections: [] }) })
+
+    expect(w.find('.diagnosis-table').exists()).toBe(false)
   })
 })

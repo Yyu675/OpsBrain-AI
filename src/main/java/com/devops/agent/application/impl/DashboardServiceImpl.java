@@ -44,6 +44,45 @@ public class DashboardServiceImpl implements DashboardService {
     private static final String SERVED_QUERY_FILTER =
             "operation_type IN ('CHAT', 'CACHE_HIT')";
 
+    /**
+     * S4-4.2 诊断区：本类既有直查 JdbcTemplate 的看板风格延续——
+     * 合并语义全部下沉 {@link DiagnosisBoardComposer}（纯函数，可钉测）。
+     * 窗口夹紧与 /trends 同宽 [1, 90]。
+     */
+    @Override
+    public Map<String, Object> getDiagnosisBoard(int days) {
+        int window = Math.min(Math.max(1, days), 90);
+        List<Map<String, Object>> statusRows = jdbcTemplate.queryForList(
+                """
+                SELECT status, COUNT(*) AS n FROM sys_diagnosis_session
+                 WHERE created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                 GROUP BY status ORDER BY n DESC
+                """, window);
+        List<Map<String, Object>> sufficiencyRows = jdbcTemplate.queryForList(
+                """
+                SELECT sufficiency, COUNT(*) AS n FROM sys_diagnosis_session
+                 WHERE status = 'COMPLETED' AND sufficiency IS NOT NULL
+                   AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                 GROUP BY sufficiency ORDER BY n DESC
+                """, window);
+        List<Map<String, Object>> evidenceRows = jdbcTemplate.queryForList(
+                """
+                SELECT evidence_type, status, COUNT(*) AS n FROM sys_diagnosis_evidence
+                 WHERE collected_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                 GROUP BY evidence_type, status
+                """, window);
+        // AVG 聚合永远返回一行（无完成会话时为 NULL）——不会 EmptyResultDataAccess
+        Double avgSeconds = jdbcTemplate.queryForObject(
+                """
+                SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)))
+                  FROM sys_diagnosis_session
+                 WHERE status = 'COMPLETED'
+                   AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                """, Double.class, window);
+        return DiagnosisBoardComposer.compose(statusRows, sufficiencyRows,
+                evidenceRows, avgSeconds, window);
+    }
+
     @Override
     public DashboardOverviewDTO getOverview() {
         log.info("📊 [Dashboard] 开始查询看板概览数据");

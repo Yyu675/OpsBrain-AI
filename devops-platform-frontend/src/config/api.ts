@@ -28,6 +28,7 @@ export const API_ENDPOINTS = {
   // M8 看板统计
   DASHBOARD_OVERVIEW: `${API_BASE}/dashboard/overview`,
   DASHBOARD_TRENDS: `${API_BASE}/dashboard/trends`,
+  DASHBOARD_DIAGNOSIS_BOARD: `${API_BASE}/dashboard/diagnosis-board`,
 
   // M5 知识库
   // TODO(P2-待接入): KNOWLEDGE_INGEST / KNOWLEDGE_CHUNKS 端点因后端 /ingest 已废弃(410, 见 6.25 P1-9)、
