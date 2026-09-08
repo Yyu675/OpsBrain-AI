@@ -100,7 +100,44 @@ jobs:
           # 开启 Schema 自检的严格模式：迁移漏执行会让 @SpringBootTest 直接失败，
           # 而不是等到运行时用户点检索才发现
           SCHEMA_FAIL_FAST: 'true'
-        run: ./mvnw -B -ntp verify
+        # tee 留档：下一「失败诊断回帖」步从 /tmp/mvn-verify.log 取材。
+        # GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉。
+        run: ./mvnw -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
+
+      - name: 失败诊断回帖（沙箱日志取证道 · 批 45 红案催生）
+        # 背景：托管 runner 日志归档在 azure blob，开发沙箱 egress 不通该域，
+        # gh api/gh run view --log 都取不到失败日志（批 45 红案两度空跑）。
+        # PR 评论走 api.github.com 是沙箱唯一稳定通道——失败时把编译错误
+        # 指纹 + 红测报告摘要 + maven 日志尾段回帖本 PR，取证不求日志。
+        # 只有失败且 PR 触发时执行，绿案零开销零噪声；本步常驻不拆。
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "<!-- opsbrain-red-diagnosis -->"
+            echo "### 🔴 后端腿失败诊断（tee 取证道）"
+            echo
+            echo "**编译错误指纹**："
+            echo '```'
+            (grep -E "\[ERROR\]|cannot find symbol|COMPILATION ERROR" /tmp/mvn-verify.log | head -25) || echo "(无编译错误——为测试阶段红)"
+            echo '```'
+            echo
+            echo "**失败测试摘要**："
+            echo '```'
+            grep -rl -E "FAILURE!|Failures: [1-9]|Errors: [1-9]" target/surefire-reports/*.txt 2>/dev/null | head -4 | while read -r f; do
+              echo "== $f =="
+              grep -E -B2 -A10 "FAILURE!|Failures: [1-9]|Errors: [1-9]" "$f" | head -22
+            done
+            echo '```'
+            echo
+            echo "**mvn 日志尾段**："
+            echo '```'
+            tail -50 /tmp/mvn-verify.log
+            echo '```'
+          } > /tmp/red-diag.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md
 
       - name: 评测指标基线对比（S4-3 CI 回归门禁）
         # 接线批次 18（报告 121）。契约层指标由 AgentEvaluationTest 常驻落盘
