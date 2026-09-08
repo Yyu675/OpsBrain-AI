@@ -5,7 +5,7 @@ import { login as apiLogin, getMe as apiGetMe, logout as apiLogout, type AuthUse
 
 export type Role = 'admin' | 'operator' | 'viewer' | 'guest'
 
-export interface CurrentUser {
+interface CurrentUser {
   name: string
   email: string
   avatar: string

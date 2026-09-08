@@ -53,7 +53,7 @@ const handleUnauthorized = (): void => {
   }
 }
 
-export interface HttpRequestOptions extends Omit<RequestInit, 'signal'> {
+interface HttpRequestOptions extends Omit<RequestInit, 'signal'> {
   timeout?: number
   retries?: number
   retryDelay?: number
@@ -234,7 +234,7 @@ export function toFriendlyError(e: unknown): FriendlyError {
 }
 
 /** 与后端统一包装对齐：code===0 才算成功 */
-export interface BizEnvelope<T = unknown> {
+interface BizEnvelope<T = unknown> {
   code: number
   message: string
   data: T

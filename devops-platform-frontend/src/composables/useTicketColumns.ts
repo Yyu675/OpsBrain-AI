@@ -114,7 +114,7 @@ export const LABEL_TO_KEY: Record<string, string> = {
   '操作': 'actions',
 }
 
-export interface UseTicketColumnsOptions {
+interface UseTicketColumnsOptions {
   /** 恢复默认后的提示（由调用方注入，composable 不直接依赖 UI 框架） */
   onReset?: () => void
 }

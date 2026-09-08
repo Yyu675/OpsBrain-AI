@@ -33,7 +33,7 @@ export interface TocItem {
 /** 顶部视差偏移（px）：正文顶部被吸顶区域遮住的高度 */
 const SCROLL_SPY_OFFSET = 96
 
-export interface UseDocOutlineOptions {
+interface UseDocOutlineOptions {
   /** 正文容器 ref（`v-html` 挂载点） */
   articleContentRef: Ref<HTMLElement | null>
   /** 滚动容器 ref（scroll spy 的参照系） */

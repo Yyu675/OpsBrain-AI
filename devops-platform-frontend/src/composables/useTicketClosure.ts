@@ -21,9 +21,9 @@ import { getPriorityLabel, getStatusLabel, type Ticket } from '@/stores/tickets'
  */
 
 /** 闭环阶段的状态。skipped 与 pending 的区别是「明确不做」与「还没做」 */
-export type ClosureState = 'done' | 'current' | 'skipped' | 'pending'
+type ClosureState = 'done' | 'current' | 'skipped' | 'pending'
 
-export interface ClosureStage {
+interface ClosureStage {
   key: string
   label: string
   state: ClosureState
@@ -38,7 +38,7 @@ export interface TicketProperty {
   type?: string
 }
 
-export interface UseTicketClosureReturn {
+interface UseTicketClosureReturn {
   closureStages: ComputedRef<ClosureStage[]>
   properties: ComputedRef<TicketProperty[]>
   showSlaAlert: ComputedRef<boolean>

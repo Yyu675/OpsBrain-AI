@@ -63,20 +63,20 @@ export interface SagaStep {
 }
 
 /** /attention 响应：{ records, count } */
-export interface SagaAttentionResponse {
+interface SagaAttentionResponse {
   records: SagaStep[]
   count: number
 }
 
 /** /{sagaId}/steps 响应：{ sagaId, steps, stepCount } */
-export interface SagaStepsResponse {
+interface SagaStepsResponse {
   sagaId: string
   steps: SagaStep[]
   stepCount: number
 }
 
 /** /{sagaId}/compensate 响应 */
-export interface SagaCompensateResult {
+interface SagaCompensateResult {
   sagaId: string
   compensatedCount: number
   failedCount: number

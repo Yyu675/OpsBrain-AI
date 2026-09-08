@@ -11,9 +11,9 @@
  */
 
 /** 重试语义，与后端 `BizError.Retry` 对齐 */
-export type RetryPolicy = 'NEVER' | 'SAFE' | 'BACKOFF' | 'CLIENT'
+type RetryPolicy = 'NEVER' | 'SAFE' | 'BACKOFF' | 'CLIENT'
 
-export interface BizErrorMeta {
+interface BizErrorMeta {
   /** 面向用户的标题 */
   title: string
   /** 下一步该怎么做——比"出错了"有用得多 */
@@ -122,7 +122,7 @@ export function isAutoRetryable(code: number | undefined): boolean {
 }
 
 /** SSE 错误事件的展示信息 */
-export interface StreamErrorView {
+interface StreamErrorView {
   /** 追加到对话气泡里的文本 */
   text: string
   /** toast 标题 */

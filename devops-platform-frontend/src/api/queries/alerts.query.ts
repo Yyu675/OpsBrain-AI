@@ -18,7 +18,7 @@ import { handleServerError } from '@/utils/notify'
  * - loading/error 由 Query 维护，与三态渲染直接对接
  */
 
-export interface AlertListFilters {
+interface AlertListFilters {
   page: Ref<number>
   size: Ref<number>
   status: Ref<AlertStatus | ''>

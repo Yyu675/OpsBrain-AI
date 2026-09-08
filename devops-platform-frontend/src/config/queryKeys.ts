@@ -13,7 +13,7 @@
  */
 
 /** 工单列表查询参数（与 store 的 TicketQueryParams 对齐） */
-export interface TicketListParams {
+interface TicketListParams {
   page?: number
   size?: number
   keyword?: string
@@ -57,7 +57,7 @@ export const ticketKeys = {
   firstResponseStats: () => [...ticketKeys.all, 'first-response-stats'] as const,
 }
 
-export interface AlertListParams {
+interface AlertListParams {
   page?: number
   size?: number
   status?: string
@@ -72,7 +72,7 @@ export const alertKeys = {
   detail: (id: string) => [...alertKeys.details(), id] as const,
 }
 
-export interface KnowledgeListParams {
+interface KnowledgeListParams {
   page?: number
   size?: number
   keyword?: string

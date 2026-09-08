@@ -20,14 +20,14 @@ const STATUS_OPTIONS = [
   { value: 'DROPPED', label: '已放弃' },
 ]
 
-export interface PostmortemForm {
+interface PostmortemForm {
   timeline: string
   impactScope: string
   impactDuration: number | null | undefined
   lessons: string
 }
 
-export interface NewActionItemForm {
+interface NewActionItemForm {
   content: string
   owner: string
   dueDate: string

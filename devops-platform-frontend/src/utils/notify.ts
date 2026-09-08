@@ -54,7 +54,7 @@ export const notify = {
 
 // ==================== 服务端错误统一处理 ====================
 
-export interface HandleServerErrorOptions {
+interface HandleServerErrorOptions {
   /**
    * 操作名，用于拼出「{动作}失败」的标题，如 '发布文档'。
    * 不传时使用 toFriendlyError 给出的通用标题。

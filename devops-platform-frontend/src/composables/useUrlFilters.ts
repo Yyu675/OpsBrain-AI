@@ -31,7 +31,7 @@ import { useRoute, useRouter } from 'vue-router'
  */
 
 /** 单个筛选项的定义 */
-export interface UrlFilterSpec<T> {
+interface UrlFilterSpec<T> {
   /** 绑定的响应式状态 */
   ref: Ref<T>
   /** URL 中的参数名 */
@@ -56,7 +56,7 @@ export interface UrlFilterSpec<T> {
  * 构造时用泛型的 {@link defineUrlFilter} 保证前者，
  * 存进数组时擦除为本类型以允许后者。
  */
-export interface AnyUrlFilterSpec {
+interface AnyUrlFilterSpec {
   ref: Ref<unknown>
   key: string
   defaultValue: unknown

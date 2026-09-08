@@ -33,7 +33,7 @@ import type { Ticket, TicketReply } from '@/stores/tickets'
  * `:analysis="analysisBundle"` 一行，父组件那边也能直接把 composable
  * 的返回值整体传过来。
  */
-export interface TimelineAnalysis {
+interface TimelineAnalysis {
   content: string
   streaming: boolean
   done: boolean

@@ -23,7 +23,7 @@ const getFocusable = (container: HTMLElement): HTMLElement[] => {
   return nodes.filter(isVisible)
 }
 
-export interface FocusTrap {
+interface FocusTrap {
   activate: () => void
   deactivate: () => void
 }

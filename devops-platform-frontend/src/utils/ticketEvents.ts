@@ -17,7 +17,7 @@
  */
 
 /** 事件名 → 载荷参数元组。新增事件在此登记。 */
-export interface EventPayloads {
+interface EventPayloads {
   /** AI 建单成功，载荷为后端返回的工单号 */
   'ticket-created': [ticketId: string]
   /** 手动工单表单提交成功，无载荷 */
@@ -28,9 +28,9 @@ export interface EventPayloads {
 // ApprovalCenter 的 mutation invalidate approvalKeys.all，
 // 导航栏角标共用该前缀因此自动刷新，不再需要发布/订阅两处手工配对。
 
-export type EventName = keyof EventPayloads
+type EventName = keyof EventPayloads
 
-export type EventCallback<N extends EventName> = (...args: EventPayloads[N]) => void
+type EventCallback<N extends EventName> = (...args: EventPayloads[N]) => void
 
 /** 内部存储擦除具体事件的参数类型，读写两端由公开方法签名保证类型安全 */
 type AnyCallback = (...args: never[]) => void

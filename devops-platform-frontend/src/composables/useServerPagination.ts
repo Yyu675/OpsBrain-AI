@@ -12,7 +12,7 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
  * 一堆可选参数里，反而比各自写清楚更难维护。
  */
 
-export interface UseServerPaginationOptions {
+interface UseServerPaginationOptions {
   /** 每页条数，默认 10 */
   pageSize?: number
   /**
@@ -36,7 +36,7 @@ export interface UseServerPaginationOptions {
 
 export type PageItem = number | 'ellipsis'
 
-export interface UseServerPaginationReturn {
+interface UseServerPaginationReturn {
   currentPage: Ref<number>
   pageSize: Ref<number>
   /**

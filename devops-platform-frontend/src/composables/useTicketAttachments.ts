@@ -32,14 +32,14 @@ import { handleServerError, notify } from '@/utils/notify'
  *    会出现「上传成功提示已弹、列表却还没更新」的空窗。
  */
 
-export interface UseTicketAttachmentsOptions {
+interface UseTicketAttachmentsOptions {
   /** 工单 ID。用 Ref——切换工单时要能感知 */
   ticketId: Ref<string>
   /** 上传者名字，取自登录态 */
   getOperator: () => string
 }
 
-export interface UseTicketAttachmentsReturn {
+interface UseTicketAttachmentsReturn {
   attachments: Ref<TicketAttachmentMeta[]>
   attachmentsLoading: Ref<boolean>
   uploading: Ref<boolean>

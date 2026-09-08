@@ -36,7 +36,7 @@ import { handleServerError, notify } from '@/utils/notify'
  * 分界线是「是否只依赖工单本身」——这里的动作都只需要 id 和当前用户。
  */
 
-export interface UseTicketActionsOptions {
+interface UseTicketActionsOptions {
   /** 当前工单。用 Ref——切换路由时引用会变 */
   ticket: Ref<Ticket | undefined>
   /** 当前登录用户名 */

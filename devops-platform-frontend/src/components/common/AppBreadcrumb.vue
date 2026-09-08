@@ -31,7 +31,7 @@
 import { computed } from 'vue'
 import { Home, ChevronRight } from 'lucide-vue-next'
 
-export interface BreadcrumbItem {
+interface BreadcrumbItem {
   /** 显示文案 */
   label: string
   /** 跳转目标。不传则该级不可点击（通常是末级当前页） */

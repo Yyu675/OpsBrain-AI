@@ -38,7 +38,7 @@ export interface BulkActionStore {
   bulkAssign: (ids: string[], assignee: string) => Promise<number>
 }
 
-export interface UseTicketBulkActionsOptions {
+interface UseTicketBulkActionsOptions {
   store: BulkActionStore
   /** 页码 ref：删空当前页时需要回退 */
   currentPage: Ref<number>

@@ -19,9 +19,9 @@ import { computed, ref, shallowRef, type ComputedRef, type Ref } from 'vue'
  * `notFound` 与 `error` 必须分开：前者数据已消失（引导返回列表），
  * 后者数据可能仍在（引导重试）——用户下一步动作完全不同。
  */
-export type ResourceStatus = 'loading' | 'ready' | 'notFound' | 'error'
+type ResourceStatus = 'loading' | 'ready' | 'notFound' | 'error'
 
-export interface UseResourceStateReturn<T> {
+interface UseResourceStateReturn<T> {
   /** 资源数据，仅 status === 'ready' 时保证非空 */
   data: Ref<T | null>
   /** 当前状态，模板按它单一分支渲染 */
@@ -116,7 +116,7 @@ export function useResourceState<T>(): UseResourceStateReturn<T> {
 
 // ==================== 外部数据源变体 ====================
 
-export interface UseExternalResourceStateReturn {
+interface UseExternalResourceStateReturn {
   status: Ref<ResourceStatus>
   error: Ref<unknown>
 

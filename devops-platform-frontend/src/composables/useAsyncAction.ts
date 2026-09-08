@@ -42,7 +42,7 @@ import { handleServerError } from '@/utils/notify'
  *    失败给 undefined 并已弹过提示。调用方想区分只需判返回值，
  *    不必再写一层 try/catch——那正是当前样板代码的来源。
  */
-export interface UseAsyncActionOptions {
+interface UseAsyncActionOptions {
   /** 操作名，用于「{动作}失败」的错误标题，如 '升级上报' */
   action?: string
   /** 成功后的提示文案。不传则不提示（如后续还有跳转、由目标页给反馈） */
@@ -54,7 +54,7 @@ export interface UseAsyncActionOptions {
   autoHandleError?: boolean
 }
 
-export interface UseAsyncActionReturn<A extends unknown[], T> {
+interface UseAsyncActionReturn<A extends unknown[], T> {
   /** 是否进行中。绑到按钮的 :disabled 与 loading 文案 */
   pending: Readonly<import('vue').Ref<boolean>>
   /** 执行。进行中时重复调用直接返回 undefined */

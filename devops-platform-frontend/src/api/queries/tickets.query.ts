@@ -21,7 +21,7 @@ import type {
  */
 
 /** 列表 Query 参数：store 的筛选状态 → http 参数 */
-export interface ListParamsToRequest {
+interface ListParamsToRequest {
   page?: number
   size?: number
   keyword?: string

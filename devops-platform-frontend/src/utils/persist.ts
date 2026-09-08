@@ -1,6 +1,6 @@
 const PREFIX = '__store__:'
 
-export interface PersistPayload<T> {
+interface PersistPayload<T> {
   version: number
   value: T
   savedAt: number
@@ -65,7 +65,7 @@ const safeRemove = (key: string) => {
 
 export type Migrator = (old: unknown) => unknown
 
-export interface LoadOptions {
+interface LoadOptions {
   migrations?: Record<number, Migrator>
 }
 

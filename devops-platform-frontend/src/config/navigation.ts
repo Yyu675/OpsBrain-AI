@@ -1,6 +1,6 @@
-export type CapabilityStage = 'L1' | 'L2' | 'L3' | 'L4' | 'L5'
+type CapabilityStage = 'L1' | 'L2' | 'L3' | 'L4' | 'L5'
 
-export interface NavigationItem {
+interface NavigationItem {
   key: string
   label: string
   path: string

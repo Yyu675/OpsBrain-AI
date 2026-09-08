@@ -5,7 +5,7 @@
  * 级别语义由后端下发（P0~P4 字符串），颜色归类是前端展示职责（后端不硬编码颜色）。
  */
 
-export type AlertLevel = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'
+type AlertLevel = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'
 export type AlertStatus = 'FIRING' | 'ACKNOWLEDGED' | 'RESOLVED'
 
 /**

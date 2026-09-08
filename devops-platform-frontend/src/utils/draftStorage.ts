@@ -25,7 +25,7 @@ const safeRemove = (key: string) => {
   }
 }
 
-export interface DraftPayload<T> {
+interface DraftPayload<T> {
   value: T
   savedAt: number
 }

@@ -36,10 +36,9 @@ import type {
 // 仅用于清理旧版本遗留的 mock 缓存，不再写入
 const PERSIST_KEY = 'knowledge'
 
-export type DocStatus = KnowledgeDocListItem['status']
 
 /** 列表查询参数（服务端筛选 + 分页） */
-export interface KnowledgeQueryParams {
+interface KnowledgeQueryParams {
   page?: number
   size?: number
   keyword?: string

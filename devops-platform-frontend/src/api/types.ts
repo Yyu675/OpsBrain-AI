@@ -18,22 +18,14 @@ export interface ApiResponse<T = unknown> {
 
 // ==================== SSE 流式事件 ====================
 
-/**
- * SSE 事件类型
- */
-export type SSEEventType = 'start' | 'tool_status' | 'token' | 'complete' | 'error'
-
+// （SSEEventType/SSEEvent 成对死链已随批次 25 整删：EventType 的唯一消费者
+// 就是那个零引用的 SSEEvent 接口——链断即双删，详见报告 128）
 /**
  * SSE 基础事件
  *
  * data 的具体形状由 event 决定（见下方 SSEStartEvent / SSETokenEvent 等）。
  * 用 unknown 强制消费方先按 event 分支再窄化，避免直接当作某一类事件误读字段。
  */
-export interface SSEEvent {
-  event: SSEEventType
-  data: unknown
-}
-
 /**
  * start 事件 - 会话开始
  */

@@ -42,7 +42,7 @@ export interface FilterChip {
   value?: string
 }
 
-export interface UseTicketFiltersOptions {
+interface UseTicketFiltersOptions {
   /**
    * 取消在途的防抖搜索。
    *
