@@ -396,3 +396,9 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 单测2例 SimpleMeterRegistry 零容器。盲编译纪律:方法引用全改显式 lambda。
 - 报告152;S5-1 仅剩 OTLP 导出归 JDK 合并批。
 
+## 批 50(2026-09-08):业务告警组——水位计接通契约,S5-1 仅剩 OTLP
+
+- alert.rules.yml 新组 opsbrain-business-alerts 两枚:UrgentPendingHigh(>10/15m)+ApprovalBacklog(>5/1h),起步阈值首周校准,NaN 不误报双职责分离。
+- 数据面=批49 四 Gauge;labels 契约全守。**S5-1 在 OTLP 导出外全组闭环**。
+- 撰档狗食:告警描述两叠字返工(语句不过关带蠢字进事故档案)。报告153。
+

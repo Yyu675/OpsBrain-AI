@@ -115,3 +115,37 @@ groups:
           summary: "OpsBrain 应用 15 分钟内多次重启"
           description: "JVM 反复退出重启。首查 OOM(ExitOnOutOfMemoryError 语义,日志应有 OutOfMemoryError 痕迹)与 compose deploy limits 余量;次查 Postgres/Redis 探活之外的连接风暴。"
 
+  # =====================================================================
+  # 业务水位组（批 50，S5-1.4 配套）——数据面=BusinessMetrics 四枚存量 Gauge
+  # （opsbrain_* 为 Micrometer→Prometheus 的点转下划线名）。
+  # 阈值纪律：两枚均为「起步阈值」，真窗首周按 P95 水位校准后回填
+  # （调阈值先看水位基线，拍脑袋阈值=风暴种子）。
+  # NaN 语义：供体崩坏时 Gauge 报 NaN，比较恒 false 不误报——
+  # 供体失踪由 OpsBrainDown/依赖闸另行报警（职责分离，双保险不重叠）。
+  # =====================================================================
+  - name: opsbrain-business-alerts
+    rules:
+      # P2:高优工单积压——P0/P1 未结量持续 15 分钟过线,值班拥堵信号
+      - alert: OpsBrainUrgentPendingHigh
+        expr: opsbrain_tickets_urgent_pending > 10
+        for: 15m
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "P0/P1 高优工单积压(>10 张,持续 15 分钟)"
+          description: "与看板 KPI 同口径——先按 module/priority 分布拆积压构成,再按值班 SOP 高开单排班疏导;必要时升级 P1 评估增援。起步阈值,真窗首周校准。"
+
+      # P2:审批排队超时——治理闸空置=自愈与前变更全哑火的替身警报
+      - alert: OpsBrainApprovalBacklog
+        expr: opsbrain_approvals_pending > 5
+        for: 1h
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "待审批积压(>5 笔,持续 1 小时)"
+          description: "审批闸空置积压 = 治理链路没哑火、只是没人批。先到审批页清账;夜班常态请评估当班审批人排班,不要盲目调高阈值。起步阈值,真窗首周校准。"
+
