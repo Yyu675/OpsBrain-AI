@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "knip": "knip",
-    "verify": "npm run typecheck && npm run lint && npm run test"
+    "verify": "npm run typecheck && npm run lint && npm run test",
+    "size:gate": "npm run build >/dev/null && node ../tools/audit/check_bundle_budget.js"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",

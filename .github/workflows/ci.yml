@@ -199,3 +199,9 @@ jobs:
 
       - name: 生产构建
         run: npm run build
+
+      - name: 体积预算（门禁）
+        # F-4（批次 32 / 报告 135）：F-2 语言包裁剪的省线之上立闸——总量/单件
+        # 双维超 budget 即红，防体积静默回弹。口径=未压缩字节（与构建产物同源）。
+        # 预算源 tools/audit/bundle_budget.json；抬预算用 --update + commit 写理由。
+        run: node ../tools/audit/check_bundle_budget.js
