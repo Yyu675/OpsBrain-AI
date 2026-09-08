@@ -40,9 +40,11 @@ const UPDATE = args.includes('--update')
 const COUNT_KEYS = /Total|annotated|leaked|blocked|hallucinated/i
 // 「上升=劣化」键：leaked/blocked/hallucinated 属计数域（零容忍）；
 // hallucinationRate 属比率域（阈 ±THRESHOLD）——幻觉率类指标方向与命中率相反。
-// 词根用 hallucina：同时罩住 hallucinated（计数）与 hallucinationRate（比率），
+// 词根用 hallucina：同时罩住 hallucinated（计数）与 hallucinationRate（比率）；
+// \bece\b/calibration 入反向域属比率径（S4-2 骨架预接，批 33）：校准误差上升=劣化，
+// \b 边界防未来 piece/receive 之类撞名；批 33 转台已证 ece +3pt→rc=1、-3pt→rc=0。
 // 夹具实证过「hallucinated 不含 hallucination 子串（差 io）」的误分类坑。
-const REVERSE_COUNT_KEYS = /leaked|blocked|hallucina/i
+const REVERSE_COUNT_KEYS = /leaked|blocked|hallucina|\bece\b|calibration/i
 
 const flat = (obj, prefix = '') =>
   Object.entries(obj).flatMap(([k, v]) =>

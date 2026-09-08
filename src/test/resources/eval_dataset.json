@@ -1386,7 +1386,7 @@
     ],
     "shouldTriggerFallback": false,
     "expectedDocs": [
-      "阿里云负载均衡SLB配置手册.md"
+      "阿里云SLB负载均衡手册.md"
     ]
   },
   {
@@ -1568,5 +1568,33 @@
       "抱歉"
     ],
     "shouldTriggerFallback": true
+  },
+  {
+    "id": 151,
+    "type": "POSITIVE",
+    "query": "SLB 健康检查的源 IP 段是多少？ECS 安全组那边要怎么放行？",
+    "expectedKeywords": [
+      "100.64.0.0/10",
+      "安全组",
+      "健康检查"
+    ],
+    "shouldTriggerFallback": false,
+    "expectedDocs": [
+      "阿里云SLB负载均衡手册.md"
+    ]
+  },
+  {
+    "id": 152,
+    "type": "POSITIVE",
+    "query": "SLB 健康检查老超时，响应超时时间和阈值建议怎么配？",
+    "expectedKeywords": [
+      "超时",
+      "阈值",
+      "健康检查"
+    ],
+    "shouldTriggerFallback": false,
+    "expectedDocs": [
+      "阿里云SLB负载均衡手册.md"
+    ]
   }
 ]
