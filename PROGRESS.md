@@ -371,3 +371,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 落器:application-prod.yml Hikari 显式块(20/5/20s/lifetime 600s/idle 300s/keepalive 240s),全 env;规模铁律 replicas×pool ≤ max_conn×0.7;leak 探不进 prod。
 - S5-4 静态面全清(4.1/4.2/4.3/4.4);S5 余量二分:五件 JDK 批 × 真窗演练档。报告146;docs/09-operations/连接池配置核查.md。
 
+## 批 44(2026-09-08):S5-6 数字资产移交清单——阶段5配置/文档面清零
+
+- `docs/09-operations/数字资产移交清单.md`:九格清点(两格挂账:备份演练/摄取实证)+六步部署包验证+三签封口+起步三式。签收不等于销账,首真窗为销账线。
+- **S5 余量纯二分**:JDK 批五件 × 真窗演练档;其余只剩用户阶件(并 main/演示)。报告147。
+
