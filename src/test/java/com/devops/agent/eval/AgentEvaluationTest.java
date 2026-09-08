@@ -181,6 +181,15 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
             appendReport(report, "\n## 误拦截正例（必须修复）\n" + String.join("\n", blocked) + "\n");
         }
 
+        // 4-3.1：契约层指标持久化（常驻层——本测试不设 env 门，CI 必跑必落）
+        EvalMetricsWriter.mergeLayer("contract", items.size(), java.util.Map.of(
+                "interceptRate", interceptRate,
+                "passRate", passRate,
+                "negTotal", negTotal,
+                "posTotal", posTotal,
+                "leaked", leaked.size(),
+                "blocked", blocked.size()));
+
         writeReport(report);
 
         org.junit.jupiter.api.Assertions.assertTrue(leaked.isEmpty(),
@@ -258,6 +267,19 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
         if (!missed.isEmpty()) {
             appendReport(report, "\n## 未命中正例（知识库缺口，需补文档）\n" + String.join("\n", missed) + "\n");
         }
+        // 4-3.1：RAG 层指标持久化（env 门控层——只在本层真跑过的运行里出现，
+        // 合并语义保证不被只跑契约层的运行抹掉）
+        java.util.Map<String, Object> ragMetrics = new java.util.LinkedHashMap<>();
+        ragMetrics.put("hitRate", hitRate);
+        ragMetrics.put("posTotal", positives.size());
+        ragMetrics.put("annotated", rankings.size());
+        if (!rankings.isEmpty()) {
+            ragMetrics.put("recallAt1", RetrievalRankMetrics.recallAtK(rankings, 1));
+            ragMetrics.put("recallAt3", RetrievalRankMetrics.recallAtK(rankings, 3));
+            ragMetrics.put("mrr", RetrievalRankMetrics.mrr(rankings));
+        }
+        EvalMetricsWriter.mergeLayer("rag", items.size(), ragMetrics);
+
         // 4-1.2 排序质量小结：只含 expectedDocs 注记样本；无注记则留空拒伪造
         if (!rankings.isEmpty()) {
             appendReport(report, "\n## 排序质量（expectedDocs 注记样本，共 " + rankings.size() + " 条）\n");
