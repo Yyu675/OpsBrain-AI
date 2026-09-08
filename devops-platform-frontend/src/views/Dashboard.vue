@@ -63,6 +63,16 @@ const attentionText = computed(() =>
   (diagnosis.value?.attentionTypes ?? []).map((t) => DIR_LABELS[t] ?? t).join('、')
 )
 
+/** 诊断量趋势：柱=当日发起，折=当日完成（补零语义由后端 Composer 保证，此处只管画） */
+const diagnosisTrendSeries = computed<TrendSeries[]>(() => {
+  const t = diagnosis.value?.sessionTrend
+  if (!t || !t.days.length) return []
+  return [
+    { name: '发起诊断', data: t.created, type: 'bar', color: '#409eff', suffix: ' 次' },
+    { name: '完成诊断', data: t.completed, type: 'line', color: '#67c23a', suffix: ' 次' }
+  ]
+})
+
 /**
  * 数据更新时间：从 Query 的 dataUpdatedAt 派生。
  *
@@ -383,6 +393,16 @@ const rootCauseTop = computed(() =>
               </table>
             </template>
             <AppEmpty v-else size="sm" description="窗口内暂无取证记录" />
+
+            <div v-if="diagnosis.sessionTrend.days.length" class="diagnosis-trend">
+              <h4 class="sub-heading">诊断量趋势（发起 / 完成）</h4>
+              <TrendChart
+                class="diagnosis-trend-chart"
+                :labels="diagnosis.sessionTrend.days"
+                :series="diagnosisTrendSeries"
+                height="240px"
+              />
+            </div>
           </div>
 
           <!-- 统计信息 -->

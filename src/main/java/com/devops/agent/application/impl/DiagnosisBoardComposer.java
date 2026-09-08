@@ -1,12 +1,15 @@
 package com.devops.agent.application.impl;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 诊断看板合并面（S4-4.2 批次 16）：把三条 GROUP BY 查询的原始行
+ * 诊断看板合并面（S4-4.2 批次 16 / S4-4.3 批次 17）：把 GROUP BY 查询的原始行
  * 合成看板载荷的纯计算类——与 DashboardServiceImpl 的 SQL 查询分层，
  * 本类的全部语义可被确定性钉测（SQL 层的正确性归集成测试既有闸）。
  *
@@ -18,8 +21,20 @@ import java.util.Map;
  *       那是「数据源失败率可见」的验收点；NO_DATA 不点名
  *       （服务可能本来就没事可报，点名会制造假警）。</li>
  * </ul>
+ *
+ * <h3>趋势口径（S4-4.3）</h3>
+ * <ul>
+ *   <li>固定周期趋势必须补零（与 getCallTrends 的既有纪律同一条）：
+ *       没有诊断发起的日子画 0 点，而不是让折线跨坑跳接——跳接的线
+ *       会把「系统闲」误读成「中间数据丢了」；</li>
+ *   <li>本类不读时钟：today 由调用方注入，日历语义才能被钉测固定；</li>
+ *   <li>越窗行直接丢弃（序列长度恒等于窗口天数，由窗口左右端点定秩序，
+ *       不认行自带的日期范围）。</li>
+ * </ul>
  */
 final class DiagnosisBoardComposer {
+
+    private static final DateTimeFormatter DAY_LABEL = DateTimeFormatter.ofPattern("MM-dd");
 
     private DiagnosisBoardComposer() {
     }
@@ -29,13 +44,17 @@ final class DiagnosisBoardComposer {
      * @param sufficiencyRows   已完成的充分性分布行 [{sufficiency, n}]
      * @param evidenceRows      证据方向×状态分布行 [{evidence_type, status, n}]
      * @param avgDurationSeconds 已完成会话平均耗时秒（无完成会话时为 null）
-     * @param windowDays        统计窗口天（已夹紧，透传展示）
+     * @param windowDays        统计窗口天（已夹紧，透传展示 + 定趋势长度）
+     * @param trendRows         逐日诊断行 [{day, total, completed}]
+     * @param today             窗口右端点（含）。注入而非自读：时钟语义可钉测
      */
     static Map<String, Object> compose(List<Map<String, Object>> statusRows,
                                        List<Map<String, Object>> sufficiencyRows,
                                        List<Map<String, Object>> evidenceRows,
                                        Double avgDurationSeconds,
-                                       int windowDays) {
+                                       int windowDays,
+                                       List<Map<String, Object>> trendRows,
+                                       LocalDate today) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("windowDays", windowDays);
 
@@ -94,7 +113,47 @@ final class DiagnosisBoardComposer {
         }
         out.put("evidenceDirections", directions);
         out.put("attentionTypes", attention);
+
+        out.put("sessionTrend", buildTrend(trendRows, windowDays, today));
         return out;
+    }
+
+    /** 逐日趋势：窗口 [today-windowDays+1, today] 逐日补零，长度恒等于窗口。 */
+    private static Map<String, Object> buildTrend(List<Map<String, Object>> trendRows,
+                                                  int windowDays, LocalDate today) {
+        Map<LocalDate, long[]> byDay = new HashMap<>();
+        for (Map<String, Object> r : trendRows) {
+            long[] v = new long[2];
+            v[0] = ((Number) r.get("total")).longValue();
+            v[1] = ((Number) r.get("completed")).longValue();
+            byDay.put(toLocalDate(r.get("day")), v);
+        }
+        List<String> days = new ArrayList<>();
+        List<Long> created = new ArrayList<>();
+        List<Long> completed = new ArrayList<>();
+        for (LocalDate d = today.minusDays(windowDays - 1L);
+             !d.isAfter(today); d = d.plusDays(1)) {
+            long[] v = byDay.get(d);
+            days.add(d.format(DAY_LABEL));
+            created.add(v == null ? 0L : v[0]);
+            completed.add(v == null ? 0L : v[1]);
+        }
+        Map<String, Object> trend = new LinkedHashMap<>();
+        trend.put("days", days);
+        trend.put("created", created);
+        trend.put("completed", completed);
+        return trend;
+    }
+
+    /** 防御日期列的三种可能包裹：java.sql.Date / LocalDate / yyyy-MM-dd 字符串。 */
+    private static LocalDate toLocalDate(Object v) {
+        if (v instanceof LocalDate d) {
+            return d;
+        }
+        if (v instanceof java.sql.Date d) {
+            return d.toLocalDate();
+        }
+        return LocalDate.parse(String.valueOf(v));
     }
 
     private static double round(double v, int decimals) {

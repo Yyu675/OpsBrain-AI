@@ -79,8 +79,20 @@ public class DashboardServiceImpl implements DashboardService {
                  WHERE status = 'COMPLETED'
                    AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                 """, Double.class, window);
+        // 逐日诊断量趋势（S4-4.3）：SQL 只取有数的行，补零/越窗丢弃属日历
+        // 语义，全部下沉 Composer（right 端点由这里注入 LocalDate.now()）
+        List<Map<String, Object>> trendRows = jdbcTemplate.queryForList(
+                """
+                SELECT DATE(created_at) AS day,
+                       COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed
+                  FROM sys_diagnosis_session
+                 WHERE created_at >= CURRENT_DATE - CAST(? AS INTEGER)
+                 GROUP BY DATE(created_at)
+                 ORDER BY day
+                """, window - 1);
         return DiagnosisBoardComposer.compose(statusRows, sufficiencyRows,
-                evidenceRows, avgSeconds, window);
+                evidenceRows, avgSeconds, window, trendRows, LocalDate.now());
     }
 
     @Override

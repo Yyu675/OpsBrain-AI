@@ -111,6 +111,11 @@ const diagnosisBoard = (over: Record<string, unknown> = {}) => ({
     { type: 'logs', total: 10, success: 10, noData: 0, failed: 0, unavailable: 0, successRate: 1 },
   ],
   attentionTypes: ['metrics'],
+  sessionTrend: {
+    days: ['09-06', '09-07', '09-08'],
+    created: [3, 0, 1],
+    completed: [2, 0, 1],
+  },
   ...over,
 })
 
@@ -348,7 +353,12 @@ describe('趋势区独立降级（6.51 契约）', () => {
   })
 
   it('趋势为空数组时显示空态而非空白图表', async () => {
-    const w = await mountPage({ trends: trends({ days: [] }) })
+    // S4-4.3 起页面有两个趋势源（B2 成本/工单趋势 + B6 诊断量趋势），
+    // 「整页零图表」的断言前提是两个源都空——主语仍是 B2 的 trends 空
+    const w = await mountPage({
+      trends: trends({ days: [] }),
+      diagnosis: diagnosisBoard({ sessionTrend: { days: [], created: [], completed: [] } }),
+    })
 
     expect(w.findAllComponents({ name: 'TrendChart' })).toHaveLength(0)
     expect(w.findAllComponents({ name: 'AppEmpty' }).length).toBeGreaterThan(0)
@@ -409,5 +419,19 @@ describe('诊断区看板（S4-4.2 批次 16）', () => {
     const w = await mountPage({ diagnosis: diagnosisBoard({ evidenceDirections: [] }) })
 
     expect(w.find('.diagnosis-table').exists()).toBe(false)
+  })
+
+  it('逐日趋势上墙：后端补零的 days 直接喂给图表，闲日 0 点照画（S4-4.3）', async () => {
+    const w = await mountPage()
+
+    expect(w.find('.diagnosis-trend-chart').exists()).toBe(true)
+  })
+
+  it('days 为空（老后端不带趋势键降级）：趋势图整块收起，不画空框', async () => {
+    const w = await mountPage({
+      diagnosis: diagnosisBoard({ sessionTrend: { days: [], created: [], completed: [] } }),
+    })
+
+    expect(w.find('.diagnosis-trend-chart').exists()).toBe(false)
   })
 })

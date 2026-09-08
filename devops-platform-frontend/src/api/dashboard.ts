@@ -137,9 +137,20 @@ export interface DiagnosisDirectionStat {
   successRate: number
 }
 
+export interface DiagnosisSessionTrend {
+  /** 窗口逐日标签（MM-dd），长度恒等于 windowDays（后端正点补零） */
+  days: string[]
+  /** 当日发起诊断数（无数据日为 0 点，不跳接） */
+  created: number[]
+  /** 当日完成诊断数 */
+  completed: number[]
+}
+
 export interface DiagnosisBoard {
   windowDays: number
   sessions: DiagnosisSessionsStats
+  /** 逐日诊断量趋势（S4-4.3） */
+  sessionTrend: DiagnosisSessionTrend
   evidenceDirections: DiagnosisDirectionStat[]
   /** 需关注方向：FAILED 或 UNAVAILABLE > 0 才点名；NO_DATA 不算源故障，点名=假警 */
   attentionTypes: string[]
@@ -162,6 +173,11 @@ export async function getDiagnosisBoard(days = 7): Promise<DiagnosisBoard> {
       byStatus: data?.sessions?.byStatus ?? [],
       avgDurationSeconds: data?.sessions?.avgDurationSeconds ?? null,
       sufficiency: data?.sessions?.sufficiency ?? []
+    },
+    sessionTrend: {
+      days: data?.sessionTrend?.days ?? [],
+      created: data?.sessionTrend?.created ?? [],
+      completed: data?.sessionTrend?.completed ?? []
     },
     evidenceDirections: data?.evidenceDirections ?? [],
     attentionTypes: data?.attentionTypes ?? []
