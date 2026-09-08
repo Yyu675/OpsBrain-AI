@@ -44,7 +44,7 @@ services:
       - devops_pg_data:/var/lib/postgresql/data
       # 表结构的唯一真相源是 Flyway 基线
       # src/main/resources/db/migration/V1__baseline.sql（S0-1 起，
-      # 原 sql/init.sql 迁入 classpath 由 Flyway 托管）。
+      # 此桩文件已由批 67 删除——classpath Flyway 单真相源）。
       #
       # 这里把同一份 V1 挂成 PG 首启脚本，仅为「纯容器、应用尚未启动」
       # 时的便利；应用一旦启动，Flyway 的 baseline-on-migrate 会把它
