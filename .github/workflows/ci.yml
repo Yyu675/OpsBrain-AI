@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write  # 批 64:失败步借 commit comment 回帖取证(沙箱侧读 CDN 日志被墙)
   pull-requests: write  # 4-3.5：PR 评论贴评测对比结果
 
 # 同一分支的新提交取消尚在跑的旧任务，避免排队浪费
@@ -72,6 +72,7 @@ jobs:
           ./mvnw -B -ntp --version
 
       - name: 迁移校验与空库全量建账（Flyway migrate+validate，路线图步骤 0-1.6/0-1 验收）
+        id: flywaycheck
         # 双保险的内层：应用启动 validate-on-migrate=true 是运行时防线（防 prod 库漂移）；
         # 本步骤用一次性零障库走「migrate→validate→库账」完整三段，证明:
         #   ① 仓库内 V1..V11 空库一次建出全部表（路线图 0-1 验收第一条）;
@@ -79,6 +80,8 @@ jobs:
         #   ③ 与后段「初始化数据库 Schema」走的主库物理隔离(取 scratch 名义),
         #      互不干扰、可重跑。
         run: |
+          set -o pipefail
+          {
           PGPASSWORD=devops_password psql -h localhost -p 25432 -U devops -d postgres \
             -c "DROP DATABASE IF EXISTS flyway_ci_scratch;" -c "CREATE DATABASE flyway_ci_scratch;"
           ./mvnw -B -ntp flyway:migrate \
@@ -91,6 +94,22 @@ jobs:
             -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';")
           echo "::notice::空库全量建账表数=$TABLES"
           [ "$TABLES" -ge 27 ] || { echo "::error::空库 migrate 后表数 $TABLES < 27(期望 V1..V11 全建账)"; exit 1; }
+          } 2>&1 | tee /tmp/flyway-check.log
+
+      - name: Flyway 步失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道，批 64）
+        if: failure() && steps.flywaycheck.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-flyway-diag -->"
+            echo "### 🔴 后端腿「迁移校验与空库全量建账」步骤取证（批 64 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -120 /tmp/flyway-check.log 2>/dev/null || echo "(日志文件缺失——步骤在 tee 前即炸,如网络/psql 客户端缺位)"
+            echo '```'
+          } > /tmp/flyway-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/flyway-diag.md --silent || true
 
       - name: 初始化数据库 Schema
         # @SpringBootTest 不建表（JPA ddl-auto 非 create），需先执行建表脚本。
