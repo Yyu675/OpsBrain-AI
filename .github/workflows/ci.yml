@@ -181,6 +181,12 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 依赖漏洞审计（门禁）
+        # S5-3.3（批次 36 / 报告 139）：prod 依赖 HIGH+ 即红；dev 依赖不在门禁口径
+        # （构建侧风险等位较低、变异噪声高）——全量含 dev 的账本随 Trivy 周巡件。
+        # 2026-09-08 量：prod 0 / 全量 0，门禁从干净地板起步，回弹即出警。
+        run: npm audit --omit=dev --audit-level=high
+
       - name: 类型检查
         run: npm run typecheck
 

@@ -313,3 +313,10 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 环境尾单:node_modules 被批33重克隆清空,npm ci 复原(535包)。
 - 仲裁:后端编译+钉测交本批 CI 后端腿。报告 138。
 
+## 批 36(2026-09-08):S5-3.3 依赖漏洞扫描 CI + 全阶段残账清单
+
+- 主线门禁:ci.yml 前端腿「依赖漏洞审计(门禁)」(npm audit --omit=dev --audit-level=high;prod 0/全量 0 干净地板起步)。
+- 增强件 `vulnerability-scan.yml`:Trivy 全仓 FS 扫(HIGH,CRITICAL 即红,未修复豁免),派单+周巡(周日22:00 UTC),artifact 30天;**激活边界同 D-D:并入 main 前不注册**。后端弃 OWASP 选型案卷入 workflow 头注(NVD 无 key 限流首轮必超时)。
+- YAML 狗食:`||` 回退默认单引号截断被 pyparse 当场抓——「`||` 一律双引号外包」立规。
+- **全阶段未完成清单成文**(报告139 §二):S1/S2/S3 零残,S0 三笔收尾,S4 两笔真窗,S5 十子项,跨阶段 4 件;这是用户问「剩什么」的定版口径。
+
