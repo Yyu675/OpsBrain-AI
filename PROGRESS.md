@@ -388,3 +388,11 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 红案澄账:557443e 同主代码差无双腿绿;四连红唯一同时变量=当时段 CI/网络事件(azure blob 沙箱 EOF 侧证);tee 取证道常驻。教训58:同码复绿是及格线。报告149。
 - S5-3.2 续:三面扫描全合格(点名不带值/异常不带配置/审计恒空 digest);一处实获:HealingOrchestrator 撤销日志直录 undoToken 全长→ maskToken(前4+len)收口;S5-3.2 全清。报告150。
 
+## 批 48+49(2026-09-08):S5-1 下半场——ECS 结构化日志+业务水位计
+
+- 改道教训59号:**先扫「Boot托管版本自带能力」再排依赖批**——Boot 3.5.6 原生 structured logging(3.4+)使 logstash 依赖批解编,JDK 批收窄为只剩 OTLP 导出一件。
+- 批48:application-prod.yml console/file 双 ecs,MDC/traceId 随身,硬开不给口子;dev 人类可读原样。
+- 批49:BusinessMetrics 侧车四枚存量 Gauge(tickets.total/urgent_pending/alerts.active/approvals.pending),供体=既有 repo 计数零增码,供体崩→NaN 不陪葬抓面;构造器直插法被实锤弃(6+ 测试类手装)。
+- 单测2例 SimpleMeterRegistry 零容器。盲编译纪律:方法引用全改显式 lambda。
+- 报告152;S5-1 仅剩 OTLP 导出归 JDK 合并批。
+

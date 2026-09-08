@@ -101,3 +101,21 @@ logging:
     # DEBUG 下会把请求/响应体打进日志。模型响应里可能带用户输入的
     # 敏感信息，进了日志归档系统就收不回来了。
     dev.langchain4j: WARN
+
+  # ==================== S5-1.3 结构化日志（批 48，生产面落器）====================
+  # Spring Boot 3.4+ 原生结构化日志（本仓 3.5.6)，无需 logstash-logback-encoder
+  # 依赖——「等 JDK 批」由此瘦身：唯一仍需 JDK 的是 OTLP 指标导出那一件。
+  #
+  # ecs = Elastic Common Schema：每行一个 JSON 对象，@timestamp/level/
+  # logger/message 外加 MDC 全键（traceId 随身）——告警风暴现场用
+  # jq/logstash 按 traceId 直接收拢一条请求的全部行，这是排障地基的
+  # 「机器可读」半身（人类可读半身 dev profile 原样保留）。
+  #
+  # 生产硬开不给关闭口子：与本文件 auth-enabled 同款纪律（回滚走改档，
+  # 走 git 审计）。开闭不受影响的唯一原因是收集管道尚未搭建（见 S5-1
+  # 镜像批次：FluentBit/云收集接线属真窗件）——但格式先行是免费的：
+  # 收管道那天，旧日志已经能看懂。
+  structured:
+    format:
+      console: ecs
+      file: ecs
