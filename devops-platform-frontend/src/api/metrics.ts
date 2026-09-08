@@ -32,7 +32,7 @@ export interface MetricMeta {
   describe: string
 }
 
-export interface MetricCatalog {
+interface MetricCatalog {
   metrics: MetricMeta[]
   /** 后端是否启用了 Prometheus 集成 */
   enabled: boolean
@@ -51,7 +51,7 @@ export interface MetricSample {
   timestamp: number
 }
 
-export interface InstantResult {
+interface InstantResult {
   metric: string
   samples: MetricSample[]
 }
@@ -67,7 +67,7 @@ export interface MetricSeries {
   points: SeriesPoint[]
 }
 
-export interface RangeResult {
+interface RangeResult {
   metric: string
   from: number
   to: number
@@ -87,7 +87,7 @@ export interface OverviewCard {
   samples: MetricSample[]
 }
 
-export interface OverviewResult {
+interface OverviewResult {
   cards: Record<string, OverviewCard>
   timestamp: number
 }
@@ -102,7 +102,7 @@ export interface Datasource {
   error?: string
 }
 
-export interface DatasourceResult {
+interface DatasourceResult {
   datasources: Datasource[]
   total: number
 }

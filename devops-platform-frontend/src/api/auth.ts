@@ -15,7 +15,7 @@ export interface AuthUser {
   role: string
 }
 
-export interface LoginResult {
+interface LoginResult {
   token: string
   tokenName: string
   user: AuthUser

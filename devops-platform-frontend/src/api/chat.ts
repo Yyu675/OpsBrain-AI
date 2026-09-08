@@ -17,7 +17,7 @@ import type {
 /**
  * SSE 事件回调接口
  */
-export interface ChatStreamCallbacks {
+interface ChatStreamCallbacks {
   onStart?: (data: SSEStartEvent) => void
   onToolStatus?: (data: SSEToolStatusEvent) => void
   onToken?: (data: SSETokenEvent) => void

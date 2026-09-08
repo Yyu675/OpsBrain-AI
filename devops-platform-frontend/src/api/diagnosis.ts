@@ -40,7 +40,7 @@ export interface DiagnosisHypothesisView {
   feedback?: string | null
 }
 
-export interface DiagnosisReplayView {
+interface DiagnosisReplayView {
   traceId: string
   session: DiagnosisSessionView
   evidences: DiagnosisEvidenceView[]

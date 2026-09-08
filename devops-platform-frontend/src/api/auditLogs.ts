@@ -61,7 +61,7 @@ export interface PagedResult<T> {
   totalPages: number
 }
 
-export interface AiCallLogPage extends PagedResult<AiCallLogItem> {
+interface AiCallLogPage extends PagedResult<AiCallLogItem> {
   stats: AiCallStats
 }
 
@@ -95,7 +95,7 @@ export interface FilterOptions {
 
 // ==================== 查询参数 ====================
 
-export interface OperationAuditQuery {
+interface OperationAuditQuery {
   actorId?: string
   /** 前缀匹配，如 `ticket.` 查全部工单操作 */
   action?: string
@@ -107,7 +107,7 @@ export interface OperationAuditQuery {
   size?: number
 }
 
-export interface AiCallLogQuery {
+interface AiCallLogQuery {
   modelName?: string
   operationType?: string
   cached?: boolean

@@ -12,7 +12,7 @@ import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz } from '../utils/http'
 
 /** 后端 sys_ticket_ai_analysis 记录 */
-export interface TicketAiAnalysis {
+interface TicketAiAnalysis {
   id: number
   ticketId: string
   version: number
@@ -29,7 +29,7 @@ export interface TicketAiAnalysis {
 }
 
 /** 保存分析的入参（结构化字段由前端解析） */
-export interface SaveAnalysisPayload {
+interface SaveAnalysisPayload {
   content: string
   reasons: string[]
   commands: string[]
@@ -80,7 +80,7 @@ export async function submitAiAnalysisFeedback(analysisId: number, helpful: bool
 }
 
 /** AI 分析准确率统计 */
-export interface AiAnalysisStats {
+interface AiAnalysisStats {
   total: number
   rated: number
   helpful: number

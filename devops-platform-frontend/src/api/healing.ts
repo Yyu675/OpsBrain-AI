@@ -38,7 +38,7 @@ export interface HealingExecution {
 }
 
 /** 编排终局视图（触发/撤销接口的返回体） */
-export interface HealingOutcome {
+interface HealingOutcome {
   executionId: number
   decision: string
   status: string
@@ -49,7 +49,7 @@ export interface HealingOutcome {
 }
 
 /** 手工触发入参（requestedBy 由后端取登录态，前端不传） */
-export interface HealingTrigger {
+interface HealingTrigger {
   actionKey: string
   environment: string
   target?: string

@@ -253,3 +253,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | 2026-09-08 | 批次 21（T37）：S4-3 CI 实弹挂线（报告 124）——**D-A 兑现，workflows 权限真推送实证已还**（`73f5d90..cdf9dff`）；eval 门禁 step #9+artifact #10 挂线且首跑 success（首跑语义两轮实证）；4-3.5 落地：tee 输出同账、marker 幂等 PR 评论、pull-requests: write 最小放权、PR 模板；knip 战线顺 T38（清零即触发删 continue-on-error 权限批剩余半） |
 | 2026-09-08 | 批次 22（T38）：knip 清零第二波（报告 125）——exports 17→7 **真账清零**；十条证伪记录：范式残影判例确立「同楼两式残影必删不豁免」（三 Query hook 整删）、ErrorCode 残页整删、conflict 同文件去 export、五成对半成面 @public；四闸全绿 1806；转正路径推荐 B（config 假阳校准随删 continue-on-error 同批） |
 | 2026-09-08 | 批次 23（T39）：4-4.3 成本区收尾（报告 126）——单次诊断均价：trace_id 归因成本 JOIN/全部完成会话分母（零成本会话入分母与耗时同口径）、空分母 null、四位小数同前端成本口径；Composer 第 11 参数+2 钉测（合 12），B6 第五卡 + smoke 断言并轨；1806 绿 + tsc 0；**4-4 自驱件清零，余全等 LLM 窗** |
+| 2026-09-08 | 批次 24（T40）：knip types 第三波（报告 127）——91→71；全量矩阵切三类后两簇 20 条全为「同文件自引用误挂 export」机械去化（零语义改动）；假阳存证增至 13 条（FrontendTicket cross=46 为 re-export 盲区最硬证物），路径 B 校准批清单闭合并待真账余 ~57 续推 |

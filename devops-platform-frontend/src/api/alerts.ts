@@ -11,7 +11,7 @@ import { http, unwrapBiz, HttpError } from '../utils/http'
 import { BizCode } from '../constants/bizCode'
 import type { Alert, AlertsResponse } from './types'
 
-export interface AlertQuery {
+interface AlertQuery {
   page?: number
   size?: number
   status?: string

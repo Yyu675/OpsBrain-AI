@@ -165,7 +165,7 @@ export interface ActionPayload {
   version?: number
 }
 
-export interface ActionQuery {
+interface ActionQuery {
   keyword?: string
   category?: string
   riskLevel?: RiskLevel | ''
@@ -379,7 +379,7 @@ export interface PolicyPayload {
   version?: number
 }
 
-export interface PolicyQuery {
+interface PolicyQuery {
   keyword?: string
   actionKey?: string
   environment?: string
