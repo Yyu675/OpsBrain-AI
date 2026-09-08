@@ -16,18 +16,6 @@ export interface ApiResponse<T = unknown> {
   timestamp: number
 }
 
-/**
- * 错误码常量
- */
-export const ErrorCode = {
-  SUCCESS: 0,
-  PARAM_ERROR: 40001,           // 参数校验失败
-  SECURITY_BLOCK: 40301,        // 输入安全拦截
-  RATE_LIMIT: 42901,            // 上游大模型限流
-  INTERNAL_ERROR: 50001,        // 服务内部异常
-  SERVICE_UNAVAILABLE: 50301,   // 上游全链路不可用
-} as const
-
 // ==================== SSE 流式事件 ====================
 
 /**

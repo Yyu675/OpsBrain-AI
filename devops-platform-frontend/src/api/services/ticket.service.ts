@@ -88,7 +88,10 @@ export async function fetchTickets(params: TicketsRequest = {}): Promise<{
 }
 
 /**
- * 根据 traceId 查询工单
+ * 根据 traceId 查询工单。
+ *
+ * @public 后端 GET /api/v1/tickets/by-trace/{traceId} 在服务（TicketController line 139），
+ * 告警→工单溯源跳转面待接。
  */
 export async function fetchTicketByTraceId(traceId: string): Promise<FrontendTicket | null> {
   try {
@@ -104,7 +107,8 @@ export async function fetchTicketByTraceId(traceId: string): Promise<FrontendTic
 }
 
 /** 后端版本冲突错误码（P1-4） */
-export const CODE_VERSION_CONFLICT = 40009
+// 同文件消费（CAS 冲突重试链），无需对外出口
+const CODE_VERSION_CONFLICT = 40009
 
 // ==================== 附件 ====================
 

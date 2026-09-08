@@ -60,7 +60,10 @@ export async function fetchLatestTicketAiAnalysis(ticketId: string): Promise<Tic
 }
 
 /**
- * 查询工单全部 AI 分析版本（version 倒序，供历史对比）
+ * 查询工单全部 AI 分析版本（version 倒序，供历史对比）。
+ *
+ * @public 与在用的 submitAiAnalysisFeedback 同域成对；后端 TICKET_AI_ANALYSIS_VERSIONS
+ * 路由在服务，「AI 分析历史对比」面板待接。
  */
 export async function fetchTicketAiAnalysisVersions(ticketId: string): Promise<TicketAiAnalysis[]> {
   const raw = await http.get<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_VERSIONS(ticketId))
@@ -86,7 +89,10 @@ export interface AiAnalysisStats {
 }
 
 /**
- * AI 分析准确率统计（供数据概览展示）
+ * AI 分析准确率统计（供数据概览展示）。
+ *
+ * @public 与同文件 submitAiAnalysisFeedback 构成「反馈→统计」闭环对；
+ * 后端统计路由在服务，概览页接入面待接。
  */
 export async function fetchAiAnalysisStats(): Promise<AiAnalysisStats> {
   const raw = await http.get<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_STATS)
