@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-vue-next'
 import {
   useClosureMetricsQuery,
   useDashboardOverviewQuery,
+  useAiAnalysisStatsQuery,
   useDiagnosisBoardQuery,
   useRootCauseStatsQuery,
   useTrendsQuery,
@@ -38,6 +39,7 @@ const rootCauseQuery = useRootCauseStatsQuery()
 const trendDays = ref(7)
 const trendQuery = useTrendsQuery(trendDays)
 const diagnosisQuery = useDiagnosisBoardQuery(trendDays)
+const aiStatsQuery = useAiAnalysisStatsQuery()
 
 // KPI 主数据：它失败即整页错误态，其余区块都是它的补充
 const data = overviewQuery.data
@@ -48,6 +50,22 @@ const closure = closureQuery.data
 const rootCauseStats = rootCauseQuery.stats
 const trend = trendQuery.data
 const diagnosis = diagnosisQuery.data
+const aiStats = aiStatsQuery.data
+
+/**
+ * 根因准确率显示口径（4-4.1）：rated=0 时后端给 0.0 但那是「还没有任何人
+ * 评过分」不是「准确率 0%」——Dashboard 页祖传纪律：null/无数据 ≠ 0。
+ */
+const aiAccuracyText = computed(() => {
+  const s = aiStats.value
+  if (!s || s.rated === 0) return '—'
+  return `${(s.helpfulRate * 100).toFixed(1)}%`
+})
+const aiRatedText = computed(() => {
+  const s = aiStats.value
+  if (!s) return '—'
+  return s.rated === 0 ? '暂无反馈' : `${s.helpful}/${s.rated}`
+})
 
 /** 诊断区方向中文名：键与后端 evidence_type 一一对应，未知类型原样显示 */
 const DIR_LABELS: Record<string, string> = {
@@ -88,13 +106,14 @@ const lastUpdated = computed(() => {
   return d ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : String(ts)
 })
 
-/** 刷新：五个查询一并重拉。refetch 会绕过 staleTime */
+/** 刷新：六个查询一并重拉。refetch 会绕过 staleTime */
 const loadDashboard = () => {
   void overviewQuery.refetch()
   void closureQuery.refetch()
   void rootCauseQuery.refetch()
   void trendQuery.refetch()
   void diagnosisQuery.refetch()
+  void aiStatsQuery.refetch()
 }
 
 /** 工单趋势：柱（新建）+ 折线（验证通过） */
@@ -397,6 +416,26 @@ const rootCauseTop = computed(() =>
               </table>
             </template>
             <AppEmpty v-else size="sm" description="窗口内暂无取证记录" />
+
+            <!-- AI 效果（4-4.1 半部先行）：根因准确率来自反馈闭环；
+                 幻觉率/证据不足率待 EVAL_LLM 窗数据接入，不在此发空壳 -->
+            <div v-if="aiStats" class="ai-effect">
+              <h4 class="sub-heading">AI 根因分析反馈</h4>
+              <div class="closure-kpi-grid">
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">根因准确率</div>
+                  <div class="closure-kpi-value" :title="aiStats.rated === 0 ? '暂无反馈数据' : `有用 ${aiStats.helpful} / 已评分 ${aiStats.rated}`">{{ aiAccuracyText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">有用/已评分</div>
+                  <div class="closure-kpi-value">{{ aiRatedText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">累计分析</div>
+                  <div class="closure-kpi-value">{{ aiStats.total }}</div>
+                </div>
+              </div>
+            </div>
 
             <div v-if="diagnosis.sessionTrend.days.length" class="diagnosis-trend">
               <h4 class="sub-heading">诊断量趋势（发起 / 完成）</h4>

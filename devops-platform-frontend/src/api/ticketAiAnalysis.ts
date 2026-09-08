@@ -79,8 +79,11 @@ export async function submitAiAnalysisFeedback(analysisId: number, helpful: bool
   unwrapBiz<unknown>(raw, '反馈提交失败')
 }
 
-/** AI 分析准确率统计 */
-interface AiAnalysisStats {
+/**
+ * AI 分析准确率统计（批次 27 恢复 export：4-4.1 AI 效果区真消费——
+ * 批 24 去化纪律的双向性范例：去化不是永别，需求出现即加回）。
+ */
+export interface AiAnalysisStats {
   total: number
   rated: number
   helpful: number

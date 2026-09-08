@@ -12,6 +12,7 @@ import {
   type TrendData,
 } from '@/api/dashboard'
 import type { DashboardOverview } from '@/api/types'
+import { fetchAiAnalysisStats } from '@/api/ticketAiAnalysis'
 import { dashboardKeys } from '@/config/queryKeys'
 
 /**
@@ -87,4 +88,15 @@ export function useDiagnosisBoardQuery(days: Ref<number>) {
 }
 
 /** @public knip 假阳存证：re-export 给视图直接 import type 用（5.88.1 对该形态解析盲区，报告 128 §三）——版本收敛后删行复查 */
+/**
+ * AI 效果区（S4-4.1 半部先行）：根因分析反馈统计。
+ * 幻觉率/证据不足率持 EVAL_LLM 窗数据再入区——本 hook 只装配既有反馈闭环。
+ */
+export function useAiAnalysisStatsQuery() {
+  return useQuery({
+    queryKey: dashboardKeys.aiEffectStats(),
+    queryFn: () => fetchAiAnalysisStats(),
+  })
+}
+
 export type { ClosureMetrics, DashboardOverview, DiagnosisBoard, TrendData }

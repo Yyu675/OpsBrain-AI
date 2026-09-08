@@ -103,6 +103,8 @@ export const dashboardKeys = {
     [...dashboardKeys.all, 'trends', days, module ?? null] as const,
   /** 诊断区看板窗口天数（S4-4.2） */
   diagnosisBoard: (days: number) => [...dashboardKeys.all, 'diagnosis-board', days] as const,
+  /** AI 效果区：根因分析反馈统计（4-4.1 半部先行，反馈闭环数据） */
+  aiEffectStats: () => [...dashboardKeys.all, 'ai-effect-stats'] as const,
 }
 
 export const approvalKeys = {

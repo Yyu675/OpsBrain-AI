@@ -43,8 +43,11 @@ const api = vi.hoisted(() => ({
   getDiagnosisBoard: vi.fn(),
   getSlaRisk: vi.fn(),
   getDashboardStats: vi.fn(),
+  fetchAiAnalysisStats: vi.fn(),
 }))
 vi.mock('@/api/dashboard', () => api)
+// AI 效果区（4-4.1 半部先行）：query hook 经 dashboard.query 间接 import 此模块
+vi.mock('@/api/ticketAiAnalysis', () => ({ fetchAiAnalysisStats: api.fetchAiAnalysisStats }))
 
 import Dashboard from '../Dashboard.vue'
 
@@ -120,12 +123,22 @@ const diagnosisBoard = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
+const aiStats = (over: Record<string, unknown> = {}) => ({
+  total: 120,
+  rated: 60,
+  helpful: 51,
+  unhelpful: 9,
+  helpfulRate: 0.85,
+  ...over,
+})
+
 const mountPage = async (opts: {
   overview?: unknown
   closure?: unknown
   rootCause?: unknown
   trends?: unknown
   diagnosis?: unknown
+  aiStats?: unknown
   overviewError?: unknown
   trendsError?: unknown
 } = {}) => {
@@ -147,6 +160,7 @@ const mountPage = async (opts: {
     api.getTrends.mockResolvedValue('trends' in opts ? opts.trends : trends())
   }
   api.getDiagnosisBoard.mockResolvedValue('diagnosis' in opts ? opts.diagnosis : diagnosisBoard())
+  api.fetchAiAnalysisStats.mockResolvedValue('aiStats' in opts ? opts.aiStats : aiStats())
   api.getSlaRisk.mockResolvedValue({ items: [], total: 0 })
   api.getDashboardStats.mockResolvedValue({})
 
@@ -435,5 +449,24 @@ describe('诊断区看板（S4-4.2 批次 16）', () => {
     })
 
     expect(w.find('.diagnosis-trend-chart').exists()).toBe(false)
+  })
+
+  it('AI 效果区：根因准确率按反馈闭环显示（51/60 → 85.0%)，4-4.1 半部先行', async () => {
+    const w = await mountPage()
+
+    expect(w.find('.ai-effect').exists()).toBe(true)
+    expect(w.text()).toContain('85.0%')
+    expect(w.text()).toContain('51/60')
+  })
+
+  it('rated=0 时准确率显示 — 而非后端给的 0.0%——「还没人评过分」不是「准确率 0%」', async () => {
+    const w = await mountPage({ aiStats: aiStats({ total: 120, rated: 0, helpful: 0, unhelpful: 0, helpfulRate: 0 }) })
+
+    expect(w.find('.ai-effect').exists()).toBe(true)
+    // 断言范围收成 ai-effect 块——「100.0%」（方向表成功率）天然含子串「0.0%」，
+    // 全页 toContain 是同字符串陷阱的第一现场
+    const aiBlock = w.find('.ai-effect').text()
+    expect(aiBlock).not.toContain('0.0')
+    expect(aiBlock).toContain('暂无反馈')
   })
 })
