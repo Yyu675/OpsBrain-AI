@@ -478,3 +478,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 
 - 批 67 收官：`e4384b5` 双腿红（CI 两 workflow 仍 `psql -f sql/init.sql`；前端 knip 红因 ComingSoonPanel 成孤儿）→ `7caea5a`(schema 步桩→V1__baseline.sql 两 workflow+占位页复位隔离+knip tee 取证道）双腿绿 → `c7f4965` 重删占位页、取证帖实锤 ComingSoonPanel → 补同删后**双腿绿 ✓**。教训两条入档：删物前引用面全层含 workflows；桩内挂账语句=前提未灭。
+- 批 68:PR #2 已合并(`f672d1b`,merge commit);.md 普查 251 份判"多而杂但不可删"→归档 A 落地:benchmark 166 份四桶(`50bb57b` 绿)、03/04 入 archive+PRD.md 重判保留(`4b25c2d`)。B/C 级(CLAUDE.md 瘦身/薄件核)待用户点头。
