@@ -463,10 +463,54 @@ describe('诊断区看板（S4-4.2 批次 16）', () => {
     const w = await mountPage({ aiStats: aiStats({ total: 120, rated: 0, helpful: 0, unhelpful: 0, helpfulRate: 0 }) })
 
     expect(w.find('.ai-effect').exists()).toBe(true)
-    // 断言范围收成 ai-effect 块——「100.0%」（方向表成功率）天然含子串「0.0%」，
+    // 断言范围收成 ai-effect 块——「100.0%」（方向表成功率）天然含子串「0.0%」， 
     // 全页 toContain 是同字符串陷阱的第一现场
     const aiBlock = w.find('.ai-effect').text()
     expect(aiBlock).not.toContain('0.0')
     expect(aiBlock).toContain('暂无反馈')
+  })
+
+  // ==================== S4-2 校准读数（批 35） ====================
+
+  const calibration = (ece: number | null, over: Record<string, unknown> = {}) => ({
+    ratedTotal: ece == null ? 0 : 4,
+    helpful: ece == null ? 0 : 3,
+    wrong: ece == null ? 0 : 1,
+    excludedPartial: 2,
+    excludedUnknown: 0,
+    excludedInvalid: 0,
+    ece,
+    empiricalAccuracy: ece == null ? null : 0.75,
+    meanConfidence: 0.8,
+    buckets: [],
+    ...over,
+  })
+
+  it('校准区：ECE 与经验正确率按判定集显示（0.125 → 12.5%，3/4）', async () => {
+    const w = await mountPage({ diagnosis: diagnosisBoard({ calibration: calibration(0.125) }) })
+
+    expect(w.find('.diagnosis-calibration').exists()).toBe(true)
+    const block = w.find('.diagnosis-calibration').text()
+    expect(block).toContain('校准误差 ECE')
+    expect(block).toContain('12.5%')
+    expect(block).toContain('75.0%')
+    expect(block).toContain('3/4')
+  })
+
+  it('校准区：判定集空（ece=null）显示 — 与「暂无反馈」——「还没人反馈」不是「误差 0」', async () => {
+    const w = await mountPage({ diagnosis: diagnosisBoard({ calibration: calibration(null) }) })
+
+    expect(w.find('.diagnosis-calibration').exists()).toBe(true)
+    const block = w.find('.diagnosis-calibration').text()
+    expect(block).toContain('—')
+    expect(block).toContain('暂无反馈')
+    // 块级断言（0.0% 乌龙同款教训：方向表有 100.0%）
+    expect(block).not.toContain('0.0%')
+  })
+
+  it('校准区：旧后端无 calibration 键 → 整块不渲染（不发空壳）', async () => {
+    const w = await mountPage()
+
+    expect(w.find('.diagnosis-calibration').exists()).toBe(false)
   })
 })

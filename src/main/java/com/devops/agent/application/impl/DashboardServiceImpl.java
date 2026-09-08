@@ -101,8 +101,18 @@ public class DashboardServiceImpl implements DashboardService {
                  WHERE s.status = 'COMPLETED'
                    AND s.created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                 """, Double.class, window);
-        return DiagnosisBoardComposer.compose(statusRows, sufficiencyRows,
+        // S4-2 校准读数（批次 35）：假设置信度 × 反馈对的直采——判定集/豁免计数/
+        // 空集 null 纪律全部下沉 HypothesisCalibrationBoard（纯函数）。
+        List<Map<String, Object>> feedbackRows = jdbcTemplate.queryForList(
+                """
+                SELECT confidence, feedback FROM sys_diagnosis_hypothesis
+                 WHERE feedback IS NOT NULL
+                   AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                """, window);
+        Map<String, Object> board = DiagnosisBoardComposer.compose(statusRows, sufficiencyRows,
                 evidenceRows, avgSeconds, window, trendRows, LocalDate.now(), costTotal);
+        board.put("calibration", HypothesisCalibrationBoard.compose(feedbackRows));
+        return board;
     }
 
     @Override

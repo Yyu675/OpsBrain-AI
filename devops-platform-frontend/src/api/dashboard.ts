@@ -148,9 +148,37 @@ export interface DiagnosisSessionTrend {
   completed: number[]
 }
 
+/** @public 载荷嵌套型消费：仅经 HypothesisCalibration.buckets 属性被页码推断消费，
+ *  无显式 import（knip 第四豁免形态「返回类型推断消费」，批 29 案卷；批 35 首次复用）。 */
+export interface CalibrationBucket {
+  index: number
+  count: number
+  meanConfidence: number | null
+  accuracy: number | null
+  gap: number | null
+}
+
+export interface HypothesisCalibration {
+  /** 判定集规模（HELPFUL=对 / WRONG=错；PARTIAL 豁免但计数，见后端类注） */
+  ratedTotal: number
+  helpful: number
+  wrong: number
+  excludedPartial: number
+  excludedUnknown: number
+  excludedInvalid: number
+  /** 校准误差 ECE（越低越好）；判定集空 → null（「还没人反馈」≠「误差 0」） */
+  ece: number | null
+  /** 经验正确率 helpful/ratedTotal；判定集空 → null */
+  empiricalAccuracy: number | null
+  meanConfidence: number | null
+  buckets: CalibrationBucket[]
+}
+
 export interface DiagnosisBoard {
   windowDays: number
   sessions: DiagnosisSessionsStats
+  /** 假设置信度校准读数（S4-2 数据面，批 35）；旧后端无此键 → null */
+  calibration?: HypothesisCalibration | null
   /** 逐日诊断量趋势（S4-4.3） */
   sessionTrend: DiagnosisSessionTrend
   evidenceDirections: DiagnosisDirectionStat[]
@@ -183,6 +211,7 @@ export async function getDiagnosisBoard(days = 7): Promise<DiagnosisBoard> {
       completed: data?.sessionTrend?.completed ?? []
     },
     evidenceDirections: data?.evidenceDirections ?? [],
-    attentionTypes: data?.attentionTypes ?? []
+    attentionTypes: data?.attentionTypes ?? [],
+    calibration: data?.calibration ?? null
   }
 }

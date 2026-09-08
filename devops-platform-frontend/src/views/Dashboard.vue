@@ -82,6 +82,19 @@ const attentionText = computed(() =>
 )
 
 /** 诊断量趋势：柱=当日发起，折=当日完成（补零语义由后端 Composer 保证，此处只管画） */
+// S4-2 校准读数（批 35）：ECE 越低越好——空判定集显示「—」，
+// 与根因准确率的 null ≠ 0 纪律同一条；PARTIAL 豁免的口径注随块展示。
+const calibration = computed(() => diagnosis.value?.calibration ?? null)
+const calibEceText = computed(() =>
+  calibration.value?.ece == null ? '—' : `${(calibration.value.ece * 100).toFixed(1)}%`)
+const calibAccText = computed(() =>
+  calibration.value?.empiricalAccuracy == null ? '—' : `${(calibration.value.empiricalAccuracy * 100).toFixed(1)}%`)
+const calibRatedText = computed(() => {
+  const c = calibration.value
+  if (!c) return '—'
+  return c.ratedTotal === 0 ? '暂无反馈' : `${c.helpful}/${c.ratedTotal}`
+})
+
 const diagnosisTrendSeries = computed<TrendSeries[]>(() => {
   const t = diagnosis.value?.sessionTrend
   if (!t || !t.days.length) return []
@@ -433,6 +446,26 @@ const rootCauseTop = computed(() =>
                 <div class="closure-kpi-card">
                   <div class="closure-kpi-label">累计分析</div>
                   <div class="closure-kpi-value">{{ aiStats.total }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 假设置信度校准（S4-2 数据面 / 批 35）：反馈闭环第二读数；
+                 PARTIAL 不进判定集（二值口径不吞半分），豁免数随 tooltip 透明 -->
+            <div v-if="diagnosis.calibration" class="diagnosis-calibration">
+              <h4 class="sub-heading">假设置信度校准</h4>
+              <div class="closure-kpi-grid">
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">校准误差 ECE</div>
+                  <div class="closure-kpi-value" :title="diagnosis.calibration.ece == null ? '判定集为空：尚无 HELPFUL/WRONG 反馈' : `判定集 ${diagnosis.calibration.ratedTotal} 条（PARTIAL 豁免 ${diagnosis.calibration.excludedPartial}）`">{{ calibEceText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">经验正确率</div>
+                  <div class="closure-kpi-value">{{ calibAccText }}</div>
+                </div>
+                <div class="closure-kpi-card">
+                  <div class="closure-kpi-label">有用/已判定</div>
+                  <div class="closure-kpi-value">{{ calibRatedText }}</div>
                 </div>
               </div>
             </div>

@@ -305,3 +305,11 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - **ETA 全景**(报告137 §二,对照路线图13.x清单):agent 侧剩 8.5~12 全职日,用户侧 ~1.5d(真窗+验收+环境+拍板);全职日历≈09-19±3 天核心清单全过,兼职 10 月上旬。两条外部闸门:真窗数据、Docker/JDK 环境。
 - 仲裁:BucketCalibrator Java 编译+钉测交本批 CI 后端腿。
 
+## 批 35(2026-09-08):S4-2 线上校准读数——反馈闭环第二读数进看板
+
+- 后端 `HypothesisCalibrationBoard`+6 钉测:判定集=HELPFUL/WRONG,PARTIAL/未知/越界三豁免但计数,空判定集三量 null(null≠0);`getDiagnosisBoard` 同端点挂 `calibration` 键,零新端口。
+- 前端校准块 3 KPI+ECE,空→—,旧后端无键→不发空壳;smoke+3(vitest 1811)。
+- knip 新议题 1 条按批 29 第四豁免形态标准件消化(CalibrationBucket 嵌套推断)→六闸全绿。
+- 环境尾单:node_modules 被批33重克隆清空,npm ci 复原(535包)。
+- 仲裁:后端编译+钉测交本批 CI 后端腿。报告 138。
+
