@@ -2,7 +2,8 @@
 /**
  * 评测集数据完整性校验器（沙箱可跑，不依赖 JDK）
  * 校验：
- *  1. src/test/resources/eval_dataset.json —— 100 条（50 正 + 50 负），id 唯一，关键词非空
+ *  1. src/test/resources/eval_dataset.json —— 条数保底不封顶（≥100、正负例各 ≥50），id 唯一，关键词非空。
+ *     4-1.5 扩集路径（目标 150）：期望从「冻结数」改为「保底闸」，扩容不被误报
  *  2. src/test/resources/alert_replay_dataset.json —— 6 场景，期望值结构合法
  * 用法：node tools/audit/validate_eval_datasets.js
  */
@@ -20,7 +21,7 @@ console.log('═ 评测集数据完整性校验 ═')
 const evalPath = path.join(ROOT, 'src/test/resources/eval_dataset.json')
 const items = JSON.parse(fs.readFileSync(evalPath, 'utf8'))
 console.log(`\n[1] eval_dataset.json（${items.length} 条）`)
-if (!Array.isArray(items) || items.length !== 100) fail(`应为 100 条，实际 ${items.length}`)
+if (!Array.isArray(items) || items.length < 100) fail(`应不少于 100 条（4-1.5 扩集路径，目标 150），实际 ${items.length}`)
 
 const ids = new Set()
 let pos = 0, neg = 0
@@ -36,8 +37,8 @@ for (const it of items) {
   else fail(`#${it.id} 未知类型 ${it.type}`)
   typeCount[it.type] = (typeCount[it.type] || 0) + 1
 }
-pos === 50 ? ok(`正例 50 条`) : fail(`正例应为 50，实际 ${pos}`)
-neg === 50 ? ok(`负例 50 条`) : fail(`负例应为 50，实际 ${neg}`)
+pos >= 50 ? ok(`正例 ${pos} 条（≥50 保底闸）`) : fail(`正例应不少于 50，实际 ${pos}`)
+neg >= 50 ? ok(`负例 ${neg} 条（≥50 保底闸）`) : fail(`负例应不少于 50，实际 ${neg}`)
 console.log('  负例分布:', JSON.stringify(typeCount))
 
 // ---------- 2. alert_replay_dataset.json ----------
