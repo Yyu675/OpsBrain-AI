@@ -87,3 +87,31 @@ groups:
   #       annotations:
   #         summary: "【联调哨兵】OpsBrain 告警链路连通性测试"
   #         description: "此为验证 Prometheus→Alertmanager→OpsBrain Webhook→自动建单链路的哨兵告警，非真实故障。"
+
+  # ---- OpsBrain 应用自身(S5-2/5-2.5,批 37):labels 契约同 host 组 ----
+  - name: opsbrain-app-alerts
+    rules:
+      # P0:应用宕机/不可达 2 分钟——critical→P0 人机协同(AlertService 映射表)
+      - alert: OpsBrainDown
+        expr: up{job="opsbrain"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "OpsBrain 应用不可达超过 2 分钟"
+          description: "Prometheus 连续 2 分钟抓不到 /ai/actuator/prometheus。查:docker compose ps / docker compose logs app;常见因=OOMKill(见 compose deploy limits)或 Flyway 迁移失败拒载。"
+
+      # P2:15 分钟内重启次数 >2——进程在口吐白沫但不会自己说
+      - alert: OpsBrainFrequentRestart
+        expr: changes(process_start_time_seconds{job="opsbrain"}[15m]) > 2
+        for: 1m
+        labels:
+          severity: warning
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "OpsBrain 应用 15 分钟内多次重启"
+          description: "JVM 反复退出重启。首查 OOM(ExitOnOutOfMemoryError 语义,日志应有 OutOfMemoryError 痕迹)与 compose deploy limits 余量;次查 Postgres/Redis 探活之外的连接风暴。"
+

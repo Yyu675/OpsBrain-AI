@@ -320,3 +320,12 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - YAML 狗食:`||` 回退默认单引号截断被 pyparse 当场抓——「`||` 一律双引号外包」立规。
 - **全阶段未完成清单成文**(报告139 §二):S1/S2/S3 零残,S0 三笔收尾,S4 两笔真窗,S5 十子项,跨阶段 4 件;这是用户问「剩什么」的定版口径。
 
+## 批 37(2026-09-08):S5-2 部署与运维——预算/自监控/备份反面/SOP 四件套
+
+- compose:`x-default-logging`(50m×5 全容器有界)+ app deploy.resources(2g/1.5,768m 留);JVM MaxRAMPercentage 口径互证。
+- 自监控:prometheus opsbrain job(/ai/actuator/prometheus)+ alert rules 组(Down P0/2m,Restart P2);labels 契约与 AlertService 同构。
+- `scripts/backup.sh`+`restore.sh`:PG热备+MinIO整桶+manifest三件互锁(SHA256/git_sha),14天保留,恢复双 key + 三查对账;`bash -n` 过。**演练记录格待 Docker 环境**——与 S0-2b/压测同账,勿当已验收。
+- `docs/09-operations/`:部署运维手册(起栈/预算/密钥L0-L2/演练模板)+ 值班SOP(AI不可用/向量库/告警风暴/磁盘满)。
+- 勘察清障:app HEALTHCHECK 与 actuator probes 实测早已具备,真缺口只剩 scrape——「先核既有再补」又省一口冗余。
+- 报告 140。
+

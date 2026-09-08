@@ -37,3 +37,12 @@ scrape_configs:
         labels:
           # 给该来源打统一 service/module 标签，便于告警继承（可被规则内标签覆盖）
           service: 'host-node'
+
+  # OpsBrain 应用自身(S5-2 步骤 5-2.5 / 批 37):actuator prometheus 端点
+  # 注意 context-path /ai(server.servlet.context-path),路径别照抄官方文档
+  - job_name: opsbrain
+    metrics_path: /ai/actuator/prometheus
+    static_configs:
+      - targets: ['app:8088']
+        labels:
+          service: 'opsbrain-ai'
