@@ -2,6 +2,7 @@ package com.devops.agent.domain.governance;
 
 import com.devops.agent.domain.healing.HealingExecution;
 import com.devops.agent.domain.healing.HealingExecutionRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -53,6 +54,12 @@ public class PolicyEvidenceService {
     @Value("${devops.healing.policy-evidence.success-streak-goal:3}")
     private int successStreakGoal;
 
+    /**
+     * 生产装配入口。多构造器类必须显式 @Autowired——否则 Spring 回退找
+     * 默认无参构造器（不存在）整个 ApplicationContext 起不来
+     * （683e5e0 后端全 context 崩的尸检结论，工具账见报告 115 §四）。
+     */
+    @Autowired
     public PolicyEvidenceService(HealingExecutionRepository executionRepository) {
         this.executionRepository = executionRepository;
     }
