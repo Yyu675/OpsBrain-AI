@@ -171,6 +171,57 @@ class PolicyEvidenceServiceTest {
     }
 
     @Test
+    @DisplayName("第三支柱：审计不完整卡住 evidenceReady——「跑成功了但说不出怎么跑的」不是证据")
+    void incompleteAuditBlocksEvidenceReady() {
+        stub(List.of("SUCCEEDED", "SUCCEEDED", "SUCCEEDED"), 0);
+        when(repository.countIncompleteAuditAmongRecent(60L, 50)).thenReturn(1);
+        AutomationPolicy p = policy(60L, false);
+
+        service.decorate(p);
+
+        assertEquals(3, p.getSuccessStreak(), "连胜本身仍达标——是第三支柱卡住，不是连胜重新算");
+        assertEquals(1, p.getAuditIncompleteRecent());
+        assertEquals(Boolean.FALSE, p.getEvidenceReady());
+    }
+
+    @Test
+    @DisplayName("审计完整（0 缺失）时第三支柱放行——批次 9 既有语义不回归")
+    void completeAuditKeepsEvidenceReady() {
+        stub(List.of("SUCCEEDED", "SUCCEEDED"), 0);
+        // countIncompleteAuditAmongRecent 未 stub → Mockito int 默认 0（完整）
+        AutomationPolicy p = policy(61L, false);
+
+        service.decorate(p);
+
+        assertEquals(0, p.getAuditIncompleteRecent());
+        assertEquals(Boolean.TRUE, p.getEvidenceReady());
+    }
+
+    @Test
+    @DisplayName("阈值随派生字段下发，前端不再把达标线写死（promoteHitsGoal/streakGoal 透传）")
+    void thresholdsFlowThrough() {
+        stub(List.of("REJECTED", "REJECTED", "REJECTED"), 3);
+        AutomationPolicy p = policy(62L, true);
+
+        service.decorate(p);
+
+        assertEquals(3, p.getPromoteHitsGoal());
+        assertEquals(2, p.getStreakGoal());
+    }
+
+    @Test
+    @DisplayName("promotable 只看演练场次，不看审计完整性——阶段语义各自单一，互不借字段")
+    void promotableIgnoresAuditCompleteness() {
+        stub(List.of("REJECTED", "REJECTED", "REJECTED"), 3);
+        when(repository.countIncompleteAuditAmongRecent(63L, 50)).thenReturn(2);
+        AutomationPolicy p = policy(63L, true);
+
+        service.decorate(p);
+
+        assertEquals(Boolean.TRUE, p.getPromotable());
+    }
+
+    @Test
     @DisplayName("空 id 哨兵：未落库的策略对象不查仓储（新建表单预览态不炸）")
     void nullIdIsNoop() {
         AutomationPolicy p = new AutomationPolicy();

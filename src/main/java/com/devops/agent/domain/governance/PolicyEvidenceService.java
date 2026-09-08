@@ -83,13 +83,19 @@ public class PolicyEvidenceService {
         List<String> recent = executionRepository.recentAutoStatuses(p.getId(), STREAK_WINDOW);
         int hits = executionRepository.countPolicyDryRunHits(p.getId());
         Optional<LocalDateTime> lastFail = executionRepository.lastAutoFailureAt(p.getId());
+        int auditIncomplete = executionRepository.countIncompleteAuditAmongRecent(p.getId(), STREAK_WINDOW);
 
         int streak = computeSuccessStreak(recent);
         p.setSuccessStreak(streak);
         p.setDryRunHits(hits);
         p.setLastAutoFailureAt(lastFail.orElse(null));
+        p.setAuditIncompleteRecent(auditIncomplete);
+        p.setPromoteHitsGoal(dryRunPromoteHits);
+        p.setStreakGoal(successStreakGoal);
         p.setPromotable(p.isDryRun() && hits >= dryRunPromoteHits);
-        p.setEvidenceReady(!p.isDryRun() && streak >= successStreakGoal);
+        // 第三支柱：审计不完整的执行不构成自治证据——
+        // 「跑成功了但说不出来怎么跑的」与失败同等不可信。
+        p.setEvidenceReady(!p.isDryRun() && streak >= successStreakGoal && auditIncomplete == 0);
     }
 
     /**

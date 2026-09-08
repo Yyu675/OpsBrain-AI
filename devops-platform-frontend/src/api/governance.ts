@@ -343,6 +343,12 @@ export interface AutomationPolicy {
   promotable?: boolean | null
   /** dryRun=false 且连续零误达标 → L5 证据门引用点 */
   evidenceReady?: boolean | null
+  /** 最近窗口审计不完整条数（第三支柱：0 才有资格谈自治） */
+  auditIncompleteRecent?: number | null
+  /** 转正场次门槛（服务端当前生效值） */
+  promoteHitsGoal?: number | null
+  /** 连胜门槛（服务端当前生效值） */
+  streakGoal?: number | null
 }
 
 export interface PolicyStats {

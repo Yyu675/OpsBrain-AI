@@ -609,7 +609,7 @@ const OUTCOME_LABELS: Record<string, string> = {
                     class="evidence is-ready is-clickable"
                     role="button"
                     tabindex="0"
-                    :title="`演练命中 ${row.dryRunHits} 场，场次达标——点击关闭演练直接上线`"
+                    :title="`演练命中 ${row.dryRunHits} 场（转正门槛 ${row.promoteHitsGoal ?? '—'} 场），场次达标——点击关闭演练直接上线`"
                     @click="togglingDryRun.run(row)"
                     @keydown.enter="togglingDryRun.run(row)"
                   >
@@ -618,7 +618,7 @@ const OUTCOME_LABELS: Record<string, string> = {
                   <span
                     v-else-if="row.dryRun && row.dryRunHits != null"
                     class="evidence"
-                    :title="`演练命中 ${row.dryRunHits} 场，未达转正场次`"
+                    :title="`演练命中 ${row.dryRunHits} 场（转正门槛 ${row.promoteHitsGoal ?? '—'} 场），未达转正场次`"
                   >
                     演练 {{ row.dryRunHits }} 场
                   </span>
@@ -626,7 +626,7 @@ const OUTCOME_LABELS: Record<string, string> = {
                     v-else-if="!row.dryRun && row.successStreak != null"
                     class="evidence"
                     :class="{ 'is-ready': row.evidenceReady === true }"
-                    :title="`连续零误执行 ${row.successStreak} 场；最近污点：${row.lastAutoFailureAt ?? '无'}`"
+                    :title="`连续零误执行 ${row.successStreak} 场（连胜门槛 ${row.streakGoal ?? '—'} 场）${row.auditIncompleteRecent ? `；⚠ 审计不完整 ${row.auditIncompleteRecent} 条` : '，审计完整'}；最近污点：${row.lastAutoFailureAt ?? '无'}`"
                   >
                     <Award v-if="row.evidenceReady" :size="10" />{{ row.evidenceReady ? ' 证据达标' : `连胜 ${row.successStreak}` }}
                   </span>

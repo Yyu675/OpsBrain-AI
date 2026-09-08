@@ -120,6 +120,15 @@ public class AutomationPolicy {
     /** 自治证据达标：dryRun=false 且连胜达标（供免审批升级门引用） */
     private Boolean evidenceReady;
 
+    /** 最近窗口内审计不完整的 auto 执行数（第三支柱；0 才有资格谈自治） */
+    private Integer auditIncompleteRecent;
+
+    /** 转正场次门槛（服务端当前生效值，下发给前端 title 用） */
+    private Integer promoteHitsGoal;
+
+    /** 连胜门槛（服务端当前生效值，下发给前端 title 用） */
+    private Integer streakGoal;
+
     /** 该策略当前是否真的会生效（自身启用 + 动作可用），由 Service 计算 */
     private Boolean effective;
 
@@ -305,4 +314,13 @@ public class AutomationPolicy {
 
     public Boolean getEvidenceReady() { return evidenceReady; }
     public void setEvidenceReady(Boolean v) { this.evidenceReady = v; }
+
+    public Integer getAuditIncompleteRecent() { return auditIncompleteRecent; }
+    public void setAuditIncompleteRecent(Integer v) { this.auditIncompleteRecent = v; }
+
+    public Integer getPromoteHitsGoal() { return promoteHitsGoal; }
+    public void setPromoteHitsGoal(Integer v) { this.promoteHitsGoal = v; }
+
+    public Integer getStreakGoal() { return streakGoal; }
+    public void setStreakGoal(Integer v) { this.streakGoal = v; }
 }

@@ -208,6 +208,30 @@ public class HealingExecutionRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.ofNullable(rows.get(0));
     }
 
+    /**
+     * S4-2 批次 13（证据门第三支柱）：最近 limit 条 auto 台账里
+     * 「审计不完整」的行数（steps_json 或 gate_decision 缺失）。
+     * <p>PRD L5 证据门三支柱：连续零误（批次 9 已入）+ 审计完整（本方法）+ 可观测达标
+     * （Prom 验证器，挂账）。审计不完整的执行不能作为自治证据——
+     * 「跑成功了但说不出来怎么跑的」与失败同等不可信。</p>
+     * <p>注意：V10（steps_json 列）之前的古行天然 steps_json 缺失，会在 50 窗口内
+     * 暂时压低完整度——窗口即时效，不回填历史（开销大于收益）。</p>
+     */
+    public int countIncompleteAuditAmongRecent(long policyId, int limit) {
+        Integer n = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) FROM (
+                    SELECT steps_json, gate_decision FROM sys_healing_execution
+                     WHERE requested_by = 'auto' AND params_json LIKE ?
+                     ORDER BY id DESC
+                     LIMIT ?
+                ) t
+                WHERE steps_json IS NULL OR gate_decision IS NULL
+                """,
+                Integer.class, policyLikeKey(policyId), limit);
+        return n == null ? 0 : n;
+    }
+
     /** 引擎写入 params 的溯源 LIKE 键（"__policyId":N —— Jackson 序列化数值不带引号）。 */
     public static String policyLikeKey(long policyId) {
         return "%\"__policyId\":" + policyId + "%";
