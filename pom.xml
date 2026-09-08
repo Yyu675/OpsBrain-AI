@@ -386,10 +386,10 @@
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-maven-plugin</artifactId>
                 <!-- 版本钉 11.17.3：Boot BOM 不托管本插件；
-                     11.17.3 为 11.x 主族末版（与运行时 flyway-core 同族），
+                     11.20.3 为 11.x 主族末版(插件自身版本列车,与 DB 模块 flyway-database-postgresql 同列车,不同代 flyway-core;CI 批 64 实测:不可混查 flyway-core 版本列车 11.17.3)
                      也治住 IDE 档把未钉版插件误报成 1116 一类问题。
                      连接参数不传固定值，CI 以 -D 注入（无环境坐标入 pom）。 -->
-                <version>11.17.3</version>
+                <version>11.20.3</version>
                 <dependencies>
                     <!-- Flyway ≥10.2 起各数据库支持拆分为独立模块;插件自身
                          classpath 不含项目依赖,必须在插件内显式声明,
@@ -397,7 +397,7 @@
                     <dependency>
                         <groupId>org.flywaydb</groupId>
                         <artifactId>flyway-database-postgresql</artifactId>
-                        <version>11.17.3</version>
+                        <version>11.20.3</version>
                     </dependency>
                 </dependencies>
             </plugin>
