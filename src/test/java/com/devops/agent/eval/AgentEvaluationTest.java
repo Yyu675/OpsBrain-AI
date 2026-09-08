@@ -3,6 +3,7 @@ package com.devops.agent.eval;
 import com.devops.agent.common.exception.SecurityGuardException;
 import com.devops.agent.common.guard.SecurityInputGuard;
 import com.devops.agent.domain.rag.HybridRetrieverService;
+import com.devops.agent.domain.rag.RetrievedChunk;
 import com.devops.agent.domain.rag.KnowledgeIngestionService;
 import com.devops.agent.domain.rag.KnowledgeScope;
 import com.devops.agent.support.AbstractIntegrationTest;
@@ -62,13 +63,24 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    /** 评测项（与 eval_dataset.json 结构一一对应） */
+    /**
+     * 评测项（与 eval_dataset.json 结构一一对应）。
+     * <p>4-1.1 新增两字段，存量条目缺省为 null 不参与新指标（渐进注记）：</p>
+     * <ul>
+     *   <li>{@code expectedDocs}——回答本题应当命中的文档标题集合
+     *       （classpath 摄取=文件名），4-1.2 Recall@K/MRR 的判据键；</li>
+     *   <li>{@code expectedRootCause}——真实根因描述，为 4-2 校准与诊断场景
+     *       预留，本批仅落字段不计分（注记内容属 4-1.5 扩集批次）。</li>
+     * </ul>
+     */
     public record EvalItem(
             int id,
             String type,
             String query,
             List<String> expectedKeywords,
-            boolean shouldTriggerFallback) {
+            boolean shouldTriggerFallback,
+            List<String> expectedDocs,
+            String expectedRootCause) {
     }
 
     private List<EvalItem> loadDataset() throws Exception {
@@ -217,12 +229,24 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
         int hit = 0;
         // 评测视角：管理员范围检索（覆盖全部可见文档）
         KnowledgeScope scope = KnowledgeScope.admin("eval-runner", null);
+        // 4-1.2：同一管道改走 retrieveWithSource 保留文档标题——连通性判据口径
+        // 逐字不变（null「服务不可用」与空列表一律计未命中），新增的是排序面。
+        // 单次调用而非先 retrieve 再 retrieveWithSource：真实嵌入每次都计费。
+        List<RetrievalRankMetrics.QueryRanking> rankings = new ArrayList<>();
         for (EvalItem item : positives) {
-            List<String> chunks = hybridRetrieverService.retrieve(item.query(), 3, scope);
-            if (chunks == null || chunks.isEmpty()) {
+            List<RetrievedChunk> chunks =
+                    hybridRetrieverService.retrieveWithSource(item.query(), 3, scope);
+            List<String> rankedTitles = chunks == null
+                    ? List.of()
+                    : chunks.stream().map(RetrievedChunk::docTitle).toList();
+            if (rankedTitles.isEmpty()) {
                 missed.add("  - #" + item.id + " 「" + item.query() + "」未命中任何片段");
             } else {
                 hit++;
+            }
+            if (item.expectedDocs() != null && !item.expectedDocs().isEmpty()) {
+                rankings.add(new RetrievalRankMetrics.QueryRanking(
+                        rankedTitles, java.util.Set.copyOf(item.expectedDocs())));
             }
         }
         double hitRate = (double) hit / positives.size();
@@ -234,6 +258,21 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
         if (!missed.isEmpty()) {
             appendReport(report, "\n## 未命中正例（知识库缺口，需补文档）\n" + String.join("\n", missed) + "\n");
         }
+        // 4-1.2 排序质量小结：只含 expectedDocs 注记样本；无注记则留空拒伪造
+        if (!rankings.isEmpty()) {
+            appendReport(report, "\n## 排序质量（expectedDocs 注记样本，共 " + rankings.size() + " 条）\n");
+            appendReport(report, "| 指标 | 结果 |");
+            appendReport(report, "|------|------|");
+            appendReport(report, "| Recall@1 | " + String.format("%.1f%%", RetrievalRankMetrics.recallAtK(rankings, 1) * 100) + " |");
+            appendReport(report, "| Recall@3 | " + String.format("%.1f%%", RetrievalRankMetrics.recallAtK(rankings, 3) * 100) + " |");
+            appendReport(report, "| MRR | " + String.format("%.3f", RetrievalRankMetrics.mrr(rankings)) + " |\n");
+            appendReport(report, "> ⚠ MOCK 嵌入下排名无语义：本节数值只证「注记→检索→指标」管线接通，"
+                    + "语义数值归 EVAL_LLM 手动 job（报告 102 §三口径，勿在 MOCK 上优化排名）。\n");
+        } else {
+            appendReport(report, "\n> 本批无 expectedDocs 注记样本：排序指标留空拒伪造 "
+                    + "（渐进注记欠账见报告 117 / 路线图 4-1.5）。\n");
+        }
+
         writeReport(report);
         // 连通性红线：minScore=0 +场景 有数据时命中率必须 100%；任何 <100% 意味着
         // 有查询返回了空/null——管道断裂（如限流拒绝、向量化异常被吞为 null

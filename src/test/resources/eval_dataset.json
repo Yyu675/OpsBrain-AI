@@ -8,6 +8,9 @@
             "describe pod",
             "CrashLoopBackOff"
         ],
+        "expectedDocs": [
+            "K8s故障排查手册.md"
+        ],
         "shouldTriggerFallback": false
     },
     {
@@ -28,6 +31,9 @@
         "expectedKeywords": [
             "kubectl logs",
             "--previous"
+        ],
+        "expectedDocs": [
+            "K8s故障排查手册.md"
         ],
         "shouldTriggerFallback": false
     },
@@ -235,6 +241,9 @@
             "内存",
             "配额"
         ],
+        "expectedDocs": [
+            "K8s故障排查手册.md"
+        ],
         "shouldTriggerFallback": false
     },
     {
@@ -279,6 +288,9 @@
             "探针",
             "重启"
         ],
+        "expectedDocs": [
+            "K8s故障排查手册.md"
+        ],
         "shouldTriggerFallback": false
     },
     {
@@ -289,6 +301,9 @@
             "镜像",
             "拉取",
             "ImagePullBackOff"
+        ],
+        "expectedDocs": [
+            "K8s故障排查手册.md"
         ],
         "shouldTriggerFallback": false
     },
