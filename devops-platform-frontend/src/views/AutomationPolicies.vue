@@ -601,13 +601,26 @@ const OUTCOME_LABELS: Record<string, string> = {
                     <AlertTriangle :size="10" /> 不生效
                   </span>
                   <!-- S4-2 证据门徽标：演练攒场 / 真执行连胜，服务端判定前端只展示 -->
+                  <!-- 批次 11：可转正徽标升级为快捷入口——证据达标时一步到位上线。
+                       动作与操作列「上线」按钮同一条 togglingDryRun 闭环
+                       （二次确认 + CAS + 就地更新），不是另一条通路 -->
                   <span
-                    v-if="row.dryRun && row.dryRunHits != null"
-                    class="evidence"
-                    :class="{ 'is-ready': row.promotable === true }"
-                    :title="`演练命中 ${row.dryRunHits} 场${row.promotable ? '，场次达标可按需上线' : ''}`"
+                    v-if="row.dryRun && row.dryRunHits != null && row.promotable === true"
+                    class="evidence is-ready is-clickable"
+                    role="button"
+                    tabindex="0"
+                    :title="`演练命中 ${row.dryRunHits} 场，场次达标——点击关闭演练直接上线`"
+                    @click="togglingDryRun.run(row)"
+                    @keydown.enter="togglingDryRun.run(row)"
                   >
-                    <Award v-if="row.promotable" :size="10" />{{ row.promotable ? ' 可转正' : `演练 ${row.dryRunHits} 场` }}
+                    <Award :size="10" /> 可转正
+                  </span>
+                  <span
+                    v-else-if="row.dryRun && row.dryRunHits != null"
+                    class="evidence"
+                    :title="`演练命中 ${row.dryRunHits} 场，未达转正场次`"
+                  >
+                    演练 {{ row.dryRunHits }} 场
                   </span>
                   <span
                     v-else-if="!row.dryRun && row.successStreak != null"
@@ -1404,6 +1417,15 @@ const OUTCOME_LABELS: Record<string, string> = {
   color: var(--text-secondary, #8a94a6);
   background: rgba(138, 148, 166, 0.12);
   white-space: nowrap;
+}
+
+.evidence.is-clickable {
+  cursor: pointer;
+}
+
+.evidence.is-clickable:hover {
+  filter: brightness(1.15);
+  text-decoration: underline;
 }
 
 .evidence.is-ready {

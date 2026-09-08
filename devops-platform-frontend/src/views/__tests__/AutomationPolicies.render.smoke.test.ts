@@ -270,6 +270,32 @@ describe('证据门徽标（S4-2 批次 10：服务端判定，页面只负责�
 
     expect(rowsOf(w)[0].find('.evidence').exists()).toBe(false)
   })
+
+  it('可转正徽标是快捷入口：点击走同一条二次确认→CAS 上线链路（批次 11）', async () => {
+    const target = row({ id: 9, dryRun: true, dryRunHits: 7, promotable: true })
+    api.togglePolicyDryRun.mockResolvedValue({ ...target, dryRun: false })
+    const w = await mountPage([target])
+
+    const badge = rowsOf(w)[0].find('.evidence')
+    expect(badge.attributes('role')).toBe('button')
+    await badge.trigger('click')
+    await flushPromises()
+
+    // 与操作列「上线」按钮同一条链路：先确认框，再 CAS 调 toggle 端点
+    expect(confirmMock).toHaveBeenCalled()
+    expect(api.togglePolicyDryRun).toHaveBeenCalledWith(9, false, target.version)
+  })
+
+  it('未达标的演练徽标只是信息：点了不会有任何动作（灰徽标不具备引导权）', async () => {
+    const w = await mountPage([row({ dryRun: true, dryRunHits: 2, promotable: false })])
+
+    const badge = rowsOf(w)[0].find('.evidence')
+    expect(badge.attributes('role')).toBeUndefined()
+    await badge.trigger('click')
+    await flushPromises()
+
+    expect(api.togglePolicyDryRun).not.toHaveBeenCalled()
+  })
 })
 
 describe('页面骨架', () => {
