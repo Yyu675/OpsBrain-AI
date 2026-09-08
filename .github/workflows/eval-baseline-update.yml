@@ -71,7 +71,7 @@ jobs:
         env:
           PGPASSWORD: devops_password
         run: |
-          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f sql/init.sql
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f src/main/resources/db/migration/V1__baseline.sql
           for f in $(ls sql/migration_v*.sql | sort -V); do
             psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f "$f"
           done

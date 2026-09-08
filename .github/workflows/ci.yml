@@ -118,7 +118,7 @@ jobs:
         env:
           PGPASSWORD: devops_password
         run: |
-          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f sql/init.sql
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f src/main/resources/db/migration/V1__baseline.sql
           for f in $(ls sql/migration_v*.sql | sort -V); do
             echo "==> $f"
             psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f "$f"
@@ -278,7 +278,24 @@ jobs:
         # duplicate/exports/types 三域真账归零，21 条 @public 假阳逐条存证
         # 随证据注释，codemirror 17 依赖从「侥幸传递」归位正式声明。
         # 本步自此转正为正式门禁：新增死代码/未声明依赖即红。
-        run: npm run knip
+        id: knipgate
+        run: |
+          set -o pipefail
+          npm run knip 2>&1 | tee /tmp/knip.log
+      - name: knip 门禁失败时回 commit 取证帖（同款 tee 道）
+        if: failure() && steps.knipgate.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-knip-diag -->"
+            echo "### 🔴 前端腿 knip 门禁取证（批 67 修红 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -120 /tmp/knip.log 2>/dev/null || echo "(日志缺失)"
+            echo '```'
+          } > /tmp/knip-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/knip-diag.md --silent || true
 
       - name: 生产构建
         run: npm run build
