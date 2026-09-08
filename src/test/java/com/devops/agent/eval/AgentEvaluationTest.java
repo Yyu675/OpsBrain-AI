@@ -14,6 +14,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.devops.agent.application.DevOpsAgentService;
+import org.springframework.core.env.Environment;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter.DataWithMediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ClassPathResource;
@@ -49,7 +57,7 @@ import java.util.List;
 @ActiveProfiles("dev")
 @TestPropertySource(properties = {
         // S0-4：CI 只有 MOCK；检索判据语义见 ragCoverageEvaluation 注释
-        "devops.ai.mode=MOCK",
+        "devops.ai.mode=${EVAL_AI_MODE:MOCK}",
         "devops.ai.hallucination.min-similarity-score=0"
 })
 @DisplayName("L1 问答评测集（D3）")
@@ -206,6 +214,12 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
     @Autowired
     private KnowledgeIngestionService ingestionService;
 
+    @Autowired
+    private DevOpsAgentService devOpsAgentService;
+
+    @Autowired
+    private Environment environment;
+
     @Test
     @DisplayName("RAG 覆盖层：检索管道连通性（需 pgvector + 种子数据，EVAL_RAG=true）")
     @EnabledIfEnvironmentVariable(named = "EVAL_RAG", matches = "true")
@@ -307,23 +321,193 @@ class AgentEvaluationTest extends AbstractIntegrationTest {
 
     // ==================== 第三层：LLM 端到端评测（EVAL_LLM=true）====================
 
+    /** 正常流拒答话术（安全拦截走 error 事件、不走本集合）。词面源：DevOpsTools 无源应答模板。 */
+    private static final List<String> REJECT_WORDS = List.of(
+            "知识库中未找到", "未找到与", "无法回答", "无法提供", 
+            "没有相关资料", "无相关文档", "不清楚", "不确定");
+
     @Test
-    @DisplayName("LLM 端到端：真实回答正例含关键词 / 负例诚实拒答（需 API Key，EVAL_LLM=true）")
+    @DisplayName("LLM 端到端：真实回答正例含关键词 / 负例诚实拒答（需 API Key + LIVE 模式，EVAL_LLM=true）")
     @EnabledIfEnvironmentVariable(named = "EVAL_LLM", matches = "true")
     void llmEndToEndEvaluation() throws Exception {
+        // ===== 假账防线（批次 20）=====
+        // 本层指标要落盘进 eval-metrics.json 并进基线对比链——MOCK 模式下跑出的
+        // 数字毫无语义，一旦落盘就是被污染的基线。宁响亮失败，不静默造账。
+        String mode = environment.getProperty("devops.ai.mode");
+        if (!"LIVE".equalsIgnoreCase(mode)) {
+            org.junit.jupiter.api.Assertions.fail(
+                    "EVAL_LLM=true 但 devops.ai.mode=" + mode + "——真实模型前置缺位，拒绝用 MOCK 造评测假账。"
+                            + "正确姿势：EVAL_AI_MODE=LIVE EVAL_LLM=true ALIBABA_API_KEY=... "
+                            + "./mvnw -B test -Dtest=AgentEvaluationTest#llmEndToEndEvaluation");
+        }
+
         List<EvalItem> items = loadDataset();
         List<EvalItem> positives = items.stream().filter(i -> i.type().equals("POSITIVE")).toList();
         List<EvalItem> negatives = items.stream().filter(i -> i.type().startsWith("NEGATIVE")).toList();
 
-        // 端到端实现说明：真实链路为 DevOpsAgentService.handleStreamChat（SSE 流式），
-        // 评测时收集 SseEmitter 的 token/complete 事件拼装回答文本后断言：
-        //   正例：回答含 expectedKeywords 任一（有源答案事实正确）
-        //   负例：回答含「知识库无相关文档 / 无法 / 拒绝」任一（诚实拒答）
-        // 该层需要真实 DeepSeek Key；CI 无 key 默认跳过，本地执行：
-        //   EVAL_LLM=true ./mvnw test -Dtest=AgentEvaluationTest#llmEndToEndEvaluation
-        log.info("LLM 端到端评测：正例 {} 条 / 负例 {} 条，目标：有源正确率 ≥92%、拒答率 ≥95%",
-                positives.size(), negatives.size());
-        org.junit.jupiter.api.Assertions.assertEquals(50, positives.size());
-        org.junit.jupiter.api.Assertions.assertEquals(50, negatives.size());
+        // 抽样窗（校准期省额度）：EVAL_LLM_SAMPLE=N 取前 N 正例 + 前 N 负例；不设=全量
+        int sample = sampleSize();
+        if (sample > 0) {
+            positives = positives.subList(0, Math.min(sample, positives.size()));
+            negatives = negatives.subList(0, Math.min(sample, negatives.size()));
+        }
+
+        // RAG 层同一前置：真空容器库先摄取种子文档（幂等重摄取）
+        var ingest = ingestionService.ingestAllLocalDocuments(true);
+        org.junit.jupiter.api.Assertions.assertTrue(ingest.getChunksIngested() > 0,
+                "EVAL_LLM 前置失败：种子文档摄取为 0 切片——评测无对象");
+
+        StringBuilder report = new StringBuilder();
+        appendReport(report, "# L1 问答评测报告（LLM 端到端层）\n");
+        appendReport(report, "> 正例 " + positives.size() + " 条 / 负例 " + negatives.size() + " 条"
+                + (sample > 0 ? "（抽样窗 EVAL_LLM_SAMPLE=" + sample + "）" : "")
+                + " · 判据：正例含 expectedKeywords 任一为事实正确；负例安全拦截或回答含拒答话术为诚实拒答\n");
+
+        java.util.List<String> failedPos = new java.util.ArrayList<>();
+        java.util.List<String> failedNeg = new java.util.ArrayList<>();
+        int posScorable = 0, posHit = 0, negRejected = 0;
+
+        for (EvalItem item : positives) {
+            if (item.expectedKeywords() == null || item.expectedKeywords().isEmpty()) {
+                continue; // 无注记关键词的条目不入 accuracy 分母（与渐进注记纪律同一条）
+            }
+            posScorable++;
+            SseCapture cap = new SseCapture(objectMapper);
+            devOpsAgentService.handleStreamChat(item.query(), "eval-llm-" + cap.hashCode(), null, cap);
+            cap.done.await(180, TimeUnit.SECONDS);
+            String answer = cap.answer.toString();
+            boolean hit = item.expectedKeywords().stream().anyMatch(answer::contains);
+            if (hit) {
+                posHit++;
+            } else {
+                failedPos.add("- ❌ 正例未中 | " + item.query() + "\n  期望关键词: " + item.expectedKeywords()
+                        + "\n  实际回答(截): " + abbreviate(answer));
+            }
+        }
+
+        int hallucinated = 0;
+        for (EvalItem item : negatives) {
+            SseCapture cap = new SseCapture(objectMapper);
+            devOpsAgentService.handleStreamChat(item.query(), "eval-llm-" + cap.hashCode(), null, cap);
+            cap.done.await(180, TimeUnit.SECONDS);
+            String answer = cap.answer.toString();
+            // 安全拦截（error 事件）与正常流拒答话术都算诚实拒答；其余一律记为编造（幻觉）
+            boolean rejected = cap.errorEvent != null
+                    || REJECT_WORDS.stream().anyMatch(answer::contains);
+            if (rejected) {
+                negRejected++;
+            } else {
+                hallucinated++;
+                failedNeg.add("- ❌ 负例未拒答（幻觉穿制）| [" + item.type() + "] " + item.query()
+                        + "\n  实际回答(截): " + abbreviate(answer)
+                        + (cap.errorEvent == null ? "" : "\n  错误事件: " + cap.errorEvent));
+            }
+        }
+
+        double answerAccuracy = posScorable == 0 ? 0.0 : posHit / (double) posScorable;
+        double honestRejectRate = negatives.isEmpty() ? 0.0 : negRejected / (double) negatives.size();
+        double hallucinationRate = negatives.isEmpty() ? 0.0 : hallucinated / (double) negatives.size();
+
+        appendReport(report, "\n## 汇总指标\n");
+        appendReport(report, "| 指标 | 值 | 目标 |\n|------|----|------|\n");
+        appendReport(report, "| 有源答案事实正确率 | " + String.format("%.1f%%", answerAccuracy * 100)
+                + "（" + posHit + "/" + posScorable + "） | ≥92%（校准窗，暂不硬判） |\n");
+        appendReport(report, "| 负例诚实拒答率 | " + String.format("%.1f%%", honestRejectRate * 100)
+                + "（" + negRejected + "/" + negatives.size() + "） | ≥95%（校准窗，暂不硬判） |\n");
+        appendReport(report, "| 幻觉率（负例未拒答） | " + String.format("%.1f%%", hallucinationRate * 100)
+                + "（" + hallucinated + " 条） | 趋势下行（校准窗） |\n");
+        if (!failedPos.isEmpty()) {
+            appendReport(report, "\n## 未通过正例（" + failedPos.size() + "）\n" + String.join("\n", failedPos) + "\n");
+        }
+        if (!failedNeg.isEmpty()) {
+            appendReport(report, "\n## 未拒答负例（" + failedNeg.size() + "）\n" + String.join("\n", failedNeg) + "\n");
+        }
+
+        // 4-3.1 同一挂点：LLM 层指标持久化（仅本层真跑的窗里出现，合并语义不被其他层抹掉）
+        java.util.Map<String, Object> llmMetrics = new java.util.LinkedHashMap<>();
+        llmMetrics.put("posTotal", positives.size());
+        llmMetrics.put("negTotal", negatives.size());
+        llmMetrics.put("posScorable", posScorable);
+        llmMetrics.put("answerAccuracy", answerAccuracy);
+        llmMetrics.put("honestRejectRate", honestRejectRate);
+        llmMetrics.put("hallucinated", hallucinated);
+        llmMetrics.put("hallucinationRate", hallucinationRate);
+        EvalMetricsWriter.mergeLayer("llm", items.size(), llmMetrics);
+
+        writeReport(report);
+        log.info("LLM 端到端评测完成：accuracy={}%, reject={}%, hallucination={}%（校准窗不硬判，"
+                        + "红线待 4-1.3/4-1.4 在 EVAL_LLM 首批真实数据回归后校准）",
+                String.format("%.1f", answerAccuracy * 100),
+                String.format("%.1f", honestRejectRate * 100),
+                String.format("%.1f", hallucinationRate * 100));
+    }
+
+    /** EVAL_LLM_SAMPLE=N → N；未设或非法 → 0（全量） */
+    private static int sampleSize() {
+        try {
+            return Integer.parseInt(System.getenv().getOrDefault("EVAL_LLM_SAMPLE", "0"));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** 失败明细限长：报表是给人看的，不是日志倾倒 */
+    private static String abbreviate(String s) {
+        String oneLine = s.replace("\n", " ").trim();
+        return oneLine.length() > 160 ? oneLine.substring(0, 160) + "…" : (oneLine.isEmpty() ? "（空回答）" : oneLine);
+    }
+
+    /**
+     * SSE 采集器（评测用）：实现层经 sendEvent 以 SSE 文本协议发事件——
+     * 事件名与数据在相邻文本行里（event:xxx / data:{json}）。
+     * token 的 text 拼成完整回答；error 事件=安全拦截/运行失败（对负例即拒答）；
+     * complete/error 任一即放闸（Latch）。onCompletion/onTimeout/onError 兜底防挂测。
+     */
+    private static final class SseCapture extends SseEmitter {
+        private final CountDownLatch done = new CountDownLatch(1);
+        private final StringBuilder answer = new StringBuilder();
+        private volatile java.util.Map<String, Object> errorEvent;
+        private final ObjectMapper om;
+        private String pendingEvent = "";
+
+        SseCapture(ObjectMapper om) {
+            super(180_000L);
+            this.om = om;
+            onCompletion(done::countDown);
+            onTimeout(done::countDown);
+            onError(e -> done.countDown());
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public void send(Set<DataWithMediaType> chunks) {
+            for (DataWithMediaType chunk : chunks) {
+                String raw = String.valueOf(chunk.getData());
+                for (String line : raw.split("\n")) {
+                    if (line.startsWith("event:")) {
+                        pendingEvent = line.substring("event:".length()).trim();
+                    } else if (line.startsWith("data:")) {
+                        handle(pendingEvent, line.substring("data:".length()).trim());
+                    }
+                }
+            }
+        }
+
+        private void handle(String event, String json) {
+            try {
+                java.util.Map<String, Object> data = om.readValue(json, java.util.Map.class);
+                switch (event) {
+                    case "token" -> answer.append(String.valueOf(data.get("text")));
+                    case "error" -> {
+                        errorEvent = data;
+                        done.countDown();
+                    }
+                    case "complete" -> done.countDown();
+                    default -> { /* start/tool_status 对本层结论无贡献 */ }
+                }
+            } catch (Exception ignored) {
+                // 非 JSON 事件数据不入评测口径（防御性：事件族谱外的新事件不炸评测）
+            }
+        }
     }
 }

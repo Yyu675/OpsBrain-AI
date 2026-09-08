@@ -34,8 +34,14 @@ const THRESHOLD = parseFloat(opt('threshold', '0.02'))
 const UPDATE = args.includes('--update')
 
 /** 计数类键（非比率）：方向各异，不能用同一套「下降=劣化」 */
-const COUNT_KEYS = /Total|annotated|leaked|blocked/i
-const REVERSE_COUNT_KEYS = /leaked|blocked/i
+// hallucinated 入计数域：整数百差显示、阈 0；注意必须写成完整词形
+// ——「hallucinat」前缀留给 REVERSE 共用，放计数域会因子串重复反而掩盖域归属错误。
+const COUNT_KEYS = /Total|annotated|leaked|blocked|hallucinated/i
+// 「上升=劣化」键：leaked/blocked/hallucinated 属计数域（零容忍）；
+// hallucinationRate 属比率域（阈 ±THRESHOLD）——幻觉率类指标方向与命中率相反。
+// 词根用 hallucina：同时罩住 hallucinated（计数）与 hallucinationRate（比率），
+// 夹具实证过「hallucinated 不含 hallucination 子串（差 io）」的误分类坑。
+const REVERSE_COUNT_KEYS = /leaked|blocked|hallucina/i
 
 const flat = (obj, prefix = '') =>
   Object.entries(obj).flatMap(([k, v]) =>
