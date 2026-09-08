@@ -82,6 +82,10 @@ export async function submitAiAnalysisFeedback(analysisId: number, helpful: bool
 /**
  * AI 分析准确率统计（批次 27 恢复 export：4-4.1 AI 效果区真消费——
  * 批 24 去化纪律的双向性范例：去化不是永别，需求出现即加回）。
+ *
+ * @public 消费面是「返回类型推断」：useAiAnalysisStatsQuery 不显式 import
+ * 本类型名（TS 由 queryFn 返回值推断），knip 看不见→假阳；批 29 在此定型
+ * 第四种豁免形态（返回类型推断消费）。
  */
 export interface AiAnalysisStats {
   total: number
