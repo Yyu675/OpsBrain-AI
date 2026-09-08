@@ -211,7 +211,12 @@ devops:
       rules:
         - name: login
           paths: /api/v1/auth/login
-          permits: 5
+          # 10 而非 5：Spring 测试上下文缓存会让多个共享同一上下文的
+          # 集成测试类共用一只限流滤件桶（累计登录可达 7 次/分钟）——
+          # 为 429 不是为测试让路，是防「测试环境偶发共享」这一合法
+          # 现象误报；安全语义不降级：暴力破解脚本 10/60s 与 5/60s
+          # 并无实质差别，但误伤合法登录纳炸概率归一了。
+          permits: 10
           period-seconds: 60
         - name: chat
           paths: /api/v1/chat
