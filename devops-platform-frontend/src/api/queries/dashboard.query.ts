@@ -86,4 +86,5 @@ export function useDiagnosisBoardQuery(days: Ref<number>) {
   })
 }
 
+/** @public knip 假阳存证：re-export 给视图直接 import type 用（5.88.1 对该形态解析盲区，报告 128 §三）——版本收敛后删行复查 */
 export type { ClosureMetrics, DashboardOverview, DiagnosisBoard, TrendData }

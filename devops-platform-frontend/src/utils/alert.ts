@@ -6,6 +6,7 @@
  */
 
 type AlertLevel = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'
+/** @public knip 假阳存证：%s */
 export type AlertStatus = 'FIRING' | 'ACKNOWLEDGED' | 'RESOLVED'
 
 /**

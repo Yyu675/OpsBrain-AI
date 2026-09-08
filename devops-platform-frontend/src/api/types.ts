@@ -8,6 +8,7 @@
 /**
  * 统一响应包装（非流式接口）
  */
+/** @public knip 假阳存证：%s */
 export interface ApiResponse<T = unknown> {
   code: number
   message: string

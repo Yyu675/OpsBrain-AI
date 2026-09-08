@@ -90,6 +90,7 @@ export interface ActionAllowlistEntry {
   effectiveBlastRadiusCount: number | null
 }
 
+/** @public knip 假阳存证：cross=4 处真实引用（5.88.1 对 re-export/barrel 的解析盲区，报告 128 §三）——版本收敛后删行复查 */
 export interface PagedResult<T> {
   items: T[]
   total: number

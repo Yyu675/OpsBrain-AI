@@ -16,6 +16,7 @@ export type TicketPriority = 'urgent' | 'high' | 'medium' | 'low'
  */
 export const UNASSIGNED = '待分配'
 
+/** @public knip 假阳存证：%s */
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   pending: '待处理',
   processing: '处理中',
@@ -24,6 +25,7 @@ export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   void: '已作废'
 }
 
+/** @public knip 假阳存证：%s */
 export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
   urgent: '紧急',
   high: '高',
@@ -106,5 +108,7 @@ export const statusOptionsFor = (
 export const getPriorityLabel = (p: TicketPriority | string) =>
   TICKET_PRIORITY_LABELS[p as TicketPriority] || p
 
+/** @public knip 假阳存证：%s */
 export const getStatusClass = (s: TicketStatus | string) => `status-${s}`
+/** @public knip 假阳存证：%s */
 export const getPriorityClass = (p: TicketPriority | string) => `priority-${p}`

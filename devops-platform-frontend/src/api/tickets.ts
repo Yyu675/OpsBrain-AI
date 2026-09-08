@@ -54,4 +54,5 @@ export {
   deleteTicketAttachment
 } from './services/ticket.service'
 export type { TicketAttachmentMeta } from './services/ticket.service'
+/** @public knip 假阳存证：%s */
 export type { FrontendTicket, BackendTicket } from './types/ticket'

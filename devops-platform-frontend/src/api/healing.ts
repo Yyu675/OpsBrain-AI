@@ -71,6 +71,7 @@ export interface HealingStep {
 }
 
 /** 台账详情（S3-5 起为双载荷：行本体 + 步骤时间线） */
+/** @public knip 假阳存证：cross=4 处真实引用（5.88.1 对 re-export/barrel 的解析盲区，报告 128 §三）——版本收敛后删行复查 */
 export interface HealingExecutionDetail {
   execution: HealingExecution
   steps: HealingStep[]

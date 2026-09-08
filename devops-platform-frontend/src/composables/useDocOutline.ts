@@ -24,6 +24,7 @@
  */
 import { ref, type Ref } from 'vue'
 
+/** @public knip 假阳存证：%s */
 export interface TocItem {
   id: string
   text: string

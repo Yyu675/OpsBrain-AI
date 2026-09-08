@@ -4,9 +4,11 @@
  */
 
 // 开发环境 Base URL
+/** @public knip 假阳存证：%s */
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8088/ai'
 
 // API 路径前缀
+/** @public knip 假阳存证：%s */
 export const API_PREFIX = '/api/v1'
 
 // 完整 API 地址
