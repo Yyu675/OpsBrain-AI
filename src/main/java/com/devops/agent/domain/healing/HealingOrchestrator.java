@@ -442,7 +442,7 @@ public class HealingOrchestrator {
             appendStep(executionId, "MANUAL_UNDO", "OK", excerpt(undone.output()));
             auditIfAgent(action, "healing.undo", executionId, true, null);
             log.warn("[Healing] 已撤销 | id={} | action={} | token={}",
-                    executionId, row.actionKey(), row.undoToken());
+                    executionId, row.actionKey(), maskToken(row.undoToken()));
             return HealingOutcome.terminal(executionId,
                     HealingGate.GateDecision.auto(row.actionKey(), executor.executorKey(), null, null),
                     HealingExecution.Status.UNDONE, "已撤销：" + undone.output(), undone);
@@ -551,6 +551,21 @@ public class HealingOrchestrator {
             return "";
         }
         return text.length() <= 500 ? text : text.substring(0, 500) + "…";
+    }
+
+    /**
+     * 凭据类字面值摘要（S5-3.2 续，批 46 审计案）。
+     * {@link #excerpt} 的 500 上限是给「输出文本」的，凭据照抄等于全录
+     * （典型 token 全长远小于 500）。凭据只留前 4 位 + 长度——
+     * 定位事实够（能对上具体一次执行），暴露面收（前 4 位撑不起穷举）。
+     */
+    private static String maskToken(String token) {
+        if (token == null) {
+            return "";
+        }
+        String t = token.trim();
+        int keep = Math.min(4, t.length());
+        return t.substring(0, keep) + "…(len=" + t.length() + ")";
     }
 
     /** handle 主线各终态点的一次性写入（失败不拖垮主流程，warn 留痕）。 */
