@@ -356,3 +356,12 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - **S0-4b 文档面收口**(11+11+12+6=40);散题#34 DNS 并入 K8s 进阶卷。真收尾差两件环境型:摄取生效验证(随 S0-2b 首跑)+ expectedDocs 注记真窗回填——文档在≠命中中。
 - 报告144。
 
+## 批 42(2026-09-08):S5-4.2 慢查询静态审计——确证 2 枚 V11 落器
+
+- 静态对账:27 表/84+存量索引 x 热点查询列集全扫;SLA/dedup/治理五领域哨兵全在场。
+- **V11 两枚**:idx_alert_group_dedup(部分索引,风暴聚合退路 dedup-miss 每条必跑)+idx_ticket_create_time(看板 KPI 每次加载必扫)。锁窗纪律:V11 后迁移一律 CONCURRENTLY 双段。
+- 观察档 3 项在案不动:keyword 三列 LOWER LIKE→pg_trgm 真窗决议(建议编 5-4.5);urgent bitmap 已服务;诊断看板低频。
+- 环境插曲:.git 对象空心化,fetch+reset --mixed FETCH_HEAD 复原零失——沙盘.git可回收钉。
+- 连带修正:「V24/42 SLA索引」真实形态=V1 squash,对账认内容不认编号。
+- 演练挂账:EXPLAIN 双查询对照/膨胀率 Monthly/trgm 拍板——真窗未跑不勾销。报告145;docs/09-operations/慢查询静态审计.md。
+
