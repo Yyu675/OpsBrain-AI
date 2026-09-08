@@ -385,6 +385,11 @@
             <plugin>
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-maven-plugin</artifactId>
+                <!-- 版本钉 11.17.3：Boot BOM 不托管本插件；
+                     11.17.3 为 11.x 主族末版（与运行时 flyway-core 同族），
+                     也治住 IDE 档把未钉版插件误报成 1116 一类问题。
+                     连接参数不传固定值，CI 以 -D 注入（无环境坐标入 pom）。 -->
+                <version>11.17.3</version>
             </plugin>
             <!--
               已移除 maven-toolchains-plugin。

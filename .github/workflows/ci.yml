@@ -71,6 +71,27 @@ jobs:
           test -x ./mvnw || { echo "::error::mvnw 缺失或没有可执行权限"; exit 1; }
           ./mvnw -B -ntp --version
 
+      - name: 迁移校验与空库全量建账（Flyway migrate+validate，路线图步骤 0-1.6/0-1 验收）
+        # 双保险的内层：应用启动 validate-on-migrate=true 是运行时防线（防 prod 库漂移）；
+        # 本步骤用一次性零障库走「migrate→validate→库账」完整三段，证明:
+        #   ① 仓库内 V1..V11 空库一次建出全部表（路线图 0-1 验收第一条）;
+        #   ② flyway:validate 对已应用账逐项 checksum 核验（0-1 验收第三条的 CI 面）;
+        #   ③ 与后段「初始化数据库 Schema」走的主库物理隔离(取 scratch 名义),
+        #      互不干扰、可重跑。
+        run: |
+          PGPASSWORD=devops_password psql -h localhost -p 25432 -U devops -d postgres \
+            -c "DROP DATABASE IF EXISTS flyway_ci_scratch;" -c "CREATE DATABASE flyway_ci_scratch;"
+          ./mvnw -B -ntp flyway:migrate \
+            -Dflyway.url=jdbc:postgresql://localhost:25432/flyway_ci_scratch \
+            -Dflyway.user=devops -Dflyway.password=devops_password
+          ./mvnw -B -ntp flyway:validate \
+            -Dflyway.url=jdbc:postgresql://localhost:25432/flyway_ci_scratch \
+            -Dflyway.user=devops -Dflyway.password=devops_password
+          TABLES=$(PGPASSWORD=devops_password psql -h localhost -p 25432 -U devops -d flyway_ci_scratch -tA \
+            -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';")
+          echo "::notice::空库全量建账表数=$TABLES"
+          [ "$TABLES" -ge 27 ] || { echo "::error::空库 migrate 后表数 $TABLES < 27(期望 V1..V11 全建账)"; exit 1; }
+
       - name: 初始化数据库 Schema
         # @SpringBootTest 不建表（JPA ddl-auto 非 create），需先执行建表脚本。
         # 迁移脚本按文件名排序执行——因此新增迁移必须保持编号递增，
