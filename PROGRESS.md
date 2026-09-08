@@ -437,3 +437,9 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 - `docs/05-development-design/真执行器接挂清单.md`:现行执行面六行+硬契约三条(序/撤销启败/无声明拒绝)+接挂六道;候选四道小→大排(k8s.pod.delete 同架轨首)。报告160。
 
+## 批 60(2026-09-09):真窗工作包+勾稽 13.x 补全(用户四问一次答)
+
+- `scripts/lab/alert_loadgen.sh` + `explain_v11_audit.sql`(演练用具);`docs/09-operations/真窗联合测试清单.md`(T1..T15)。
+- 勾稽预置件 §三:§13.1-13.4 原件寻获(仓根路线图)+26 项判(18 工程面齐/真窗补签 7/拍板 2+D-01..D-07 账)。
+- 纪律三返工:清单乱文重卷/列名实对(occurrence_count/ticket_no/update_time)/loadgen 冒烟修两真案(xargs env 传导/gawk asort 性口)。报告162。
+
