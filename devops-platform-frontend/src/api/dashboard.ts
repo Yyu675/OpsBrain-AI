@@ -110,7 +110,7 @@ export async function getTrends(days = 7, module?: string | null): Promise<Trend
 
 // ---- 诊断区看板（S4-4.2） ----
 
-export interface DiagnosisSufficiencyStat {
+interface DiagnosisSufficiencyStat {
   sufficiency: string
   count: number
 }

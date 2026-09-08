@@ -145,6 +145,9 @@ export function useTheme() {
  * 不这样做的话，页面会先以浅色渲染，等 Vue 启动后才切暗色，
  * 用户看到一次刺眼的白闪——暗色主题最典型的体验瑕疵。
  * 必须是**同步内联**执行，任何异步都来不及。
+ *
+ * @public index.html 第 13 行的内联脚本以本常量为 SSoT（内容须保持一致）——
+ * 该引用发生在 HTML 层面，knip 看不到，故显式标记公开 API 防假阳清链。
  */
 export const THEME_INIT_SCRIPT = `
 (function(){try{
