@@ -102,6 +102,20 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
         <!--
+          micrometer-registry-otlp（S5-1 批次 52）：OTLP 协议指标导出。
+          版本由 spring-boot-dependencies(Micrometer BOM）托管，与
+          prometheus 注册器同族同号——双注册器共存互不干扰
+          （prom 拉模型照旧，otlp 推模型走 collector）。
+          默认停用（management.otlp.metrics.export.enabled=false），
+          只在部署方供给 collector 地址后经 env 显开——
+          不给默认开启：没接 collector 的推流器只会把周期错误
+          喂给日志，还误导读者以为指标有去处。
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-otlp</artifactId>
+        </dependency>
+        <!--
           Resilience4j（S0-3，路线图 §4.3）：数据源级熔断 + LLM 限流。
           与 ToolRuntimeManager 的分工（AGENTS 3.7.5）：Resilience4j 管
           「跨调用的熔断状态」（数据源客户端级），ToolRuntimeManager 管

@@ -584,6 +584,19 @@ management:
       show-details: always
       probes:
         enabled: true
+  # ==================== OTLP 指标导出（S5-1 尾件，批 52）====================
+  # micrometer-registry-otlp 已在 pom（版本 Boot BOM 托管）。默认停用：
+  # 没接 collector 就开启推流 = 周期连接错误刷日志 + 「指标有去处」的幻觉；
+  # 双注册器（prom 拉 + otlp 推）共存互不干扰，prom 契约（批 37 job）照旧。
+  # prod 开法：OTLP_EXPORT_ENABLED=true 且 OTLP_METRICS_URL 指到 collector。
+  otlp:
+    metrics:
+      export:
+        enabled: ${OTLP_EXPORT_ENABLED:false}
+        url: ${OTLP_METRICS_URL:http://localhost:4318}
+        # 60s 推一次：告警面在 prom 拉模型担纲，otlp 是画像/趋势用，
+        # 半分钟级的内耗对 2g 预算没有意义。
+        step: ${OTLP_EXPORT_STEP:60s}
   # S0-3：熔断器状态汇入 /actuator/health（resilience4j-spring-boot3 自带
   # CircuitBreakerHealthIndicator，这里是显式声明而非依赖默认值）
   health:
