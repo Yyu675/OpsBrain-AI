@@ -47,6 +47,37 @@ devops:
     # 由部署方通过环境变量显式打开（docker-compose.yml 默认给 MOCK）。
     mode: ${AI_MODE:MOCK}
 
+spring:
+  datasource:
+    hikari:
+      # ==================== S5-4.4 池核查落器（批 43 / 报告 146）====================
+      # 现状勘定：此前 prod 走 Boot 默认（pool=10 / timeout=30s），
+      # dev 方言为 10/2/30s——默认值只能本地成立，生产不核等于裸奔。
+      #
+      # 规模公式（单一铁律）：replicas × maximum-pool-size ≤
+      # PG max_connections × 0.7（compose PG 未覆写，默认 100）。
+      # 现默认 20 —— web 并发大头已被 llm ratelimiter(60/s）与
+      # webhook 滑窗闸（SlidingWindowRateLimiter）压底，DB 争用远低于 web 线程数。
+      # 要扩副本先扩公式；公式不破，池不炸。
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      # 20s 而非默认 30s：连接拿不到多半是池耗尽或 PG 卡住，
+      # 多等 10s 不会等来连接，只会把 Tomcat 线程多押 10s。
+      connection-timeout: ${DB_POOL_CONN_TIMEOUT_MS:20000}
+      # max-lifetime 必须显著小于 PG idle_in_transaction_session_timeout
+      # 与链路设备的空闲断连（负载均衡典型 10~30 分钟）——
+      # 连接比自己先死的池，全池烂尾是常态。600s 给小武器，不赌长跑。
+      max-lifetime: ${DB_POOL_MAX_LIFETIME_MS:600000}
+      # 闲置 5 分钟回收；keepalive 必须 < idle-timeout，
+      # 读到已死但尚未过期连接（测个 SELECT 1 再发）是西墙漏水东墙补，
+      # 心跳放在恰间歇即廉价。
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT_MS:300000}
+      keepalive-time: ${DB_POOL_KEEPALIVE_MS:240000}
+      # leak-detection-threshold 不进 prod：阈值期打印栈是调查期武器，
+      # 常年挂着等于把每个长事务都当嫌疑犯记录——
+      # 池耗尽三连（active 贴 max/connection.wait 高/慢查询）
+      # 本册方法论卷 §5 已给排查定式。
+
 # ============================================================
 # API 文档：生产环境整体关闭
 # ============================================================

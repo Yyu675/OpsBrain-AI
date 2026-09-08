@@ -365,3 +365,9 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 连带修正:「V24/42 SLA索引」真实形态=V1 squash,对账认内容不认编号。
 - 演练挂账:EXPLAIN 双查询对照/膨胀率 Monthly/trgm 拍板——真窗未跑不勾销。报告145;docs/09-operations/慢查询静态审计.md。
 
+## 批 43(2026-09-08):S5-4.4 池配置核查——prod Hikari 裸奔封堵
+
+- 五池盘点:Hikari prod 全默认(唯一🟡)、Tomcat 200/ Letttuce 共享/ OkHttp 被闸盖/ PG 100 全过。闸真相=ratelimiter llm 60/s,bulkhead 无配存在。
+- 落器:application-prod.yml Hikari 显式块(20/5/20s/lifetime 600s/idle 300s/keepalive 240s),全 env;规模铁律 replicas×pool ≤ max_conn×0.7;leak 探不进 prod。
+- S5-4 静态面全清(4.1/4.2/4.3/4.4);S5 余量二分:五件 JDK 批 × 真窗演练档。报告146;docs/09-operations/连接池配置核查.md。
+
