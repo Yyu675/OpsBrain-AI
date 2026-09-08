@@ -297,3 +297,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - **S4-2 ECE 骨架**:`EceMetrics`(等宽bin,空样本NaN拒假满分,越界抛拒钳位)+ EceMetricsTest 11 钉测;`eval_compare` REVERSE 词表预接 `\bece\b|calibration`(三案转台;\b 防 pieceRate 撞名已实证)。真窗首开日操作手册入报告136 §四(四步,最后一寸=LLM窗置信度通道)。
 - 闸序:校验器/保底/预演152全绿;ECE Java编译+钉测仲裁交本批CI后端腿。报告136。
 
+- **插曲结案(批33)**:会话中途沙箱重克隆(本地史回基座674429c),reflog考古+`reset --soft FETCH_HEAD`缝合,批33六文件零污染重提交(1b3a8c3..6bde3c2双腿绿)。「报账前验地基(git log先验历史连续性)」入纪律,与核headSha/零run探针并称三兄弟。报告136 §六。
+
