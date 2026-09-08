@@ -273,3 +273,10 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 预演当场抓弹两发并修复:#138 弹体虚写(private_key 下划线 vs 规则空格);工具自身 STRUCTURE_BREAK 逃逸事故(转义类张冠李戴 → 改码点谓词实现,教训入仓:语义检查不用转义类)。
 - 双校验器(schema/保底闸)绿;欠账①②清零,剩 S4-2 ECE 真窗对账 + D-D 增强件。
 
+## D-D · 批 31(2026-09-08):评测基线自动更新增强件落地
+
+- `.github/workflows/eval-baseline-update.yml`:workflow_dispatch 派单 → 镜像主线 backend 环境重跑 → eval_compare 先亮账(劣化 rc=1 即中止,回归物理不可入基线) → 无劣化 --update → bot 回写派单分支([skip ci] 防自激)。
+- 守护:环境同口径镜像 / 权限隔离(主线 read 不变) / 派单理由强制进提交审计 / artifact 留档 30 天。
+- 边界:EVAL_RAG/EVAL_LLM 真窗基线不在其域,仍走本地真窗人工 --update(S4-2 欠账不变)。
+- eval_compare.js 头注挂账转已办;报告 134。
+

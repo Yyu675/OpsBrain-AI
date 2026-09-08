@@ -18,7 +18,8 @@
  *     Total/leaked/blocked/annotated）同样比绝对差，但 leaked/blocked
  *     方向相反——漏拦截增多就是劣化；
  *   · --update 把当前文件整体另存为基线（4-3.4 手动更新基线的本地实现；
- *     CI 内 workflow_dispatch 接线挂账——workflows 权限，同 T12 先例）。
+ *     CI 侧已由 .github/workflows/eval-baseline-update.yml 接线：人工派单、
+ *     先亮账后回写、劣化即中止——本文件只负责「比」与「另存」，搬运编排在那里）。
  */
 
 const fs = require('fs')

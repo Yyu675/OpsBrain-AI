@@ -1,0 +1,133 @@
+name: 评测基线更新（workflow_dispatch 增强件 · D-D）
+
+# 增强件，非主线门禁——只在 Actions 页面手动触发，不与 push/PR 闸序耦合。
+# 语义（eval_compare.js 头注 4-3.4 的 CI 接线实现）：
+#   人工派单 → 完整后端评测环境重跑(AI_MODE=MOCK, 与主线同镜像)
+#   → compare 先亮账(劣化即中止, 不许把回归写进基线)
+#   → 无劣化才 --update 并以 bot 提交回派单分支, 提交信息带派单理由。
+# [skip ci] 防自激：基线是纯数据文件, 同一 SHA 代码再跑一遍主线无新增信号。
+# S4-2/4-3.2 前置：EVAL_RAG/EVAL_LLM 真窗首跑基线仍需人工本地 --update 提交，
+# 本工作流不论证「基线该是什么」，只搬运「当前实测是什么」——审计口在派单理由。
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: '派单理由（必填，写进提交信息审计链，如：报告133后正式验收 150 数据集契约层读数）'
+        required: true
+        type: string
+      threshold:
+        description: '劣化阈值（绝对值，默认 0.02，与主线门禁一致）'
+        required: false
+        default: '0.02'
+        type: string
+
+permissions:
+  contents: write  # bot 回写基线文件所需；主线 ci.yml 仍是 read, 此门不相通
+
+jobs:
+  update-baseline:
+    name: 评测重跑 → 亮账 → 回写基线
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # 环境镜像主线 ci.yml backend job,逐字段一致——基线必须产自与门禁同口径
+    # 的环境,否则「轻量环境造基线、全量环境查基线」会系统性误红。
+    services:
+      postgres:
+        image: ankane/pgvector:v0.5.1
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops_password
+          POSTGRES_DB: devops_knowledge_db
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d devops_knowledge_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.0-alpine
+        ports:
+          - 26379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 初始化数据库 Schema
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f sql/init.sql
+          for f in $(ls sql/migration_v*.sql | sort -V); do
+            psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Redis 密码配置
+        run: |
+          sudo apt-get install -y --no-install-recommends redis-tools >/dev/null 2>&1 || true
+          redis-cli -h localhost -p 26379 CONFIG SET requirepass devops_redis_pwd
+          redis-cli -h localhost -p 26379 -a devops_redis_pwd PING
+
+      - name: 编译与测试（产出 target/eval-metrics.json）
+        env:
+          AI_MODE: MOCK
+          SPRING_PROFILES_ACTIVE: dev
+          SCHEMA_FAIL_FAST: 'true'
+        run: ./mvnw -B -ntp verify
+
+      - name: 对比亮账（劣化即中止）
+        # 先把对比结果打出来：这不是门禁,是「回写前的账本公示」。
+        # rc=1(有劣化)整步失败 → 后续 update/commit 不执行,回归无法混入基线。
+        # 无历史基线时 eval_compare 按首跑语义 rc=0 放行(引导语义不变)。
+        run: |
+          node tools/audit/eval_compare.js \
+            --current target/eval-metrics.json \
+            --baseline tools/audit/eval_baseline.json \
+            --threshold "${{ inputs.threshold }}" | tee eval-compare.txt
+
+      - name: 生成新基线（不提交，先成物）
+        run: |
+          node tools/audit/eval_compare.js \
+            --current target/eval-metrics.json \
+            --baseline tools/audit/eval_baseline.new.json \
+            --update
+          test -f tools/audit/eval_baseline.new.json
+
+      - name: 差异确认 + bot 回写派单分支
+        run: |
+          if [ -f tools/audit/eval_baseline.json ] && diff -q tools/audit/eval_baseline.json tools/audit/eval_baseline.new.json >/dev/null; then
+            echo "基线与现测一致，无变更可写，跳过提交。"
+            rm tools/audit/eval_baseline.new.json
+            exit 0
+          fi
+          mv tools/audit/eval_baseline.new.json tools/audit/eval_baseline.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/audit/eval_baseline.json
+          git commit -m "chore(eval): workflow_dispatch 基线更新 —— ${{ inputs.reason }} [skip ci]"
+          git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: 留档（实测 + 亮账）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-baseline-evidence
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            target/eval-metrics.json
+            eval-compare.txt
