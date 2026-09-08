@@ -280,3 +280,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 边界:EVAL_RAG/EVAL_LLM 真窗基线不在其域,仍走本地真窗人工 --update(S4-2 欠账不变)。
 - eval_compare.js 头注挂账转已办;报告 134。
 
+- **插曲结案**:0c4e920 push 事件被 GitHub 侧丢弃(25+min 零 run),空探针 `bfde51a` 复触——同树双腿 success,批31内容有效入账。零-run-超时即探针复触已写入报账纪律(报告134 §六)。
+

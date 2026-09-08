@@ -1,6 +1,6 @@
 # 批次 31（D-D）：评测基线自动更新 workflow_dispatch 接线——增强件落地
 
-日期：2026-09-08 ｜ 状态：完成待派单实证 ｜ 承接：报告 118(S4-3 基线门禁）、eval_compare.js 头注挂账（「CI 内 workflow_dispatch 接线挂账——同 T12 先例」)
+日期：2026-09-08 ｜ 状态：完成（激活待并入 main，脚本链已实证） ｜ 承接：报告 118(S4-3 基线门禁）、eval_compare.js 头注挂账（「CI 内 workflow_dispatch 接线挂账——同 T12 先例」)
 
 ---
 
@@ -35,7 +35,22 @@ workflow_dispatch 手动派单的自动更新通道**，定位增强件，**不�
 - 无历史基线时 compare 按首跑语义 rc=0 放行（引导语义与主线一致），本工作流即可承担
   「 MOCK 契约层基线首跑」的搬运工角色。
 
-## 五、验证方案
+## 五、验证账（本批实测）
 
-推送后立即 workflow_dispatch 派单一次端到端实证（含 bot 回写 + [skip ci] 语义），
-结果在批 31 报账中给出。
+- **激活边界（实测发现）**:`workflow_dispatch` 工作流在落到默认分支 `main` 前不在 Actions 注册（派单 API 404)。本会话限定 arena 分支、不碰 main,故**真派单端到端并入 main 后首次可用**——非阻塞设计：文件随分支入主干即激活。
+- **脚本链全场景本地转台实证**(eval_compare 真身，四场):
+  A 首跑无基线→亮账 rc=0 放行 + --update 成物 ✓
+  B 基线一致→diff 跳过分支不提交 ✓
+  D 改善/持平→rc=0,单侧缺席指标跳项可见 ✓
+  C 真劣化(securityBlockRate -10pt / leakedTotal +1)→**rc=1 中止** ✓
+- 转台教训（两连，自记一账）：转台 JSON 必须保持 `layers` 嵌套结构与 current/baseline 角色不翻转——第一次模拟因少包 layers 而全空比出假绿，第二次把恶化写反角色又假绿，**工具本身倒是每次都是对的**。
+
+
+## 六、事件丢失案（批 31 报账插曲，结案）
+
+推送 `0c4e920` 后 25+ 分钟零 workflow run（push 与 PR 双事件皆无）,YAML 解析合法、
+远端 HEAD 正确——判为 **GitHub 侧 push 事件丢失**（罕见，与本日早段 artifact 下载 EOF
+同属平台抖动气质）。处置：**空探针法**——在同枝顶推空提交 `bfde51a` 复触发事件，
+探针 run 立即入队且树与 0c4e920 完全相同，其双腿 success 即批 31 内容的有效 CI 声明。
+教训入报账纪律：推后先核「run 是否存在」再核 conclusion；零 run 超时即探针复触，
+不许把「没跑」静默报成「没红」。
