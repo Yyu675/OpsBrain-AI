@@ -192,6 +192,32 @@ devops:
     # 左侧是客户端可伪造的部分，右侧由每一跳代理追加）。
     trusted-proxies: ${TRUSTED_PROXIES:}
 
+    # ==================== API 入口限流（S5-3.5，批 45）====================
+    # 机制：RateLimitFilter 按（规则, 客户端IP）分桶发 resilience4j
+    # RateLimiter；timeoutDuration=ZERO——超员即 429，HTTP 层绝不排队
+    # （排队的延误会传染给 Servlet 线程，比拒绝更贵）。
+    #
+    # 两条出厂规则浓缩于登录与 AI 对话：
+    #   · login（5/60s）：登录是暴力破解与撞库的靶心——
+    #     它比谁都「不该快」，慢即是安全；合法用户几乎感知不到此闸；
+    #   · chat（20/60s）：AI 对话是烧钱的闸面（每次调用背后是模型
+    #     API 额度与延迟），此闸挡的是脚本误循环/误点击雪崩，不是真用户。
+    #
+    # 限流键 = ClientIpResolver 解析结果（XFF 辨伪归其管；直连部署下
+    # 即 TCP remoteAddr）。生产配 TRUSTED_PROXIES 后本滤自动生效——
+    # 与审计系统的 IP 口径同源，不留两本花名册。
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      rules:
+        - name: login
+          paths: /api/v1/auth/login
+          permits: 5
+          period-seconds: 60
+        - name: chat
+          paths: /api/v1/chat
+          permits: 20
+          period-seconds: 60
+
   ai:
     # 双模开关：MOCK（开发期不调 API）/ REAL（生产模式）
     mode: ${AI_MODE:MOCK}

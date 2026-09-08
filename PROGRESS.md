@@ -376,3 +376,10 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - `docs/09-operations/数字资产移交清单.md`:九格清点(两格挂账:备份演练/摄取实证)+六步部署包验证+三签封口+起步三式。签收不等于销账,首真窗为销账线。
 - **S5 余量纯二分**:JDK 批五件 × 真窗演练档;其余只剩用户阶件(并 main/演示)。报告147。
 
+## 批 45(2026-09-08):S5-3.5 API 入口限流——双闸出厂
+
+- 翻案:resilience4j 2.4.0 早守门(llm 限流既在岗),本件无需 JDK,划出 JDK 批。
+- `RateLimitFilter`+`RateLimitProperties`+`RateLimitWebConfig`:规则大队(登录5/60s+AI对话20/60s)、IP分桶(ClientIpResolver 同口径辨伪)、timeout=ZERO 拒绝不排队、429+Retry-After+JSON、context-path 剥离、2万硬顶粗回收;**不标@Component**(web切片不扫配置→25类冲击半径归零,第57号案族谱入库)。
+- 集成面配额安全账三件在案(4登录<5/chat调用<20/悲观累积位预留CI试错位)。
+- 单测6例 Spring mock 零容器;报告148。
+
