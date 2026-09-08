@@ -76,7 +76,7 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("flyway_schema_history 恰好 {1..10} 十条全部成功（V1 基线 + V2~V10 增量链，托管生效证据）")
+    @DisplayName("flyway_schema_history 恰好 {1..11} 十一条全部成功（V1 基线 + V2~V11 增量链，托管生效证据）")
     void schemaHistoryShouldRecordBaselinePlusFirstIncrement() {
         var rows = jdbcTemplate.queryForList(
                 """
@@ -86,9 +86,9 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
                  ORDER BY installed_rank
                 """);
         assertThat(rows)
-                .as("容器真空库按序执行 V1~V10。多出记录说明"
+                .as("容器真空库按序执行 V1~V11。多出记录说明"
                         + "测试容器泄漏了别的库的脏状态，或混入了未评审的迁移文件")
-                .hasSize(10);
+                .hasSize(11);
         assertThat(rows.get(0).get("version")).as("首条为 V1 基线").isEqualTo("1");
         assertThat(rows.get(1).get("version")).as("V2 = S1-2 sys_change_event").isEqualTo("2");
         assertThat(rows.get(2).get("version")).as("V3 = S1-5 sys_diagnosis_evidence").isEqualTo("3");
@@ -99,6 +99,7 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
         assertThat(rows.get(7).get("version")).as("V8 = S3-1 Mock 轨白名单种子").isEqualTo("8");
         assertThat(rows.get(8).get("version")).as("V9 = S3-3 执行后验证三列").isEqualTo("9");
         assertThat(rows.get(9).get("version")).as("V10 = S3-5 步骤时间线 steps_json").isEqualTo("10");
+        assertThat(rows.get(10).get("version")).as("V11 = S5-4.2 慢查询静态审计两枚索引（批 42，报告 145 评审在案）").isEqualTo("11");
         assertThat(rows).allSatisfy(r ->
                 assertThat(r.get("success")).as("所有迁移必须成功").isEqualTo(Boolean.TRUE));
     }
