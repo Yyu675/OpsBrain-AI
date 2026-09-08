@@ -456,7 +456,7 @@ GitHub check-runs 的 annotations **最多只返回 3 条失败**。
 | :-- | :-- | :-- |
 | 超大 SFC | `TicketDetail.vue`(2655) `TicketList.vue`(2552) `KnowledgeEditor.vue`(1970) 等 | 修改这些文件时**不得让行数净增长**，至少拆出一个子组件或 composable |
 | 后端无 Controller 测试 | `src/test/` | 新增/修改 Controller 必须补 `@WebMvcTest` |
-| 无 CI | 仓库根 | 见 `docs/08-benchmark/01-new-api对标分析与借鉴优化建议.md` §5.2 |
+| 无 CI | 仓库根 | 见 `docs/08-benchmark/001-050/01-new-api对标分析与借鉴优化建议.md` §5.2 |
 | 无 Dockerfile | 仓库根 | 同上 §5.3 |
 | traceId 未接 MDC | `TraceContext` / `ApiResponse` | 见 §3.2，优先修 |
 | 无 API 限流 | 全局 | `/chat/stream` 与 `/alerts/webhook` 优先 |
