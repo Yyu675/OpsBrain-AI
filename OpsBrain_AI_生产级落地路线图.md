@@ -691,7 +691,7 @@ public String queryServiceMetrics(
 | 3-2.3 | 每个执行器实现 `dryRun`：输出目标 Pod / 当前副本数 / 预期影响 | 同上 |
 | 3-2.4 | 每个执行器实现 `rollback`：重启回滚 = 记录原 Pod 信息（不可真正回滚，诚实标注）；扩缩容回滚 = 恢复原副本数 | 同上 |
 | 3-2.5 | **爆炸半径强制校验**：单次操作影响 Pod 数 ≤ 总数的 20%（对齐 README 的"5% 单节点"精神，可按场景配置） | 校验逻辑 |
-| 3-2.6 | 注册为 Agent 工具：`restartPod` / `scaleReplicas`，`riskLevel = HIGH_RISK` | `DevOpsTools` |
+| 3-2.6 | ~~注册为 Agent 工具：`restartPod` / `scaleReplicas`，`riskLevel = HIGH_RISK`~~ **已按更优架构实现（批 70 核验修正）**：执行器**不注册为 Agent @Tool**，走 `AlertService.triggerHealingPolicy → HealingAutoTrigger → HealingGate（治理门求值）→ ExecutorRegistry` 链路。理由：高危动作由**系统在治理门下受控触发**，比「LLM 可自由调用」安全一个量级——若注册为 @Tool，模型幻觉一句话就可能绕过审批链（工具白名单铁律：Agent 侧只保留只读取证工具 + 受控建单）。原任务表述作废，以实际实现为准 | `HealingOrchestrator`/`ExecutorRegistry`（非 `DevOpsTools`） |
 | 3-2.7 | 配置 `sys_action_allowlist` 初始数据 + `sys_risk_policy` 初始数据 | 新迁移 `V25` |
 
 **📌 为什么选这两个**
@@ -880,9 +880,9 @@ public String queryServiceMetrics(
 
 | # | 任务 | 涉及文件 |
 |---|---|---|
-| 5-1.1 | 接入 OpenTelemetry（Micrometer Tracing + OTLP 导出） | `pom.xml` |
-| 5-1.2 | traceId 贯通：告警 → 工单 → 诊断 → 工具执行 → LLM 调用 | 各处 |
-| 5-1.3 | 结构化日志（JSON 格式输出，便于采集） | `logback-spring.xml` |
+| 5-1.1 | ~~接入 OpenTelemetry（Micrometer Tracing + OTLP 导出）~~ **部分落地（批 70 核验修正 + 用户拍板）**：`micrometer-registry-otlp` 已接入（指标经 OTLP 导出）；**span 链路追踪经拍板不引入**——私有化部署无跨服务链路诉求，现有 MDC traceId（`TraceContext` 唯一来源铁律）已够排障；引入 OTel 会形成两套 traceId 体系，span 关联成本 > 收益。真窗出现 OTel Collector 诉求时再评 | `pom.xml` |
+| 5-1.2 | traceId 贯通：告警 → 工单 → 诊断 → 工具执行 → LLM 调用（**日志层已贯通，span 上报待补**） | 各处 |
+| 5-1.3 | 结构化日志（JSON 格式输出，便于采集）——**实际实现为 Spring Boot 原生 `logging.structured.format: ecs`，非 logback-spring.xml 自定义**（批 70 核验修正） | `application-prod.yml` |
 | 5-1.4 | 关键指标暴露：诊断耗时分布、工具失败率、LLM 成本、熔断器状态 | `MetricsCatalog` |
 | 5-1.5 | 健康检查增强：liveness / readiness / startup 探针分离 | `HealthCheckController` |
 
@@ -1109,7 +1109,7 @@ public String queryServiceMetrics(
 | S4-2 | 4 | 置信度校准 | S4-1 | 3d | ✅(4-2.1~4-2.3 分桶校准器全绿) |
 | S4-3 | 4 | CI 回归防劣化 | S4-1 | 3d | ⚠️工在(门就位;基线数字⏳T12/T13 铸剑+并 main) |
 | S4-4 | 4 | 效果看板 | S4-1 | 3d | ✅(CI 对账回帖+agent 效果页+评测历史视图) |
-| S5-1 | 5 | 可观测性补全 | S3-5 | 3d | ✅(结构化 ECS 双道+四水位 gauges+OTLP+周性审计) |
+| S5-1 | 5 | 可观测性补全 | S3-5 | 3d | ✅(结构化 ECS 双道+四水位 gauges+OTLP 指标+周性审计;span 追踪批 70 拍板**不引入**——私有化部署无跨服务链路诉求,MDC traceId 已够排障,两套 traceId 体系关联成本>收益,真窗有 OTel Collector 时再评) |
 | S5-2 | 5 | 部署与运维文档 | S5-1 | 3d | ✅工/⏳(手册/SOP/移交清单 16 本齐;备份演练记录⏳T3) |
 | S5-3 | 5 | 安全加固 | S5-1 | 3d | ✅(5-3.1~3.4 全+密钥埋入钉测+webhook 门 A6) |
 | S5-4 | 5 | 性能与容量 | S5-1 | 3d | ✅工/⏳(慢查静态半+V11 双索引+连池核查;压测⏳T6/T4) |
