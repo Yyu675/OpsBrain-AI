@@ -480,3 +480,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批 67 收官：`e4384b5` 双腿红（CI 两 workflow 仍 `psql -f sql/init.sql`；前端 knip 红因 ComingSoonPanel 成孤儿）→ `7caea5a`(schema 步桩→V1__baseline.sql 两 workflow+占位页复位隔离+knip tee 取证道）双腿绿 → `c7f4965` 重删占位页、取证帖实锤 ComingSoonPanel → 补同删后**双腿绿 ✓**。教训两条入档：删物前引用面全层含 workflows；桩内挂账语句=前提未灭。
 - 批 68:PR #2 已合并(`f672d1b`,merge commit);.md 普查 251 份判"多而杂但不可删"→归档 A 落地:benchmark 166 份四桶(`50bb57b` 绿)、03/04 入 archive+PRD.md 重判保留(`4b25c2d`)。B/C 级(CLAUDE.md 瘦身/薄件核)待用户点头。
 - 批 69:SQL 迁移收敛——V2~V11 折叠进 V1 单一基线(33 表,用户拍板文件不散放);dev 存量库同步修复(删账本 V2~V7 行+补 8 月旧库 9 月新表历史欠账,列差归零);429 假红根因=共享上下文跨类登录风暴踩爆 login 限流,五集成类 @TestPropertySource 关限流后 42/42 绿;SilentCatch 漂移(BusinessMetrics 补 warn 留线索,注入-还原闭环)。报告 170。
+- 批69收官件B:CLAUDE.md 瘦身 3218→319 行——6.1~6.59 共 59 条决策(2985 行)逐字归档至 docs/archive-历史档/CLAUDE-6.x决策记录全量.md(锚点原样,9 处外部 §6.x 引用逐点核验仍可达);六章改 59 行索引表;双七章错位追加病灶消除(DEF 表+L1.5 状态并入唯一七章);头部定位声明同步。B 级遗留(CLAUDE.md 瘦身/INDEX.md)全部清账,C 级(14 份薄件核/批报模板收口)待用户点头。
