@@ -14,6 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -57,7 +59,7 @@ class HealthIndicatorsTest {
             ChatModel model = mock(ChatModel.class);
             when(model.chat(anyString())).thenReturn("pong");
 
-            Health h = new LlmHealthIndicator(model).health();
+            Health h = new LlmHealthIndicator(model, "REAL").health();
 
             assertEquals(Status.UP, h.getStatus());
             assertEquals("deepseek", h.getDetails().get("model"));
@@ -71,7 +73,7 @@ class HealthIndicatorsTest {
             ChatModel model = mock(ChatModel.class);
             when(model.chat(anyString())).thenReturn("   ");
 
-            Health h = new LlmHealthIndicator(model).health();
+            Health h = new LlmHealthIndicator(model, "REAL").health();
 
             assertEquals(Status.DOWN, h.getStatus());
             assertTrue(String.valueOf(h.getDetails().get("reason")).contains("空响应"));
@@ -85,7 +87,7 @@ class HealthIndicatorsTest {
             ChatModel model = mock(ChatModel.class);
             when(model.chat(anyString())).thenReturn(null);
 
-            Health h = new LlmHealthIndicator(model).health();
+            Health h = new LlmHealthIndicator(model, "REAL").health();
 
             assertEquals(Status.DOWN, h.getStatus());
         }
@@ -98,7 +100,7 @@ class HealthIndicatorsTest {
             ChatModel model = mock(ChatModel.class);
             when(model.chat(anyString())).thenThrow(new RuntimeException("connect timed out"));
 
-            Health h = new LlmHealthIndicator(model).health();
+            Health h = new LlmHealthIndicator(model, "REAL").health();
 
             assertEquals(Status.DOWN, h.getStatus());
             // 带上异常类型：运维据此区分「网络不通」与「鉴权失败」
@@ -107,12 +109,29 @@ class HealthIndicatorsTest {
         }
 
         @Test
+        @DisplayName("MOCK 模式 → UNKNOWN 而非 DOWN：替身模式不得让整端点 503")
+        void unknownInMockMode() {
+            // 未配 API key 的开发者拉代码起 dev（AI_MODE=MOCK）时，
+            // 探活真实 LLM 必然 401 → DOWN → /actuator/health 503，
+            // 表现像「系统坏了」实为「有意替身」。MOCK 必须与真实故障可区分
+            ChatModel model = mock(ChatModel.class);
+            when(model.chat(anyString())).thenThrow(new RuntimeException("401"));
+
+            Health h = new LlmHealthIndicator(model, "MOCK").health();
+
+            assertEquals(Status.UNKNOWN, h.getStatus());
+            assertTrue(String.valueOf(h.getDetails().get("reason")).contains("MOCK"));
+            // MOCK 不打真实 API
+            verify(model, never()).chat(anyString());
+        }
+
+        @Test
         @DisplayName("异常 message 为 null 时详情为空串，不显示字面量 null")
         void nullMessageBecomesEmptyString() {
             ChatModel model = mock(ChatModel.class);
             when(model.chat(anyString())).thenThrow(new RuntimeException());
 
-            Health h = new LlmHealthIndicator(model).health();
+            Health h = new LlmHealthIndicator(model, "REAL").health();
 
             assertEquals("", h.getDetails().get("message"));
         }

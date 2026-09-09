@@ -33,8 +33,11 @@ spring:
 # ============================================================
 devops:
   ai:
-    # 模式开关：MOCK（开发期替身，0成本） / REAL（真实API调用）
-    mode: REAL
+    # 模式开关：MOCK（开发期替身，0成本） / REAL（真实API调用）。
+    # 走环境变量占位（默认 REAL 保持既有 dev 行为）：application.yml 顶层
+    # 已用 ${AI_MODE:MOCK}，若此处写字面量会压住环境变量——用户按 README
+    # export AI_MODE=MOCK 时静默失效，配了不生效是坑
+    mode: ${AI_MODE:REAL}
 
     # 大模型 API 配置（OpenAI 兼容协议）
     # 配置项名保留 alibaba 前缀是历史命名，实际可对接任意 OpenAI 兼容端点。

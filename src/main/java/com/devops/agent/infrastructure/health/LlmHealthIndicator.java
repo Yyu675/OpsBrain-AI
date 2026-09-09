@@ -2,6 +2,7 @@ package com.devops.agent.infrastructure.health;
 
 import dev.langchain4j.model.chat.ChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.stereotype.Component;
@@ -34,13 +35,25 @@ import org.springframework.stereotype.Component;
 public class LlmHealthIndicator implements HealthIndicator {
 
     private final ChatModel chatModel;
+    private final String aiMode;
 
-    public LlmHealthIndicator(@Qualifier("turboModel") ChatModel chatModel) {
+    public LlmHealthIndicator(@Qualifier("turboModel") ChatModel chatModel,
+                              @Value("${devops.ai.mode:MOCK}") String aiMode) {
         this.chatModel = chatModel;
+        this.aiMode = aiMode;
     }
 
     @Override
     public Health health() {
+        // MOCK 是有意替身（开发期 0 成本），探活真实 API 无意义且必然误导：
+        // 未配 key 的开发者拉代码起 dev，health 会因 401 永远 DOWN→整端点 503，
+        // 表现像「系统坏了」。MOCK 模式如实报 UNKNOWN（不计入 DOWN），
+        // 并注明原因——「模式替身」与「真实故障」必须可区分。
+        if ("MOCK".equalsIgnoreCase(aiMode)) {
+            return Health.unknown()
+                    .withDetail("reason", "MOCK 模式使用替身模型，不探测真实 LLM 连通性")
+                    .build();
+        }
         try {
             // 最小探测：只验证连通与鉴权，不产生有意义回答
             String reply = chatModel.chat("ping");
