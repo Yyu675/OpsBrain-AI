@@ -57,11 +57,17 @@ public class BusinessMetrics {
         log.info("📏 [Metrics] 业务水位计已登记（4 枚存量 Gauge）");
     }
 
-    /** 供体异常→NaN 退化，单独量灭灯不限于抓面。 */
+    /**
+     * 供体异常→NaN 退化，单独量灭灯不限于抓面。
+     * <p>NaN 语义正确（Prometheus 侧「抓不到」），但退化本身要留线索——
+     * Down 指标负责塌陷警报，这条 warn 负责指认是哪个量、因何退化的，
+     * 二者互补不重复（AGENTS 静默 catch 契约：吞可以，留线索是底线）。
+     */
     private static double safe(java.util.function.DoubleSupplier supplier) {
         try {
             return supplier.getAsDouble();
         } catch (Exception e) {
+            log.warn("📏 [Metrics] Gauge 供体异常，本量退化为 NaN | cause={}", e.getMessage());
             return Double.NaN;
         }
     }

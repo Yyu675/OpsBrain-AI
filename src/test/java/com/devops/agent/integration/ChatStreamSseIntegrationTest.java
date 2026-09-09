@@ -98,6 +98,11 @@ import static org.assertj.core.api.Assertions.assertThat;
         // 放宽限流：本类会连续发多次请求，用生产默认值会互相干扰
         "devops.ai.chat.rate-limit=1000",
         "devops.ai.chat.rate-window-ms=60000",
+        // login 限流：共享测试上下文的多个集成类每个用例都真实登录，
+        // 累计远超 10 次/分钟，429 风暴曾致 CI surefire 里 10 条假红
+        // （批 45 annotations 实锤）。限流滤件防的是外部恶意流量，
+        // 测试上下文的 127.0.0.1 登录不是它的保护对象。
+        "devops.security.rate-limit.enabled=false",
         // 心跳调大，避免注释帧混进事件解析
         "devops.ai.sse.heartbeat-interval-ms=600000"
 })

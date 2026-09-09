@@ -69,6 +69,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "devops.ai.mode=MOCK",
         "devops.ai.chat.rate-limit=1000",
         "devops.ai.chat.rate-window-ms=60000",
+        // login 限流关闭：共享上下文多类连跑会累计登录超 10 次/分钟（批 45 假红根因）
+        "devops.security.rate-limit.enabled=false",
         // 核心：把 SSE 超时压到 800ms。
         // MOCK 模式下打字机效果每 3 个字符 sleep 50ms，一段回答远超 800ms，
         // 因此必然在流跑完之前触发 onTimeout——这正是要测的时机。
