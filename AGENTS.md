@@ -130,15 +130,22 @@ npm run knip                       # 死代码/死依赖检测
 
 - 主库是 **PostgreSQL + pgvector，不需要兼容其他数据库**。可以放心使用 PG 专有能力
   （`tsvector`、`JSONB`、`ON CONFLICT`、数组类型）。
-- Schema 变更（S0-1，2026-09-07 起）：**真相源是 `src/main/resources/db/migration/`，
+- Schema 变更（S0-1，2026-09-07 起；**批 69 迁移收敛**，2026-09-09）：**真相源是 `src/main/resources/db/migration/`，
   由 Flyway 托管**（`flyway_schema_history` 版本表 + checksum；应用启动时自动 migrate）。
   - `V1__baseline.sql` 是单文件基线（即原 `sql/init.sql` 整体迁入，历史 v05~v27
-    已于 2026-08-27 整合进它）。**已对所有现存库应用，禁止再修改其中任何语句**——
-    `validate-on-migrate: true` 会让被篡改的历史迁移直接导致应用启动失败。
-  - **新增变更一律新建 `V{版本}__描述.sql`**（版本顺延，`V2__`, `V3__`……）。
+    已于 2026-08-27 整合进它）。**批 69 起原 V2~V11 十个增量迁移已折叠进 V1**
+    （33 表全量：新表 CREATE 照搬、V6/V9/V10 的 ALTER 补列内联进对应 CREATE、
+    V8 种子与 V11 索引按节保留），`db/migration/` 目录当前只有 V1 一个文件。
+  - **日常变更仍新增 `V{版本}__描述.sql`**（版本顺延，当前下一个可用版本为 V2）。
     Flyway 保证按序、各库只执行一次；新文件不需要 `IF NOT EXISTS` 幂等外壳，
     但 PG 的 DDL 都跑在事务里，失败自动回滚不留半截。
-  - 空库启动应用 = Flyway 执行全部迁移建全表（CI 第一个 `@SpringBootTest` 即此验收）；
+  - **批 69 新增约定：存量迁移折叠**。当增量迁移积累到一定数量、且全部为
+    「加表/加列/种子/索引」这类可幂等重放的内容时，可把它们折叠进 V1 基线
+    （ALTER 补列内联进 CREATE）。折叠时必须同步做两件事，缺一会让存量库起不来：
+    ① 删掉 `flyway_schema_history` 中被折叠版本的行；
+    ② 在存量库重放折叠后的 V1（全幂等，已有对象自动跳过）。
+    操作细则见 V1 头部「存量库 checksum 修复」注释。
+  - 空库启动应用 = Flyway 执行 V1 一次建全表（CI 第一个 `@SpringBootTest` 即此验收）；
     已有库首次启动：未见过版本表的库会被 `baseline-on-migrate: true` 标记 V1 已应用后跳过，
     之后的增量迁移照常执行——**从旧时代继承的库不需要手工跑任何脚本**。
   - 禁止再在代码里写建表 DDL（旧 `ensureSchema()` 模式已删除：它与基线内容重复，

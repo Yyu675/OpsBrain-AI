@@ -1,36 +1,15 @@
 {
   "_generatedBy": "ContractExportTest —— 请勿手工编辑，改后端后重跑 mvn test",
   "ticketStatus": {
-    "all": [
-      "PENDING",
-      "PROCESSING",
-      "RESOLVED",
-      "CLOSED",
-      "VOID"
-    ],
+    "all": ["PENDING", "PROCESSING", "RESOLVED", "CLOSED", "VOID"],
     "transitions": {
-      "PENDING": [
-        "PROCESSING",
-        "RESOLVED",
-        "VOID"
-      ],
-      "PROCESSING": [
-        "PENDING",
-        "RESOLVED",
-        "VOID"
-      ],
-      "RESOLVED": [
-        "CLOSED",
-        "PROCESSING"
-      ],
-      "CLOSED": [
-        "PROCESSING"
-      ],
+      "PENDING": ["PROCESSING", "RESOLVED", "VOID"],
+      "PROCESSING": ["PENDING", "RESOLVED", "VOID"],
+      "RESOLVED": ["CLOSED", "PROCESSING"],
+      "CLOSED": ["PROCESSING"],
       "VOID": []
     },
-    "terminal": [
-      "VOID"
-    ]
+    "terminal": ["VOID"]
   },
   "fieldLimits": {
     "createTicket": {
@@ -59,6 +38,12 @@
       "retry": "NEVER"
     },
     {
+      "name": "STATE_CONFLICT",
+      "code": 40004,
+      "httpStatus": 409,
+      "retry": "NEVER"
+    },
+    {
       "name": "QUOTA_EXCEEDED",
       "code": 40005,
       "httpStatus": 429,
@@ -68,12 +53,6 @@
       "name": "BUDGET_EXCEEDED",
       "code": 40006,
       "httpStatus": 400,
-      "retry": "NEVER"
-    },
-    {
-      "name": "STATE_CONFLICT",
-      "code": 40004,
-      "httpStatus": 409,
       "retry": "NEVER"
     },
     {
@@ -113,15 +92,15 @@
       "retry": "NEVER"
     },
     {
-      "name": "WEBHOOK_UNAUTHORIZED",
-      "code": 40104,
-      "httpStatus": 401,
-      "retry": "NEVER"
-    },
-    {
       "name": "NO_PERMISSION",
       "code": 40103,
       "httpStatus": 403,
+      "retry": "NEVER"
+    },
+    {
+      "name": "WEBHOOK_UNAUTHORIZED",
+      "code": 40104,
+      "httpStatus": 401,
       "retry": "NEVER"
     },
     {

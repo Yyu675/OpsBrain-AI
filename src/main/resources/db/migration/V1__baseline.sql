@@ -5,11 +5,25 @@
 -- classpath 由 Flyway 托管。此前全部历史变更（v05~v27，2026-08-27 整合）
 -- 已合并进本基线，这是单文件基线的唯一真相源。
 --
+-- 批 69（2026-09-09）折叠：原 V2~V11 共 10 个增量迁移已并入本文件
+-- （用户决策：迁移文件不散放）。V6/V9/V10 的 ALTER 补列已内联进对应
+-- CREATE TABLE；V8 种子与 V11 索引按节保留。全库 33 张表。
+--
 -- 规则（AGENTS.md §3.5）：
---   1. 本文件已对所有现存库应用，禁止再修改其中任何语句；
---      新变更一律新增 V{版本}__描述.sql，版本顺延。
---   2. 空库：Flyway migrate 直接执行本文件建全表；
+--   1. 新变更一律新增 V{版本}__描述.sql（V2 起），版本顺延；
+--      批量收敂数量多的小迁移时可折叠进基线，但必须同步做
+--      「存量库 checksum 修复」（见下）。
+--   2. 空库：Flyway migrate 直接执行本文件一次建全表（33 张）；
 --      已有库：baseline-on-migrate 将本版本标记为已应用后跳过。
+--
+-- 存量库 checksum 修复（批 69 合并后必做一次）：
+--   合并改写了 V1 内容 → 已应用过旧 V1 的库 checksum 不匹配 →
+--   validate-on-migrate 拒绝启动。修复（在应用启动前执行一次）：
+--     DELETE FROM flyway_schema_history WHERE version IN ('2','3','4','5','6','7','8','9','10','11');
+--     UPDATE flyway_schema_history SET checksum = <新值> WHERE version = '1';
+--   <新值> 取法：DROP 并重建 scratch 库跑一次 migrate 后查
+--     SELECT checksum FROM flyway_schema_history WHERE version='1';
+--   或（更简单）flyway repair（同样会重算 V1 checksum 并清掉已删迁移行）。
 -- =====================================================================
 
 
@@ -1129,4 +1143,275 @@ END $$;
 --    SELECT c.doc_id, COUNT(c.id) AS dangling_chunks
 --    FROM sys_knowledge_chunk c LEFT JOIN sys_knowledge_doc d ON c.doc_id = d.id
 --    WHERE c.doc_id IS NOT NULL AND d.id IS NULL GROUP BY c.doc_id;
+-- =====================================================================
+
+
+-- =====================================================================
+-- ===== 以下为原 V2~V11 增量迁移折叠区（2026-09-09 批 69 合并）=====
+--
+-- 合并说明（用户拍板：迁移文件不散放，收敛为单一基线）：
+--   原 V2__sys_change_event ~ V11__slowquery_audit_indexes 共 10 个增量
+--   迁移，已折叠进本基线。新表 CREATE 照搬、ALTER 补列内联进对应表的
+--   CREATE（V6 feedback 列、V9 验证列、V10 steps_json），种子与索引
+--   按原样保留。每节头部保留原文件名与设计注释（防漂移依据）。
+--   空   库：Flyway 执行本文件一次建出全部 33 张表；
+--   存量库：见本文件头部「批 69 checksum 修复」说明。
+--   后续新增表结构仍按 AGENTS §3.5 新增 V{n}__描述.sql。
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- [原 V2__sys_change_event.sql] S1-2 变更取证：变更事件注册表
+-- ---------------------------------------------------------------------
+-- 设计依据（防漂移，与 PROGRESS 决策表一致）：
+-- * 「变更关联是根因定位性价比最高的单一方向」（路线图原文）；
+--   生产故障大部分与近期变更相关——先建事件注册表 + CI 回调写入端点，
+--   比事后翻 CI 系统 API 更稳（CI 系统认证/限流/格式都是额外故障面）。
+-- * UNIQUE (source, external_id)：CI/CD 流水线重发/重试不重复入库，
+--   写入天然幂等，与台账「injection-restore 唯一性」同一品味。
+-- * change_time 与 reported_at 分离：上报延迟本身是可观测信号
+--   （延迟过大的变更事件，取证时要打折）。
+-- * 列级口径与 V1 baseline 对齐（BIGSERIAL/VARCHAR/TIMESTAMP，不上 TZ——
+--   全库现状如此，单表引入 timestamptz 只会让对比 SQL 更绕）。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_change_event (
+    id           BIGSERIAL PRIMARY KEY,
+    service_name VARCHAR(128) NOT NULL,                 -- 受影响服务名（工具层已有白名单字符集）
+    change_type  VARCHAR(32)  NOT NULL,                 -- deploy / config / scale / rollback / ...
+    operator     VARCHAR(64)  NOT NULL DEFAULT 'unknown',
+    summary      VARCHAR(2000) NOT NULL,                -- 变更内容摘要（写入端截断，不撑爆上下文）
+    change_time  TIMESTAMP    NOT NULL,                 -- 变更实际发生时刻
+    reported_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- 入库时刻
+    source       VARCHAR(64)  NOT NULL DEFAULT 'api',   -- ci-callback / manual / ...
+    external_id  VARCHAR(191),                          -- 外部系统事件 ID（幂等键，可空=手工录入）
+    CONSTRAINT uk_change_source_external UNIQUE (source, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_change_service_time ON sys_change_event (service_name, change_time);
+CREATE INDEX IF NOT EXISTS idx_change_time         ON sys_change_event (change_time);
+
+-- ---------------------------------------------------------------------
+-- [原 V3__sys_diagnosis_evidence.sql] S1-5 证据落库
+-- ---------------------------------------------------------------------
+-- 设计依据（防漂移）：
+-- * 「每条证据可回放」= 按 trace_id 拉全链——诊断一次诊断会话的全部取证
+--   记录按 trace_id 聚簇；trace_id 由调用链（诊断流程/告警入口）下发，
+--   纯评测/演示场景允许为空（NULL 互不冲突）。
+-- * content 存工具层 Evidence 载荷原文（TEXT）：回放要的是「当时长什么样」，
+--   不做的归一化=不做隐性信息有损转换。
+-- * relevance_score 可空：metrics 方向天然无此字段，NULL 与 0 语义不同。
+-- * 与前两张表的列级惯例一致（BIGSERIAL/VARCHAR/TIMESTAMP），不起 TZ 端。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_diagnosis_evidence (
+    id              BIGSERIAL PRIMARY KEY,
+    trace_id        VARCHAR(64),                    -- 诊断链路 ID（回放键；可空=孤证）
+    agent_name      VARCHAR(64) NOT NULL,           -- 取证发起方（diagnosis-engine / eval / manual …）
+    evidence_type   VARCHAR(32) NOT NULL,           -- metrics / changes / logs / topology
+    status          VARCHAR(16) NOT NULL,           -- SUCCESS / NO_DATA / FAILED / UNAVAILABLE
+    title           VARCHAR(512) NOT NULL,
+    content         TEXT,                           -- Evidence.toToolPayload() 原文
+    source_ref      VARCHAR(2000),                  -- PromQL / LogQL / 表谓词（可下钻）
+    relevance_score DOUBLE PRECISION,
+    collected_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_trace ON sys_diagnosis_evidence (trace_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_type_time ON sys_diagnosis_evidence (evidence_type, collected_at);
+CREATE INDEX IF NOT EXISTS idx_evidence_status ON sys_diagnosis_evidence (status);
+
+-- ---------------------------------------------------------------------
+-- [原 V4__sys_diagnosis_session.sql] S2-1 诊断会话
+-- ---------------------------------------------------------------------
+-- 设计依据（防漂移）：
+-- * 一条告警 <=> 一条诊断会话（唯一索引 alert_id）：去重语义与告警链路
+--   一致——同一活跃告警的重复触发不应产生第二条诊断（§6.1 验收第 4 条）。
+-- * trace_id 是证据回放键：本会话触发的全部 sys_diagnosis_evidence 行
+--   都带同一 trace_id（V3 已有索引）。
+-- * status 与 sufficiency 分离：status 是流程态（RUNNING/COMPLETED/
+--   REJECTED/ERROR），sufficiency 是证据判据（SUFFICIENT/WEAK/INSUFFICIENT）。
+--   「诊断跑完了但证据不足」≠「诊断失败了」——混用会把排障人带偏。
+-- * 不设结果正文列：推理摘要落 summary；完整叙事在图前端回放证据+状态机。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_diagnosis_session (
+    id              BIGSERIAL PRIMARY KEY,
+    trace_id        VARCHAR(64) NOT NULL,
+    alert_id        BIGINT NOT NULL,                -- 关联 sys_alert.id（去重唯一约束在此列）
+    ticket_id       VARCHAR(64),                    -- 建单成功后回填（诊断先于建单异步/失败时允许空）
+    service         VARCHAR(128) NOT NULL,
+    status          VARCHAR(16) NOT NULL,           -- RUNNING / COMPLETED / REJECTED / ERROR
+    sufficiency     VARCHAR(16),                    -- SUFFICIENT / WEAK / INSUFFICIENT（RUNNING 时为 NULL）
+    summary         TEXT,
+    error_message   VARCHAR(1024),
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-- 同告警仅一条「进行中」诊断。部分唯一索引（仅 RUNNING）：
+-- 全列唯一会让一条 REJECTED 行永久锁死该告警的诊断（历史教训级 bug 形态）。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dsession_alert_running
+    ON sys_diagnosis_session (alert_id) WHERE status = 'RUNNING';
+CREATE INDEX IF NOT EXISTS idx_dsession_trace ON sys_diagnosis_session (trace_id);
+CREATE INDEX IF NOT EXISTS idx_dsession_status_time ON sys_diagnosis_session (status, created_at);
+
+-- ---------------------------------------------------------------------
+-- [原 V5__sys_diagnosis_hypothesis.sql + V6__hypothesis_feedback_and_boost.sql]
+-- S2-2 根因假设（V6 的 feedback 列已内联进 CREATE，免二次 ALTER）
+-- ---------------------------------------------------------------------
+-- 设计依据（防漂移）：
+-- * session_trace_id 关联诊断会话（轨迹的唯一索引都在 sys_diagnosis_session）；
+--   trace_id 链路: 告警 → 工单 → 会话 → 假设 → 证据——链路不可断。
+-- * evidence_ids / contradict_ids 用 JSON 数组存（id 列表，点开假设看证据
+--   的关联键）；不拆关系表：假设-证据关联不需要双向查询，且关系表成本大于收益。
+-- * confidence 存 DOUBLE PRECISION（模型给出 + 置信度引擎钳制后的最终值）。
+-- * [原 V6] 假设反馈直接落在假设行（单值：最后一次反馈为准）
+--   ——反馈的语义是「这条假设靠不靠谱」，数据量小，不值得独立表。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_diagnosis_hypothesis (
+    id              BIGSERIAL PRIMARY KEY,
+    session_trace_id VARCHAR(64) NOT NULL,
+    rank            INTEGER NOT NULL,
+    statement       VARCHAR(512) NOT NULL,
+    reasoning       TEXT,
+    confidence      DOUBLE PRECISION NOT NULL,
+    evidence_ids    TEXT,                        -- JSON 数组
+    contradict_ids  TEXT,                        -- JSON 数组
+    suggested_action VARCHAR(2000),
+    feedback        VARCHAR(16),                 -- [原 V6] HELPFUL / PARTIAL / WRONG
+    feedback_at     TIMESTAMP,                   -- [原 V6] 最近一次反馈时间
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_hypothesis_session ON sys_diagnosis_hypothesis (session_trace_id);
+
+-- ---------------------------------------------------------------------
+-- [原 V6__hypothesis_feedback_and_boost.sql] S2-3 知识加权表
+-- ---------------------------------------------------------------------
+-- * 知识加权用独立 boost 表（不污染 sys_knowledge_chunk 本体）：
+--   反馈回流必须可挂零权重容错（helpfulCount 归零黑洞）、可全沉默
+--   避免跨表库固定期清洗时损害数据本体。
+-- * boost 公式只在代码里（KnowledgeBoostRepository），Schema 只泛放量：
+--   helpful_count / wrong_count 两个计数器——公式可口，数据免疫。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_knowledge_boost (
+    chunk_id       BIGINT PRIMARY KEY,                  -- sys_knowledge_chunk.id 关联键
+    helpful_count  INTEGER NOT NULL DEFAULT 0,
+    wrong_count    INTEGER NOT NULL DEFAULT 0,
+    updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- [原 V7__healing_execution.sql + V9__healing_verification.sql + V10__healing_steps_json.sql]
+-- S3-1 自愈执行台账（V9 验证列、V10 步骤时间线列已内联进 CREATE，免二次 ALTER）
+-- ---------------------------------------------------------------------
+-- 设计依据（防漂移）：
+-- * 一次执行一行：演算、审批、执行、撤销的全过程字段都在同一行
+--   ——「事后审计」是 L4 的硬指标，审计查询不接受跨表拼图。
+-- * approval_id 关联 sys_approval_request（可空）：AUTO_EXECUTE 与
+--   REJECTED 两类裁决不产生审批单，审计时靠 gate_decision 区分。
+-- * pre_snapshot_json / undo_token 为回滚触发器（批次 3）预留载体，
+--   现在就用、现在就落库——快照不在执行当下采集，事后无从补拍。
+-- * executor_key 落行：审计必须能回答「当时是哪只手做的」，
+--   不能只记「想做什么」。
+-- * [原 V9] 验证结论直接落在执行行（单值：最近一次验证为准）
+--   ——「这次执行好了没有」是该行自己的事，不值得独立表；
+--   verify_status 三值 + 程序态：PASS / FAIL / UNKNOWN（验证器结论）、
+--   SKIPPED（无匹配验证器——必须留痕，未验证的 SUCCEEDED 不能长得像已验证）。
+-- * [原 V10] steps_json：编排器在 GATE_EVALUATE / IDEMPOTENCY_CHECK /
+--   DRY_RUN / EXECUTE / SUBMIT_APPROVAL / VERIFY / AUTO_UNDO /
+--   ESCALATE_TICKET / MANUAL_UNDO 各节点产生的步骤序列
+--   （[{name,status,detail,at}]），详情 API 据此回放全过程。
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_healing_execution (
+    id                BIGSERIAL PRIMARY KEY,
+    action_key        VARCHAR(128) NOT NULL,              -- 与白名单 actionKey 严格对齐
+    environment       VARCHAR(64)  NOT NULL,
+    target            VARCHAR(512),
+    params_json       TEXT,
+    alert_id          BIGINT,                             -- 触发告警（可空：手工触发）
+    requested_by      VARCHAR(64),
+    gate_decision     VARCHAR(32)  NOT NULL,              -- AUTO_EXECUTE / REQUIRES_APPROVAL / DENIED / NO_EXECUTOR
+    approval_id       BIGINT,                             -- sys_approval_request.id（可空）
+    executor_key      VARCHAR(64),                        -- 承接执行器（拒绝类裁决为 NULL）
+    status            VARCHAR(32)  NOT NULL,              -- PENDING_APPROVAL / SUCCEEDED / FAILED / REJECTED / UNDONE
+    dry_run_plan      TEXT,                               -- 演算计划（审批单展示「将要发生什么」）
+    output            TEXT,
+    error             TEXT,
+    pre_snapshot_json TEXT,                               -- 执行前快照（Snapshot_Before_Healing）
+    undo_token        VARCHAR(128),                       -- 撤销凭据（NULL = 不可撤销）
+    verify_status     VARCHAR(16),                        -- [原 V9] PASS / FAIL / UNKNOWN / SKIPPED
+    verify_result_json TEXT,                              -- [原 V9] before/after 指标组
+    verified_at       TIMESTAMP,                          -- [原 V9] 最近一次验证时刻
+    steps_json        TEXT,                               -- [原 V10] 步骤时间线 JSON 数组
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at       TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_healing_execution_alert  ON sys_healing_execution(alert_id);
+CREATE INDEX IF NOT EXISTS idx_healing_execution_status ON sys_healing_execution(status);
+-- [原 V9] 待验证扫描的热路径：SUCCEEDED 且未验证且在观察窗内
+CREATE INDEX IF NOT EXISTS idx_healing_execution_verify_scan
+    ON sys_healing_execution (status, verify_status, finished_at);
+
+COMMENT ON COLUMN sys_healing_execution.steps_json IS
+    'S3-5 步骤时间线 JSON 数组：节点名/状态/摘要/时间戳，供详情页回放（§3-5.1）';
+
+-- ---------------------------------------------------------------------
+-- [原 V8__mock_healing_allowlist_seed.sql] S3-1 补丁：Mock 自愈动作白名单种子
+-- ---------------------------------------------------------------------
+-- 设计依据（防漂移）：
+-- * Mock 轨是治理链路的演示/CI 底座（与 MockChatModel 同族），但白名单
+--   语义是「未登记 = 拒绝」——不登记 mock 动作，Mock 执行器在治理门下
+--   连演算都到不了，演示即死。
+-- * 风险等级取 DRAFT（免审批 + auto_execute_allowed=TRUE）：Mock 动作
+--   零副作用，用 DRAFT 让开箱路径落在 AUTO_EXECUTE，全链路一遍走通；
+--   环境限 staging,dev——prod 演示需管理员到治理页显式放行（与
+--   「装好就自动重启生产 Pod 不可接受」同一默认保守精神）。
+-- * mock.pod.restart 留一条 enabled=FALSE 的示例：审批路径的演示
+--   由管理员启用后走（风险挂 CONTROLLED_WRITE → SINGLE 审批）。
+-- ---------------------------------------------------------------------
+INSERT INTO sys_action_allowlist (
+    action_key, display_name, description, category, risk_level,
+    target_pattern, environments, param_schema, enabled
+) VALUES
+    ('mock.disk.cleanup', 'Mock 磁盘清理', 'Mock 轨演示动作：全链路（门→演算→执行→台账）零副作用走通',
+     'script', 'DRAFT', '*', 'staging,dev',
+     '{"gracePeriodSeconds":{"type":"int","max":120,"default":30}}'::jsonb, TRUE),
+    ('mock.pod.restart', 'Mock 重启 Pod', 'Mock 轨审批路径演示：启用后走 SINGLE 审批再执行',
+     'script', 'CONTROLLED_WRITE', '*', 'staging,dev',
+     '{"gracePeriodSeconds":{"type":"int","max":120,"default":30}}'::jsonb, FALSE)
+ON CONFLICT (action_key) DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- [原 V11__slowquery_audit_indexes.sql] 慢查询静态审计首批索引（Batch 42 / 报告 145）
+-- ---------------------------------------------------------------------
+-- 审计方法:EXPLAIN 环境缺位下改做静态对账——全量解析 V1..V10 索引面 ×
+-- JdbcTemplate/MyBatis 热点查询的 WHERE/ORDER BY 列集,交集缺口逐项定级。
+--
+-- 本枚两枚候选,均为「每次对应请求必跑且当前无对口索引」的确证级:
+--
+--   1) idx_alert_group_dedup —— 风暴聚合查询(AlertRepository.findActiveGroupTicket)
+--      dedup 未命中时的退路查询,风暴期间每条告警都跑;过滤集
+--      (service, module) + status 活跃 + ticket_id 非空 + last_occurred_at 窗口,
+--      现有 idx_alert_service 是 (service, first_occurred_at) 不对口。
+--      用部分索引把「活跃且已建单」的子集钉住——风暴下该子集小且稳定。
+--
+--   2) idx_ticket_create_time —— 看板 KPI 今日新增 + N 天趋势
+--      (DevOpsTicketRepository.countCreatedToday/countCreatedByDay),
+--      每次首页加载必扫;现有索引无 create_time 对口列。
+--
+-- 观察档(本次不动,理由见报告 145 §三):
+--   · 工单 keyword 三列 LOWER LIKE '%kw%' —— 前导通配无索引可救,正解是
+--     pg_trgm GIN;属运行时扩展决策,真窗演练(S5-4.2 演练项)里评。
+--   · countUrgentPending (priority,status) 双列 —— BitmapAnd 已可服务。
+--
+-- 不用 CONCURRENTLY 的原因:Flyway 在事务内跑迁移,CONCURRENTLY 禁事务;
+-- 现阶段表规模小,B-tree 建索引锁窗可忽略——锁窗随规模增长,演练项含
+-- 「V11 后续索引一律走 CONCURRENTLY 双段迁移」的纪律。
+-- ---------------------------------------------------------------------
+
+CREATE INDEX IF NOT EXISTS idx_alert_group_dedup
+    ON sys_alert (service, module, last_occurred_at DESC)
+    WHERE status IN ('FIRING', 'ACKNOWLEDGED') AND ticket_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_ticket_create_time
+    ON sys_devops_ticket (create_time DESC);
+
+-- =====================================================================
+-- ===== 原 V2~V11 折叠区结束。全库 33 张表（V1 原 27 + 本区 6）。 =====
 -- =====================================================================

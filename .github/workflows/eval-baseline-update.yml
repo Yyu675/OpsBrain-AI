@@ -68,13 +68,12 @@ jobs:
           cache: maven
 
       - name: 初始化数据库 Schema
+        # 批 69 迁移收敛：V1__baseline.sql 已含全部 33 表（原 V2~V11 折叠进
+        # 基线，sql/ 目录只余数据脚本），单文件执行即可。
         env:
           PGPASSWORD: devops_password
         run: |
           psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f src/main/resources/db/migration/V1__baseline.sql
-          for f in $(ls sql/migration_v*.sql | sort -V); do
-            psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f "$f"
-          done
 
       - name: Redis 密码配置
         run: |
