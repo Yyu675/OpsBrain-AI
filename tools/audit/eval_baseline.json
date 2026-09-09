@@ -1,0 +1,15 @@
+{
+  "generatedAt" : "2026-09-09T18:16:31.143063833Z",
+  "dataset" : "eval_dataset.json",
+  "datasetSize" : 152,
+  "layers" : {
+    "contract" : {
+      "blocked" : 0,
+      "passRate" : 1.0,
+      "leaked" : 0,
+      "posTotal" : 69,
+      "negTotal" : 54,
+      "interceptRate" : 1.0
+    }
+  }
+}
