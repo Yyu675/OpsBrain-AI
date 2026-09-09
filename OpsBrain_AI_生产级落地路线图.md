@@ -1107,7 +1107,7 @@ public String queryServiceMetrics(
 | S3-5 | 3 | L4 前端页面 | S3-4 | 4d | ✅(三条 FutureCapability 占位全解封,报告 113) |
 | S4-1 | 4 | 评测判据升级 | S2-3 | 4d | ✅(判据升级多轮落件;S0-4b 文档面 40/40 实测) |
 | S4-2 | 4 | 置信度校准 | S4-1 | 3d | ✅(4-2.1~4-2.3 分桶校准器全绿) |
-| S4-3 | 4 | CI 回归防劣化 | S4-1 | 3d | ⚠️工在(门就位;基线数字⏳T12/T13 铸剑+并 main) |
+| S4-3 | 4 | CI 回归防劣化 | S4-1 | 3d | ✅(契约层基线已铸:eval_baseline.json 1bdeb98 bot 回写,passRate 1.0/interceptRate 1.0/leaked 0——对比门已亮剑并注入验证红绿双向生效;RAG/LLM 层指标待 EVAL 真窗后由分层合并语义自动并入基线) |
 | S4-4 | 4 | 效果看板 | S4-1 | 3d | ✅(CI 对账回帖+agent 效果页+评测历史视图) |
 | S5-1 | 5 | 可观测性补全 | S3-5 | 3d | ✅(结构化 ECS 双道+四水位 gauges+OTLP 指标+周性审计;span 追踪批 70 拍板**不引入**——私有化部署无跨服务链路诉求,MDC traceId 已够排障,两套 traceId 体系关联成本>收益,真窗有 OTel Collector 时再评) |
 | S5-2 | 5 | 部署与运维文档 | S5-1 | 3d | ✅工/⏳(手册/SOP/移交清单 16 本齐;备份演练记录⏳T3) |

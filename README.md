@@ -131,6 +131,11 @@ cd devops-platform-frontend && npm ci && npm run dev
 - **测试**：后端 103 个测试文件，前端 1,756 例；
 - **契约测试**：前后端错误码、状态流转守卫、分页钳制、事务边界、
   日志脱敏、部署时区等**跨端/跨层约定都有测试守着**；
+- **评测回归门禁**（S4-3）：评测集 152 条（69 正例 + 54 负例 + 排除项），
+  契约层基线 `passRate 100% / interceptRate 100% / leaked 0 / blocked 0`
+  （`tools/audit/eval_baseline.json`，CI 每次运行自动对比，劣化超 2pt 即红，
+  报告见 artifact `backend-eval-metrics`）。语义级命中率需真实嵌入模型，
+  属 `EVAL_LLM` 手动 job，不虚标数字；
 - **注入-还原验证**（硬纪律）：每写一条测试，都要把它声称防住的缺陷
   真的注入产品代码、确认测试会红、再还原。**不做这一步等于不知道自己写的是不是假测试**；
 - **审查报告**：`docs/08-benchmark/` 下 99 篇，每篇记录缺陷成因、
