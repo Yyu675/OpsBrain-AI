@@ -56,6 +56,51 @@ public class DiagnosisSessionRepository {
     }
 
     /**
+     * 池满排队占位（批 76 / P2-3，报告 174 审计件）：QUEUED 行既留痕又占住
+     * 「该告警有诊断在路上」的语义（纳入部分唯一索引谓词），后续扫描器捞起重跑。
+     * <p>幂等：QUEUED 也进 {@code (alert_id) WHERE status IN ('RUNNING','QUEUED')}
+     * 的占位谓词——同一告警反复触发池满不会排多条队。</p>
+     *
+     * @return 排队行 id；null = 该告警已有进行中/排队中的诊断（占位冲突，无需再排）
+     */
+    public Long enqueueIfAbsent(String traceId, Long alertId, String ticketId, String service) {
+        String sql = """
+                INSERT INTO sys_diagnosis_session (trace_id, alert_id, ticket_id, service, status)
+                VALUES (?, ?, ?, ?, 'QUEUED')
+                ON CONFLICT (alert_id) WHERE status IN ('RUNNING', 'QUEUED') DO NOTHING
+                RETURNING id
+                """;
+        List<Long> ids = jdbcTemplate.queryForList(sql, Long.class, traceId, alertId, ticketId, service);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    /**
+     * 捞排队中的会话（先进先出）：QUEUED 且无人 RUNNING 中（同告警）
+     * ——排队扫描器按批捞起重新提交。
+     */
+    public List<Map<String, Object>> findQueued(int limit) {
+        String sql = """
+                SELECT * FROM sys_diagnosis_session
+                 WHERE status = 'QUEUED'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM sys_diagnosis_session r
+                        WHERE r.alert_id = sys_diagnosis_session.alert_id AND r.status = 'RUNNING')
+                 ORDER BY created_at ASC LIMIT ?
+                """;
+        return jdbcTemplate.queryForList(sql, limit);
+    }
+
+    /**
+     * QUEUED → RUNNING（扫描器捞起、即将重跑时置位）。
+     * CAS 谓词 QUEUED：与 RUNNING 占位索引的并发竞争天然安全——
+     * 两个扫描器实例同时捞同一行只有一方置位成功。
+     */
+    public int markQueuedRunning(Long id) {
+        String sql = "UPDATE sys_diagnosis_session SET status='RUNNING', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='QUEUED'";
+        return jdbcTemplate.update(sql, id);
+    }
+
+    /**
      * 完成态更新：状态 + 充分性 + 结论、回填工单 id。
      * <p>前置状态守卫：仅 {@code RUNNING -> COMPLETED}；并发重跑只落一次
      * （0 行 = 「已有别人收尾」），ERROR 终态也不会被覆盖。</p>

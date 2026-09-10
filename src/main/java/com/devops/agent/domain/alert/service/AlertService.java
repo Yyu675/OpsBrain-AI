@@ -209,20 +209,20 @@ public class AlertService {
             return;
         }
 
-        // 查找活跃告警（FIRING / ACKNOWLEDGED）
-        Optional<Alert> existing = alertRepository.findActiveByDedupKey(dedupKey);
+        // 原子去重（批 76 / P2-1，报告 174 审计件）：单条 upsert 完成
+        // 「新告警插入 或 既有活跃告警计次」。原「查后插」在并发同键推送下，
+        // 后者撞 uk_alert_active_dedup 部分唯一索引按异常丢弃——告警没丢但
+        // 计次丢失、异常路径污染日志。ON CONFLICT 把竞争窗口收进单条语句。
+        Alert candidate = buildAlertCandidate(incoming, alertName, service, severity, dedupKey);
+        boolean isNewAlert = alertRepository.insertOrIncrement(candidate);
 
-        if (existing.isPresent()) {
-            // 去重命中：递增次数 + 刷新最后触发时间
-            Alert alert = existing.get();
-            alertRepository.incrementOccurrence(alert.getId());
-            log.info("🔁 [AlertService] 重复告警 | alertName={} | service={} | dedupKey={} | occurrence={}",
-                    alertName, service, dedupKey, alert.getOccurrenceCount() + 1);
-            // WebSocket 广播更新（非阻塞旁路——推送失败不影响主流程）
-            alertNotifier.broadcastUpdate(alert);
+        if (isNewAlert) {
+            // 新告警：自动建单 + 后续广播（沿用原建单链路）
+            proceedNewAlert(candidate, incoming, alertName, service);
         } else {
-            // 新告警：创建告警记录 + 自动建单
-            createNewAlert(incoming, alertName, service, severity, dedupKey);
+            // 重复告警计次完成：查最新态广播更新（非阻塞旁路——推送失败不影响主流程）
+            alertRepository.findActiveByDedupKey(dedupKey)
+                    .ifPresent(alertNotifier::broadcastUpdate);
         }
     }
 
@@ -258,14 +258,15 @@ public class AlertService {
      * 工单是附属增值。建单失败时 ERROR 日志留存，运维可手动补单。
      * </p>
      */
-    private void createNewAlert(AlertmanagerWebhook.Alert incoming,
-                                 String alertName, String service,
-                                 String severity, String dedupKey) {
-        // 推断模块与级别
+    /**
+     * 构建告警实体候选（P2-1：与插入解耦——insertOrIncrement 原子完成插入/计次）。
+     */
+    private Alert buildAlertCandidate(AlertmanagerWebhook.Alert incoming,
+                                      String alertName, String service,
+                                      String severity, String dedupKey) {
         String module = inferModule(incoming);
         String level = normalizeLevel(severity);
 
-        // 构建告警实体
         Alert alert = new Alert();
         alert.setSource("prometheus");
         alert.setAlertName(alertName);
@@ -281,27 +282,33 @@ public class AlertService {
         alert.setLastOccurredAt(LocalDateTime.now());
         alert.setCreateTime(LocalDateTime.now());
         alert.setUpdateTime(LocalDateTime.now());
+        return alert;
+    }
 
-        // 落库告警
-        Alert saved = alertRepository.save(alert);
+    /**
+     * 新告警后续链路（P2-1 从原 createNewAlert 拆出）：upsert 已插入，
+     * 此处只做广播 + 聚合抑制判断 + 建单 + 诊断 + 治理触发。
+     */
+    private void proceedNewAlert(Alert saved, AlertmanagerWebhook.Alert incoming,
+                                 String alertName, String service) {
         log.info("🚨 [AlertService] 新告警已入库 | id={} | alertName={} | level={} | service={} | module={}",
-                saved.getId(), alertName, level, service, module);
+                saved.getId(), alertName, saved.getLevel(), service, saved.getModule());
 
         // WebSocket 广播新告警（非阻塞旁路——推送失败不影响主流程）
         alertNotifier.broadcastNew(saved);
 
         // 方向 E：告警风暴聚合抑制。窗口内同 service+module 已有已建单的活跃告警时，
         // 新告警关联其工单而不新建单——避免一个故障源（如节点宕机）引发的多条不同告警
-        // 各建一张工单刷屏。被抑制的告警仍已入库（上方 save），列表可见（告警可见性铁律），
+        // 各建一张工单刷屏。被抑制的告警仍已入库（上方 upsert），列表可见（告警可见性铁律），
         // 只是不重复建单、不重复强提醒。
         if (autoTicketEnabled && aggregateEnabled) {
-            Optional<Alert> group = alertRepository.findActiveGroupTicket(service, module, aggregateWindowMinutes);
+            Optional<Alert> group = alertRepository.findActiveGroupTicket(service, saved.getModule(), aggregateWindowMinutes);
             if (group.isPresent() && group.get().getTicketId() != null) {
                 String groupTicketId = group.get().getTicketId();
                 alertRepository.updateTicketId(saved.getId(), groupTicketId);
                 saved.setTicketId(groupTicketId);
                 log.info("🧲 [AlertService] 告警聚合抑制 | id={} | alertName={} | service={} | module={} | 关联工单={} | 窗口={}min",
-                        saved.getId(), alertName, service, module, groupTicketId, aggregateWindowMinutes);
+                        saved.getId(), alertName, service, saved.getModule(), groupTicketId, aggregateWindowMinutes);
                 // 关联到组工单：追加活动流 + 聚合通知（不重复强提醒）
                 appendAggregatedAlert(groupTicketId, saved, alertName);
                 return;
@@ -309,7 +316,7 @@ public class AlertService {
         }
 
         // 自动建单（Single Writer 契约 6.10：通过 TicketService 写入，不直写 Repository）
-        createAutoTicket(saved, alertName, service, module);
+        createAutoTicket(saved, alertName, service, saved.getModule());
 
         // S2-1：新告警 → 自动诊断（异步、不阻塞；工单号可能为空由会话表回填设计承载）。
         // 去重与聚合抑制分支在上方已 return——两条旁路天然不重复触发诊断。

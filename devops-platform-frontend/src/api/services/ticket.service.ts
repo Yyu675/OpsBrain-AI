@@ -588,10 +588,18 @@ export async function exportTicketsCsv(params: TicketsRequest = {}): Promise<str
   let page = 1
   const size = 200
   let totalPages = 1
+  // 导出熔断上限（批 76 / P3，报告 174 审计件）：大库全量拉取会阻塞 UI
+  // 且打满后端分页接口——1 万行对人工筛选分析已远超可用量级，
+  // 超限走服务端导出（待后端补该能力时对接），不在前端无限循环。
+  const MAX_EXPORT_ROWS = 10_000
 
   while (page <= totalPages) {
     const res = await fetchTickets({ ...params, page, size })
     all.push(...res.tickets)
+    if (all.length >= MAX_EXPORT_ROWS) {
+      all.length = MAX_EXPORT_ROWS
+      break
+    }
     totalPages = res.totalPages
     page++
   }

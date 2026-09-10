@@ -169,6 +169,33 @@ public class ApprovalRequestRepository {
         return jdbcTemplate.update(sql, now);
     }
 
+    /**
+     * 僵尸 APPROVED 单恢复标记（批 76 / P2-2，报告 174 审计件）。
+     * <p>
+     * {@code approveAndExecute} 是「先固化 APPROVED → 再执行 → 再回写」三步，
+     * 进程在中间中断（部署重启/OOM）会留 <b>APPROVED 僵尸单</b>——已批准但
+     * 永远等不到 EXECUTED/EXECUTE_FAILED 回写，前端看板与审批人都以为「执行中」。
+     * 本方法把滞留超过 {@code staleMinutes} 的 APPROVED 单标记 EXECUTE_FAILED，
+     * 结果里写明「进程中断」，审批人可人工重放（重试入口在审批详情）。
+     * </p>
+     * <p>CAS 带 {@code status='APPROVED'}：与正常运行中的 approveAndExecute
+     * 竞争时后者先回写则本条不命中，零误伤。update_time 谓词防止
+     * 「正在执行的单」被误标（执行中单的 update_time 刚被 approve 刷新过）。</p>
+     *
+     * @param staleMinutes 滞留判定阈值（分钟）——须大于正常执行耗时上限
+     * @return 标记数
+     */
+    public int markZombieApprovedStale(LocalDateTime now, int staleMinutes) {
+        String sql = """
+            UPDATE sys_approval_request
+               SET status = 'EXECUTE_FAILED', executed_at = CURRENT_TIMESTAMP,
+                   execute_result = '执行中断恢复：批准后进程在回写结果前退出（重启/OOM），由僵尸单扫描器标记；请人工重放或驳回处理',
+                   update_time = CURRENT_TIMESTAMP
+             WHERE status = 'APPROVED' AND update_time < ?
+            """;
+        return jdbcTemplate.update(sql, now.minusMinutes(staleMinutes));
+    }
+
     private static class ApprovalRowMapper implements RowMapper<ApprovalRequest> {
         @Override
         public ApprovalRequest mapRow(ResultSet rs, int rowNum) throws SQLException {

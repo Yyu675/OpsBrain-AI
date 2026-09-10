@@ -65,4 +65,31 @@ public class ApprovalExpireScheduler {
             log.error("❌ [ApprovalExpire] 超时扫描失败（下一轮 5 分钟后重试）", e);
         }
     }
+
+    /**
+     * 僵尸 APPROVED 单恢复扫描（批 76 / P2-2，报告 174 审计件）。
+     * <p>
+     * {@code approveAndExecute} 是「固化 APPROVED → 执行 → 回写」三步非事务链——
+     * 进程在执行与回写之间中断（部署重启/OOM），留下已批准但永无终态的僵尸单。
+     * 滞留超 10 分钟（正常执行耗时上限远低于此，含 reasoner 模型 120s 超时×重试
+     * 也不过数分钟）即标记 EXECUTE_FAILED + 中断说明，审批人可人工重放。
+     * </p>
+     * <p>与 {@link #scanAndExpire()} 同频同开关：两者都是审批生命周期的
+     * 收尾扫描——「超时未审批驳回」与「批准后中断恢复」是同一治理承诺的两翼。</p>
+     */
+    @Scheduled(fixedDelay = 300_000, initialDelay = 180_000)
+    public void scanAndRecoverZombies() {
+        if (!enabled) {
+            return;
+        }
+        try {
+            int n = approvalService.recoverZombieApproved(10);
+            // n>0 时 Service 内部已记 WARN；零命中不刷屏
+            if (n == 0) {
+                log.debug("🧟 [ApprovalRecover] 扫描完成：无僵尸 APPROVED 单");
+            }
+        } catch (Exception e) {
+            log.error("❌ [ApprovalRecover] 僵尸单扫描失败（下一轮 5 分钟后重试）", e);
+        }
+    }
 }

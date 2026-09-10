@@ -1216,6 +1216,9 @@ CREATE TABLE IF NOT EXISTS sys_diagnosis_evidence (
 CREATE INDEX IF NOT EXISTS idx_evidence_trace ON sys_diagnosis_evidence (trace_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_type_time ON sys_diagnosis_evidence (evidence_type, collected_at);
 CREATE INDEX IF NOT EXISTS idx_evidence_status ON sys_diagnosis_evidence (status);
+-- 批 76 / P2-5（报告 174 审计件）：看板热查 WHERE collected_at >= ? GROUP BY 的
+-- 时间窗过滤——(evidence_type, collected_at) 前导列不匹配纯时间谓词，补单列。
+CREATE INDEX IF NOT EXISTS idx_evidence_collected_time ON sys_diagnosis_evidence (collected_at DESC);
 
 -- ---------------------------------------------------------------------
 -- [原 V4__sys_diagnosis_session.sql] S2-1 诊断会话
@@ -1243,12 +1246,16 @@ CREATE TABLE IF NOT EXISTS sys_diagnosis_session (
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
--- 同告警仅一条「进行中」诊断。部分唯一索引（仅 RUNNING）：
+-- 同告警仅一条「进行中」诊断。部分唯一索引（RUNNING+QUEUED 占位态，批 76 P2-3）：
 -- 全列唯一会让一条 REJECTED 行永久锁死该告警的诊断（历史教训级 bug 形态）。
+-- QUEUED 纳入占位谓词：池满排队与进行中都算「诊断在路上」，防同告警重复入队。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dsession_alert_running
-    ON sys_diagnosis_session (alert_id) WHERE status = 'RUNNING';
+    ON sys_diagnosis_session (alert_id) WHERE status IN ('RUNNING', 'QUEUED');
 CREATE INDEX IF NOT EXISTS idx_dsession_trace ON sys_diagnosis_session (trace_id);
 CREATE INDEX IF NOT EXISTS idx_dsession_status_time ON sys_diagnosis_session (status, created_at);
+-- 批 76 / P2-5（报告 174 审计件）：看板热查 WHERE created_at >= ? 的纯时间窗
+-- ——(status, created_at) 前导列不匹配纯 created_at 谓词，补单列。
+CREATE INDEX IF NOT EXISTS idx_dsession_created_time ON sys_diagnosis_session (created_at DESC);
 
 -- ---------------------------------------------------------------------
 -- [原 V5__sys_diagnosis_hypothesis.sql + V6__hypothesis_feedback_and_boost.sql]

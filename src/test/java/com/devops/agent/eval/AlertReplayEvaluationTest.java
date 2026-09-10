@@ -89,11 +89,17 @@ class AlertReplayEvaluationTest {
 
         // 模拟持久层：save 记录；findActiveByDedupKey 命中已保存的同键活跃告警；
         // incrementOccurrence 递增计数
-        when(alertRepository.save(any(Alert.class))).thenAnswer(inv -> {
+        // 模拟持久层(P2-1 upsert 语义):同 dedupKey 活跃告警已存在 → false(计次),
+        // 否则 true(新插)——真实复刻 insertOrIncrement 的 xmax=0 判定
+        when(alertRepository.insertOrIncrement(any(Alert.class))).thenAnswer(inv -> {
             Alert a = inv.getArgument(0);
+            boolean exists = savedAlerts.stream()
+                    .filter(al -> al.getStatus() != null && !"RESOLVED".equals(al.getStatus()))
+                    .anyMatch(al -> java.util.Objects.equals(al.getDedupKey(), a.getDedupKey()));
             if (a.getId() == null) a.setId((long) (savedAlerts.size() + 1));
             savedAlerts.add(a);
-            return a;
+            if (exists) incrementCalls++;   // false = 计次路径(原 incrementOccurrence 语义并入 upsert)
+            return !exists;
         });
         when(alertRepository.findActiveByDedupKey(anyString())).thenAnswer(inv -> {
             String key = inv.getArgument(0);
@@ -149,7 +155,7 @@ class AlertReplayEvaluationTest {
         assertEquals(1, distinctSavedKeys(), "同键风暴只产生 1 个事件");
         verify(ticketService, times(1)).createTicket(anyString(), anyString(), anyString(), anyString(),
                 any(), anyString(), anyString(), anyString());
-        assertEquals(2, incrementCalls, "第 2、3 条同键应走计次而非建单");
+        assertEquals(2, incrementCalls, "第 2、3 条同键应走计次而非建单(upsert 返回 false)");
     }
 
     @Test

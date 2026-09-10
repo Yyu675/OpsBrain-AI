@@ -141,6 +141,20 @@ public class ApprovalService {
         return n;
     }
 
+    /**
+     * 僵尸 APPROVED 单恢复（批 76 / P2-2，报告 174 审计件）：
+     * approveAndExecute 三步（固化 APPROVED→执行→回写）中间中断，
+     * 留下「已批准但永无回写」僵尸单——看板与审批人都以为执行中。
+     * 滞留超阈值的标记 EXECUTE_FAILED + 中断说明，审批人可见可人工重放。
+     */
+    public int recoverZombieApproved(int staleMinutes) {
+        int n = repository.markZombieApprovedStale(LocalDateTime.now(), staleMinutes);
+        if (n > 0) {
+            log.warn("🧟 [Approval] 恢复僵尸 APPROVED 单 {} 张（滞留超 {} 分钟，标记 EXECUTE_FAILED 待人工重放）", n, staleMinutes);
+        }
+        return n;
+    }
+
     private Map<String, Object> page(List<ApprovalRequest> list, int total, int page, int size) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("items", list);

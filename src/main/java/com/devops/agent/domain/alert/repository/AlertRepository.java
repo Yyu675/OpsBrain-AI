@@ -272,6 +272,55 @@ public class AlertRepository {
     }
 
     /**
+     * 原子 upsert：并发同键重复推送一条 SQL 完成「插入新告警 或 计次既有告警」
+     * （批 76 / P2-1，报告 174 审计件）。
+     * <p>
+     * 原实现「查后插」在风暴并发下两条同键推送都过 findActiveByDedupKey 的空判，
+     * 后者撞 {@code uk_alert_active_dedup} 部分唯一索引按异常丢弃——告警没丢但
+     * occurrence_count 少记，且异常路径污染日志。此方法靠
+     * {@code ON CONFLICT ... WHERE 谓词 DO UPDATE} 把竞争窗口收进单条语句：
+     * PG 保证部分唯一索引上的 ON CONFLICT 谓词匹配与 DO UPDATE 原子执行。
+     * </p>
+     *
+     * @return true = 插入了新行（调用方走建单路径）；false = 计次了既有活跃行
+     */
+    public boolean insertOrIncrement(Alert alert) {
+        String sql = "INSERT INTO sys_alert (source, alert_name, level, title, description, status, " +
+                "dedup_key, service, module, occurrence_count, first_occurred_at, last_occurred_at, " +
+                "acknowledged_at, resolved_at, ticket_id, create_time, update_time) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "ON CONFLICT (dedup_key) WHERE status IN ('FIRING','ACKNOWLEDGED') " +
+                "DO UPDATE SET occurrence_count = sys_alert.occurrence_count + 1, " +
+                "last_occurred_at = EXCLUDED.last_occurred_at, update_time = EXCLUDED.update_time " +
+                "RETURNING (xmax = 0) AS inserted";
+        LocalDateTime now = LocalDateTime.now();
+        if (alert.getCreateTime() == null) alert.setCreateTime(now);
+        if (alert.getUpdateTime() == null) alert.setUpdateTime(now);
+        if (alert.getStatus() == null) alert.setStatus("FIRING");
+        if (alert.getOccurrenceCount() == null) alert.setOccurrenceCount(1);
+
+        // xmax=0 表示本事务新插入的行；DO UPDATE 走的行 xmax 非 0
+        Boolean inserted = jdbcTemplate.query(sql, rs -> rs.next() && rs.getBoolean(1),
+                alert.getSource(), alert.getAlertName(), alert.getLevel(), alert.getTitle(),
+                alert.getDescription(), alert.getStatus(), alert.getDedupKey(),
+                alert.getService(), alert.getModule(), alert.getOccurrenceCount(),
+                alert.getFirstOccurredAt(), alert.getLastOccurredAt(),
+                alert.getAcknowledgedAt(), alert.getResolvedAt(), alert.getTicketId(),
+                alert.getCreateTime(), alert.getUpdateTime());
+        boolean isNew = Boolean.TRUE.equals(inserted);
+        if (isNew) {
+            // 回填 id 供调用方建单/广播用——单行 RETURNING id 即可，避免再查一次
+            Long id = jdbcTemplate.query("SELECT id FROM sys_alert WHERE dedup_key = ? AND status IN ('FIRING','ACKNOWLEDGED') ORDER BY id DESC LIMIT 1",
+                    (rs, i) -> rs.getLong(1), alert.getDedupKey()).stream().findFirst().orElse(null);
+            alert.setId(id != null ? id : 0L);
+            log.info("✅ 告警创建(原子upsert) | id={} alertName={} dedupKey={}", alert.getId(), alert.getAlertName(), alert.getDedupKey());
+        } else {
+            log.info("🔁 重复告警计次(原子upsert) | alertName={} dedupKey={}", alert.getAlertName(), alert.getDedupKey());
+        }
+        return isNew;
+    }
+
+    /**
      * 回填关联工单号
      */
     public void updateTicketId(Long id, String ticketId) {

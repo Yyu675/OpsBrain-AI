@@ -107,9 +107,23 @@ public class DiagnosisOrchestrator {
                 CORE, MAX, 30, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(QUEUE),
                 new NamedFactory("diagnosis-worker"),
-                (r, executor) -> log.warn(
-                        "⚠️ [Diagnosis] 诊断池满负荷，降级为仅建单不诊断 | poolSize={}/{} queue={}/{}",
-                        executor.getPoolSize(), MAX, executor.getQueue().size(), QUEUE));
+                // 批 76 / P2-3（报告 174 审计件）：池满不再「丢弃仅 WARN」——
+                // 诊断证据静默丢失是最阴险的降级。改为落库排队（QUEUED 会话行），
+                // 由 DiagnosisQueueScheduler 周期捞起重跑。排队本身失败（库也挂了）
+                // 才退化为仅 WARN 丢弃——那是全库故障场景，排队救不了。
+                (r, executor) -> {
+                    log.warn("⚠️ [Diagnosis] 诊断池满负荷，任务转入 QUEUED 排队 | poolSize={}/{} queue={}/{}",
+                            executor.getPoolSize(), MAX, executor.getQueue().size(), QUEUE);
+                    if (r instanceof QueuedDiagnosisTask task) {
+                        try {
+                            sessionRepository.enqueueIfAbsent(task.traceId(), task.alertId(),
+                                    task.ticketId(), task.service());
+                        } catch (Exception dbEx) {
+                            log.error("❌ [Diagnosis] 排队落库失败，诊断任务丢弃（库故障场景）| alertId={} | {}",
+                                    task.alertId(), dbEx.getMessage());
+                        }
+                    }
+                });
     }
 
     /**
@@ -127,8 +141,39 @@ public class DiagnosisOrchestrator {
         stateManager.transition(AgentState.NEW, TriggerType.USER_REQUEST,
                 "S2-1 诊断提交 alertId=" + alertId + " service=" + service);
 
-        pool.execute(() -> runDiagnosis(traceId, snapshot, alertId, ticketId, service));
+        pool.execute(new QueuedDiagnosisTask(traceId, alertId, ticketId, service,
+                () -> runDiagnosis(traceId, snapshot, alertId, ticketId, service)));
         return traceId;
+    }
+
+    /**
+     * 池满时可被拒绝策略识别并转排队的任务载体（批 76 / P2-3）。
+     * <p>拒绝策略需要 traceId/alertId/ticketId/service 四元组来落 QUEUED 会话行，
+     * 裸 Runnable 拿不到字段——用 record 同时承载元数据与实际工作。</p>
+     */
+    record QueuedDiagnosisTask(String traceId, Long alertId, String ticketId,
+                               String service, Runnable work) implements Runnable {
+        @Override
+        public void run() {
+            work.run();
+        }
+    }
+
+    /** 排队扫描器限量捞起用：当前池队列剩余容量（批 76 / P2-3）。 */
+    public int remainingQueueCapacity() {
+        return pool.getQueue().remainingCapacity();
+    }
+
+    /**
+     * 排队会话的恢复执行（批 76 / P2-3）：扫描器已把会话行 CAS 置为 RUNNING
+     * （占位语义已由 QUEUED→RUNNING 延续，无需 createIfAbsent 再占位），
+     * 此处直接提交任务体。池再次满时该任务会再走拒绝策略——但占位谓词
+     * 已含 QUEUED，重新排队幂等（ON CONFLICT DO NOTHING）。
+     */
+    public void resumeQueued(String traceId, Long alertId, String ticketId, String service) {
+        Map<String, String> snapshot = TraceContext.capture();
+        pool.execute(new QueuedDiagnosisTask(traceId, alertId, ticketId, service,
+                () -> runDiagnosis(traceId, snapshot, alertId, ticketId, service)));
     }
 
     private void runDiagnosis(String traceId, Map<String, String> snapshot,

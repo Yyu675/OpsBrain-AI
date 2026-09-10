@@ -90,10 +90,12 @@ class AlertServiceTest {
         // 默认：无活跃告警、无可聚合的组工单、保存后回填 ID
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
         when(alertRepository.findActiveGroupTicket(any(), any(), anyInt())).thenReturn(Optional.empty());
-        when(alertRepository.save(any(Alert.class))).thenAnswer(inv -> {
+        // 批 76 / P2-1:去重原子化后 save 退役,改 mock insertOrIncrement。
+        // 默认语义 = 无冲突新插入(返回 true 并回填 id,与产品代码一致)
+        when(alertRepository.insertOrIncrement(any(Alert.class))).thenAnswer(inv -> {
             Alert a = inv.getArgument(0);
             a.setId(1L);
-            return a;
+            return true;
         });
         // 注意 assignee 用 any()：产品代码传的是 null（告警建单不预设负责人），
         // 而 Mockito 的 anyString() **不匹配 null**，写成 anyString() 桩不会生效，
@@ -134,7 +136,7 @@ class AlertServiceTest {
     /** 取本次 save 进去的告警实体 */
     private Alert savedAlert() {
         ArgumentCaptor<Alert> cap = ArgumentCaptor.forClass(Alert.class);
-        verify(alertRepository).save(cap.capture());
+        verify(alertRepository).insertOrIncrement(cap.capture());
         return cap.getValue();
     }
 
@@ -152,7 +154,7 @@ class AlertServiceTest {
             service.processWebhook(webhook(incoming("firing",
                     labels("alertname", "HighCpu", "service", "api"))));
 
-            verify(alertRepository, never()).save(any());
+            verify(alertRepository, never()).insertOrIncrement(any());
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
                     anyString(), any(), anyString(), anyString(), anyString());
         }
@@ -163,7 +165,7 @@ class AlertServiceTest {
             assertDoesNotThrow(() -> service.processWebhook(null));
             assertDoesNotThrow(() -> service.processWebhook(new AlertmanagerWebhook()));
             assertDoesNotThrow(() -> service.processWebhook(webhook()));
-            verify(alertRepository, never()).save(any());
+            verify(alertRepository, never()).insertOrIncrement(any());
         }
 
         @Test
@@ -174,14 +176,14 @@ class AlertServiceTest {
                     incoming("firing", labels("alertname", "HighCpu", "service", "api"))));
 
             // 只有合法的那条入库
-            verify(alertRepository, times(1)).save(any(Alert.class));
+            verify(alertRepository, times(1)).insertOrIncrement(any(Alert.class));
         }
 
         @Test
         @DisplayName("单条处理异常不中断整批 —— 一条脏数据不能让同批其他告警全丢")
         void oneFailureDoesNotAbortBatch() {
             // 第一条 save 抛异常，第二条应仍被处理
-            when(alertRepository.save(any(Alert.class)))
+            when(alertRepository.insertOrIncrement(any(Alert.class)))
                     .thenThrow(new RuntimeException("db down"))
                     .thenAnswer(inv -> {
                         Alert a = inv.getArgument(0);
@@ -193,7 +195,7 @@ class AlertServiceTest {
                     incoming("firing", labels("alertname", "A", "service", "api")),
                     incoming("firing", labels("alertname", "B", "service", "api")))));
 
-            verify(alertRepository, times(2)).save(any(Alert.class));
+            verify(alertRepository, times(2)).insertOrIncrement(any(Alert.class));
         }
     }
 
@@ -208,11 +210,14 @@ class AlertServiceTest {
             existing.setId(9L);
             existing.setOccurrenceCount(3);
             when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(existing));
+            // 批 76 / P2-1:upsert 语义 = 同键冲突时返回 false(计次由 SQL 完成)
+            when(alertRepository.insertOrIncrement(any(Alert.class))).thenReturn(false);
 
             service.processWebhook(webhook(incoming("firing",
                     labels("alertname", "HighCpu", "service", "api", "instance", "node-1"))));
 
-            verify(alertRepository).incrementOccurrence(9L);
+            // 计次路径:insertOrIncrement 被调一次且返回 false,不建单不广播新告警
+            verify(alertRepository).insertOrIncrement(any(Alert.class));
             verify(alertRepository, never()).save(any());
             // 重复告警不该再建一张工单——否则一次持续故障会刷屏
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
@@ -283,7 +288,7 @@ class AlertServiceTest {
             verify(alertRepository).resolve(7L);
             verify(notifier).broadcastResolved(active);
             // 恢复不该建单，也不该新增告警记录
-            verify(alertRepository, never()).save(any());
+            verify(alertRepository, never()).insertOrIncrement(any());
         }
 
         @Test
@@ -293,7 +298,7 @@ class AlertServiceTest {
                     labels("alertname", "Gone", "service", "api")))));
 
             verify(alertRepository, never()).resolve(anyLong());
-            verify(alertRepository, never()).save(any());
+            verify(alertRepository, never()).insertOrIncrement(any());
         }
     }
 
@@ -394,7 +399,7 @@ class AlertServiceTest {
 
             // 这是告警可见性铁律：建单挂了，告警仍必须能在列表里看到，
             // 否则运维连「有这么回事」都不知道
-            verify(alertRepository).save(any(Alert.class));
+            verify(alertRepository).insertOrIncrement(any(Alert.class));
         }
 
         @Test
@@ -405,7 +410,7 @@ class AlertServiceTest {
             service.processWebhook(webhook(incoming("firing",
                     labels("alertname", "X", "service", "api"))));
 
-            verify(alertRepository).save(any(Alert.class));
+            verify(alertRepository).insertOrIncrement(any(Alert.class));
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
                     anyString(), any(), anyString(), anyString(), anyString());
         }
@@ -427,7 +432,7 @@ class AlertServiceTest {
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
                     anyString(), any(), anyString(), anyString(), anyString());
             // 但被抑制的告警本身仍然入库、仍然可见
-            verify(alertRepository).save(any(Alert.class));
+            verify(alertRepository).insertOrIncrement(any(Alert.class));
         }
 
         @Test
@@ -512,6 +517,8 @@ class AlertServiceTest {
         existing.setOccurrenceCount(1);
         existing.setTicketId("TK-OLD");
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(existing));
+        // P2-1 原子去重：分支依据改为 upsert 返回值——false = 同键冲突计次（去重路径）
+        when(alertRepository.insertOrIncrement(any(Alert.class))).thenReturn(false);
         service.processWebhook(webhook(incoming("firing", Map.of(
                 "alertname", "HighErrorRate",
                 "service", "order-service",

@@ -82,10 +82,11 @@ class AlertHealingTriggerWiringTest {
 
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
         when(alertRepository.findActiveGroupTicket(any(), any(), anyInt())).thenReturn(Optional.empty());
-        when(alertRepository.save(any(Alert.class))).thenAnswer(inv -> {
+        // P2-1:save 退役,改 mock insertOrIncrement(默认=新插入)
+        when(alertRepository.insertOrIncrement(any(Alert.class))).thenAnswer(inv -> {
             Alert a = inv.getArgument(0);
             a.setId(1L);
-            return a;
+            return true;
         });
         // assignee 传 null —— anyString() 不匹配 null，必须 any()（AlertServiceTest 同款坑）
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
@@ -141,10 +142,13 @@ class AlertHealingTriggerWiringTest {
         Alert existing = new Alert();
         existing.setId(9L);
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(existing));
+        // P2-1:分支依据 = upsert 返回 false(同键冲突计次,去重路径)
+        when(alertRepository.insertOrIncrement(any(Alert.class))).thenReturn(false);
 
         service.processWebhook(firingPodCrash());
 
-        verify(alertRepository).incrementOccurrence(9L);
+        // 计次由 upsert SQL 原子完成;引擎零调用不变
+        verify(alertRepository).insertOrIncrement(any(Alert.class));
         verify(healingAutoTrigger, never()).onAlertFired(any());
     }
 
@@ -172,7 +176,7 @@ class AlertHealingTriggerWiringTest {
 
         assertDoesNotThrow(() -> service.processWebhook(firingPodCrash()));
 
-        verify(alertRepository).save(any(Alert.class));
+        verify(alertRepository).insertOrIncrement(any(Alert.class));
         verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
                 any(), anyString(), anyString(), anyString());
     }
@@ -185,7 +189,7 @@ class AlertHealingTriggerWiringTest {
 
         assertDoesNotThrow(() -> service.processWebhook(firingPodCrash()));
 
-        verify(alertRepository).save(any(Alert.class));
+        verify(alertRepository).insertOrIncrement(any(Alert.class));
         verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
                 any(), anyString(), anyString(), anyString());
     }

@@ -149,3 +149,75 @@ groups:
           summary: "待审批积压(>5 笔,持续 1 小时)"
           description: "审批闸空置积压 = 治理链路没哑火、只是没人批。先到审批页清账;夜班常态请评估当班审批人排班,不要盲目调高阈值。起步阈值,真窗首周校准。"
 
+
+  # =====================================================================
+  # 系统自身监控补缺（批 76 / P3-2，报告 174 审计件）
+  # 此前规则面缺：中间件探活（PG/Redis/MinIO 宕机靠应用报错倒查）、
+  # JVM 堆压力、HTTP 5xx 错误率——三者都是「用户先痛监控后知」的典型。
+  # 依赖暴露前提：compose 侧给 PG/Redis/MinIO 暴露 metrics 端点
+  # （postgres_exporter/redis_exporter/minio 自带 /minio/v2/metrics）。
+  # 暴露端点属部署侧接线件，规则先就位（无数据时 for 持续不满足不误报）。
+  # =====================================================================
+  - name: opsbrain-dependency-alerts
+    rules:
+      # P1:PG 掉线——检索/建单/审批全链随 db down 报错,须最高优先响应
+      - alert: OpsBrainPostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical       # → P0
+          service: opsbrain-ai
+          module: DATABASE
+        annotations:
+          summary: "PostgreSQL 探活失败(1 分钟)"
+          description: "检查容器:docker compose ps postgres;若 OOMKill 查容器内存预算(批 76 已配 1g limit)与日志。应用侧 /actuator/health 的 db 组件会同步 DOWN。"
+
+      # P1:Redis 掉线——限流 fail-closed 拒收 webhook(批 75 后),语义缓存/会话降级
+      - alert: OpsBrainRedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical       # → P0
+          service: opsbrain-ai
+          module: CACHE
+        annotations:
+          summary: "Redis 探活失败(1 分钟)"
+          description: "注意:批 75 后 webhook 限流 fail-closed,Redis 宕=告警入口拒收(Alertmanager 会退避重投不丢)。先拉起 Redis,再核对积压的告警是否已重投完整。"
+
+      # P1:MinIO 掉线——附件上传/归档写入失败
+      - alert: OpsBrainMinioDown
+        expr: minio_cluster_health_online == 0 or minio_server_offline > 0
+        for: 1m
+        labels:
+          severity: warning        # → P2(附件可用性非主链路,但持续宕要人看)
+          service: opsbrain-ai
+          module: STORAGE
+        annotations:
+          summary: "MinIO 探活失败(1 分钟)"
+          description: "附件上传/冷记忆归档会持续失败。检查容器与卷挂载;单节点 MinIO 无冗余,对象数据只在卷里——拉起前勿动卷。"
+
+  - name: opsbrain-jvm-alerts
+    rules:
+      # P2:JVM 老年代近满——Full GC 风暴前兆,应用假死的主因
+      - alert: OpsBrainJvmHeapHigh
+        expr: jvm_memory_used_bytes{area="heap",id=~"G1 Old Gen|PS Old Gen"} / jvm_memory_max_bytes{area="heap",id=~"G1 Old Gen|PS Old Gen"} > 0.85
+        for: 10m
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "JVM 老年代使用率 >85%(持续 10 分钟)"
+          description: "先看是检索大结果集还是 SSE 长会话堆积;容器 limit 2g(批 76 口径),堆约 1.5g——调预算先看 Grafana 基线再动,OOMKill 不是降速。"
+
+      # P2:HTTP 5xx 错误率——用户侧「偶发报错」的量化替身
+      - alert: OpsBrainHttp5xxRate
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) > 0.02
+        for: 10m
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "HTTP 5xx 错误率 >2%(5 分钟窗口,持续 10 分钟)"
+          description: "按 uri/status 标签拆;若集中在单一端点查该链路依赖(渠道健康 /ai-model 可指认 chat vs embedding),若均匀抬头查 GC/连接池。"

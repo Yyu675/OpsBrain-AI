@@ -101,10 +101,10 @@ class AlertTimeZoneConsistencyTest {
 
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
         when(alertRepository.findActiveGroupTicket(any(), any(), anyInt())).thenReturn(Optional.empty());
-        when(alertRepository.save(any(Alert.class))).thenAnswer(inv -> {
+        when(alertRepository.insertOrIncrement(any(Alert.class))).thenAnswer(inv -> {
             Alert a = inv.getArgument(0);
             a.setId(1L);
-            return a;
+            return true;   // P2-1 upsert:返回 true = 新插入路径
         });
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
                 any(), anyString(), anyString(), anyString()))
@@ -218,7 +218,7 @@ class AlertTimeZoneConsistencyTest {
 
     private Alert savedAlert() {
         ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
-        verify(alertRepository).save(captor.capture());
+        verify(alertRepository).insertOrIncrement(captor.capture());
         return captor.getValue();
     }
 
