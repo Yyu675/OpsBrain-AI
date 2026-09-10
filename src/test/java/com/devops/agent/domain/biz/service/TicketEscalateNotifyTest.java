@@ -78,7 +78,10 @@ class TicketEscalateNotifyTest {
         service = new TicketService(ticketRepository,
                 mock(TicketReplyRepository.class), activityRepository,
                 mock(TicketTagRepository.class), mock(TicketActionRepository.class),
-                mock(TicketPostmortemRepository.class), notifier, redisTemplate);
+                mock(TicketPostmortemRepository.class), notifier, redisTemplate,
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAttachmentRepository.class),
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository.class),
+                org.mockito.Mockito.mock(io.minio.MinioClient.class));
     }
 
     @AfterEach

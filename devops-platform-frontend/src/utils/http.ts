@@ -382,8 +382,11 @@ export const httpRequest = async <T = unknown>(
           continue
         }
         // 401：未登录或登录失效，清 token 并通知 App 跳登录页。
-        // ⚠️ 临时开发开关（2026-08-26）：UI 预览默认不跳登录（VITE_ENABLE_AUTH_REDIRECT=1 可恢复）。
-        if (res.status === 401 && import.meta.env.VITE_ENABLE_AUTH_REDIRECT === '1') {
+        // 批 75 / P1-5（报告 174 审计）：默认「启用」——原 VITE_ENABLE_AUTH_REDIRECT=1
+        // 的 opt-in 语义让默认部署下 token 过期(24h)后既不清 token 也不跳登录，
+        // 用户陷入静默 401 黑洞。反转为 VITE_DISABLE_AUTH_REDIRECT=1 显式豁免
+        // （仅开发 UI 预览场景用），兜底防护默认在岗。
+        if (res.status === 401 && import.meta.env.VITE_DISABLE_AUTH_REDIRECT !== '1') {
           handleUnauthorized()
         }
         throw new HttpError(

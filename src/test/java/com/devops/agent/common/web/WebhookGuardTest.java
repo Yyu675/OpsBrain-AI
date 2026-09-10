@@ -12,7 +12,9 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -36,7 +38,7 @@ class WebhookGuardTest {
     @BeforeEach
     void setUp() {
         limiter = mock(SlidingWindowRateLimiter.class);
-        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong())).thenReturn(true);
+        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong(), anyBoolean())).thenReturn(true);
 
         request = mock(HttpServletRequest.class);
         when(request.getRemoteAddr()).thenReturn("10.0.0.1");
@@ -52,11 +54,61 @@ class WebhookGuardTest {
         ReflectionTestUtils.setField(guard, "secret", "");
         ReflectionTestUtils.setField(guard, "rateLimit", 300);
         ReflectionTestUtils.setField(guard, "rateWindowMs", 60000L);
+        // 批 75 P1-2：默认 dev profile（无 active）——向后兼容语义的基线
+        org.springframework.mock.env.MockEnvironment devEnv =
+                new org.springframework.mock.env.MockEnvironment();
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                guard, "environment", devEnv);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                guard, "requireSecretInProd", true);
     }
 
     @Test
     @DisplayName("未配置密钥时放行，保持对既有 alertmanager.yml 的向后兼容")
     void allowsWhenSecretNotConfigured() {
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    /** MockEnvironment 无链式 setProperty（void 返回）——active profile 用专用 helper 设 */
+    private static org.springframework.mock.env.MockEnvironment newProdEnv() {
+        org.springframework.mock.env.MockEnvironment env = new org.springframework.mock.env.MockEnvironment();
+        env.setActiveProfiles("prod");
+        return env;
+    }
+
+    @Test
+    @DisplayName("批75 P1-2：prod profile 无密钥 = 拒绝处理（403），不再 WARN 放行")
+    void prodWithoutSecretIsRejected() {
+        org.springframework.mock.env.MockEnvironment prodEnv =
+                newProdEnv();
+        ReflectionTestUtils.setField(guard, "environment", prodEnv);
+        ReflectionTestUtils.setField(guard, "secret", "");
+
+        assertThatThrownBy(() -> guard.verify(request))
+                .isInstanceOf(WebhookRejectedException.class);
+    }
+
+    @Test
+    @DisplayName("批75 P1-2：prod profile 显式豁免开关（require-secret=false）仍放行——演练/调试通道")
+    void prodWithExplicitExemptionAllows() {
+        org.springframework.mock.env.MockEnvironment prodEnv =
+                newProdEnv();
+        ReflectionTestUtils.setField(guard, "environment", prodEnv);
+        ReflectionTestUtils.setField(guard, "secret", "");
+        ReflectionTestUtils.setField(guard, "requireSecretInProd", false);
+
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("批75 P1-2：prod profile 配了密钥则照常走密钥校验（有 token 放行/无 token 拒）")
+    void prodWithSecretFallsThroughToTokenCheck() {
+        org.springframework.mock.env.MockEnvironment prodEnv =
+                newProdEnv();
+        ReflectionTestUtils.setField(guard, "environment", prodEnv);
+        ReflectionTestUtils.setField(guard, "secret", "prod-secret");
+        when(request.getHeader("X-Webhook-Token")).thenReturn("prod-secret");
+
         assertDoesNotThrow(() -> guard.verify(request));
     }
 
@@ -95,7 +147,7 @@ class WebhookGuardTest {
     @Test
     @DisplayName("触发限流抛 429 且带 Retry-After，让 Alertmanager 退避重投而非丢告警")
     void rejectsWhenRateLimited() {
-        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong())).thenReturn(false);
+        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong(), anyBoolean())).thenReturn(false);
 
         var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
 
@@ -108,7 +160,7 @@ class WebhookGuardTest {
     void rateLimitAppliesBeforeAuth() {
         ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
         when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn("wrong");
-        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong())).thenReturn(false);
+        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong(), anyBoolean())).thenReturn(false);
 
         var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
 
@@ -137,7 +189,7 @@ class WebhookGuardTest {
         org.mockito.Mockito.verify(clientIpResolver).resolve(request);
         org.mockito.Mockito.verify(limiter)
                 .tryAcquire(org.mockito.ArgumentMatchers.eq("webhook"),
-                        org.mockito.ArgumentMatchers.eq("203.0.113.7"), anyInt(), anyLong());
+                        org.mockito.ArgumentMatchers.eq("203.0.113.7"), anyInt(), anyLong(), anyBoolean());
     }
 
     @Test
@@ -151,6 +203,6 @@ class WebhookGuardTest {
 
         org.mockito.Mockito.verify(limiter)
                 .tryAcquire(anyString(), org.mockito.ArgumentMatchers.eq("10.0.0.1"),
-                        anyInt(), anyLong());
+                        anyInt(), anyLong(), anyBoolean());
     }
 }

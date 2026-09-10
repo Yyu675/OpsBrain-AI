@@ -327,6 +327,54 @@ describe('重试决策遵循业务码的 retry 语义', () => {
   })
 })
 
+describe('契约 · 401 兜底默认在岗（批 75 / P1-5 静默黑洞修复）', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    vi.unstubAllGlobals()
+    window.location.pathname = '/'
+  })
+
+  /** 桩一个 401 响应（satoken 过期的标准形态：裸 401 或 40101 业务码） */
+  function stub401() {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ code: 40101, message: '未登录', data: null }),
+        { status: 401, headers: { 'content-type': 'application/json' } })
+    ) as unknown as typeof fetch
+  }
+
+  it('401 默认派发 auth:unauthorized 事件并清 token —— token 过期不再静默', async () => {
+    // 修复前（VITE_ENABLE_AUTH_REDIRECT opt-in）：默认部署不派发事件，
+    // token 过期(24h)后用户陷入无提示的 401 黑洞。
+    // 本测试防语义回退：若有人改回 opt-in，本条立刻红。
+    stub401()
+    const fired = vi.fn()
+    window.addEventListener('auth:unauthorized', fired)
+
+    await expect(
+      httpRequest('/api/v1/tickets', { retries: 0 })
+    ).rejects.toMatchObject({ status: 401 })
+
+    expect(fired, '401 必须派发 auth:unauthorized（默认在岗，非 opt-in）').toHaveBeenCalledTimes(1)
+    window.removeEventListener('auth:unauthorized', fired)
+  })
+
+  it('豁免开关 VITE_DISABLE_AUTH_REDIRECT=1 时不派发 —— 开发 UI 预览通道保留', async () => {
+    vi.stubEnv('VITE_DISABLE_AUTH_REDIRECT', '1')
+    stub401()
+    const fired = vi.fn()
+    window.addEventListener('auth:unauthorized', fired)
+
+    await expect(
+      httpRequest('/api/v1/tickets', { retries: 0 })
+    ).rejects.toBeTruthy()
+
+    expect(fired).not.toHaveBeenCalled()
+    window.removeEventListener('auth:unauthorized', fired)
+  })
+})
+
 describe('契约 · http.ts 不得与词表并行维护错误码文案', () => {
   /**
    * 结构性断言：`toFriendlyError` 的 BIZ 分支里不许再出现按具体业务码分流的代码。

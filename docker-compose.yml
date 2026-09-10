@@ -139,10 +139,76 @@ services:
     networks: [opsbrain]
     logging: *default-logging
 
+  # ------------------- L2 监控栈（批 75 / P1-6，报告 174 审计）-------------------
+  # 修复前监控栈只在 dev compose——生产一键部署后 OpsBrainDown 等告警规则
+  # 无数据源，L2 告警链路静默断链（README 声称的 L2 能力实际不可用）。
+  # 三件套与 app 同网络（opsbrain）：Prometheus 抓 app:8088/ai/actuator/prometheus，
+  # node-exporter 采集宿主机，Alertmanager 路由告警回 OpsBrain webhook。
+  # 注意：dev 形态后端在宿主机跑故 alertmanager.yml 用 host.docker.internal，
+  # prod 形态后端在网内——monitoring/alertmanager.yml 的 webhook 地址需按部署形态确认。
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: opsbrain-node-exporter
+    restart: unless-stopped
+    command:
+      # 生产 Linux 直挂宿主根（rslave）；WSL2 不支持 rslave 的说明见 dev compose
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "9100:9100"
+    networks: [opsbrain]
+    logging: *default-logging
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: opsbrain-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/-/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - node-exporter
+      - alertmanager
+    networks: [opsbrain]
+    logging: *default-logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: opsbrain-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9093/-/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks: [opsbrain]
+    logging: *default-logging
+
 volumes:
   pg_data:
   redis_data:
   minio_data:
+  prometheus_data:
 
 networks:
   opsbrain:

@@ -75,8 +75,9 @@ class LogRedactionContractTest {
 
     static {
         // 只提示「未配置 devops.alert.webhook.secret」，不输出该配置的值。
-        // 这条告警本身很重要：生产环境漏配会让告警端点无鉴权
-        REVIEWED_SAFE.put("common/web/WebhookGuard.java", 1);
+        // 批 75 / P1-2 新增第二处（prod 无密钥拒收的 error 日志）：同样只提配置键名
+        // 与处置指引，不输出值——两处均已逐条核对。
+        REVIEWED_SAFE.put("common/web/WebhookGuard.java", 2);
         // 输出的是「加签=是/否」这个布尔判断结果，不是 secret 本身
         REVIEWED_SAFE.put("domain/notify/DingTalkNotifier.java", 1);
     }

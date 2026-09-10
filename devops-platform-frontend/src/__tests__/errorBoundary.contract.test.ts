@@ -168,7 +168,11 @@ describe('Markdown 渲染单一入口', () => {
 
     const offenders: string[] = []
     for (const file of walk(SRC)) {
-      if (ALLOWED_OWN_SANITIZE.some(a => file.endsWith(a))) continue
+      // Windows 路径分隔符归一化(批75):file.endsWith('utils/safeMarkdown.ts') 在
+      // Windows 下收到 'utils\safeMarkdown.ts' 永不匹配,豁免失效致本机误报
+      // (CI Linux 正常)——归一化后两端同判。
+      const normFile = file.split('\\').join('/')
+      if (ALLOWED_OWN_SANITIZE.some(a => normFile.endsWith(a))) continue
       const code = codeOf(file)
       if (/DOMPurify\.sanitize/.test(code) && /marked\.parse|marked\(/.test(code)) {
         offenders.push(relative(SRC, file))

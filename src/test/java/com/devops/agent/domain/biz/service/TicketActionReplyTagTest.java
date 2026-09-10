@@ -85,7 +85,10 @@ class TicketActionReplyTagTest {
 
         service = new TicketService(ticketRepository, replyRepository,
                 activityRepository, tagRepository, actionRepository, postmortemRepository,
-                notifier, redisTemplate);
+                notifier, redisTemplate,
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAttachmentRepository.class),
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository.class),
+                org.mockito.Mockito.mock(io.minio.MinioClient.class));
     }
 
     /** 一张处于 PROCESSING 的普通工单 */

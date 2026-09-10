@@ -60,7 +60,10 @@ class TicketServiceTest {
 
         service = new TicketService(ticketRepository, replyRepository,
                 activityRepository, tagRepository, actionRepository, postmortemRepository,
-                dingTalkNotifier, redisTemplate);
+                dingTalkNotifier, redisTemplate,
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAttachmentRepository.class),
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository.class),
+                org.mockito.Mockito.mock(io.minio.MinioClient.class));
     }
 
     @Test

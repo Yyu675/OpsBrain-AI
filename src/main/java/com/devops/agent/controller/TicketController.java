@@ -393,20 +393,10 @@ public class TicketController {
     @cn.dev33.satoken.annotation.SaCheckRole("ADMIN")   // 方向 F：工单物理删除不可逆，限管理员（作废用 /void，OPS 可用）
     public ApiResponse<DevOpsTicket> deleteTicket(@PathVariable String id) {
         log.warn("[TicketController] 删除工单: id={}", id);
-        // 先清附件（含 MinIO 对象），再删工单主体。
-        // 顺序原因：删完工单后 attachmentService 内部记活动流会
-        // 因工单不存在而失败，且已无从查证附件归属
-        int attachments = attachmentService.deleteAllByTicketId(id);
-        if (attachments > 0) {
-            log.info("[TicketController] 已级联清理附件 | id={} | count={}", id, attachments);
-        }
-
-        // 级联清理 AI 分析（表无外键约束，需应用层保证，否则积累孤儿数据）
-        int analyses = aiAnalysisService.deleteByTicketId(id);
-        if (analyses > 0) {
-            log.info("[TicketController] 已级联清理 AI 分析 | id={} | count={}", id, analyses);
-        }
-
+        // 批 75 / P1-4：级联收口进 TicketService.deleteTicket 单事务
+        // （原在此串三个独立事务：附件→AI分析→工单，第 3 步失败会留
+        // 「附件已删而工单残留」半删态）。附件的 MinIO 对象删除由
+        // Service 内 afterCommit 事务同步保证：提交后才删、回滚不删。
         DevOpsTicket deleted = ticketService.deleteTicket(id);
         return ApiResponse.success(deleted);
     }

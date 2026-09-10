@@ -48,6 +48,12 @@ public class TicketService {
     /** 通知渠道：依赖接口而非具体厂商实现——换 Slack/Teams 只需换实现类，本类不动 */
     private final com.devops.agent.domain.notify.Notifier notifier;
     private final StringRedisTemplate redisTemplate;
+    // 批 75 / P1-4：删单级联收口进同一事务。注入 repository 而非 Service——
+    // TicketAttachmentService 依赖本类（记活动流），反向注入 Service 会循环依赖；
+    // repository 层注入无环。MinIO 对象删除靠事务同步 afterCommit（本方法内注册）。
+    private final com.devops.agent.domain.biz.repository.TicketAttachmentRepository attachmentRepository;
+    private final com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository aiAnalysisRepository;
+    private final io.minio.MinioClient minioClient;
 
     public TicketService(DevOpsTicketRepository ticketRepository,
                         TicketReplyRepository replyRepository,
@@ -56,7 +62,10 @@ public class TicketService {
                         com.devops.agent.domain.biz.repository.TicketActionRepository actionRepository,
                         com.devops.agent.domain.biz.repository.TicketPostmortemRepository postmortemRepository,
                         com.devops.agent.domain.notify.Notifier notifier,
-                        StringRedisTemplate redisTemplate) {
+                        StringRedisTemplate redisTemplate,
+                        com.devops.agent.domain.biz.repository.TicketAttachmentRepository attachmentRepository,
+                        com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository aiAnalysisRepository,
+                        io.minio.MinioClient minioClient) {
         this.ticketRepository = ticketRepository;
         this.replyRepository = replyRepository;
         this.activityRepository = activityRepository;
@@ -65,6 +74,9 @@ public class TicketService {
         this.postmortemRepository = postmortemRepository;
         this.notifier = notifier;
         this.redisTemplate = redisTemplate;
+        this.attachmentRepository = attachmentRepository;
+        this.aiAnalysisRepository = aiAnalysisRepository;
+        this.minioClient = minioClient;
     }
 
     /**
@@ -524,8 +536,9 @@ public class TicketService {
      * @return 被删除的工单（供前端撤销时回填）
      * @throws IllegalStateException 工单不存在
      */
-    // 事务：工单 + 回复 + 活动流 + 标签 + 处置 + 复盘（6 张表）。任一步失败必须整体回滚，
-    // 否则会留下「工单已删但回复/标签仍在」这类孤儿数据。
+    // 事务：工单 + 回复 + 活动流 + 标签 + 处置 + 复盘 + 附件 + AI 分析（8 张表）。
+    // 批 75 / P1-4：附件/AI 分析并入同一事务（原 Controller 串三独立事务）。
+    // 任一步失败整体回滚，不再出现「附件已删而工单残留」半删态。
     @Transactional(rollbackFor = Exception.class)
     public DevOpsTicket deleteTicket(String ticketId) {
         DevOpsTicket existing = ticketRepository.findById(ticketId);
@@ -546,12 +559,41 @@ public class TicketService {
         int actions = actionRepository.deleteByTicketId(ticketId);
         int postmortem = postmortemRepository.deleteByTicketId(ticketId);
 
-        log.warn("🗑️ [TicketService] 工单已删除 | ticketId={} | title={} | 级联清理 回复={} 活动={} 标签={} 动作={} 复盘={}",
-                ticketId, existing.getTitle(), replies, activities, tags, actions, postmortem);
-        // 注：附件清理由 TicketController 调用 TicketAttachmentService 完成。
-        // 不在此处直接注入：TicketAttachmentService 依赖 TicketService（记活动流），
-        // 反向注入会形成循环依赖。
+        // 批 75 / P1-4：附件与 AI 分析纳入同一事务（原为 Controller 串三个独立事务，
+        // 第 3 步失败会留「附件已删工单残留」半删态——附件行删了还连带 MinIO 对象
+        // 已被 afterCommit 删掉，不可回滚）。MinIO 对象删除靠事务同步 afterCommit：
+        // 本事务整体提交后才执行；回滚则回调不触发，对象原样保留——语义天然正确。
+        int attachments = 0;
+        for (com.devops.agent.domain.biz.entity.TicketAttachment a : attachmentRepository.deleteByTicketId(ticketId)) {
+            attachments++;
+            registerObjectRemoveAfterCommit(a.getBucket(), a.getObjectKey());
+        }
+        int analyses = aiAnalysisRepository.deleteByTicketId(ticketId);
+
+        log.warn("🗑️ [TicketService] 工单已删除 | ticketId={} | title={} | 级联清理 回复={} 活动={} 标签={} 动作={} 复盘={} 附件={} AI分析={}",
+                ticketId, existing.getTitle(), replies, activities, tags, actions, postmortem, attachments, analyses);
         return existing;
+    }
+
+    /**
+     * 事务提交成功后再删对象；失败仅告警（占存储不影响正确性，孤儿对象由对账清理）。
+     * 与 TicketAttachmentService.removeObjectAfterCommit 同语义——不直接调用它
+     * 是为避免 Service 级循环依赖（AttachmentService 依赖本类记活动流）。
+     */
+    private void registerObjectRemoveAfterCommit(String bucket, String objectKey) {
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        try {
+                            minioClient.removeObject(
+                                    io.minio.RemoveObjectArgs.builder().bucket(bucket).object(objectKey).build());
+                        } catch (Exception e) {
+                            log.warn("⚠️ [TicketService] MinIO 对象删除失败（孤儿对象待对账清理）| bucket={} | key={} | err={}",
+                                    bucket, objectKey, e.getMessage());
+                        }
+                    }
+                });
     }
 
     /**

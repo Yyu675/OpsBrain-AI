@@ -50,6 +50,19 @@ public class WebhookGuard {
     @Value("${devops.alert.webhook.secret:}")
     private String secret;
 
+    /**
+     * 生产密钥强制（批 75 / P1-2，报告 174 审计）：
+     * prod profile 下密钥未配置时直接拒绝处理（403），不再「WARN 后放行」——
+     * 该端点免登录、直写库、可触发自动建单，漏配密钥=任何能访问到服务的人
+     * 可灌入伪造告警。dev/test 保持向后兼容（本地链路无密钥照常工作）。
+     * 显式豁免开关供演练/调试场景，默认关。
+     */
+    @Value("${devops.alert.webhook.require-secret:true}")
+    private boolean requireSecretInProd;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.core.env.Environment environment;
+
     /** 限流窗口内允许的最大请求数；<= 0 关闭限流 */
     @Value("${devops.alert.webhook.rate-limit:300}")
     private int rateLimit;
@@ -75,8 +88,11 @@ public class WebhookGuard {
     public void verify(HttpServletRequest request) {
         String clientIp = resolveClientIp(request);
 
-        // 1) 限流（先于密钥校验：密钥错误的暴力尝试同样要被限流挡住）
-        if (!rateLimiter.tryAcquire("webhook", clientIp, rateLimit, rateWindowMs)) {
+        // 1) 限流（先于密钥校验：密钥错误的暴力尝试同样要被限流挡住）。
+        // 批 75 / P1-3：fail-closed——webhook 是防线型限流（免鉴权直写库，
+        // 密钥未配时限流是唯一防线），Redis 故障时拒绝而非放行；
+        // Alertmanager 对非 200 退避重投，告警不丢。
+        if (!rateLimiter.tryAcquire("webhook", clientIp, rateLimit, rateWindowMs, true)) {
             log.warn("🚫 [WebhookGuard] 触发限流 | ip={} | limit={}/{}ms", clientIp, rateLimit, rateWindowMs);
             // 429 + Retry-After：让 Alertmanager 退避重投，告警最终不丢。
             // 若返回 200 静默丢弃，风暴期的告警会永久消失——对运维平台不可接受。
@@ -85,7 +101,16 @@ public class WebhookGuard {
 
         // 2) 共享密钥
         if (secret == null || secret.isBlank()) {
-            // 只在首次提醒，避免每条告警刷屏
+            // 批 75 / P1-2：prod 无密钥=拒绝处理而非 WARN 放行。
+            // 拒的是这一条告警写入，不是整个平台——密钥补上后链路即恢复，
+            // 比起「裸奔接收伪造告警直至有人发现配置缺失」，损失面小一个量级。
+            if (isProdProfile() && requireSecretInProd) {
+                log.error("⛔ [WebhookGuard] 生产环境未配置 devops.alert.webhook.secret，"
+                        + "拒绝处理告警写入。设置 ALERT_WEBHOOK_SECRET 后恢复"
+                        + "（演练豁免：devops.alert.webhook.require-secret=false）");
+                throw WebhookRejectedException.unauthorized();
+            }
+            // dev/test 向后兼容：只在首次提醒，避免每条告警刷屏
             if (WARNED.compareAndSet(false, true)) {
                 log.warn("⚠️ [WebhookGuard] 未配置 devops.alert.webhook.secret，"
                         + "告警端点当前无鉴权。生产环境请务必设置 ALERT_WEBHOOK_SECRET。");
@@ -102,6 +127,16 @@ public class WebhookGuard {
 
     private static final java.util.concurrent.atomic.AtomicBoolean WARNED =
             new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 生产 profile 判定（含 prod 前缀变体，如 prod-cn） */
+    private boolean isProdProfile() {
+        for (String p : environment.getActiveProfiles()) {
+            if (p != null && p.startsWith("prod")) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * 常量时间字符串比较。

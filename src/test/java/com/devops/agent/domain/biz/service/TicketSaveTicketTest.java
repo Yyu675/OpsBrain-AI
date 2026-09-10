@@ -84,7 +84,10 @@ class TicketSaveTicketTest {
 
         service = new TicketService(ticketRepository, replyRepository,
                 activityRepository, tagRepository, actionRepository, postmortemRepository,
-                notifier, redisTemplate);
+                notifier, redisTemplate,
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAttachmentRepository.class),
+                org.mockito.Mockito.mock(com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository.class),
+                org.mockito.Mockito.mock(io.minio.MinioClient.class));
     }
 
     /** 取出真正交给仓储落库的那个实体——断言派生字段只能看它，不能看入参 */

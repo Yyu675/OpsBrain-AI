@@ -87,6 +87,27 @@ public class SlidingWindowRateLimiter {
      * @return true 放行，false 拒绝
      */
     public boolean tryAcquire(String scope, String identity, int limit, long windowMs) {
+        return tryAcquire(scope, identity, limit, windowMs, false);
+    }
+
+    /**
+     * 尝试获取一个令牌（可指定故障策略）。
+     *
+     * <h3>fail-open vs fail-closed 的分治（批 75 / P1-3，报告 174 审计）</h3>
+     * <p>
+     * 原实现统一 fail-open（Redis 故障全放行），对 <b>chat</b> 是对的——
+     * 它是已登录用户的可用性端点，故障期必须可用，且额度失控另有成本熔断兜底。
+     * 但对 <b>webhook</b> 是错的——它<b>免鉴权、直写库、可触发自动建单</b>，
+     * 在密钥未配置时限流是唯一防线。Redis 故障 + 密钥未配叠加 = 防线全消失，
+     * 一次网络分区可灌进上万条伪造告警压垮库。防线型限流必须 fail-closed：
+     * 故障期拒绝写入，Alertmanager 会对非 200 退避重投，告警不丢（与
+     * {@code WebhookRejectedException.rateLimited} 的 429+Retry-After 语义同源）。
+     * </p>
+     *
+     * @param failClosedOnRedisError true = Redis 故障时拒绝（防线型限流，如 webhook）
+     */
+    public boolean tryAcquire(String scope, String identity, int limit, long windowMs,
+                               boolean failClosedOnRedisError) {
         if (limit <= 0) {
             return true;
         }
@@ -100,7 +121,13 @@ public class SlidingWindowRateLimiter {
                     String.valueOf(limit), member);
             return allowed == null || allowed == 1L;
         } catch (Exception e) {
-            // fail-open：限流组件故障不应让业务不可用
+            if (failClosedOnRedisError) {
+                log.error("⛔ [RateLimit] Redis 异常，fail-closed 拒绝本次请求（防线型限流：{}）| id={} | err={} "
+                        + "——放行会令免鉴权写入端点失去最后防线；Alertmanager 将退避重投，告警不丢",
+                        scope, identity, e.getMessage());
+                return false;
+            }
+            // fail-open：可用性型限流（chat 等），故障期必须可用
             log.warn("⚠️ [RateLimit] Redis 异常，放行本次请求（fail-open）| scope={} | id={} | err={}",
                     scope, identity, e.getMessage());
             return true;
