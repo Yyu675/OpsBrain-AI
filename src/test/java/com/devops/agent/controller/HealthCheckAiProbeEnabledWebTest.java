@@ -4,6 +4,8 @@ import com.devops.agent.common.exception.GlobalExceptionHandler;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.model.output.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import javax.sql.DataSource;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -110,13 +113,21 @@ class HealthCheckAiProbeEnabledWebTest {
         // 运维连「哪里坏了」都看不到
         when(turboModel.chat(any(ChatRequest.class)))
                 .thenThrow(new RuntimeException("上游 401 Unauthorized"));
+        // embedding 渠道桩为正常（批 74 分渠道语义：chat 挂不应连坐 embedding 探测）
+        when(embeddingModel.embed(anyString()))
+                .thenReturn(Response.from(new Embedding(new float[1536])));
 
         mockMvc.perform(get("/api/v1/health/ai-model"))
                 .andExpect(status().isOk())
-                // 关键：不再是 DISABLED，说明开关真的被读取并生效了
-                .andExpect(jsonPath("$.overallStatus").value("FAILED"))
-                .andExpect(jsonPath("$.error").value(
-                        org.hamcrest.Matchers.containsString("401")));
+                // 关键：不再是 DISABLED，说明开关真的被读取并生效了。
+                // 批 74 分渠道结构：turbo 挂 → error 在渠道子对象里，
+                // overallStatus 精确指认 chat 渠道（embedding 不被连坐——
+                // 分渠道捕获是多渠道架构的运维分治语义）
+                .andExpect(jsonPath("$.overallStatus").value("DEGRADED_CHAT_DOWN"))
+                .andExpect(jsonPath("$.turboModel.status").value("FAILED"))
+                .andExpect(jsonPath("$.turboModel.error").value(
+                        org.hamcrest.Matchers.containsString("401")))
+                .andExpect(jsonPath("$.embeddingModel.status").value("SUCCESS"));
 
         verify(turboModel).chat(any(ChatRequest.class));
     }

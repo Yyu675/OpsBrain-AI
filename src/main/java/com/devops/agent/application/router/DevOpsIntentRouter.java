@@ -63,13 +63,13 @@ public class DevOpsIntentRouter {
     /**
      * Turbo 模型名（从配置读取，供 SSE start 事件展示真实模型名）
      */
-    @org.springframework.beans.factory.annotation.Value("${devops.ai.alibaba.turbo-model:turbo}")
+    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.chat.turbo-model:turbo}")
     private String turboModelName;
 
     /**
      * Reasoner 模型名（从配置读取）
      */
-    @org.springframework.beans.factory.annotation.Value("${devops.ai.alibaba.reasoner-model:reasoner}")
+    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.chat.reasoner-model:reasoner}")
     private String reasonerModelName;
 
     public DevOpsIntentRouter(@org.springframework.beans.factory.annotation.Qualifier("turboAgentEngine") DevOpsAgentEngine turboAgentEngine,

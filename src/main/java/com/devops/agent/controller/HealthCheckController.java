@@ -153,9 +153,15 @@ public class HealthCheckController {
 
         log.info("🔍 [HealthCheck] 开始验证 AI 模型连通性，当前模式: {}", aiMode);
 
+        // 多渠道后必须分渠道捕获（方案 C，批 74）：chat 与 embedding 可能来自
+        // 不同厂商——一个渠道挂不该把另一个渠道的探测结果连带吞掉，
+        // overallStatus 汇总要能指认「哪条腿断了」。
+        boolean chatUp = false;
+        boolean embeddingUp = false;
+
+        // 1. 验证 Turbo 模型（chat 渠道）
         try {
-            // 1. 验证 Turbo 模型
-            log.info("   -> 测试 Turbo 模型...");
+            log.info("   -> 测试 Turbo 模型（chat 渠道）...");
             ChatResponse turboResponse = turboModel.chat(
                     ChatRequest.builder()
                             .messages(UserMessage.from("ping"))
@@ -166,9 +172,19 @@ public class HealthCheckController {
                     "response", turboResponse.aiMessage().text(),
                     "modelClass", turboModel.getClass().getSimpleName()
             ));
+            chatUp = true;
+        } catch (Exception e) {
+            log.error("❌ [HealthCheck] chat 渠道（turbo）探测失败", e);
+            result.put("turboModel", Map.of(
+                    "status", "FAILED",
+                    "error", String.valueOf(e.getMessage()),
+                    "hint", "检查 devops.ai.chat.base-url / api-key / turbo-model"
+            ));
+        }
 
-            // 2. 验证 Reasoner 模型
-            log.info("   -> 测试 Reasoner 模型...");
+        // 2. 验证 Reasoner 模型（chat 渠道，与 turbo 同渠道——挂则同挂，单列只为独立看响应）
+        try {
+            log.info("   -> 测试 Reasoner 模型（chat 渠道）...");
             ChatResponse reasonerResponse = reasonerModel.chat(
                     ChatRequest.builder()
                             .messages(UserMessage.from("ping"))
@@ -179,23 +195,50 @@ public class HealthCheckController {
                     "response", reasonerResponse.aiMessage().text(),
                     "modelClass", reasonerModel.getClass().getSimpleName()
             ));
+            chatUp = true;
+        } catch (Exception e) {
+            log.error("❌ [HealthCheck] chat 渠道（reasoner）探测失败", e);
+            result.put("reasonerModel", Map.of(
+                    "status", "FAILED",
+                    "error", String.valueOf(e.getMessage()),
+                    "hint", "检查 devops.ai.chat.base-url / api-key / reasoner-model"
+            ));
+        }
 
-            // 3. 验证 Embedding 模型
-            log.info("   -> 测试 Embedding 模型...");
+        // 3. 验证 Embedding 模型（embedding 独立渠道）
+        try {
+            log.info("   -> 测试 Embedding 模型（embedding 渠道）...");
             var embeddingResponse = embeddingModel.embed("test");
+            int dim = embeddingResponse.content().vector().length;
             result.put("embeddingModel", Map.of(
                     "status", "SUCCESS",
-                    "dimension", embeddingResponse.content().vector().length,
+                    "dimension", dim,
                     "modelClass", embeddingModel.getClass().getSimpleName()
             ));
-
-            result.put("overallStatus", "SUCCESS");
-            log.info("✅ [HealthCheck] AI 模型连通性验证成功");
-
+            embeddingUp = true;
         } catch (Exception e) {
-            log.error("❌ [HealthCheck] AI 模型连通性验证失败", e);
+            log.error("❌ [HealthCheck] embedding 渠道探测失败", e);
+            result.put("embeddingModel", Map.of(
+                    "status", "FAILED",
+                    "error", String.valueOf(e.getMessage()),
+                    "hint", "检查 devops.ai.embedding.base-url / api-key / model"
+            ));
+        }
+
+        if (chatUp && embeddingUp) {
+            result.put("overallStatus", "SUCCESS");
+            log.info("✅ [HealthCheck] AI 双渠道连通性验证成功");
+        } else if (chatUp) {
+            result.put("overallStatus", "DEGRADED_EMBEDDING_DOWN");
+            result.put("hint", "chat 渠道正常，embedding 渠道不可用——检索/摄取将降级，纯对话不受影响");
+            log.warn("⚠️ [HealthCheck] embedding 渠道不可用（chat 正常）");
+        } else if (embeddingUp) {
+            result.put("overallStatus", "DEGRADED_CHAT_DOWN");
+            result.put("hint", "embedding 渠道正常，chat 渠道不可用——对话能力不可用，摄取/重建不受影响");
+            log.warn("⚠️ [HealthCheck] chat 渠道不可用（embedding 正常）");
+        } else {
             result.put("overallStatus", "FAILED");
-            result.put("error", e.getMessage());
+            log.error("❌ [HealthCheck] AI 双渠道均不可用");
         }
 
         return result;

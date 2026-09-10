@@ -78,17 +78,20 @@ resilience4j:
       # 预留实例槽：cmdb 客户端随阶段 1 后续工具落地时接挂（同形配置拍平即可）。
   ratelimiter:
     instances:
+      # chat 渠道配额：对话/诊断/工具调用共用（真实流量峰值受 SSE 并发约束，
+      # 每请求 1~N 次模型调用）。厂商常见 chat QPS 限制远高于 embedding 低档。
       llm:
-        # 依据：60 次/秒 仍低于常见云厂商 embedding 默认 QPS 低档位，
-        # 给真实 key 留安全边距。
         limit-for-period: 60
         limit-refresh-period: 1s
-        # S0-4 实测校正（原 0s）：摄取/评测是顺序批量调用，零等待会让
-        # 突发直接被拒绝（实测摄取报「向量化失败」）——此类负载要的是
-        # 【配速】而非「拒绝」。10s 等待上限消化突发；超过仍拒绝，
-        # 防失控任务把线程无限挂在排队上。交互单发嵌入的典型等待感知
-        # 远低于 1s（除非已处于持续超载，那本来就该显性失败）。
         timeout-duration: 10s
+      # embedding 渠道配额（方案 C 批 74 分治）：独立于 chat——
+      # 摄取/重建是批量顺序调用，与交互对话的突发互不挤占；
+      # 厂商 embedding QPS 档位普遍低于 chat，独立桶防「对话把
+      # 摄取配额吃光」的连带饿死。
+      llm-embedding:
+        limit-for-period: 30
+        limit-refresh-period: 1s
+        timeout-duration: 30s
 
 server:
   port: 8088
@@ -248,7 +251,37 @@ devops:
       # 又不宜过长——过长会让已结束的会话长期占用内存。
       ttl-minutes: ${AGENT_SESSION_TTL_MINUTES:60}
 
-    # 阿里云百炼配置（Real 模式生效）
+    # ==================== 多渠道模型配置（方案 C，批 74）====================
+    # 三角色各自独立渠道：chat / embedding / reranker 可来自不同厂商不同端点。
+    # 走 channels.* 层级——devops.ai.chat.* 已被对话限流（rate-limit）占用，
+    # 模型渠道组与之天然分治不混层。
+    # 未配置的角色组自动回落到 ALIBABA_* 旧环境变量（兼容既有 .env 不破坏）。
+    channels:
+      # chat 渠道（回答模型 turbo+reasoner 同渠道——大小模型分流是选型不是渠道边界）
+      chat:
+        base-url: ${AI_CHAT_BASE_URL:${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}
+        api-key: ${AI_CHAT_API_KEY:${ALIBABA_API_KEY:your-alibaba-api-key-here}}
+        turbo-model: ${AI_CHAT_TURBO_MODEL:${ALIBABA_TURBO_MODEL:qwen-plus}}
+        reasoner-model: ${AI_CHAT_REASONER_MODEL:${ALIBABA_REASONER_MODEL:qwen-max}}
+        timeout-ms: ${AI_CHAT_TIMEOUT_MS:60000}
+        max-retries: ${AI_CHAT_MAX_RETRIES:2}
+
+      # embedding 渠道（可与 chat 不同厂商；维度必须与 vector.dimension 铁律一致）
+      embedding:
+        base-url: ${AI_EMBEDDING_BASE_URL:${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}
+        api-key: ${AI_EMBEDDING_API_KEY:${ALIBABA_API_KEY:your-alibaba-api-key-here}}
+        model: ${AI_EMBEDDING_MODEL:${ALIBABA_EMBEDDING_MODEL:text-embedding-v2}}
+        timeout-ms: ${AI_EMBEDDING_TIMEOUT_MS:60000}
+        max-retries: ${AI_EMBEDDING_MAX_RETRIES:2}
+
+      # reranker 渠道（代码规划占位，接入混合检索重排位时启用）
+      reranker:
+        base-url: ${AI_RERANKER_BASE_URL:${ALIBABA_BASE_URL:}}
+        api-key: ${AI_RERANKER_API_KEY:${ALIBABA_API_KEY:}}
+        model: ${AI_RERANKER_MODEL:}
+        timeout-ms: ${AI_RERANKER_TIMEOUT_MS:30000}
+
+    # 阿里云百炼配置（旧结构，保留兼容——上方三组未配时回落到这里）
     alibaba:
       api-key: ${ALIBABA_API_KEY:your-alibaba-api-key-here}
       base-url: ${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
@@ -265,6 +298,12 @@ devops:
     # 向量维度铁律（全链路统一）
     vector:
       dimension: 1536
+
+    # 模型指纹锁（方案 C 批 74）：embedding 模型变更检测——
+    # 换模型=旧向量语义空间作废，静默混用会返回垃圾检索结果（无任何报错）。
+    # 指纹 = base-url + model + dimension 的摘要；不一致时拒检索并要求重建。
+    model-fingerprint:
+      enabled: true
 
     # 语义缓存配置
     semantic-cache:

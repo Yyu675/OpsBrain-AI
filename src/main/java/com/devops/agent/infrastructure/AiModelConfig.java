@@ -2,6 +2,7 @@ package com.devops.agent.infrastructure;
 
 import com.devops.agent.infrastructure.llm.LlmEndpointSpec;
 import com.devops.agent.infrastructure.llm.OpenAiCompatibleModelFactory;
+import com.devops.agent.infrastructure.guard.ModelFingerprintGuard;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -32,36 +33,44 @@ import java.time.Duration;
 @Configuration
 public class AiModelConfig {
 
-    @Value("${devops.ai.alibaba.api-key}")
-    private String alibabaApiKey;
+    // ==================== 多渠道配置（方案 C，批 74）====================
+    // 三角色各自独立渠道。AI_CHAT_* / AI_EMBEDDING_* 未配置时回落
+    // ALIBABA_* 旧键——application.yml 里的 ${A:${B:default}} 双层回落完成兼容,
+    // 这里只消费已解析的最终值。
+    @Value("${devops.ai.channels.chat.base-url}")
+    private String chatBaseUrl;
 
-    @Value("${devops.ai.alibaba.base-url}")
-    private String alibabaBaseUrl;
+    @Value("${devops.ai.channels.chat.api-key}")
+    private String chatApiKey;
 
-    @Value("${devops.ai.alibaba.turbo-model}")
+    @Value("${devops.ai.channels.chat.turbo-model}")
     private String turboModel;
 
-    @Value("${devops.ai.alibaba.reasoner-model}")
+    @Value("${devops.ai.channels.chat.reasoner-model}")
     private String reasonerModel;
 
-    @Value("${devops.ai.alibaba.embedding-model}")
-    private String embeddingModel;
-
-    @Value("${devops.ai.alibaba.timeout}")
+    @Value("${devops.ai.channels.chat.timeout-ms}")
     private long timeout;
 
-    @Value("${devops.ai.alibaba.max-retries}")
+    @Value("${devops.ai.channels.chat.max-retries}")
     private int maxRetries;
 
-    /**
-     * 向量维度（全链路唯一来源：devops.ai.vector.dimension）
-     * <p>
-     * 必须与 {@code V1__baseline.sql} 的 {@code VECTOR(n)} 和
-     * {@link VectorStoreConfig} 读的是同一个配置键——此前这里不读配置、
-     * 也不向 Embedding API 传 dimensions，所谓「维度铁律」只是注释，
-     * 换模型时会在写库那一刻才炸（列类型不匹配）。
-     * </p>
-     */
+    @Value("${devops.ai.channels.embedding.base-url}")
+    private String embeddingBaseUrl;
+
+    @Value("${devops.ai.channels.embedding.api-key}")
+    private String embeddingApiKey;
+
+    @Value("${devops.ai.channels.embedding.model}")
+    private String embeddingModel;
+
+    @Value("${devops.ai.channels.embedding.timeout-ms}")
+    private long embeddingTimeout;
+
+    @Value("${devops.ai.channels.embedding.max-retries}")
+    private int embeddingMaxRetries;
+
+    /** 向量维度（全链路唯一来源：devops.ai.vector.dimension） */
     @Value("${devops.ai.vector.dimension}")
     private int vectorDimension;
 
@@ -73,22 +82,27 @@ public class AiModelConfig {
     // 故障要到写库那一刻才以 expected 1536 dimensions, not 3072 暴露。
     // 现在配置的解读只发生在下面三个方法里，且它们是纯函数、可单测。
 
-    /** Turbo（日常对话）端点 */
+    /** Turbo（日常对话）端点——chat 渠道 */
     public LlmEndpointSpec turboSpec() {
-        return LlmEndpointSpec.chat(alibabaBaseUrl, alibabaApiKey, turboModel,
+        return LlmEndpointSpec.chat(chatBaseUrl, chatApiKey, turboModel,
                 Duration.ofMillis(timeout), maxRetries);
     }
 
-    /** Reasoner（复杂推理）端点，超时按 REASONER_TIMEOUT_MULTIPLIER 放大 */
+    /** Reasoner（复杂推理）端点，超时按 REASONER_TIMEOUT_MULTIPLIER 放大——chat 渠道 */
     public LlmEndpointSpec reasonerSpec() {
-        return LlmEndpointSpec.reasoner(alibabaBaseUrl, alibabaApiKey, reasonerModel,
+        return LlmEndpointSpec.reasoner(chatBaseUrl, chatApiKey, reasonerModel,
                 Duration.ofMillis(timeout), maxRetries);
     }
 
-    /** Embedding 端点，维度取自 devops.ai.vector.dimension */
+    /** Embedding 端点——embedding 独立渠道（可与 chat 不同厂商），维度取自铁律键 */
     public LlmEndpointSpec embeddingSpec() {
-        return LlmEndpointSpec.embedding(alibabaBaseUrl, alibabaApiKey, embeddingModel,
-                Duration.ofMillis(timeout), maxRetries, vectorDimension);
+        return LlmEndpointSpec.embedding(embeddingBaseUrl, embeddingApiKey, embeddingModel,
+                Duration.ofMillis(embeddingTimeout), embeddingMaxRetries, vectorDimension);
+    }
+
+    /** 当前 embedding 渠道指纹（base-url+model+dimension 摘要）——指纹锁用 */
+    public String embeddingFingerprint() {
+        return ModelFingerprintGuard.fingerprint(embeddingBaseUrl, embeddingModel, vectorDimension);
     }
 
     // ==================== Real 模式（生产模式）====================
@@ -176,11 +190,13 @@ public class AiModelConfig {
         LlmEndpointSpec spec = embeddingSpec();
         log.info("🚀 [AiModelConfig] 初始化 Embedding 模型: {}（与 V1 基线 VECTOR({}) 对齐）",
                 spec.describe(), vectorDimension);
-        // S0-3：Bean 收口限流（llm 实例）。装饰而非注解贴调用方——无论检索、
-        // 摄取还是重建索引，拿到的 embeddingModel 都已带配额护栏
+        // S0-3 + 方案 C 批 74：Bean 收口限流（llm-embedding 独立实例）——
+        // chat 与 embedding 可能来自不同厂商不同配额档位，独立桶防连带饿死。
+        // 装饰而非注解贴调用方——无论检索、摄取还是重建索引，拿到的
+        // embeddingModel 都已带配额护栏
         return new RateLimitedEmbeddingModel(
                 OpenAiCompatibleModelFactory.embedding(spec),
-                rateLimiterRegistry.rateLimiter("llm"));
+                rateLimiterRegistry.rateLimiter("llm-embedding"));
     }
 
     // ==================== Mock 模式（开发模式）====================
@@ -233,8 +249,8 @@ public class AiModelConfig {
     public EmbeddingModel mockEmbeddingModel(RateLimiterRegistry rateLimiterRegistry) {
         log.warn("⚠️ [AiModelConfig] Mock 模式：Embedding 模型将返回假向量（{} 维确定性向量）", vectorDimension);
         // 维度传给 Mock——S0-2-J1 曾证明硬编码 1536 会让维度注入在 MOCK 路径无声落空
-        // 与 REAL 同样过限流装饰：护栏通路在 MOCK 下也可被测试断言
+        // 与 REAL 同样过限流装饰（llm-embedding 独立实例）：护栏通路在 MOCK 下也可被测试断言
         return new RateLimitedEmbeddingModel(new MockEmbeddingModel(vectorDimension),
-                rateLimiterRegistry.rateLimiter("llm"));
+                rateLimiterRegistry.rateLimiter("llm-embedding"));
     }
 }
