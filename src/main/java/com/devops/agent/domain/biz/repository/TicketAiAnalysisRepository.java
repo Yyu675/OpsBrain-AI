@@ -103,6 +103,22 @@ public class TicketAiAnalysisRepository {
     }
 
     /**
+     * 工单在近 N 分钟内是否已有任何版本的分析（方案 3 批 78：诊断自动回填查重）
+     *
+     * <p>只用 EXISTS 不取内容——查重不需要数据，省一行传输与大字段反序列化。</p>
+     */
+    public boolean existsSince(String ticketId, int withinMinutes) {
+        String sql = """
+            SELECT EXISTS (
+                SELECT 1 FROM sys_ticket_ai_analysis
+                WHERE ticket_id = ? AND create_time >= CURRENT_TIMESTAMP - (? * INTERVAL '1 minute')
+            )
+            """;
+        Boolean exists = jdbcTemplate.queryForObject(sql, Boolean.class, ticketId, withinMinutes);
+        return Boolean.TRUE.equals(exists);
+    }
+
+    /**
      * 记录用户反馈（AI 准确率数据来源）
      *
      * @return 受影响行数（0=分析不存在）

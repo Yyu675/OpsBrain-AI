@@ -8,6 +8,15 @@
       </span>
     </header>
 
+    <!-- 三态兜底（审计批三 P1-5）：旧实现 onMounted 无 catch 无三态，
+         接口失败白屏 + 未捕获 rejection，用户无从重试 -->
+    <div v-if="loadState === 'loading'" class="empty-hint">诊断回放加载中…</div>
+    <div v-else-if="loadState === 'error'" class="empty-hint">
+      诊断回放加载失败。
+      <button class="retry-btn" @click="loadReplay">重试</button>
+    </div>
+
+    <template v-else>
     <p v-if="session.summary" class="summary">{{ session.summary }}</p>
 
     <section class="evidence-section">
@@ -53,12 +62,14 @@
       </ul>
       <p v-if="!hypotheses.length" class="empty-hint">未见假设——规则基线判为「无物可说」或该会话已被终判</p>
     </section>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { notify, handleServerError } from '@/utils/notify'
 import {
   fetchDiagnosisReplay,
   postHypothesisFeedback,
@@ -70,6 +81,9 @@ import {
 
 const route = useRoute()
 const traceId = String(route.params.traceId ?? '')
+
+/** 三态：加载中 / 失败（可重试） / 就绪（审计批三 P1-5 补齐） */
+const loadState = ref<'loading' | 'error' | 'done'>('loading')
 
 const session = ref<DiagnosisSessionView>({})
 const evidences = ref<DiagnosisEvidenceView[]>([])
@@ -95,17 +109,32 @@ async function mark(h: DiagnosisHypothesisView, feedback: HypothesisFeedback) {
   try {
     await postHypothesisFeedback(h.id, feedback)
     h.feedback = feedback
+  } catch (e) {
+    // 旧实现只有 try/finally：反馈 POST 失败成未捕获 rejection，
+    // 按钮转圈归零、无任何提示，反馈数据静默丢失（审计批三 P1-5）
+    handleServerError(e, { action: '反馈根因假设' })
   } finally {
     fbBusy.value[h.id] = false
   }
 }
 
-onMounted(async () => {
-  const replay = await fetchDiagnosisReplay(traceId)
-  session.value = replay.session
-  evidences.value = replay.evidences
-  hypotheses.value = replay.hypotheses
-})
+async function loadReplay() {
+  loadState.value = 'loading'
+  try {
+    const replay = await fetchDiagnosisReplay(traceId)
+    session.value = replay.session
+    evidences.value = replay.evidences
+    hypotheses.value = replay.hypotheses
+    loadState.value = 'done'
+  } catch (e) {
+    // 旧实现 onMounted 裸 await：接口失败白屏 + 二次未捕获 rejection
+    console.warn('[DiagnosisDetail] 回放加载失败', e)
+    loadState.value = 'error'
+  }
+}
+
+onMounted(loadReplay)
+void notify
 </script>
 
 <style scoped>

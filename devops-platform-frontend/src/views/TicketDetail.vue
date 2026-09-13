@@ -96,25 +96,28 @@ const visibleReplies = computed(() =>
 )
 
 /**
- * 载入分析：优先用存档，没有才调付费 LLM
+ * 载入分析：只用存档，不自动调 LLM（方案 2，批 78）
  *
- * 此前是无条件 runAnalysis()——每次打开/刷新工单详情都调一次 DeepSeek，
- * 结果还只存内存、关页即失。
+ * 此前的链路是「无存档 → 自动 runAnalysis()」——每次打开工单详情都是
+ * 一次付费调用。但工单里有大量场景是老手一眼就知道怎么处理的小问题：
+ * 磁盘满清理、证书过期换证、重启即可的偶发抖动。自动分析等于替所有人
+ * 做了「我需要 AI」的决定，token 在无人阅读中烧掉。
+ *
+ * 现在无存档时展示「生成 AI 分析」按钮（AnalysisCard 空态）：一次点击
+ * = 一次有意识的付费决策。需要 AI 的人一键可得，不需要的人零成本。
  */
 const initAnalysis = async () => {
-  const hasArchive = await loadArchivedAnalysis()
-  if (!hasArchive) runAnalysis()
+  await loadArchivedAnalysis()
 }
 
 onMounted(() => {
   loadDetail()
   loadAttachments()
-  loadSimilarTickets()
-  loadRelatedDocs()
   loadActions()
-  // 趋势不在此触发：它依赖 ticket.service 做服务下钻，而此刻详情尚未加载完。
-  // 由下方 watch(ticket.service) 在服务就绪后触发（切换工单同样由它兜住）
-  void initAnalysis()
+  // 相似工单/相关文档/AI 分析不在此触发（审计批一后改由 watch(ticket.id)
+  // 驱动）：挂载时 store 未必有该工单（F5 直达），此刻 ticketService() 为空，
+  // 同步调用只会早退；工单入 store 后 watch 立即触发，两条路径都不漏。
+  // 趋势同理：由下方 watch(ticket.service) 在服务就绪后触发。
 })
 
 /**
@@ -130,16 +133,31 @@ watch(ticketId, (newId, oldId) => {
     resetAnalysis()
     actions.value = []
     pm.reset()
+    // 趋势重置（审计批一 P0-2）：旧实现 A 的服务趋势会留在 B 页面——
+    // 口径标注写的是 A 的服务，数字却是 A 的，纯属张冠李戴
+    insightTrend.value = null
     // 重置三态：使上一工单进行中的请求作废，并回到 loading 避免
     // 新工单尚未拉到时残留上一工单的终态（error / notFound）
     resource.reset()
     loadDetail()
-    loadSimilarTickets()
-    loadRelatedDocs()
-    loadActions()
-    void initAnalysis()
+    loadActions(newId)
   }
 })
+
+/**
+ * 详情入 store 后驱动依赖工单数据的读取（审计批一 P0-2 补全）
+ *
+ * 旧实现在 watch(ticketId) 里同步调 loadSimilarTickets / loadRelatedDocs /
+ * initAnalysis——切工单瞬间 B 尚未入 store（loadDetail 的 fetch 在途），
+ * 三个函数读 ticketService() 为空全部早退且无重触发：从相似工单跳转或
+ * F5 直达时右栏 Insights 永久空白。改由「工单 id 变化」驱动——store 里
+ * 有缓存（列表页点进来）时 id 即刻就位立即触发，无缓存时 loadDetail 完成
+ * 后触发，两条路径都不漏。
+ *
+ * 注意：本 watch 必须放在 useTicketAnalysis 解构之后——immediate 会在
+ * setup 执行期同步触发一次，引用了尚未初始化的函数会直接 ReferenceError
+ * （第一次实现就栽在这里，测试 33 例全红）。
+ */
 
 /**
  * 闭环进度、SLA 展示与属性栏的派生计算已抽到 useTicketClosure。
@@ -154,10 +172,11 @@ const { closureStages, properties, showSlaAlert, slaBarClass } = useTicketClosur
 const {
   analysisContent, analysisStreaming, analysisDone, citations, citationDocs, analysisCost,
   analysisFromArchive, analysisArchivedAt,
+  analysisVersions, analysisViewVersion, switchAnalysisVersion,
   analysisId, analysisFeedback, submitFeedback,
   structured, confidenceClass, useStructuredRender,
   similarTickets, similarLoading, relatedDocs, relatedLoading,
-  runAnalysis, stopAnalysis, regenerateAnalysis, generateReply,
+  runAnalysis, stopAnalysis, regenerateAnalysis, generateReply, replyDrafting,
   loadSimilarTickets, loadRelatedDocs, renderMarkdown, copyCommand, copyAnalysis,
   loadArchivedAnalysis, resetAnalysis,
 } = useTicketAnalysis(
@@ -166,6 +185,14 @@ const {
   () => ticket.value?.service ?? '',
   () => ticket.value?.title ?? ''
 )
+
+watch(() => ticket.value?.id, (id, prev) => {
+  if (id && id !== prev) {
+    loadSimilarTickets()
+    loadRelatedDocs()
+    void initAnalysis()
+  }
+}, { immediate: true })
 
 /**
  * 工单趋势（B-1 + 下钻）：供右栏 Insights 迷你折线
@@ -177,19 +204,29 @@ const {
  */
 const insightTrend = ref<TrendData | null>(null)
 const insightTrendLoading = ref(false)
+/** 趋势请求代数（审计批一）：切工单后 A 的在途响应不得写入 B 的图表 */
+let insightTrendEpoch = 0
 
 const loadInsightTrend = async () => {
-  if (insightTrendLoading.value) return
+  // 旧守卫 `if (insightTrendLoading.value) return` 是"在途即跳过"——
+  // A 的趋势请求未返回时切到 B（服务不同），B 的加载被永久跳过，
+  // A 的数据（口径标注也是 A 的服务）留在 B 页面。改为代数守卫：
+  // 新请求照发，晚到的旧响应按代数丢弃，而不是让新请求给旧的让路。
+  const epoch = ++insightTrendEpoch
   insightTrendLoading.value = true
   try {
     const service = ticket.value?.service
     const module = service ? mapServiceToModule(service) : null
-    insightTrend.value = await getTrends(14, module)
+    const data = await getTrends(14, module)
+    if (epoch !== insightTrendEpoch) return   // 已切工单，过期响应丢弃
+    insightTrend.value = data
   } catch (e) {
-    console.warn('[TicketDetail] 趋势数据加载失败', e)
-    insightTrend.value = null
+    if (epoch === insightTrendEpoch) {
+      console.warn('[TicketDetail] 趋势数据加载失败', e)
+      insightTrend.value = null
+    }
   } finally {
-    insightTrendLoading.value = false
+    if (epoch === insightTrendEpoch) insightTrendLoading.value = false
   }
 }
 
@@ -227,7 +264,7 @@ const ticketContextText = computed(() => {
  */
 const {
   replyContent, submitting, submitReply,
-  transferDialogVisible, transferTarget, workloadOf, openTransferDialog, doTransfer,
+  transferDialogVisible, transferTarget, transferring, workloadOf, openTransferDialog, doTransfer,
   priorityAction, raisePriority,
   acknowledging, doAcknowledge, escalateAction, doEscalate,
   closeTicket, reopenLabel, processingAction, startProcessing,
@@ -296,6 +333,8 @@ const doSubmitVerification = async () => {
 
 const actions = ref<TicketActionRecord[]>([])
 const actionsLoading = ref(false)
+/** 处置动作请求代数（审计批一 P0-2：A 的在途响应不得覆盖 B 的动作列表） */
+let actionsEpoch = 0
 const actionDialogVisible = ref(false)
 const actionForm = ref({ actionType: 'INVESTIGATE', summary: '', detail: '', effective: null as boolean | null })
 const actionSubmitting = ref(false)
@@ -315,16 +354,22 @@ const STAGES = [
   { value: 'VERIFYING', label: '验证中' }
 ]
 
-const loadActions = async () => {
-  const cur = ticket.value
-  if (!cur) return
+const loadActions = async (targetId?: string) => {
+  // 审计批一 P0-2：改用显式传入的工单 ID，不再依赖 store 里的 ticket.value——
+  // watch(ticketId) 切工单瞬间 B 尚未入 store（loadDetail 在途），旧实现此刻
+  // 早退且无重触发，B 的处置动作列表永久空白（相似工单跳转/F5 直达均中招）。
+  const id = targetId ?? ticket.value?.id
+  if (!id) return
+  const epoch = ++actionsEpoch
   actionsLoading.value = true
   try {
-    actions.value = await fetchTicketActions(cur.id)
+    const rows = await fetchTicketActions(id)
+    if (epoch !== actionsEpoch) return   // 已切工单，过期响应丢弃
+    actions.value = rows
   } catch (e) {
-    console.warn('加载处置动作失败', e)
+    if (epoch === actionsEpoch) console.warn('加载处置动作失败', e)
   } finally {
-    actionsLoading.value = false
+    if (epoch === actionsEpoch) actionsLoading.value = false
   }
 }
 
@@ -496,7 +541,6 @@ const handleGenerateReply = async () => {
     notify.success('AI 已生成回复草稿，请审核后发送')
   }
 }
-
 // ==================== 标签编辑 ====================
 const newTagInput = ref('')
 const tagRemoving = ref(false)
@@ -818,6 +862,11 @@ const onSinkGotoDoc = (docId: number) => {
                 feedback: analysisFeedback,
                 id: analysisId,
                 onFeedback: submitFeedback,
+                onGenerate: runAnalysis,
+                versions: analysisVersions,
+                viewVersion: analysisViewVersion,
+                onSwitchVersion: switchAnalysisVersion,
+                onAdopt: openRootCauseDialog,
                 renderMarkdown,
                 onCopyCommand: copyCommand,
                 onCopyAnalysis: copyAnalysis,
@@ -836,9 +885,9 @@ const onSinkGotoDoc = (docId: number) => {
                 @keydown.ctrl.enter="submitReply"
               ></textarea>
               <div class="reply-actions">
-                <button class="btn-outline" @click="handleGenerateReply">
+                <button class="btn-outline" :disabled="replyDrafting" @click="handleGenerateReply">
                   <Sparkles :size="16" class="primary-icon" />
-                  AI 生成回复
+                  {{ replyDrafting ? 'AI 生成中…' : 'AI 生成回复' }}
                 </button>
                 <div class="btn-spacer"></div>
                 <button class="btn-primary" :disabled="submitting" @click="submitReply">
@@ -934,7 +983,7 @@ const onSinkGotoDoc = (docId: number) => {
       </el-select>
       <template #footer>
         <el-button @click="transferDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!transferTarget" @click="doTransfer">确认转派</el-button>
+        <el-button type="primary" :disabled="!transferTarget || transferring" @click="doTransfer">{{ transferring ? '转派中…' : '确认转派' }}</el-button>
       </template>
     </el-dialog>
 

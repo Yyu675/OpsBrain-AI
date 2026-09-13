@@ -559,7 +559,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                     // P2-25：取消后不再推送 token，避免断开后空耗前端
                     if (isCancelled(traceId)) return;
                     answerBuilder.append(partial);
-                    sendTokenEvent(emitter, partial);
+                    sendTokenEvent(emitter, traceId, partial);
                 })
                 .onToolExecuted((ToolExecution toolExecution) -> {
                     String toolName = toolExecution.request().name();
@@ -624,7 +624,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                     // P2-35：tool_status 放在写操作之后，状态反映真实落库结果。
                     // 非草稿工具（只读）无写操作，直接标记 success。
                     String toolStatus = (draft != null && businessKey == null) ? "error" : "success";
-                    sendToolStatusEvent(emitter, toolName, toolStatus, "工具执行完成：" + toolName);
+                    sendToolStatusEvent(emitter, traceId, toolName, toolStatus, "工具执行完成：" + toolName);
 
                     // 收集工具结果（供前端识别工单创建等）
                     Object payload = buildToolResultPayload(toolName, displayResult, businessKey);
@@ -693,6 +693,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         sendCompleteEvent(emitter, traceId, latencyMs, false, actualCost, citations, toolResults);
                         emitter.complete();
                     } finally {
+                        // 模型流真正终点之一：清理取消标记（P2-23 无界增长防线，
+                        // 清理权自轮询循环移交至此——见 streamAgent 末尾注释）。
+                        cancelFlags.remove(traceId);
                         done.complete(null);
                     }
                 })
@@ -757,6 +760,9 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                         sendErrorEvent(emitter, traceId, ApiCode.INTERNAL_ERROR, "Agent 执行失败，请稍后重试");
                         emitter.complete();
                     } finally {
+                        // 模型流真正终点之二：清理取消标记（与 onCompleteResponse 的
+                        // finally 对称——两条终点必触发其一，标记无残留路径）。
+                        cancelFlags.remove(traceId);
                         done.completeExceptionally(error);
                     }
                 })
@@ -786,12 +792,13 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         } catch (ExecutionException e) {
             log.warn("⚠️ [AgentStream] 流式执行异常 | traceId={} | {}",
                     traceId, e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
-        } finally {
-            // P2-23 教训：标记用完即清，避免无界增长
-            if (cancelFlags.remove(traceId) != null && !done.isDone()) {
-                log.debug("🧹 [CancelStream] 取消标记已清理 | traceId={}", traceId);
-            }
         }
+        // 注意：此处不再清理取消标记。原因：轮询循环因取消退出时，模型 HTTP 流
+        // 往往**仍在跑**——onPartialResponse / onToolExecuted 检查点还依赖标记
+        // 拦截晚到的 token 推送与建单写库；提前 remove 等于拆掉闸门。
+        // 标记的清理权已移交模型流的真正终点（onCompleteResponse / onError 的
+        // finally），二者必然触发其一，无残留路径（P2-23 的「标记用完即清」
+        // 原则不变，只是清理时机改到流真正结束）。
     }
 
     /**
@@ -1093,7 +1100,8 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      * 检查指定 traceId 是否已被取消
      */
     private boolean isCancelled(String traceId) {
-        return cancelFlags.getOrDefault(traceId, new AtomicBoolean(false)).get();
+        AtomicBoolean flag = cancelFlags.get(traceId);
+        return flag != null && flag.get();
     }
 
     /**
@@ -1140,7 +1148,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
                     break;
                 }
                 int end = Math.min(i + 3, chars.length);
-                sendTokenEvent(emitter, new String(chars, i, end - i));
+                sendTokenEvent(emitter, traceId, new String(chars, i, end - i));
                 Thread.sleep(50);
             }
         } catch (Exception e) {
@@ -1181,21 +1189,21 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         Map<String, Object> data = new HashMap<>();
         data.put("traceId", traceId);
         data.put("routerModel", routerModel);
-        sendEvent(emitter, "start", data);
+        sendEvent(emitter, "start", traceId, data);
     }
 
-    private void sendTokenEvent(SseEmitter emitter, String text) {
+    private void sendTokenEvent(SseEmitter emitter, String traceId, String text) {
         Map<String, Object> data = new HashMap<>();
         data.put("text", text);
-        sendEvent(emitter, "token", data);
+        sendEvent(emitter, "token", traceId, data);
     }
 
-    private void sendToolStatusEvent(SseEmitter emitter, String toolName, String status, String message) {
+    private void sendToolStatusEvent(SseEmitter emitter, String traceId, String toolName, String status, String message) {
         Map<String, Object> data = new HashMap<>();
         data.put("toolName", toolName);
         data.put("status", status);
         data.put("message", message);
-        sendEvent(emitter, "tool_status", data);
+        sendEvent(emitter, "tool_status", traceId, data);
     }
 
     private void sendCompleteEvent(SseEmitter emitter, String traceId, long latencyMs,
@@ -1208,7 +1216,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         data.put("costRmb", costRmb);
         data.put("citations", citations);
         data.put("toolResults", toolResults);
-        sendEvent(emitter, "complete", data);
+        sendEvent(emitter, "complete", traceId, data);
     }
 
     private void sendErrorEvent(SseEmitter emitter, String traceId, int code, String message) {
@@ -1216,7 +1224,7 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
         data.put("traceId", traceId);
         data.put("code", code);
         data.put("message", message);
-        sendEvent(emitter, "error", data);
+        sendEvent(emitter, "error", traceId, data);
     }
 
     /**
@@ -1225,12 +1233,21 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
      * 统一用 ObjectMapper 序列化（自动完成 JSON 转义），
      * 不再手工 escapeJson，避免双重转义。
      */
-    private void sendEvent(SseEmitter emitter, String eventName, Map<String, Object> data) {
+    private void sendEvent(SseEmitter emitter, String eventName, String traceId, Map<String, Object> data) {
         try {
             String json = objectMapper.writeValueAsString(data);
             emitter.send(SseEmitter.event().name(eventName).data(json));
         } catch (IOException e) {
-            log.error("❌ [SSE] 事件发送失败 | event={}", eventName, e);
+            // 客户端已断连（用户关页/杀进程/网络中断）。P2-25 的取消检查点
+            // （onPartialResponse / onToolExecuted / simulateTypingEffect / 轮询循环）
+            // 全部依赖取消标记，而 Controller 的 onError 回调只在响应已 commit
+            // 且容器感知断连时触发——某些断连形态（如 send 时才发现管道破裂）
+            // 先在这里暴露。此处置位取消标记，等于把「断连」翻译成模型侧能读懂的
+            // 停止信号：后续 token 推送跳过、工具不再写库建单、轮询循环退出，
+            // 模型流的后续回调不再产生任何用户已看不到的计费副作用。
+            log.warn("🛑 [SSE] 事件发送失败（客户端可能已断连）| event={} | traceId={} —— 已置取消标记止损",
+                    eventName, traceId, e);
+            cancelStream(traceId);
         }
     }
 }

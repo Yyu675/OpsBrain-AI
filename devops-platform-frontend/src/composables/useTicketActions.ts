@@ -129,9 +129,14 @@ export function useTicketActions(options: UseTicketActionsOptions) {
     void store.loadTeamMembers()
   }
 
+  /** 转派进行中标记（审计批三 P1-6 防重入）：双击会发出两次转派请求，
+      第二次把刚改好的负责人又改回去（读到的还是旧值），活动流多两条记录 */
+  const transferring = ref(false)
+
   const doTransfer = async () => {
     const cur = ticket.value
     if (!cur || !transferTarget.value) return
+    if (transferring.value) return
 
     const t = store.getById(cur.id)
     // 转给当前负责人时短路：否则活动流会多一条「转派给张明」，
@@ -141,12 +146,15 @@ export function useTicketActions(options: UseTicketActionsOptions) {
       return
     }
 
+    transferring.value = true
     try {
       await store.transferTicket(cur.id, transferTarget.value)
       notify.success(`已转派给 ${transferTarget.value}`)
       transferDialogVisible.value = false
     } catch {
       // store 已提示错误。**保持弹窗打开**——关掉会让用户以为成功了
+    } finally {
+      transferring.value = false
     }
   }
 
@@ -345,7 +353,7 @@ export function useTicketActions(options: UseTicketActionsOptions) {
     // 回复
     replyContent, submitting, submitReply,
     // 转派
-    transferDialogVisible, transferTarget, workloadOf, openTransferDialog, doTransfer,
+    transferDialogVisible, transferTarget, transferring, workloadOf, openTransferDialog, doTransfer,
     // 优先级
     priorityAction, raisePriority,
     // 首响 / 升级

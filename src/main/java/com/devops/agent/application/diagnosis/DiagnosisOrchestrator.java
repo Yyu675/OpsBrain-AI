@@ -257,24 +257,42 @@ public class DiagnosisOrchestrator {
             }
             // 2-1.5 工单 AI 分析区回填（§6.1 验收第 1 条的最后一个环）。
             // 置信度为按充分性映射的启发值（S2-2 才做真实校准）：
-            //   SUFFICIENT=80 / WEAK=60 / INSUFFICIENT=20（转人工信号而不是自信度）
-            if (ticketId != null && !ticketId.isBlank()) {
-                int conf = switch (aggregated.sufficiency()) {
-                    case SUFFICIENT -> 80;
-                    case WEAK -> 60;
-                    case INSUFFICIENT -> 20;
-                };
+            //   SUFFICIENT=80 / WEAK=60（INSUFFICIENT 不回填，见下方门槛）
+            // 方案 3 批 78：回填前查重——AI 分析有两条独立写库路径（本诊断回填 +
+            // 前端详情页生成），2026-09-13 BUG.md 现场同一工单两路径各写一版，
+            // 用户看到重复分析且成本翻倍。近期（10 分钟）已有任何版本即跳过自动
+            // 回填：自动回填是「附属增值」不是「权威结论」，人已产出过分析就不必
+            // 再插一版；用户想要新结论走前端「重新分析」（手动路径不受此限）。
+            // 方案 C 批 79：INSUFFICIENT（证据不足，转人工信号）不再写入分析表——
+            // 此前 conf=20 的低质量结论也会占据「版本 1」，让空态生成按钮消失，
+            // 用户可能误以为 AI 已尽力而不再点「生成」；且证据回放 traceId 已由
+            // 通知（publishCompletion→钉钉/WS）与告警详情页承载，分析表只收
+            // 有实质推理价值的结论。INSUFFICIENT 的人工介入信号走通知通道。
+            if (ticketId != null && !ticketId.isBlank()
+                    && aggregated.sufficiency() != EvidenceAggregator.Sufficiency.INSUFFICIENT) {
                 try {
-                    aiAnalysisService.save(ticketId,
-                            summary + "\n\n（证据回放:traceId=" + traceId + "）",
-                            null, null, null, conf, null);
-                    log.info("🩺 [Diagnosis] 诊断结论已回填工单 | ticketId={} | sufficiency={} | conf={}",
-                            ticketId, aggregated.sufficiency(), conf);
+                    if (aiAnalysisService.hasRecentAnalysis(ticketId, 10)) {
+                        log.info("⏭️ [Diagnosis] 工单近期已有 AI 分析，跳过自动回填防重复 | ticketId={}", ticketId);
+                    } else {
+                        int conf = switch (aggregated.sufficiency()) {
+                            case SUFFICIENT -> 80;
+                            case WEAK -> 60;
+                            default -> 0;   // 不可达：INSUFFICIENT 已被上方门槛挡下
+                        };
+                        aiAnalysisService.save(ticketId,
+                                summary + "\n\n（证据回放:traceId=" + traceId + "）",
+                                null, null, null, conf, null);
+                        log.info("🩺 [Diagnosis] 诊断结论已回填工单 | ticketId={} | sufficiency={} | conf={}",
+                                ticketId, aggregated.sufficiency(), conf);
+                    }
                 } catch (Exception ex) {
                     // 回填失败不反噬诊断主流程（同样是附属增值一族）
                     log.warn("⚠️ [Diagnosis] 工单 AI 分析回填失败 | ticketId={} | why={}",
                             ticketId, ex.getMessage());
                 }
+            } else if (ticketId != null && !ticketId.isBlank()) {
+                log.info("⏭️ [Diagnosis] 证据不足（INSUFFICIENT），结论不进 AI 分析表，走人工介入通知 | ticketId={}",
+                        ticketId);
             }
             AgentState finalState = aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
                     ? AgentState.FAILED : AgentState.DRAFT_READY;

@@ -1419,6 +1419,44 @@ CREATE INDEX IF NOT EXISTS idx_alert_group_dedup
 CREATE INDEX IF NOT EXISTS idx_ticket_create_time
     ON sys_devops_ticket (create_time DESC);
 
+-- ---------------------------------------------------------------------
+-- 批 80: 慢查询审计首批索引（P1 四个）
+-- ---------------------------------------------------------------------
+-- 日期: 2026-09-13
+-- 依据: docs/08-benchmark/151-168/178-*-batch-80-慢查询审计首批索引.md
+-- 审计方法: 静态代码扫描四大域 47 个查询方法 × WHERE/ORDER BY 列集 × 索引覆盖度
+--
+-- P1-1: 看板最近告警索引（findRecentFiring）
+--   覆盖: SELECT * FROM sys_alert WHERE status='FIRING' ORDER BY created_at DESC LIMIT 100
+--   现状: status 非索引前导列 → SeqScan + 回表排序
+--   收益: Index-Only Scan（部分谓词索引仅覆盖 FIRING 状态）
+CREATE INDEX IF NOT EXISTS idx_alert_firing_recent
+    ON sys_alert (status, created_at DESC)
+    WHERE status = 'FIRING';
+
+-- P1-2: 诊断排队扫描器 FIFO 索引（fetchQueued，批76 P2-3 引入）
+--   覆盖: SELECT * FROM sys_diagnosis_session WHERE status='QUEUED' ORDER BY created_at ASC LIMIT ?
+--   现状: status 非索引前导列 → SeqScan + 回表排序
+--   收益: Index Scan（DiagnosisQueueScheduler 核心查询）
+CREATE INDEX IF NOT EXISTS idx_dsession_queue_fifo
+    ON sys_diagnosis_session (status, created_at ASC)
+    WHERE status = 'QUEUED';
+
+-- P1-3: 审批僵尸单扫描器索引（markZombieApprovedStale，批76 P2-2 引入）
+--   覆盖: UPDATE sys_approval_request SET status='EXECUTE_FAILED' WHERE status='APPROVED' AND update_time < ?
+--   现状: status + update_time 无联合索引 → SeqScan
+--   收益: Index Scan（ApprovalExpireScheduler 核心查询）
+CREATE INDEX IF NOT EXISTS idx_approval_zombie_scan
+    ON sys_approval_request (status, update_time)
+    WHERE status = 'APPROVED';
+
+-- P1-4: 我的工单列表索引（findByAssignee）
+--   覆盖: SELECT * FROM devops_ticket WHERE assigned_to=? ORDER BY created_at DESC LIMIT ? OFFSET ?
+--   现状: idx_ticket_assigned_to 覆盖 WHERE，ORDER BY created_at 回表排序
+--   收益: Index-Only Scan（前端「我的工单」Tab 高频查询）
+CREATE INDEX IF NOT EXISTS idx_ticket_assignee_time
+    ON devops_ticket (assigned_to, created_at DESC);
+
 -- =====================================================================
 -- ===== 原 V2~V11 折叠区结束。全库 33 张表（V1 原 27 + 本区 6）。 =====
 -- =====================================================================

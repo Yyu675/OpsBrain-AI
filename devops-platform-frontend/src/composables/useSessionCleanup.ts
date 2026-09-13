@@ -52,6 +52,25 @@ export function useSessionCleanup(): void {
         chat.clearAll()
 
         /*
+         * 清除复盘沉淀草稿（opsbrain.sink-draft.*，KnowledgeSinkDrawer 写入）。
+         *
+         * 与 chat-sessions 是同一族问题：草稿正文含工单标题、故障描述、
+         * 处理过程——常带内部信息；键按工单 ID 而非用户隔离，共享值守机
+         * 交接班后下一个用户打开同一工单的「沉淀为知识」即可恢复上一人
+         * 的草稿。登出必须随身份一起清掉（前端审计批二 P1-2）。
+         */
+        try {
+          const doomed: string[] = []
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i)
+            if (key?.startsWith('opsbrain.sink-draft.')) doomed.push(key)
+          }
+          doomed.forEach(k => localStorage.removeItem(k))
+        } catch {
+          // 隐私模式等 localStorage 异常：清不掉就清不掉，不阻塞登出主流程
+        }
+
+        /*
          * 清空 TanStack Query 缓存。
          *
          * 与对话历史是同一类问题，只是载体不同：Query 的 gcTime 是 5 分钟，

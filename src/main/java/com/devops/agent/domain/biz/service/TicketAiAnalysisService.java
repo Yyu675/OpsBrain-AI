@@ -82,6 +82,26 @@ public class TicketAiAnalysisService {
         return repository.findLatest(ticketId);
     }
 
+    /**
+     * 工单近期是否已有分析（方案 3 批 78：诊断自动回填前的查重）
+     *
+     * <p>背景：AI 分析有两条独立写库路径——前端详情页手动/自动生成、
+     * 告警诊断编排器自动回填。BUG.md 现场（2026-09-13）暴露同一工单
+     * 两条路径各写一版：用户打开详情页看到「版本 1」的诊断结论，点开
+     * 历史又冒出一版前端生成——重复且成本翻倍。</p>
+     *
+     * <p>去重口径：工单在 {@code withinMinutes} 内已有任何版本即视为重复——
+     * 自动回填是「附属增值」不是「权威结论」，既然近期已有人（或另一条
+     * 自动链路）产出过分析，就不必再插一版。用户真想要新结论，
+     * 「重新分析」按钮永远可用（手动路径不受此限）。</p>
+     *
+     * @return true = 近期已有分析，调用方应跳过自动写入
+     */
+    public boolean hasRecentAnalysis(String ticketId, int withinMinutes) {
+        if (ticketId == null || ticketId.isBlank()) return false;
+        return repository.existsSince(ticketId, withinMinutes);
+    }
+
     /** 取全部版本（version 倒序） */
     public List<TicketAiAnalysis> listVersions(String ticketId) {
         return repository.findByTicketId(ticketId);

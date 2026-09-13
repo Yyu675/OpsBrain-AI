@@ -43,6 +43,7 @@ vi.mock('@/utils/notify', () => ({
 vi.mock('@/api/ticketAiAnalysis', () => ({
   saveTicketAiAnalysis: vi.fn(async () => ({ id: 1 })),
   fetchLatestTicketAiAnalysis: vi.fn(async () => null),
+  fetchTicketAiAnalysisVersions: vi.fn(async () => []),
   submitAiAnalysisFeedback: vi.fn(async () => undefined),
 }))
 
@@ -153,31 +154,36 @@ describe('useTicketAnalysis — 流未正常收尾时必须兜底', () => {
   })
 })
 
-describe('useTicketAnalysis — generateReply 同样要兜底', () => {
-  it('生成回复草稿时断流，状态复位且内容保留', async () => {
+describe('useTicketAnalysis — generateReply 同样要兜底（方案 B：草稿经返回值交付，分析卡不动）', () => {
+  it('生成回复草稿时断流，草稿经返回值保留、分析卡不被覆盖', async () => {
     chatMock.chatStream.mockImplementation(async (_q, cb) => {
       cb.onToken?.({ text: '建议先检查连接池配置' })
       cb.onClose?.()
     })
 
     const { api } = setup()
-    await api.generateReply()
+    const draft = await api.generateReply()
 
-    expect(api.analysisStreaming.value).toBe(false)
-    expect(api.analysisContent.value).toContain('建议先检查连接池配置')
-    expect(api.analysisContent.value).toContain('连接已中断')
+    // 回复草稿走返回值（消费方是回复框），不再写进分析卡
+    expect(draft).toContain('建议先检查连接池配置')
+    expect(draft).toContain('连接已中断')
+    expect(api.replyDrafting.value).toBe(false)
+    // 分析内容保持原样——这正是方案 B 修的 bug：
+    // 旧实现会把它逐字替换成回复草稿，时间线上 AI 分析卡面目全非
+    expect(api.analysisContent.value).toBe('')
   })
 
-  it('无内容断流时给出提示', async () => {
+  it('无内容断流时返回错误提示', async () => {
     chatMock.chatStream.mockImplementation(async (_q, cb) => {
       cb.onClose?.()
     })
 
     const { api } = setup()
-    await api.generateReply()
+    const draft = await api.generateReply()
 
-    expect(api.analysisContent.value).toContain('连接意外中断')
-    expect(api.analysisStreaming.value).toBe(false)
+    expect(draft).toContain('连接意外中断')
+    expect(api.replyDrafting.value).toBe(false)
+    expect(api.analysisContent.value).toBe('')
   })
 })
 

@@ -53,6 +53,16 @@ interface TimelineAnalysis {
   id: number | null
   /** 参数是「是否有帮助」的布尔值，不是文本 */
   onFeedback?: (helpful: boolean) => void
+  /** 未生成空态的「生成 AI 分析」按钮回调（方案 2：点击式生成，不自动烧 token） */
+  onGenerate?: () => void
+  /** 全部历史版本（方案 3：>1 版时渲染切换器） */
+  versions?: Array<{ version: number; createTime: string }>
+  /** 当前展示版本：null = 最新 */
+  viewVersion?: number | null
+  /** 切换版本回调（null = 切回最新） */
+  onSwitchVersion?: (v: number | null) => void
+  /** 采纳为根因回调（方案 4：直达根因确认弹窗并预填本分析） */
+  onAdopt?: () => void
   renderMarkdown: (text: string) => string
   onCopyCommand: (cmd: string) => void
   onCopyAnalysis: () => void
@@ -149,6 +159,11 @@ defineProps<{
           :feedback="analysis.feedback"
           :can-feedback="analysis.id != null"
           :on-feedback="analysis.onFeedback"
+          :on-generate="analysis.onGenerate"
+          :versions="analysis.versions"
+          :view-version="analysis.viewVersion"
+          :on-switch-version="analysis.onSwitchVersion"
+          :on-adopt="analysis.onAdopt"
           :render-markdown="analysis.renderMarkdown"
           :on-copy-command="analysis.onCopyCommand"
           :on-copy-analysis="analysis.onCopyAnalysis"

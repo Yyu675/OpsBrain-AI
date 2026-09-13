@@ -45,6 +45,16 @@ defineProps<{
   canFeedback?: boolean
   /** 提交反馈回调 */
   onFeedback?: (helpful: boolean) => void
+  /** 生成分析回调（未生成空态的按钮，方案 2：点击式生成） */
+  onGenerate?: () => void
+  /** 全部历史版本（方案 3：>1 版时渲染切换器） */
+  versions?: Array<{ version: number; createTime: string }>
+  /** 当前展示版本：null = 最新 */
+  viewVersion?: number | null
+  /** 切换版本回调（null = 切回最新） */
+  onSwitchVersion?: (v: number | null) => void
+  /** 采纳为根因回调（方案 4：直达根因确认弹窗并预填本分析） */
+  onAdopt?: () => void
 }>()
 </script>
 
@@ -59,6 +69,27 @@ defineProps<{
         历史分析{{ archivedAt ? ` · ${archivedAt}` : '' }}
       </span>
       <span v-else-if="done" class="analysis-status done">完成</span>
+      <!-- 版本切换（方案 3）：AI 分析有两条写库路径（前端生成 / 告警诊断回填），
+           同一工单可能多版本并存。只展示最新版会把早期结论藏起来。 -->
+      <select
+        v-if="versions && versions.length > 1 && !streaming"
+        class="version-select"
+        :value="viewVersion ?? ''"
+        title="切换历史分析版本"
+        @change="onSwitchVersion && onSwitchVersion(($event.target as HTMLSelectElement).value === '' ? null : Number(($event.target as HTMLSelectElement).value))"
+      >
+        <option value="">最新</option>
+        <option v-for="v in versions" :key="v.version" :value="v.version">v{{ v.version }} · {{ (v.createTime || '').slice(5, 16) }}</option>
+      </select>
+    </div>
+
+    <!-- 未生成空态：不自动烧 token（方案 2）——老手自己能搞定就别花钱，
+         想要 AI 分析再点按钮，一次点击 = 一次有意识的付费决策 -->
+    <div v-if="!content && !streaming && !done" class="analysis-empty">
+      <span class="empty-hint">尚未生成 AI 分析</span>
+      <button class="analysis-btn primary" @click="onGenerate && onGenerate()">
+        <Sparkles :size="11" /> 生成 AI 分析
+      </button>
     </div>
 
     <!-- 结构化渲染 -->
@@ -171,6 +202,12 @@ defineProps<{
       <button v-if="done" class="analysis-btn" @click="onCopyAnalysis">
         <Copy :size="11" /> 复制
       </button>
+      <!-- 采纳为根因（方案 4）：AI 分析的最大价值就是「接近正确的根因假设」，
+           但 B3 根因确认才是写库的权威动作。没有这个按钮时用户要复制全文、
+           关卡片、找根因按钮、粘贴——四步漏一步结论就丢。直达弹窗并预填。 -->
+      <button v-if="done && !streaming" class="analysis-btn adopt" @click="onAdopt && onAdopt()" title="把此分析预填到根因确认弹窗，人工审核后写库">
+        采纳为根因
+      </button>
       <button v-if="done && !streaming" class="analysis-btn" @click="onRegenerate">
         <RefreshCw :size="11" /> 重新分析
       </button>
@@ -281,4 +318,34 @@ defineProps<{
 .feedback-btn.active[title="有用"] { background: var(--state-success, var(--success)); border-color: var(--state-success, var(--success)); }
 .feedback-btn.active[title="没用"] { background: #EF4444; border-color: #EF4444; }
 .action-divider { width: 1px; height: 12px; background: var(--color-border-light, var(--border-1)); }
+
+/* 未生成空态（方案 2）：打开详情页不再自动烧 token */
+.analysis-empty {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 0 4px;
+}
+/* 版本切换器（方案 3）：原生 select 最省事，样式与卡片同色系 */
+.version-select {
+  margin-left: auto;
+  font-size: 0.625rem;
+  color: var(--color-text-tertiary, var(--text-3));
+  background: var(--color-surface, var(--surface-1));
+  border: 1px solid var(--color-border-light, var(--border-1));
+  border-radius: 4px;
+  padding: 1px 4px;
+  cursor: pointer;
+}
+.version-select:hover { border-color: var(--color-primary-light, #79bbff); }
+.empty-hint { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); }
+/* 主按钮形态：与列表里的次级按钮区分开，这是卡片里唯一的推进动作 */
+.analysis-btn.primary {
+  color: var(--color-primary, var(--brand));
+  font-size: 0.75rem; padding: 4px 10px;
+  border: 1px solid var(--color-primary-light, rgba(64, 158, 255, 0.5));
+  background: rgba(64, 158, 255, 0.06);
+}
+.analysis-btn.primary:hover { background: rgba(64, 158, 255, 0.14); }
+/* 采纳为根因（方案 4）：AI→人工权威动作的桥，视觉上略强调但不喧宾 */
+.analysis-btn.adopt { color: var(--state-success, var(--success)); }
+.analysis-btn.adopt:hover { background: rgba(103, 194, 58, 0.1); }
 </style>

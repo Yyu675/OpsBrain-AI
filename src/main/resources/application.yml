@@ -5,6 +5,17 @@ spring:
   profiles:
     active: ${spring_profiles_active:dev}
 
+  # ==================== .env 直读（批 77）====================
+  # IDEA 直接启动不会加载 .env（run-dev.sh 的 source .env 帮不上 IDE 场景），
+  # 环境变量缺失时走 application.yml 占位默认值（qwen-plus/占位Key）→ 401 被
+  # 启动守卫拦截。此行让 Spring 自行读项目根 .env（KEY=VALUE 与 properties
+  # 兼容），IDEA/脚本/CI 三方一致：
+  #   - IDEA 直接启动：读到真实 Key 与模型名
+  #   - run-dev.sh：source 后的真实环境变量优先级更高，不受影响
+  #   - CI/生产（无 .env 文件）：optional: 前缀保证静默跳过不报错
+  config:
+    import: optional:file:.env[.properties]
+
   # ==================== 异步请求超时（A2 修复）====================
   # SSE（SseEmitter）走 Spring MVC 异步请求通道，受此值约束。
   # 超时层级必须满足：MVC async > SSE emitter > 模型总超时，

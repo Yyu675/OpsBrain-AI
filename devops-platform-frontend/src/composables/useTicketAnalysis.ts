@@ -20,6 +20,7 @@ import { fetchTickets } from '@/api/tickets'
 import {
   saveTicketAiAnalysis,
   fetchLatestTicketAiAnalysis,
+  fetchTicketAiAnalysisVersions,
   submitAiAnalysisFeedback
 } from '@/api/ticketAiAnalysis'
 import { fetchKnowledgeDocs } from '@/api/knowledge'
@@ -203,6 +204,69 @@ export function useTicketAnalysis(
   /** 当前分析的用户反馈：null=未评价 / 'HELPFUL' / 'UNHELPFUL' */
   const analysisFeedback = ref<string | null>(null)
 
+  /**
+   * 全部历史版本（方案 3 批 78：版本切换）
+   *
+   * AI 分析有两条写库路径（前端生成 / 告警诊断自动回填），同一工单天然
+   * 可能多版本并存。只展示「最新一条」会把早期版本藏起来——工单处理了
+   * 几小时后回看，中间那次诊断结论就找不到了。versions 记录 id/version/
+   * createTime 轻量清单，切换时按 id 从清单回填内容。
+   */
+  const analysisVersions = ref<Array<{ id: number; version: number; createTime: string }>>([])
+  /** 当前展示的版本号：null = 最新（未切历史） */
+  const analysisViewVersion = ref<number | null>(null)
+
+  /** 载入全部版本清单（在 loadArchivedAnalysis 命中后调用；≤1 版时不值得渲染切换器） */
+  const loadAnalysisVersions = async () => {
+    const id = ticketId()
+    if (!id) return
+    const epoch = analysisEpoch
+    try {
+      const versions = await fetchTicketAiAnalysisVersions(id)
+      if (epoch !== analysisEpoch) return   // 用户已切工单，过期响应丢弃
+      analysisVersions.value = versions.map(v => ({ id: v.id, version: v.version, createTime: v.createTime }))
+    } catch (e) {
+      if (epoch === analysisEpoch) {
+        console.warn('[useTicketAnalysis] 加载版本清单失败（不影响展示最新版）', e)
+        analysisVersions.value = []
+      }
+    }
+  }
+
+  /**
+   * 切换到指定历史版本展示
+   *
+   * 从版本清单按 id 找记录回填 content 等展示字段；找不到（清单过期等）
+   * 回退刷新清单再试一次。切回 null = 最新。
+   */
+  const switchAnalysisVersion = async (version: number | null) => {
+    if (version === null) {
+      analysisViewVersion.value = null
+      await loadArchivedAnalysis()
+      await loadAnalysisVersions()
+      return
+    }
+    const target = analysisVersions.value.find(v => v.version === version)
+    if (!target) return
+    try {
+      const versions = await fetchTicketAiAnalysisVersions(ticketId())
+      const full = versions.find(v => v.version === version)
+      if (!full?.content) return
+      analysisContent.value = full.content
+      analysisDone.value = true
+      analysisStreaming.value = false
+      analysisFromArchive.value = true
+      analysisArchivedAt.value = full.createTime
+      analysisId.value = full.id
+      analysisFeedback.value = full.feedback ?? null
+      analysisViewVersion.value = version
+      citations.value = full.citations?.length ? full.citations : extractCitationsFromText(full.content)
+      void resolveCitations(citations.value)
+    } catch (e) {
+      console.warn('[useTicketAnalysis] 切换历史版本失败', e)
+    }
+  }
+
   // Insights 数据
   const similarTickets = ref<FrontendTicket[]>([])
   const similarLoading = ref(false)
@@ -248,14 +312,16 @@ export function useTicketAnalysis(
   const loadSimilarTickets = async () => {
     const svc = ticketService()
     if (!svc) return
+    const epoch = analysisEpoch
     similarLoading.value = true
     try {
       const result = await fetchTickets({ service: svc, size: 5, page: 1 })
+      if (epoch !== analysisEpoch) return   // 已切工单，A 的相似工单不覆盖 B
       similarTickets.value = result.tickets.filter(t => t.id !== ticketId()).slice(0, 3)
     } catch (e) {
-      console.warn('[useTicketAnalysis] 加载相似工单失败', e)
+      if (epoch === analysisEpoch) console.warn('[useTicketAnalysis] 加载相似工单失败', e)
     } finally {
-      similarLoading.value = false
+      if (epoch === analysisEpoch) similarLoading.value = false
     }
   }
 
@@ -263,18 +329,31 @@ export function useTicketAnalysis(
     const keywords = [ticketService(), ticketTitle()].filter(Boolean)
     const keyword = keywords.join(' ')
     if (!keyword.trim()) return
+    const epoch = analysisEpoch
     relatedLoading.value = true
     try {
       const result = await fetchKnowledgeDocs({ keyword: keyword.trim(), size: 3, page: 1, status: 'PUBLISHED' })
+      if (epoch !== analysisEpoch) return   // 已切工单，A 的相关文档不覆盖 B
       relatedDocs.value = (result.content ?? []).slice(0, 3)
     } catch (e) {
-      console.warn('[useTicketAnalysis] 加载相关文档失败', e)
+      if (epoch === analysisEpoch) console.warn('[useTicketAnalysis] 加载相关文档失败', e)
     } finally {
-      relatedLoading.value = false
+      if (epoch === analysisEpoch) relatedLoading.value = false
     }
   }
 
   // ==================== 分析 ====================
+
+  /**
+   * 请求代数守卫（前端审计批一，P0 竞态）
+   *
+   * 切换工单时 resetAnalysis 自增 epoch；所有异步读（存档/版本清单/相似
+   * 工单/相关文档）发起时捕获当前代数，响应回来若代数已变（用户已切走）
+   * 则整批丢弃——否则工单 A 的慢响应会晚到覆盖 B 的数据：分析卡挂出 A
+   * 的根因、analysisId 指向 A 的记录（B 页点「有用」反馈到 A）、相似工单
+   * 列表也变成 A 的。与 tickets store 的搜索序号守卫同一模式。
+   */
+  let analysisEpoch = 0
 
   /**
    * 重置分析状态
@@ -286,6 +365,8 @@ export function useTicketAnalysis(
    * </p>
    */
   const resetAnalysis = () => {
+    // 代数自增：使所有在途响应作废（见 analysisEpoch 注释）
+    analysisEpoch++
     // 有正在进行的流式请求先中断，否则旧工单的 token 会继续写进新工单的内容
     if (abortController) {
       abortController.abort()
@@ -300,8 +381,11 @@ export function useTicketAnalysis(
     analysisArchivedAt.value = ''
     analysisId.value = null
     analysisFeedback.value = null
+    analysisVersions.value = []
+    analysisViewVersion.value = null
     similarTickets.value = []
     relatedDocs.value = []
+    replyDrafting.value = false
   }
 
   /**
@@ -353,8 +437,12 @@ export function useTicketAnalysis(
   const loadArchivedAnalysis = async (): Promise<boolean> => {
     const id = ticketId()
     if (!id) return false
+    const epoch = analysisEpoch
     try {
       const latest = await fetchLatestTicketAiAnalysis(id)
+      // 已切工单：A 的存档晚到不得写进 B——analysisId 会指向 A 的记录，
+      // 用户在 B 页点「有用/没用」将反馈到 A 的分析上（审计 P0-1）
+      if (epoch !== analysisEpoch) return false
       if (!latest || !latest.content?.trim()) return false
 
       analysisContent.value = latest.content
@@ -373,6 +461,8 @@ export function useTicketAnalysis(
         if (fromText.length) citations.value = fromText
       }
       void resolveCitations(citations.value)
+      // 方案 3 批 78：命中存档同时拉版本清单——多版本时 AnalysisCard 渲染切换器
+      await loadAnalysisVersions()
       return true
     } catch (e) {
       console.warn('[useTicketAnalysis] 读取分析存档失败，将走实时分析', e)
@@ -414,6 +504,7 @@ export function useTicketAnalysis(
     analysisArchivedAt.value = ''
     analysisId.value = null
     analysisFeedback.value = null
+    analysisViewVersion.value = null
     analysisStreaming.value = true
     abortController = new AbortController()
 
@@ -437,7 +528,7 @@ export function useTicketAnalysis(
           analysisStreaming.value = false
           // 仅成功完成才存档：失败/中断的内容存下来会在下次被当作有效分析复用，
           // 用户会看到一段残缺的结论却不知它是残缺的
-          void archiveAnalysis(analysisContent.value)
+          void archiveAnalysis(analysisContent.value).then(() => loadAnalysisVersions())
         },
         onError: (data: SSEErrorEvent) => {
           analysisContent.value += `\n\n❌ ${data.message || '分析请求失败，请稍后重试'}`
@@ -487,65 +578,67 @@ export function useTicketAnalysis(
 
   // ==================== 生成回复草稿 ====================
 
+  /**
+   * 回复草稿独立状态（方案 B，批 79）
+   *
+   * 此前 generateReply 直接复用 analysisContent/analysisStreaming——生成回复
+   * 会把时间线上「AI 分析建议」卡片的内容逐字替换成回复草稿，且 analysisId
+   * 不清（反馈按钮仍指向旧分析）、存档分析被顶掉、切工单时 resetAnalysis 又
+   * 只清分析不清草稿。根因是两个语义不同的流共用了同一组状态变量。
+   *
+   * 回复草稿的消费方是回复框（handleGenerateReply 填入 replyContent），
+   * 不需要进分析卡；流式过程用 replyDrafting 让回复按钮转圈即可。
+   */
+  const replyDrafting = ref(false)
+
   const generateReply = async (): Promise<string | null> => {
-    if (analysisStreaming.value) {
-      notify.warning('AI 正在分析中，请稍候')
+    if (replyDrafting.value || analysisStreaming.value) {
+      notify.warning('AI 正在生成中，请稍候')
       return null
     }
 
     const replyQuery = `请根据工单上下文生成回复草稿（不要直接发送，仅生成草稿供用户审核）：\n${ticketContext()}\n\n请用中文回复，包含：\n1. 问题分析摘要\n2. 建议的排查步骤\n3. 相关的知识库参考`
 
-    analysisContent.value = ''
-    citations.value = []
-    analysisDone.value = false
-    analysisStreaming.value = true
+    replyDrafting.value = true
     abortController = new AbortController()
 
+    let replyText = ''
     try {
-      let replyText = ''
       await chatStream(replyQuery, {
         onStart: () => {},
         onToolStatus: () => {},
         onToken: (data: SSETokenEvent) => {
           replyText += data.text
-          analysisContent.value = replyText
         },
-        onComplete: (data: SSECompleteEvent) => {
-          if (data.citations?.length) citations.value = data.citations
-          analysisDone.value = true
-          analysisStreaming.value = false
+        onComplete: () => {
+          replyDrafting.value = false
         },
         onError: (data: SSEErrorEvent) => {
           replyText += `\n\n❌ ${data.message || '请求失败'}`
-          analysisContent.value = replyText
-          analysisDone.value = true
-          analysisStreaming.value = false
+          replyDrafting.value = false
         },
 
-        // 同 runAnalysis：流被关闭但没收到 complete 时兜底收尾，
-        // 否则 analysisStreaming 永远为 true，整个 AI 面板卡死
+        // 同 runAnalysis：流关闭但没收到 complete 时兜底收尾，
+        // 否则 replyDrafting 永远为 true，回复按钮一直转圈
         onClose: () => {
-          if (!analysisStreaming.value) return
+          if (!replyDrafting.value) return
           if (replyText) {
             replyText += '\n\n_（连接已中断，以上为已生成内容）_'
-            analysisContent.value = replyText
           } else {
-            analysisContent.value = '❌ 连接意外中断，未收到回复草稿，请重试'
+            replyText = '❌ 连接意外中断，未收到回复草稿，请重试'
           }
-          analysisDone.value = true
-          analysisStreaming.value = false
+          replyDrafting.value = false
         }
       }, abortController)
       return replyText
     } catch (error: unknown) {
       if (isAbortLike(error) || abortController?.signal.aborted) {
-        analysisContent.value += '\n\n_（已停止生成）_'
+        replyText += '\n\n_（已停止生成）_'
       } else {
-        analysisContent.value += `\n\n❌ 连接失败：${errorMessage(error)}`
+        replyText += `\n\n❌ 连接失败：${errorMessage(error)}`
       }
-      analysisDone.value = true
-      analysisStreaming.value = false
-      return null
+      replyDrafting.value = false
+      return replyText
     } finally {
       abortController = null
     }
@@ -593,6 +686,10 @@ export function useTicketAnalysis(
     // 存档来源标识（供卡片标注「上次分析结果」及时间）
     analysisFromArchive,
     analysisArchivedAt,
+    // 版本切换（方案 3：多版本并存时的历史回看）
+    analysisVersions,
+    analysisViewVersion,
+    switchAnalysisVersion,
     // 反馈（策略 B：AI 准确率数据来源）
     analysisId,
     analysisFeedback,
@@ -611,6 +708,8 @@ export function useTicketAnalysis(
     stopAnalysis,
     regenerateAnalysis,
     generateReply,
+    // 回复草稿生成中状态（方案 B：与分析状态分离，回复按钮转圈用）
+    replyDrafting,
     loadSimilarTickets,
     loadRelatedDocs,
     // 存档读写与状态重置（切换工单必须调 resetAnalysis）

@@ -43,7 +43,7 @@ devops:
     # 配置项名保留 alibaba 前缀是历史命名，实际可对接任意 OpenAI 兼容端点。
     # API Key 与 Base URL 均从环境变量读取，密钥不得写入本文件。
     alibaba:
-      api-key: ${ALIBABA_API_KEY:please-set-ALIBABA_API_KEY-in-env-file}
+      api-key: ${ALIBABA_API_KEY:your-alibaba-api-key-here}
 
       # Base URL 可被环境变量覆盖，便于切换供应商
       base-url: ${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}

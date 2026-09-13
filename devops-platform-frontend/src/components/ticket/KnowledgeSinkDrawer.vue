@@ -185,6 +185,8 @@ const generateDraft = async () => {
           }
           loadState.value = 'done'
           streaming.value = false
+          // 生成完成即存草稿：生成 ≠ 会发布，用户可能审一半离开，回来接着审
+          saveDraft()
         },
         onError: (data: SSEErrorEvent) => {
           // 同 ChatMode：查表拿到 hint 与重试语义，而不是只回显 message
@@ -245,6 +247,7 @@ const stopStream = () => {
 }
 
 const regenerate = () => {
+  draftRestored.value = false
   generateDraft()
 }
 
@@ -343,8 +346,12 @@ const handlePublish = async () => {
     }
     notify.success(msg, { duration: 6000 })
 
+    // 发布成功 = 草稿使命完成，清除本地存档（防下次打开误恢复已发布内容）
+    clearDraft()
     emit('published', result.id, formTitle.value.trim())
-    closeDrawer()
+    // 直接 emit 而非 closeDrawer()：visible setter 对任何关闭都会 saveDraft，
+    // 走 closeDrawer 会把刚 clear 的草稿又存回去（发布-复活循环）
+    emit('update:modelValue', false)
   } catch (error: unknown) {
     if (error instanceof DuplicateContentError) {
       // 40021 重复内容：提示跳转到现有文档，不静默吞掉
@@ -383,30 +390,113 @@ const handlePublish = async () => {
 // ==================== 抽屉开关 ====================
 
 const closeDrawer = () => {
-  if (streaming.value) {
-    stopStream()
-  }
+  // 收尾（stopStream+saveDraft）已收口到 visible setter（见其注释）——
+  // 这里只负责发关闭事件，setter 会统一走一遍收尾
   emit('update:modelValue', false)
 }
 
 const visible = computed({
   get: () => props.modelValue,
-  set: (val: boolean) => emit('update:modelValue', val),
+  set: (val: boolean) => {
+    // 所有关闭路径（footer 按钮 closeDrawer / Esc / 右上角 × / destroy-on-close
+    // 之外）最终都汇到这里。把收尾逻辑放在 setter 而非只绑关闭按钮——
+    // 旧实现按 Esc 或点 × 时走本 setter 直接 emit，绕过 closeDrawer：
+    // SSE 不 abort（token 在后台继续烧到 complete）、草稿不存（关页即丢）。
+    // 旁路关闭与显式关闭必须同权，收口在唯一必经之路。
+    if (!val) {
+      if (streaming.value) stopStream()
+      saveDraft()
+    }
+    emit('update:modelValue', val)
+  },
 })
 
-// 抽屉打开时触发 AI 整理 + 加载建议
+// ==================== 本地草稿存档（方案 A，批 79）====================
+//
+// 未发布的复盘草稿存 localStorage（按工单键控）：草稿是「用户正在编辑的
+// 工作产物」，不是「已发布知识」——不值得为它动后端表，但绝不能关页即丢。
+// 发布成功后清除；AI 生成的正文完成时也自动存一份（生成完成 ≠ 会发布，
+// 用户可能审到一半去查别的，回来继续）。
+// 复用全站 savePersisted/loadPersisted 的容错（隐私模式/超限自动降级内存态）。
+
+interface SinkDraft {
+  title: string
+  category: string
+  tags: string[]
+  content: string
+  summary: string
+  savedAt: string
+}
+
+const DRAFT_PREFIX = 'opsbrain.sink-draft.'
+
+const draftKey = (ticketId: string) => DRAFT_PREFIX + ticketId
+
+const saveDraft = () => {
+  if (!props.ticketId) return
+  // 空草稿不存：只剩标题预填、正文为空时，恢复它等于恢复一个「假进度」
+  if (!formContent.value.trim()) return
+  const draft: SinkDraft = {
+    title: formTitle.value,
+    category: formCategory.value,
+    tags: formTags.value,
+    content: formContent.value,
+    summary: formSummary.value,
+    savedAt: new Date().toISOString(),
+  }
+  try {
+    localStorage.setItem(draftKey(props.ticketId), JSON.stringify(draft))
+  } catch {
+    // 隐私模式/超限：存档是增强，失败静默（与 persist.ts 同语义）
+  }
+}
+
+const loadDraft = (): SinkDraft | null => {
+  if (!props.ticketId) return null
+  try {
+    const raw = localStorage.getItem(draftKey(props.ticketId))
+    if (!raw) return null
+    const d = JSON.parse(raw) as SinkDraft
+    // 只恢复有正文的草稿（防字段残缺的假进度）
+    return d?.content?.trim() ? d : null
+  } catch {
+    return null
+  }
+}
+
+const clearDraft = () => {
+  if (!props.ticketId) return
+  try {
+    localStorage.removeItem(draftKey(props.ticketId))
+  } catch { /* 忽略 */ }
+}
+
+/** 当前展示内容是否来自本地草稿（状态条如实标注来源） */
+const draftRestored = ref(false)
+
+// 抽屉打开时只加载建议与本地草稿，不自动触发 AI 整理（批 79 方案 A）
+//
+// 此前 watch(open) 里直接 generateDraft()——每开一次抽屉烧一次 LLM，
+// 关了再开同一工单再烧一遍；草稿纯内存，关页即失，与 AI 分析当初
+// 「每次打开详情页都付费且不沉淀」是同一个反模式。
+// 现在三层复用：localStorage 草稿 → 无草稿显示「开始生成」按钮 →
+// 一次点击 = 一次有意识的付费决策（与 AnalysisCard 空态同一契约）。
 watch(
   () => props.modelValue,
   (open) => {
     if (open) {
       activeTab.value = 'edit'
-      // 重置表单
-      formTitle.value = `【故障复盘】${props.ticketTitle}`
-      formCategory.value = props.ticketService || ''
-      formTags.value = []
-      formSummary.value = ''
+      // 恢复本地草稿（按工单键控）；无草稿回到 idle 空态
+      const draft = loadDraft()
+      formTitle.value = draft?.title ?? `【故障复盘】${props.ticketTitle}`
+      formCategory.value = draft?.category ?? props.ticketService
+      formTags.value = draft?.tags ?? []
+      formContent.value = draft?.content ?? ''
+      formSummary.value = draft?.summary ?? ''
+      draftRestored.value = !!draft
+      streamCost.value = 0
+      loadState.value = draft ? 'done' : 'idle'
       loadSuggestions()
-      generateDraft()
     }
   }
 )
@@ -426,13 +516,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <el-drawer
+  <!-- Dialog 而非 Drawer（批 79 方案 A）：用户明确不喜抽屉式展示——
+       侧滑遮主内容、宽度受限。Dialog 居中、可调宽度、与项目既有
+       处置动作/根因确认/验证弹窗同族交互。 -->
+  <el-dialog
     v-model="visible"
     title="沉淀为知识"
-    direction="rtl"
-    size="680px"
+    width="760px"
+    top="6vh"
     :close-on-click-modal="false"
-    :before-close="((done: () => void) => { closeDrawer(); done() }) as any"
+    destroy-on-close
+    class="sink-dialog"
   >
     <template #header>
       <div class="drawer-header">
@@ -454,7 +548,9 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="loadState === 'done'">
           <CheckCircle :size="14" />
-          <span>AI 整理完成，请审核正文后发布</span>
+          <!-- 草稿来源如实标注：用户需知道这是上次存到本地的草稿，非本次生成 -->
+          <span v-if="draftRestored">已恢复本地草稿，请审核后发布</span>
+          <span v-else>AI 整理完成，请审核正文后发布</span>
           <span v-if="streamCost" class="cost">成本 ¥{{ streamCost.toFixed(4) }}</span>
           <button class="link-btn" @click="regenerate">
             <RefreshCw :size="12" /> 重新生成
@@ -610,7 +706,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </template>
-  </el-drawer>
+  </el-dialog>
 </template>
 
 <style scoped lang="scss">
@@ -629,6 +725,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 14px;
   padding: 0 4px;
+  /* Dialog（原 Drawer）化后需自带滚动：Drawer 身高天然受限，
+     Dialog 则会把整个对话框撑到屏高。72vh 留出 header/footer 呼吸空间。 */
+  max-height: 72vh;
+  overflow-y: auto;
 }
 
 /* 状态条 */
