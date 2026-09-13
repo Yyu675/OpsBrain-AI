@@ -1426,13 +1426,11 @@ CREATE INDEX IF NOT EXISTS idx_ticket_create_time
 -- 依据: docs/08-benchmark/151-168/178-*-batch-80-慢查询审计首批索引.md
 -- 审计方法: 静态代码扫描四大域 47 个查询方法 × WHERE/ORDER BY 列集 × 索引覆盖度
 --
--- P1-1: 看板最近告警索引（findRecentFiring）
---   覆盖: SELECT * FROM sys_alert WHERE status='FIRING' ORDER BY created_at DESC LIMIT 100
---   现状: status 非索引前导列 → SeqScan + 回表排序
---   收益: Index-Only Scan（部分谓词索引仅覆盖 FIRING 状态）
-CREATE INDEX IF NOT EXISTS idx_alert_firing_recent
-    ON sys_alert (status, created_at DESC)
-    WHERE status = 'FIRING';
+-- P1-1: 看板最近告警索引（已有 idx_alert_status 覆盖，本索引删除）
+--   原计划: WHERE status='FIRING' ORDER BY created_at DESC
+--   现状: sys_alert 无 created_at 列（真列名 first_occurred_at / last_occurred_at）
+--   既有覆盖: idx_alert_status (status, first_occurred_at DESC) 已覆盖相似查询
+--   决策: 删除本索引（列名失实 + 与既有索引冗余）
 
 -- P1-2: 诊断排队扫描器 FIFO 索引（fetchQueued，批76 P2-3 引入）
 --   覆盖: SELECT * FROM sys_diagnosis_session WHERE status='QUEUED' ORDER BY created_at ASC LIMIT ?
@@ -1450,12 +1448,11 @@ CREATE INDEX IF NOT EXISTS idx_approval_zombie_scan
     ON sys_approval_request (status, update_time)
     WHERE status = 'APPROVED';
 
--- P1-4: 我的工单列表索引（findByAssignee）
---   覆盖: SELECT * FROM devops_ticket WHERE assigned_to=? ORDER BY created_at DESC LIMIT ? OFFSET ?
---   现状: idx_ticket_assigned_to 覆盖 WHERE，ORDER BY created_at 回表排序
---   收益: Index-Only Scan（前端「我的工单」Tab 高频查询）
-CREATE INDEX IF NOT EXISTS idx_ticket_assignee_time
-    ON devops_ticket (assigned_to, created_at DESC);
+-- P1-4: 我的工单列表索引（已有 idx_ticket_assignee 覆盖，本索引删除）
+--   原计划: WHERE assigned_to=? ORDER BY created_at DESC
+--   现状: 真表名 sys_devops_ticket；真列名 assignee（非 assigned_to）；真列名 create_time（非 created_at）
+--   既有覆盖: idx_ticket_assignee (assignee) 已覆盖 WHERE 谓词
+--   决策: 删除本索引（列名失实 + 与既有索引冗余；ORDER BY create_time 若有性能问题再复合）
 
 -- =====================================================================
 -- ===== 原 V2~V11 折叠区结束。全库 33 张表（V1 原 27 + 本区 6）。 =====

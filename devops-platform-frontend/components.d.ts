@@ -26,7 +26,6 @@ declare module 'vue' {
     CollapseToggle: typeof import('./src/components/common/CollapseToggle.vue')['default']
     CollapsibleCard: typeof import('./src/components/common/CollapsibleCard.vue')['default']
     CollapsiblePanel: typeof import('./src/components/common/CollapsiblePanel.vue')['default']
-    ComingSoonPanel: typeof import('./src/components/common/ComingSoonPanel.vue')['default']
     DataStateBoundary: typeof import('./src/components/common/DataStateBoundary.vue')['default']
     DocOutlinePanel: typeof import('./src/components/knowledge/DocOutlinePanel.vue')['default']
     DocPropertiesPanel: typeof import('./src/components/knowledge/DocPropertiesPanel.vue')['default']
