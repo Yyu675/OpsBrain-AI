@@ -1,5 +1,7 @@
 package com.devops.agent.support;
 
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -56,17 +58,62 @@ import org.testcontainers.utility.DockerImageName;
 public abstract class AbstractIntegrationTest {
 
     /**
+     * Docker 可用性（类加载时探测一次）。
+     * <p>
+     * Windows 本机的 Docker Desktop npipe 有时对 Testcontainers 不可见
+     * （Docker CLI 走自己的 context 能连，Testcontainers 的 npipe 探测却失败）。
+     * 原实现里 {@code POSTGRES.start()} 抛出的 IllegalStateException 会包装成
+     * {@code ExceptionInInitializerError}，把整批测试打成 ERROR 而非 SKIP——
+     * 「环境不可用」被误读成「代码坏了」。这里改为：探测失败时记录标志，
+     * {@link #skipIfDockerUnavailable()} 以 JUnit Assumption 跳过，
+     * 本机得 SKIP、CI（Linux，Docker 常驻）照常全量执行。
+     * </p>
+     */
+    private static final boolean DOCKER_AVAILABLE = probeDocker();
+
+    private static boolean probeDocker() {
+        try {
+            Class.forName("org.testcontainers.DockerClientFactory");
+            org.testcontainers.DockerClientFactory.instance().client();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * 子类 {@code @BeforeAll}（或基类统一调用）里跳过 Docker 不可用的环境。
+     * 默认 {@code @BeforeAll} 钩子对所有子类生效——子类若自定义 {@code @BeforeAll}
+     * 需自行调用本方法（JUnit 5 不继承 @BeforeAll 除非子类不声明自己的）。
+     */
+    @BeforeAll
+    static void skipIfDockerUnavailable() {
+        Assumptions.assumeTrue(DOCKER_AVAILABLE,
+                "本机 Docker 对 Testcontainers 不可见（Windows npipe 常见）——跳过集成测试，CI Linux 上全量执行");
+    }
+
+    /**
      * 共享的 PG 容器（pgvector/pgvector:pg16 镜像，预装向量扩展）。
      * 线程安全：{@link PostgreSQLContainer} 的 {@code start()} 内部有双重检查锁，
      * 且各子类启动时序由 JUnit 类加载顺序决定，此处 static 块天然单例。
+     * <p>
+     * Docker 不可用时容器不启动（保持 null 语义安全：跳过的测试不会触碰它）。
+     * </p>
      */
     @SuppressWarnings("resource") // 容器不 close——Ryuk sidecar 在 JVM 退出时统一回收
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
-            DockerImageName.parse("pgvector/pgvector:pg16")
-                    .asCompatibleSubstituteFor(PostgreSQLContainer.IMAGE))
-            .withDatabaseName("devops_knowledge_db")
-            .withUsername("devops")
-            .withPassword("devops_password");
+    static final PostgreSQLContainer<?> POSTGRES = createContainer();
+
+    private static PostgreSQLContainer<?> createContainer() {
+        if (!DOCKER_AVAILABLE) {
+            return null;
+        }
+        return new PostgreSQLContainer<>(
+                DockerImageName.parse("pgvector/pgvector:pg16")
+                        .asCompatibleSubstituteFor(PostgreSQLContainer.IMAGE))
+                .withDatabaseName("devops_knowledge_db")
+                .withUsername("devops")
+                .withPassword("devops_password");
+    }
 
     /**
      * 在 Spring 上下文装配前（此时 DataSource 尚未创建）把容器连接信息
@@ -75,6 +122,7 @@ public abstract class AbstractIntegrationTest {
      */
     @DynamicPropertySource
     static void registerDataSource(DynamicPropertyRegistry registry) {
+        // Docker 不可用时 POSTGRES 为 null（测试已被 Assumption 跳过，不会走到这里）
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
@@ -83,6 +131,8 @@ public abstract class AbstractIntegrationTest {
     static {
         // 显式启动（而非依赖首次 getJdbcUrl 触发）：若容器拉不起来，
         // 错误抛出点定位在本类，而不是包装成「属性注册失败」。
-        POSTGRES.start();
+        if (POSTGRES != null) {
+            POSTGRES.start();
+        }
     }
 }

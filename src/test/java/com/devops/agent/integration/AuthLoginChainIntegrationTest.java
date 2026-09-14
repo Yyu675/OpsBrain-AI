@@ -272,7 +272,9 @@ class AuthLoginChainIntegrationTest {
         User seeded = seedUser("OPS", "ACTIVE");
         Map<String, String> session = login(RAW_PASSWORD);
 
-        jdbcTemplate.update("DELETE FROM sys_user WHERE id = ?", seeded.getId());
+        // 走仓储层删除：缓存失效是仓储职责，绕过它直删库会让
+        // findByUsername 读到已删用户的陈旧缓存（批86缓存引入的回归，测试就是为守住这契约）
+        userRepository.deleteById(seeded.getId());
 
         mockMvc.perform(get("/api/v1/auth/me")
                         .header(session.get("tokenName"), session.get("token")))

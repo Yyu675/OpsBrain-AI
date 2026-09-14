@@ -62,8 +62,23 @@ public class UserRepository {
                 u.getDisplayName(), u.getRole(), u.getStatus());
     }
 
-    /** 更新末次登录时刻。P2-3：清除该用户缓存 */
-    @CacheEvict(value = "users", key = "#id")
+    /**
+     * 按 id 删除用户。缓存全清：同一用户被 findByUsername/findById 两个键缓存，
+     * 删除时只清其一必留陈旧——用户表行数个位到十位级，全清成本可忽略。
+     */
+    @CacheEvict(value = "users", allEntries = true)
+    public int deleteById(Long id) {
+        return jdbcTemplate.update("DELETE FROM sys_user WHERE id = ?", id);
+    }
+
+    /**
+     * 更新末次登录时刻。
+     * <p>
+     * 缓存全清而非只清 #id 键：lastLoginAt 变更后，findByUsername（key=username）
+     * 里的旧快照同样过期，只清单键会留下「登录后 lastLoginAt 仍为 null」的陈旧读。
+     * </p>
+     */
+    @CacheEvict(value = "users", allEntries = true)
     public void updateLastLogin(Long id, LocalDateTime at) {
         jdbcTemplate.update(
                 "UPDATE sys_user SET last_login_at = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?",
