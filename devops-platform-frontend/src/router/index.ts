@@ -93,7 +93,6 @@ const router = createRouter({
     { path: '/tickets', name: 'tickets', component: lazy(() => import('../views/TicketList.vue'), 'TicketList', 'list'), meta: { title: '工单列表' } },
     { path: '/tickets/:id', name: 'ticket-detail', component: lazy(() => import('../views/TicketDetail.vue'), 'TicketDetail', 'detail'), meta: { title: '工单详情' } },
     { path: '/action-items', name: 'action-items', component: lazy(() => import('../views/ActionItemBoard.vue'), 'ActionItemBoard', 'list'), meta: { title: '改进项看板' } },
-    { path: '/ai-chat', name: 'ai-chat', component: lazy(() => import('../views/ai/AiChatView.vue'), 'AiChatView', 'dashboard'), meta: { title: 'AI 对话', hiddenFromNavigation: true } },
     { path: '/dashboard', name: 'dashboard', component: lazy(() => import('../views/Dashboard.vue'), 'Dashboard', 'dashboard'), meta: { title: '运维大屏' } },
     { path: '/help', name: 'help', component: lazy(() => import('../views/HelpCenter.vue'), 'HelpCenter', 'list'), meta: { title: '帮助中心' } },
     {
@@ -309,7 +308,7 @@ router.beforeEach(async (to, from) => {
   // ⚠️ 临时开发开关（2026-08-26）：UI 预览跳过登录鉴权（VITE_SKIP_AUTH=1，
   // 由 dev server 启动环境变量注入）。对外交付前移除该开关恢复登录拦截。
   // ====================================================================
-  if (import.meta.env.VITE_SKIP_AUTH === '1') {
+  if (import.meta.env.DEV && import.meta.env.VITE_SKIP_AUTH === '1') {
     return true
   }
 

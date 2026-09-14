@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed } from 'vue'
 import { relativeTime, formatAbsolute, parseDate } from '@/utils/time'
+import { useSharedClock } from '@/utils/sharedClock'
 
 interface Props {
   value: string | number | Date | null | undefined
@@ -13,24 +14,7 @@ const props = withDefaults(defineProps<Props>(), {
   refreshMs: 60000
 })
 
-const now = ref(Date.now())
-let timer: ReturnType<typeof setInterval> | null = null
-
-const start = () => {
-  if (timer) return
-  timer = setInterval(() => { now.value = Date.now() }, props.refreshMs)
-}
-
-const stop = () => {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
-}
-
-onMounted(start)
-onBeforeUnmount(stop)
-watch(() => props.refreshMs, () => { stop(); start() })
+const { now } = useSharedClock(props.refreshMs)
 
 const valid = computed(() => !!parseDate(props.value))
 const rel = computed(() => relativeTime(props.value, now.value))

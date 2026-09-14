@@ -63,14 +63,18 @@ export function useTicketListQuery(params: () => ListParamsToRequest) {
   return useQuery({
     queryKey: computed(() => ticketKeys.list(queryParams.value)),
     queryFn: () => fetchTickets(toRequest(queryParams.value)),
+    staleTime: 10_000, // 10 秒缓存：工单列表变化较频繁，但仍可短暂缓存
+    gcTime: 5 * 60_000,
   })
 }
 
-/** 热门标签（跨全表聚合，与具体列表无关） */
+/** 热门标签（跨全表聚合，与具体列表无关）。缓存 60 秒（标签聚合变化缓慢）。 */
 export function useTicketHotTagsQuery() {
   return useQuery({
     queryKey: computed(() => ticketKeys.hotTags()),
     queryFn: () => fetchHotTags(),
+    staleTime: 60_000, // 60 秒缓存：标签分布变化缓慢
+    gcTime: 10 * 60_000,
   })
 }
 

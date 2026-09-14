@@ -125,7 +125,17 @@ const saving = ref(false)
 const draftSavedAt = ref<string | null>(null)
 const mobileSideOpen = ref(false)
 const editorPreview = ref(true)
-const editorMode = ref<'visual' | 'markdown'>('visual')
+/**
+ * 默认 Markdown 模式，富文本编辑器仅在用户主动切换时懒加载。
+ *
+ * 性能考量：
+ * - 富文本编辑器（wangEditor）打包后 800 KB / gzip 274 KB
+ * - Markdown 编辑器（md-editor-v3）已内置，无额外加载
+ * - 运维文档 80% 场景使用 Markdown 即可满足需求
+ *
+ * 用户可通过顶栏切换按钮随时启用富文本模式。
+ */
+const editorMode = ref<'visual' | 'markdown'>('markdown')
 const starterDismissed = ref(false)
 
 /**

@@ -40,6 +40,8 @@ export function useAlertListQuery(filters: AlertListFilters) {
     // params 进 key：任一筛选或页码变化都会自动触发重拉
     queryKey: computed(() => alertKeys.list(params.value)),
     queryFn: () => fetchAlerts(params.value),
+    staleTime: 15_000, // 15 秒缓存：告警列表需要较及时的数据，但仍可短暂缓存
+    gcTime: 3 * 60_000,
   })
 
   return {
@@ -59,6 +61,8 @@ export function useAlertDetailQuery(id: Ref<string>) {
     queryFn: () => fetchAlertById(id.value),
     // id 为空（路由参数缺失）时不发请求
     enabled: computed(() => !!id.value),
+    staleTime: 30_000, // 30 秒缓存：告警详情变化不频繁（确认/恢复操作后会 invalidate）
+    gcTime: 5 * 60_000,
   })
 
   return query

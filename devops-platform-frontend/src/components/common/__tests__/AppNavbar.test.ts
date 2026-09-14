@@ -433,3 +433,144 @@ describe('卸载清理', () => {
     spy.mockRestore()
   })
 })
+
+/**
+ * 移动端导航抽屉。
+ *
+ * ── 为什么这组测试值得写 ──────────────────────────────────────
+ * 修复前，窄屏样式把 `.nav-link` 全部 `display:none`、只留 `.nav-link.active`。
+ * 手机上**只看得见自己已经在的那一页**，去任何其他页面都没有入口——
+ * 导航等于不存在。而桌面端完全正常，所以在开发机上永远不会暴露。
+ *
+ * 这类「只在某个视口下成立」的缺陷靠人工点不出来（谁都不会每次改完
+ * 都缩一次窗口），必须由测试钉住。下面测的是**抽屉里有全部菜单项**
+ * 这个事实，而不是 CSS——CSS 断言在 jsdom 里没有媒体查询，测不了。
+ */
+type MobileVm = {
+  mobileNavOpen: boolean
+  toggleMobileNav: () => void
+  closeMobileNav: () => void
+  navItems: Array<{ key: string; label: string }>
+}
+const mobileVmOf = (w: VueWrapper) => w.vm as unknown as MobileVm
+
+describe('移动端导航抽屉', () => {
+  it('汉堡按钮存在——它是手机上唯一的换页入口', async () => {
+    const w = await mountNavbar()
+    expect(w.find('.mobile-nav-toggle').exists()).toBe(true)
+  })
+
+  it('抽屉包含全部菜单项，不是只有当前页', async () => {
+    // 这一条直接对应被修复的缺陷：修复前窄屏只剩 active 一项
+    const w = await mountNavbar({ role: 'admin' })
+    const links = w.findAll('.mobile-nav-item')
+    const expected = mobileVmOf(w).navItems.length
+
+    expect(expected).toBeGreaterThan(1)
+    expect(links).toHaveLength(expected)
+  })
+
+  it('抽屉菜单与桌面端同源——两份清单会漂移成「点进去 403」', async () => {
+    const w = await mountNavbar({ role: 'admin' })
+    const drawerLabels = w.findAll('.mobile-nav-item').map((el) => el.text())
+
+    for (const item of mobileVmOf(w).navItems) {
+      expect(drawerLabels.some((t) => t.includes(item.label))).toBe(true)
+    }
+  })
+
+  it('抽屉同样按角色过滤', async () => {
+    const w = await mountNavbar({ role: 'operator' })
+    const text = w.findAll('.mobile-nav-item').map((el) => el.text()).join(' ')
+    expect(text).not.toContain('审批中心')
+  })
+
+  it('点汉堡开合抽屉', async () => {
+    const w = await mountNavbar()
+    const vm = mobileVmOf(w)
+    expect(vm.mobileNavOpen).toBe(false)
+
+    await w.find('.mobile-nav-toggle').trigger('click')
+    expect(vm.mobileNavOpen).toBe(true)
+
+    await w.find('.mobile-nav-toggle').trigger('click')
+    expect(vm.mobileNavOpen).toBe(false)
+  })
+
+  it('打开抽屉会关掉通知与用户菜单——三层浮层叠一屏要点三次才能回到内容', async () => {
+    const w = await mountNavbar()
+    const vm = vmOf(w)
+    vm.showNotifications = true
+    vm.showUserMenu = true
+
+    mobileVmOf(w).toggleMobileNav()
+    await w.vm.$nextTick()
+
+    expect(vm.showNotifications).toBe(false)
+    expect(vm.showUserMenu).toBe(false)
+  })
+
+  it('路由变化即关抽屉', async () => {
+    // 不能只绑 click：抽屉里点的是 RouterLink，
+    // 且「点当前页自己」不触发路由变化，还有浏览器返回键这条路径
+    const w = await mountNavbar()
+    mobileVmOf(w).toggleMobileNav()
+    expect(mobileVmOf(w).mobileNavOpen).toBe(true)
+
+    await router.push('/tickets')
+    await flushPromises()
+
+    expect(mobileVmOf(w).mobileNavOpen).toBe(false)
+  })
+
+  it('遮罩仅在打开时渲染，点击即关闭', async () => {
+    const w = await mountNavbar()
+    expect(w.find('.mobile-nav-backdrop').exists()).toBe(false)
+
+    mobileVmOf(w).toggleMobileNav()
+    await w.vm.$nextTick()
+    expect(w.find('.mobile-nav-backdrop').exists()).toBe(true)
+
+    await w.find('.mobile-nav-backdrop').trigger('click')
+    expect(mobileVmOf(w).mobileNavOpen).toBe(false)
+  })
+
+  it('打开时锁 body 滚动，关闭后恢复', async () => {
+    // 不锁的话手机上滑抽屉会连带滚动背后页面，松手后内容已经跑掉
+    const w = await mountNavbar()
+
+    mobileVmOf(w).toggleMobileNav()
+    await w.vm.$nextTick()
+    expect(document.body.style.overflow).toBe('hidden')
+
+    mobileVmOf(w).closeMobileNav()
+    await w.vm.$nextTick()
+    expect(document.body.style.overflow).toBe('')
+  })
+
+  it('抽屉开着时卸载必须恢复 body 滚动', async () => {
+    // 登出跳转是典型路径：不恢复会让登录页整页滚不动且毫无线索
+    const w = await mountNavbar()
+    mobileVmOf(w).toggleMobileNav()
+    await w.vm.$nextTick()
+    expect(document.body.style.overflow).toBe('hidden')
+
+    w.unmount()
+
+    expect(document.body.style.overflow).toBe('')
+  })
+
+  it('aria-expanded 随开合更新，aria-controls 指向真实存在的抽屉', async () => {
+    const w = await mountNavbar()
+    const btn = w.find('.mobile-nav-toggle')
+
+    expect(btn.attributes('aria-expanded')).toBe('false')
+    await btn.trigger('click')
+    expect(btn.attributes('aria-expanded')).toBe('true')
+
+    // aria-controls 指向不存在的 id 时，屏幕阅读器读到的是一句空引用
+    const controls = btn.attributes('aria-controls')
+    expect(controls).toBeTruthy()
+    expect(w.find(`#${controls}`).exists()).toBe(true)
+  })
+})

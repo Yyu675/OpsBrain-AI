@@ -27,6 +27,7 @@ import {
 
 import { safeMarkdown } from '@/utils/safeMarkdown'
 import { chatStream } from '@/api/chat'
+import { loadDraft, saveDraft, clearDraft } from '@/utils/draftStorage'
 import {
   createKnowledgeDoc,
   fetchKnowledgeDocCategories,
@@ -186,7 +187,7 @@ const generateDraft = async () => {
           loadState.value = 'done'
           streaming.value = false
           // 生成完成即存草稿：生成 ≠ 会发布，用户可能审一半离开，回来接着审
-          saveDraft()
+          saveCurrentDraft()
         },
         onError: (data: SSEErrorEvent) => {
           // 同 ChatMode：查表拿到 hint 与重试语义，而不是只回显 message
@@ -347,7 +348,7 @@ const handlePublish = async () => {
     notify.success(msg, { duration: 6000 })
 
     // 发布成功 = 草稿使命完成，清除本地存档（防下次打开误恢复已发布内容）
-    clearDraft()
+    clearCurrentDraft()
     emit('published', result.id, formTitle.value.trim())
     // 直接 emit 而非 closeDrawer()：visible setter 对任何关闭都会 saveDraft，
     // 走 closeDrawer 会把刚 clear 的草稿又存回去（发布-复活循环）
@@ -405,7 +406,7 @@ const visible = computed({
     // 旁路关闭与显式关闭必须同权，收口在唯一必经之路。
     if (!val) {
       if (streaming.value) stopStream()
-      saveDraft()
+      saveCurrentDraft()
     }
     emit('update:modelValue', val)
   },
@@ -417,7 +418,10 @@ const visible = computed({
 // 工作产物」，不是「已发布知识」——不值得为它动后端表，但绝不能关页即丢。
 // 发布成功后清除；AI 生成的正文完成时也自动存一份（生成完成 ≠ 会发布，
 // 用户可能审到一半去查别的，回来继续）。
-// 复用全站 savePersisted/loadPersisted 的容错（隐私模式/超限自动降级内存态）。
+// 复用 draftStorage 全站草稿管理（sessionStorage + 24h 过期 + 容错降级）。
+// 批 85：删自建的 localStorage 三件套（存/读/清），收敛为 draftStorage 同语义，
+// 顺带修复 lint error（no-restricted-syntax: new Date().toISOString()）。
+// 原实现的三个差异全是劣势：永不过期、跨会话留存、违反 AGENTS.md localStorage 禁令。
 
 interface SinkDraft {
   title: string
@@ -425,14 +429,17 @@ interface SinkDraft {
   tags: string[]
   content: string
   summary: string
-  savedAt: string
 }
 
-const DRAFT_PREFIX = 'opsbrain.sink-draft.'
+const DRAFT_KEY_PREFIX = 'sink-draft.'
 
-const draftKey = (ticketId: string) => DRAFT_PREFIX + ticketId
+const draftKey = (ticketId: string) => DRAFT_KEY_PREFIX + ticketId
 
-const saveDraft = () => {
+/** 当前展示内容是否来自本地草稿（状态条如实标注来源） */
+const draftRestored = ref(false)
+
+/** 保存草稿的包装函数：只在必要时写 sessionStorage */
+const saveCurrentDraft = () => {
   if (!props.ticketId) return
   // 空草稿不存：只剩标题预填、正文为空时，恢复它等于恢复一个「假进度」
   if (!formContent.value.trim()) return
@@ -442,44 +449,30 @@ const saveDraft = () => {
     tags: formTags.value,
     content: formContent.value,
     summary: formSummary.value,
-    savedAt: new Date().toISOString(),
   }
-  try {
-    localStorage.setItem(draftKey(props.ticketId), JSON.stringify(draft))
-  } catch {
-    // 隐私模式/超限：存档是增强，失败静默（与 persist.ts 同语义）
-  }
+  saveDraft(draftKey(props.ticketId), draft)
 }
 
-const loadDraft = (): SinkDraft | null => {
+/** 加载草稿的包装函数：从 sessionStorage 读取并校验 */
+const loadCurrentDraft = (): SinkDraft | null => {
   if (!props.ticketId) return null
-  try {
-    const raw = localStorage.getItem(draftKey(props.ticketId))
-    if (!raw) return null
-    const d = JSON.parse(raw) as SinkDraft
-    // 只恢复有正文的草稿（防字段残缺的假进度）
-    return d?.content?.trim() ? d : null
-  } catch {
-    return null
-  }
+  const d = loadDraft<SinkDraft>(draftKey(props.ticketId))
+  // 只恢复有正文的草稿（防字段残缺的假进度）
+  return d?.content?.trim() ? d : null
 }
 
-const clearDraft = () => {
+/** 清除草稿的包装函数 */
+const clearCurrentDraft = () => {
   if (!props.ticketId) return
-  try {
-    localStorage.removeItem(draftKey(props.ticketId))
-  } catch { /* 忽略 */ }
+  clearDraft(draftKey(props.ticketId))
 }
-
-/** 当前展示内容是否来自本地草稿（状态条如实标注来源） */
-const draftRestored = ref(false)
 
 // 抽屉打开时只加载建议与本地草稿，不自动触发 AI 整理（批 79 方案 A）
 //
 // 此前 watch(open) 里直接 generateDraft()——每开一次抽屉烧一次 LLM，
 // 关了再开同一工单再烧一遍；草稿纯内存，关页即失，与 AI 分析当初
 // 「每次打开详情页都付费且不沉淀」是同一个反模式。
-// 现在三层复用：localStorage 草稿 → 无草稿显示「开始生成」按钮 →
+// 现在三层复用：sessionStorage 草稿 → 无草稿显示「开始生成」按钮 →
 // 一次点击 = 一次有意识的付费决策（与 AnalysisCard 空态同一契约）。
 watch(
   () => props.modelValue,
@@ -487,7 +480,7 @@ watch(
     if (open) {
       activeTab.value = 'edit'
       // 恢复本地草稿（按工单键控）；无草稿回到 idle 空态
-      const draft = loadDraft()
+      const draft = loadCurrentDraft()
       formTitle.value = draft?.title ?? `【故障复盘】${props.ticketTitle}`
       formCategory.value = draft?.category ?? props.ticketService
       formTags.value = draft?.tags ?? []

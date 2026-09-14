@@ -64,11 +64,6 @@ export default defineConfig({
       },
     },
   },
-  css: {
-    preprocessorOptions: {
-      scss: {},
-    },
-  },
   build: {
     chunkSizeWarningLimit: 800,
     rollupOptions: {

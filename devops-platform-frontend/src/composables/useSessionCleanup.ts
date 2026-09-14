@@ -52,22 +52,23 @@ export function useSessionCleanup(): void {
         chat.clearAll()
 
         /*
-         * 清除复盘沉淀草稿（opsbrain.sink-draft.*，KnowledgeSinkDrawer 写入）。
+         * 清除复盘沉淀草稿（__draft__:sink-draft.*）。
          *
-         * 与 chat-sessions 是同一族问题：草稿正文含工单标题、故障描述、
-         * 处理过程——常带内部信息；键按工单 ID 而非用户隔离，共享值守机
-         * 交接班后下一个用户打开同一工单的「沉淀为知识」即可恢复上一人
-         * 的草稿。登出必须随身份一起清掉（前端审计批二 P1-2）。
+         * 批 85：前缀从 opsbrain.sink-draft. 改为 __draft__:sink-draft.，
+         * 与全站 draftStorage 统一（TicketFormDialog / ArticleFormDialog
+         * 同族前缀 __draft__:）。localStorage 改 sessionStorage 在批 85
+         * 同时收敛，此处只管清理——sessionStorage 不跨标签页，正常关页
+         * 即清，此分支只兜底「浏览器登出时未手动关标签页」边缘场景。
          */
         try {
           const doomed: string[] = []
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i)
-            if (key?.startsWith('opsbrain.sink-draft.')) doomed.push(key)
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i)
+            if (key?.startsWith('__draft__:sink-draft.')) doomed.push(key)
           }
-          doomed.forEach(k => localStorage.removeItem(k))
+          doomed.forEach(k => sessionStorage.removeItem(k))
         } catch {
-          // 隐私模式等 localStorage 异常：清不掉就清不掉，不阻塞登出主流程
+          // 隐私模式等异常：清不掉就清不掉，不阻塞登出主流程
         }
 
         /*

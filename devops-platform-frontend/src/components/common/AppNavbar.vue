@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { notify } from '@/utils/notify'
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Monitor, Bell, User, Settings, LogOut, LogIn, CheckCheck } from 'lucide-vue-next'
+import { Monitor, Bell, User, Settings, LogOut, LogIn, CheckCheck, Menu, X } from 'lucide-vue-next'
 import ProfileDialog from '@/components/common/ProfileDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
 import AvatarFallback from '@/components/common/AvatarFallback.vue'
@@ -93,6 +93,48 @@ const showUserMenu = ref(false)
 const profileVisible = ref(false)
 const settingsVisible = ref(false)
 
+/**
+ * 移动端导航抽屉。
+ *
+ * ── 为什么必须有 ──────────────────────────────────────────────
+ * 窄屏样式（见下方 `@media (max-width: 768px)`）把 `.nav-link` 全部
+ * `display: none`，只留 `.nav-link.active` 可见。也就是说手机上**只看得到
+ * 自己已经在的那一页**，去任何其他页面都没有入口——导航等于不存在。
+ * 桌面端一切正常，所以这个缺陷在开发机上永远不会暴露。
+ *
+ * 抽屉复用同一份 `navItems`（已按 RBAC 过滤），不另起一套菜单配置：
+ * 两份清单必然漂移，而漂移的表现是「手机上看得见某页、点进去 403」。
+ */
+const mobileNavOpen = ref(false)
+
+const toggleMobileNav = () => {
+  mobileNavOpen.value = !mobileNavOpen.value
+  // 抽屉与两个下拉互斥：同屏叠三层浮层时用户要点三次才能回到内容
+  showNotifications.value = false
+  showUserMenu.value = false
+}
+
+const closeMobileNav = () => { mobileNavOpen.value = false }
+
+/**
+ * 路由变化即关抽屉。
+ *
+ * 不能只绑在链接的 click 上：抽屉里点的是 `RouterLink`，
+ * 而「点当前页自己」不会触发路由变化，也有浏览器返回键这条路径。
+ * 监听 `route.path` 这个**事实**而非某一次点击，三种路径全覆盖。
+ */
+watch(() => route.path, closeMobileNav)
+
+/**
+ * 抽屉打开时锁 body 滚动。
+ *
+ * 不锁的话手机上滑动抽屉会连带滚动背后的页面，松手后内容已经跑掉，
+ * 用户以为点错了。离开组件时必须恢复——否则登出跳转后整页滚不动。
+ */
+watch(mobileNavOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+
 const toggleNotifications = () => {
   showNotifications.value = !showNotifications.value
   showUserMenu.value = false
@@ -155,12 +197,28 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
   hoverTimers.forEach(t => clearTimeout(t))
   hoverTimers.clear()
+  // 抽屉开着时卸载（登出跳转是典型路径）会把 overflow:hidden 留在 body 上，
+  // 表现为登录页整页滚不动且毫无线索。卸载必须无条件恢复。
+  document.body.style.overflow = ''
 })
 </script>
 
 <template>
   <nav class="navbar">
     <div class="navbar-container">
+      <!-- 汉堡按钮：仅窄屏可见（CSS 控制），是手机上唯一的换页入口 -->
+      <button
+        class="mobile-nav-toggle"
+        type="button"
+        :aria-expanded="mobileNavOpen"
+        aria-controls="mobile-nav-drawer"
+        :aria-label="mobileNavOpen ? '关闭导航菜单' : '打开导航菜单'"
+        @click.stop="toggleMobileNav"
+      >
+        <X v-if="mobileNavOpen" :size="22" />
+        <Menu v-else :size="22" />
+      </button>
+
       <RouterLink to="/" class="navbar-logo">
         <div class="logo-icon">
           <Monitor :size="20" :stroke-width="2" />
@@ -279,6 +337,45 @@ onBeforeUnmount(() => {
         </div>
         </template>
       </div>
+    </div>
+
+    <!--
+      移动端导航抽屉（≤768px）。
+      桌面端由 CSS 隐藏（`.mobile-nav-*` 在 min-width 下 display:none），
+      不用 v-if 判断视口——视口判断要监听 resize，而 CSS 媒体查询是免费的。
+    -->
+    <div
+      v-if="mobileNavOpen"
+      class="mobile-nav-backdrop"
+      @click="closeMobileNav"
+    ></div>
+    <div
+      id="mobile-nav-drawer"
+      class="mobile-nav-drawer"
+      :class="{ open: mobileNavOpen }"
+      :aria-hidden="!mobileNavOpen"
+    >
+      <div class="mobile-nav-head">
+        <span class="mobile-nav-title">导航</span>
+        <button class="mobile-nav-close" aria-label="关闭导航" @click="closeMobileNav">
+          <X :size="18" />
+        </button>
+      </div>
+      <nav class="mobile-nav-list">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.key"
+          :to="item.path"
+          class="mobile-nav-item"
+          :class="{ active: activeKey === item.key }"
+        >
+          <span>{{ item.label }}</span>
+          <span
+            v-if="item.key === 'approvals' && approvalPending > 0"
+            class="nav-badge"
+          >{{ approvalPending > 99 ? '99+' : approvalPending }}</span>
+        </RouterLink>
+      </nav>
     </div>
 
     <ProfileDialog :visible="profileVisible" @update:visible="profileVisible = $event" />
@@ -731,6 +828,19 @@ onBeforeUnmount(() => {
   }
 }
 
+/*
+ * 移动端导航抽屉。
+ *
+ * 桌面端整套隐藏：汉堡按钮、遮罩、抽屉三者都只在 ≤768px 出现。
+ * 用 CSS 媒体查询而非 JS 视口判断——后者要监听 resize、要处理
+ * SSR 无 window，而这里需要的只是「窄屏才显示」这一条静态规则。
+ */
+.mobile-nav-toggle,
+.mobile-nav-backdrop,
+.mobile-nav-drawer {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .navbar-container {
     width: 100%;
@@ -741,29 +851,157 @@ onBeforeUnmount(() => {
     overflow: hidden;
   }
 
-  .logo-text,
-  .notification-wrapper {
+  .logo-text {
     display: none;
   }
 
+  /*
+   * 顶栏内联链接在窄屏整体让位给抽屉。
+   *
+   * 此前这里是 `.nav-link { display: none }` + `.nav-link.active
+   * { display: inline-flex }`——只留「当前页」这一个不能导航到别处的标签，
+   * 手机上因此完全无法换页。现在换页统一走汉堡抽屉，
+   * 顶栏不再重复渲染一个假入口（它既占位又误导）。
+   */
   .nav-links {
+    display: none;
+  }
+
+  .mobile-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* 44×44 是 WCAG 2.1 AA 的最小可点击区域，手机上小于此易误触 */
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text-primary);
+    }
+  }
+
+  /* logo 居中：汉堡在左、操作区在右，logo 占据中间剩余空间 */
+  .navbar-logo {
     flex: 1;
     min-width: 0;
     justify-content: center;
   }
 
-  .nav-link {
-    display: none;
-  }
-
-  .nav-link.active {
-    display: inline-flex;
-    padding-inline: 11px;
-  }
-
   .navbar-actions {
     flex-shrink: 0;
     gap: 4px;
+  }
+
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    /* 顶栏高度 56px：遮罩从顶栏下沿开始，汉堡按钮保持可点（用于关闭） */
+    inset: 56px 0 0 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .mobile-nav-drawer {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    width: min(76vw, 300px);
+    max-height: calc(100vh - 56px);
+    z-index: 45;
+    padding: 8px 0;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.14));
+    overflow-y: auto;
+    /*
+     * 关闭态用 translateX + visibility 双管。
+     *
+     * 只靠 translateX 移出视口时，抽屉里的 RouterLink 仍在 tab 顺序里——
+     * 用户按 Tab 会把焦点交给一个看不见的链接，屏幕阅读器也会念出来。
+     * visibility:hidden 把它整体移出可交互树，且仍支持 transition。
+     */
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0.22s ease;
+
+    &.open {
+      transform: translateX(0);
+      visibility: visible;
+    }
+  }
+
+  .mobile-nav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12px 10px 16px;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  .mobile-nav-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-tertiary);
+  }
+
+  .mobile-nav-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text-primary);
+    }
+  }
+
+  .mobile-nav-list {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    /* 48px 行高：手机上列表项比顶栏链接更需要宽松命中区 */
+    min-height: 48px;
+    padding: 0 12px;
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+    text-decoration: none;
+
+    &:hover {
+      background: var(--color-surface-hover);
+      color: var(--color-text-primary);
+    }
+
+    &.active {
+      background: var(--color-primary-lighter);
+      color: var(--color-primary);
+      font-weight: 600;
+    }
   }
 }
 </style>

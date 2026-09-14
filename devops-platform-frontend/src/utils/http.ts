@@ -386,7 +386,8 @@ export const httpRequest = async <T = unknown>(
         // 的 opt-in 语义让默认部署下 token 过期(24h)后既不清 token 也不跳登录，
         // 用户陷入静默 401 黑洞。反转为 VITE_DISABLE_AUTH_REDIRECT=1 显式豁免
         // （仅开发 UI 预览场景用），兜底防护默认在岗。
-        if (res.status === 401 && import.meta.env.VITE_DISABLE_AUTH_REDIRECT !== '1') {
+        if (res.status === 401 &&
+            !(import.meta.env.DEV && import.meta.env.VITE_DISABLE_AUTH_REDIRECT === '1')) {
           handleUnauthorized()
         }
         throw new HttpError(

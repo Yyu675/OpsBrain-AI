@@ -62,7 +62,6 @@
     "jsdom": "^30.0.1",
     "knip": "^5.88.1",
     "pinia": "^3.0.4",
-    "sass": "^1.101.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.67.0",
     "unplugin-auto-import": "^21.0.0",

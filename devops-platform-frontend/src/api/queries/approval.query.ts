@@ -27,6 +27,8 @@ export function useApprovalListQuery(status: Ref<string>, page = 1, size = 50) {
     // status 进 key：切 tab 自动重拉，不需要在 switchTab 里手调 fetchList
     queryKey: computed(() => approvalKeys.list(status.value, page, size)),
     queryFn: () => listApprovals(status.value, page, size),
+    staleTime: 20_000, // 20 秒缓存：审批列表变化较频繁，但可短暂缓存
+    gcTime: 5 * 60_000,
   })
 
   return {
@@ -48,6 +50,8 @@ export function usePendingApprovalCountQuery(enabled: Ref<boolean>) {
     queryKey: approvalKeys.pendingCount(),
     queryFn: () => pendingCount(),
     enabled,
+    staleTime: 30_000, // 30 秒缓存：角标数字变化不频繁（审批决策后会 invalidate）
+    gcTime: 10 * 60_000,
   })
 
   return {

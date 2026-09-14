@@ -4,6 +4,7 @@ import { ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { X, Settings, RotateCcw } from 'lucide-vue-next'
 import { useAppStore, type AppSettings } from '@/stores/app'
+import { useTheme, type ColorMode } from '@/composables/useTheme'
 import { useFocusTrap } from '@/utils/focusTrap'
 
 interface Props {
@@ -17,6 +18,30 @@ const dialogRef = ref<HTMLElement | null>(null)
 const trap = useFocusTrap(() => dialogRef.value)
 
 const form = ref<AppSettings>({ ...app.settings })
+
+/**
+ * 外观（明/暗/跟随系统）。
+ *
+ * ── 为什么加在这里 ────────────────────────────────────────────
+ * `useTheme` + `theme.css` + `theme-bridge.css` 是一套**已经完整可用**的
+ * 主题系统：令牌齐备、localStorage 持久化、`index.html` 里还有防首屏白闪的
+ * 内联脚本。但全项目唯一挂载 `ThemeSwitcher` 的地方是 `/design-system`——
+ * 一个 `hiddenFromNavigation` 的演示页。也就是说这套能力**用户根本到不了**，
+ * 写好的暗色主题谁也切不出来。系统设置在用户菜单里，是它的正确归属。
+ *
+ * ── 为什么不进 form ──────────────────────────────────────────
+ * 主题不属于 `AppSettings`（它是 useTheme 的模块级单例，走自己的
+ * storage key）。且外观必须**即时生效**：用户点「深色」是想立刻看到效果，
+ * 而不是先保存、关弹窗、再发现颜色变了。所以这一节与下方
+ * 「保存后生效」的表单项语义不同，UI 上用 hint 明确说明，不让用户误判。
+ */
+const { state: themeState, setMode } = useTheme()
+
+const colorModeOptions: { value: ColorMode; label: string }[] = [
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+  { value: 'system', label: '跟随系统' }
+]
 
 const timeoutOptions: { value: number; label: string }[] = [
   { value: 5, label: '5 分钟' },
@@ -111,6 +136,22 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
             <section class="section">
               <div class="section-title">显示</div>
+              <!--
+                外观即时生效，与本弹窗其它「保存后生效」的项语义不同，
+                故 hint 里明确写出来——否则用户点了深色又点「取消」，
+                会以为主题会跟着回滚。
+              -->
+              <div class="field-row">
+                <label class="field-label">外观</label>
+                <select
+                  class="field-select"
+                  :value="themeState.mode"
+                  @change="setMode(($event.target as HTMLSelectElement).value as ColorMode)"
+                >
+                  <option v-for="o in colorModeOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+              </div>
+              <div class="field-hint">立即生效并记住选择；「跟随系统」会随操作系统的深浅色设置自动切换</div>
               <label class="switch-row">
                 <div class="switch-text">
                   <div class="switch-title">紧凑表格</div>

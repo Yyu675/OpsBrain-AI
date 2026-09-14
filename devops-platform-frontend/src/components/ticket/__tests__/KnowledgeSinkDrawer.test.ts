@@ -155,9 +155,10 @@ describe('打开抽屉：表单预填', () => {
     expect(vm.formSummary).toBe('')
   })
 
-  it('打开时触发 AI 整理与建议加载', async () => {
+  it('打开时加载建议，不自动触发 AI 整理（批 79 改为按需生成）', async () => {
     const w = await mountDrawer()
-    expect(chatStreamMock).toHaveBeenCalled()
+    // 批 79 方案 A：打开时不自动 generateDraft，只在用户点击「开始生成」时付费
+    expect(chatStreamMock).not.toHaveBeenCalled()
     expect(w.exists()).toBe(true)
   })
 })
