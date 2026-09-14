@@ -56,6 +56,12 @@ public class RealModeStartupGuard {
     @org.springframework.beans.factory.annotation.Value("${devops.ai.vector.dimension:1536}")
     private int vectorDimension;
 
+    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.chat.api-key:}")
+    private String chatApiKey;
+
+    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.embedding.api-key:}")
+    private String embeddingApiKey;
+
     public RealModeStartupGuard(@Qualifier("embeddingModel") EmbeddingModel embeddingModel,
                                  ModelFingerprintGuard fingerprintGuard,
                                  SemanticCacheService semanticCacheService) {
@@ -66,6 +72,17 @@ public class RealModeStartupGuard {
 
     @EventListener(ApplicationReadyEvent.class)
     public void verifyOnStartup() {
+        // ---- 0) 占位 key 检测：embedding 有实调自检兜底，chat 渠道若带
+        // 默认占位 key 启动，故障要拖到用户第一次对话才以 401 暴露——
+        // 此处提前到启动期 fail-fast（批 88 A 阶段发现）
+        for (String key : new String[]{chatApiKey, embeddingApiKey}) {
+            if (key == null || key.isBlank() || key.startsWith("your-") || key.contains("-here")) {
+                throw new IllegalStateException(
+                        "[RealModeStartupGuard] AI 渠道 api-key 为空或占位符（" + key + "）——"
+                        + "REAL 模式拒绝启动。设置 AI_CHAT_API_KEY / AI_EMBEDDING_API_KEY 环境变量。");
+            }
+        }
+
         // ---- 1) 维度契约：实测一次 embed ----
         Embedding probe;
         try {

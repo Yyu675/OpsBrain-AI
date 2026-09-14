@@ -2,6 +2,7 @@ package com.devops.agent.domain.auth;
 
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -74,12 +75,17 @@ public class UserRepository {
     /**
      * 更新末次登录时刻。
      * <p>
-     * 缓存全清而非只清 #id 键：lastLoginAt 变更后，findByUsername（key=username）
-     * 里的旧快照同样过期，只清单键会留下「登录后 lastLoginAt 仍为 null」的陈旧读。
+     * 双键精确清理（id + username）：同一用户被两个键缓存，全清（allEntries）
+     * 会把整个 users 缓存清空，高频登录下命中率趋零（批 88 B1 实证）。
+     * 注意不能在方法体内调另一个 @CacheEvict 方法自清——同类自调用
+     * 不走 AOP 代理，注解不生效（经典陷阱）。
      * </p>
      */
-    @CacheEvict(value = "users", allEntries = true)
-    public void updateLastLogin(Long id, LocalDateTime at) {
+    @Caching(evict = {
+            @CacheEvict(value = "users", key = "#id"),
+            @CacheEvict(value = "users", key = "#username")
+    })
+    public void updateLastLogin(Long id, String username, LocalDateTime at) {
         jdbcTemplate.update(
                 "UPDATE sys_user SET last_login_at = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?",
                 at, id);

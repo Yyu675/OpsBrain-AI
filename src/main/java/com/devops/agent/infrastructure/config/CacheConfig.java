@@ -14,9 +14,11 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>用于缓存高频读取、低变更的热数据：</p>
  * <ul>
- *   <li><b>users</b>：用户信息（登录/权限检查），5 分钟过期</li>
- *   <li><b>knowledge-meta</b>：知识文档元数据（标题/状态），10 分钟过期</li>
+ *   <li><b>users</b>：用户信息（登录/权限检查，UserRepository），5 分钟过期</li>
  * </ul>
+ * <p>新增缓存名直接加 {@code @Cacheable("名字")} 即可复用本管理器
+ * （统一 1000 条/5 分钟）。如有差异化 TTL 需求，用 {@code createNativeStaticCache}
+ * 按缓存名单独建 Caffeine 实例，勿改全局值。</p>
  *
  * <p><b>为什么不用 Redis</b>：这些数据访问频率极高（每个请求都检查权限），
  * 网络往返（1-5ms）会累积成显著延迟；本地缓存访问 < 1μs。</p>

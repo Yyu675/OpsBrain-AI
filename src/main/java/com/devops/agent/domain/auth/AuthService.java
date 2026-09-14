@@ -48,7 +48,7 @@ public class AuthService {
             throw new AuthException("用户名或密码错误");
         }
 
-        userRepository.updateLastLogin(user.getId(), LocalDateTime.now());
+        userRepository.updateLastLogin(user.getId(), user.getUsername(), LocalDateTime.now());
         log.info("🔑 [Auth] 登录成功 | userId={} | username={} | role={}",
                 user.getId(), user.getUsername(), user.getRole());
         return user;

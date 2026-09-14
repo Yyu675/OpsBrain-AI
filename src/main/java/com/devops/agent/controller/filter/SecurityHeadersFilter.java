@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -29,6 +30,19 @@ import java.io.IOException;
         matchIfMissing = false  // 默认关闭，生产显式开启
 )
 public class SecurityHeadersFilter extends OncePerRequestFilter {
+
+    /**
+     * 前端域名白名单（与 WebConfig CORS 共用同一配置键）。
+     * <p>
+     * CSP {@code connect-src} 原来写死 {@code 'self'}——前后端分域部署
+     * （前端走独立域名/CDN）时，浏览器会把所有 API 调用拦掉，故障形如
+     * 「页面能开但所有请求 Refused to connect」，且只在浏览器端可见、
+     * 后端日志无任何痕迹。从 CORS origins 派生 connect-src 后，
+     * 「CORS 允许的域 = CSP 允许连的域」天然一致（批 88 A 阶段发现）。
+     * </p>
+     */
+    @Value("${devops.security.cors.allowed-origins:*}")
+    private String corsAllowedOrigins;
 
     @Override
     protected void doFilterInternal(
@@ -63,18 +77,16 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         // script-src 'self' = 脚本只能来自同源（禁止内联脚本和 eval）
         // style-src 'self' 'unsafe-inline' = 样式允许同源和内联（Element Plus 需要）
         // img-src 'self' data: https: = 图片允许同源、data URI 和 HTTPS
-        // connect-src 'self' = AJAX/WebSocket 只能连同源
+        // connect-src = AJAX/WebSocket 允许同源 + CORS 白名单里的前端域名（分域部署不炸）
         // font-src 'self' data: = 字体允许同源和 data URI
         // object-src 'none' = 禁止 <object>、<embed>、<applet>
         // frame-ancestors 'none' = 禁止被任何站点嵌入（与 X-Frame-Options 重复但更强）
-        //
-        // ⚠️ 注意：此 CSP 较严格，若前端使用 CDN 或第三方脚本需要调整
         response.setHeader("Content-Security-Policy",
                 "default-src 'self'; " +
                         "script-src 'self'; " +
                         "style-src 'self' 'unsafe-inline'; " +
                         "img-src 'self' data: https:; " +
-                        "connect-src 'self'; " +
+                        "connect-src 'self' " + cspConnectSources() + "; " +
                         "font-src 'self' data:; " +
                         "object-src 'none'; " +
                         "frame-ancestors 'none'; " +
@@ -93,5 +105,25 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * 把 CORS origins 配置转成 CSP connect-src 追加源。
+     * 通配 {@code *} / 占位符 / dev 的本地地址不追加（'self' 已覆盖或属开发场景）。
+     */
+    private String cspConnectSources() {
+        String trimmed = corsAllowedOrigins == null ? "" : corsAllowedOrigins.trim();
+        if (trimmed.isEmpty() || "*".equals(trimmed) || trimmed.contains("__MUST_SET_")) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String origin : trimmed.split(",")) {
+            String o = origin.trim();
+            if (o.isEmpty() || "*".equals(o) || o.startsWith("http://localhost")) {
+                continue;
+            }
+            sb.append(' ').append(o);
+        }
+        return sb.toString();
     }
 }

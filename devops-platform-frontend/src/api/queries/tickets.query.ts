@@ -81,10 +81,11 @@ export function useTicketHotTagsQuery() {
 /**
  * 写操作后的统一失效入口。
  *
- * store 的写方法在落库成功后调用 `invalidate`，把「该刷新哪些缓存」的
- * 决定权交给 queryKey 前缀本身——失效 `ticketKeys.all` 会连带失效
- * 列表、详情、统计、热门标签、SLA 风险。没有遗漏，
- * 也无需在每个写方法里记住要刷几处（6.17 缺陷根源）。
+ * 设计给「工单页迁移到 TanStack Query」时使用：当前工单列表走 Pinia
+ * store 直连 + 显式 fetchList（TicketList.vue），不经本模块，故暂无
+ * 调用方——有意保留的公共 API + 测试契约（批 88 A 阶段核查确认，非死代码）。
+ * 迁移后失效 `ticketKeys.all` 会连带失效列表/详情/统计/热门标签/SLA 风险，
+ * 无需在每个写方法里记住要刷几处（6.17 缺陷根源即写后漏刷）。
  */
 export function useTicketInvalidate() {
   const queryClient = useQueryClient()
