@@ -1566,11 +1566,8 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_doc_title_trgm
 CREATE INDEX IF NOT EXISTS idx_knowledge_doc_content_trgm
     ON sys_knowledge_doc USING gin (content gin_trgm_ops);
 
--- P1-3：AI 分析查询索引
--- 覆盖场景：工单详情页加载 AI 分析（按工单ID + 版本倒序）
--- 覆盖查询：SELECT * FROM sys_ticket_ai_analysis WHERE ticket_id = ? ORDER BY analysis_version DESC
-CREATE INDEX IF NOT EXISTS idx_ai_analysis_ticket_version
-    ON sys_ticket_ai_analysis (ticket_id, analysis_version DESC);
+-- P1-3：AI 分析查询索引——已有覆盖索引 idx_ai_analysis_ticket(ticket_id, version DESC)
+-- （见上方 Table 17 建表节），不重复建。
 
 -- P1-4：会话摘要查询索引
 -- 覆盖场景：AI 对话加载历史会话（按 session_id + 时间倒序）
