@@ -205,13 +205,17 @@ class LlmEndpointSpecTest {
         /** 按 application.yml 的键名手工装配一个 AiModelConfig（无需 Spring 上下文） */
         private AiModelConfig configured() {
             AiModelConfig cfg = new AiModelConfig();
-            ReflectionTestUtils.setField(cfg, "alibabaBaseUrl", URL);
-            ReflectionTestUtils.setField(cfg, "alibabaApiKey", KEY);
+            ReflectionTestUtils.setField(cfg, "chatBaseUrl", URL);
+            ReflectionTestUtils.setField(cfg, "chatApiKey", KEY);
             ReflectionTestUtils.setField(cfg, "turboModel", "qwen-plus");
             ReflectionTestUtils.setField(cfg, "reasonerModel", "qwen-max");
-            ReflectionTestUtils.setField(cfg, "embeddingModel", "text-embedding-v2");
             ReflectionTestUtils.setField(cfg, "timeout", 60_000L);
             ReflectionTestUtils.setField(cfg, "maxRetries", 2);
+            ReflectionTestUtils.setField(cfg, "embeddingBaseUrl", URL);
+            ReflectionTestUtils.setField(cfg, "embeddingApiKey", KEY);
+            ReflectionTestUtils.setField(cfg, "embeddingModel", "text-embedding-v2");
+            ReflectionTestUtils.setField(cfg, "embeddingTimeout", 60_000L);
+            ReflectionTestUtils.setField(cfg, "embeddingMaxRetries", 2);
             ReflectionTestUtils.setField(cfg, "vectorDimension", 1536);
             return cfg;
         }

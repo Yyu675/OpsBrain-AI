@@ -198,6 +198,12 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- Caffeine 本地缓存（批 86 P2-3：用户/知识元数据高频读缓存） -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- ================= LangChain4j（版本由 BOM 托管） ================= -->
         <!-- 核心模块（提供 ChatLanguageModel / EmbeddingModel 接口） -->
         <dependency>

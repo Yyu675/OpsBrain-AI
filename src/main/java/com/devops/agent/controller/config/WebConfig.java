@@ -8,10 +8,12 @@ import com.devops.agent.common.context.TraceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import jakarta.annotation.PostConstruct;
 import java.util.Arrays;
 
 /**
@@ -49,6 +51,7 @@ import java.util.Arrays;
 public class WebConfig implements WebMvcConfigurer {
 
     private final com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor;
+    private final Environment environment;
 
     /**
      * 鉴权总开关。<b>默认 true（开启）</b>，仅允许在本地开发环境显式关闭。
@@ -65,8 +68,11 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${devops.security.auth-enabled:true}")
     private boolean authEnabled;
 
-    public WebConfig(com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor) {
+    public WebConfig(
+            com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor,
+            Environment environment) {
         this.auditInterceptor = auditInterceptor;
+        this.environment = environment;
     }
 
     @Override
@@ -132,6 +138,44 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${devops.security.cors.allowed-origins:*}")
     private String allowedOrigins;
 
+    /**
+     * 生产环境 CORS 白名单检查（启动时校验）— P3-1 批 86 加固
+     * <p>
+     * 强制生产环境必须配置具体域名，拒绝通配符 * 或占位符启动。
+     * 防止「本地开发配置泄露到生产」导致的 CSRF/跨站读取风险。
+     * </p>
+     */
+    @PostConstruct
+    public void validateCorsConfig() {
+        boolean isProd = Arrays.asList(environment.getActiveProfiles()).contains("prod");
+        String trimmed = allowedOrigins.trim();
+        boolean isWildcard = "*".equals(trimmed);
+        boolean isPlaceholder = trimmed.contains("__MUST_SET_");
+
+        if (isProd && (isWildcard || isPlaceholder)) {
+            String message = """
+                    ❌ [WebConfig] 生产环境检测到不安全的 CORS 配置！
+
+                    当前配置：devops.security.cors.allowed-origins = %s
+                    风险等级：P0（CSRF / 跨站读取攻击面）
+
+                    生产环境必须配置具体域名白名单，例如：
+                      CORS_ALLOWED_ORIGINS=https://ops.example.com,https://admin.example.com
+
+                    或在 application-prod.yml 中：
+                      devops.security.cors.allowed-origins: https://ops.example.com,https://admin.example.com
+
+                    启动已终止，请修复配置后重启。
+                    """.formatted(trimmed);
+            log.error(message);
+            throw new IllegalStateException("生产环境禁止使用 CORS 通配符或占位符配置");
+        }
+
+        if (isWildcard) {
+            log.warn("⚠️ [WebConfig] CORS 允许任意来源 (*)，仅可用于本地开发");
+        }
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         String[] origins = Arrays.stream(allowedOrigins.split(","))
@@ -140,8 +184,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .toArray(String[]::new);
 
         if (origins.length == 1 && "*".equals(origins[0])) {
-            log.warn("⚠️ [WebConfig] CORS 允许任意来源且允许携带凭证——仅可用于本地开发。"
-                    + "生产环境请设置 CORS_ALLOWED_ORIGINS 为具体域名列表。");
+            log.warn("⚠️ [WebConfig] CORS 允许任意来源且允许携带凭证——仅可用于本地开发。");
         } else {
             log.info("🔒 [WebConfig] CORS 白名单已启用 | origins={}", String.join(", ", origins));
         }

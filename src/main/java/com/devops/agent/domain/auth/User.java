@@ -1,6 +1,7 @@
 package com.devops.agent.domain.auth;
 
 import lombok.Data;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
 
@@ -14,6 +15,7 @@ import java.time.LocalDateTime;
  * @since 2026-08-20
  */
 @Data
+@ToString(exclude = {"password"})  // P1-3：防止密码哈希泄漏到日志
 public class User {
 
     private Long id;

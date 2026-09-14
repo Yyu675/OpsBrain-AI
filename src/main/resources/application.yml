@@ -29,6 +29,14 @@ spring:
   # 数据源配置（由 profile 具体化）
   datasource:
     driver-class-name: org.postgresql.Driver
+    # P2-1：HikariCP 连接池优化（2026-09-14 批 86）
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}           # 最大连接数（默认 10 → 20）
+      minimum-idle: ${DB_MIN_IDLE:5}                  # 最小空闲连接（默认同 max → 5）
+      connection-timeout: 30000                        # 连接超时 30s
+      idle-timeout: 600000                             # 空闲连接存活 10 分钟
+      max-lifetime: 1800000                            # 连接最大生命周期 30 分钟（防 PG 服务端超时断连）
+      leak-detection-threshold: 60000                  # 连接泄漏检测阈值 60s（开发环境诊断用）
 
   # ==================== Flyway（S0-1：迁移版本化） ====================
   # 表结构唯一真相源 = classpath:db/migration/V{n}__描述.sql（AGENTS 3.5）。
@@ -48,6 +56,14 @@ spring:
   data:
     redis:
       database: 0
+      # P2-2：Lettuce 连接池优化（2026-09-14 批 86）
+      lettuce:
+        pool:
+          max-active: 20        # 最大活动连接数（默认 8 → 20）
+          max-idle: 10          # 最大空闲连接数（默认 8 → 10）
+          min-idle: 5           # 最小空闲连接数（默认 0 → 5，保持热连接）
+          max-wait: 3000        # 获取连接最大等待时间 3s（默认 -1 无限等待）
+        shutdown-timeout: 100   # 关闭超时 100ms（默认 100ms，保持）
 
 # ==================== Resilience4j（S0-3，路线图 §4.3）====================
 # 分工（AGENTS 3.7.5）：本层管「跨调用的熔断/限流状态」（数据源客户端级），
@@ -235,6 +251,23 @@ devops:
         - name: chat
           paths: /api/v1/chat
           permits: 20
+          period-seconds: 60
+        # P1-2：高成本端点限流（2026-09-14 批 86）
+        - name: file-upload
+          paths: /api/v1/tickets/*/attachments
+          permits: 30          # 每分钟最多 30 次文件上传（防带宽滥用）
+          period-seconds: 60
+        - name: knowledge-ingest
+          paths: /api/v1/knowledge-docs
+          permits: 10          # 每分钟最多 10 次知识库摄取（向量化成本高）
+          period-seconds: 60
+        - name: batch-reindex
+          paths: /api/v1/knowledge-docs/reindex/pending
+          permits: 2           # 每分钟最多 2 次批量重索引（资源密集型）
+          period-seconds: 60
+        - name: alert-webhook
+          paths: /api/v1/alerts/webhook
+          permits: 60          # 每分钟最多 60 次告警推送（WebhookGuard 已有 300/min，再加一层保护）
           period-seconds: 60
 
   ai:

@@ -1457,3 +1457,142 @@ CREATE INDEX IF NOT EXISTS idx_approval_zombie_scan
 -- =====================================================================
 -- ===== 原 V2~V11 折叠区结束。全库 33 张表（V1 原 27 + 本区 6）。 =====
 -- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 批 86: 查询性能优化复合索引（P2-5 知识库 + P2-7 工单）
+-- ---------------------------------------------------------------------
+-- 日期: 2026-09-14
+-- 目的: 优化前端列表页常见查询（筛选 + 排序组合），减少 SeqScan 和回表排序
+-- 策略: 复合索引覆盖 WHERE + ORDER BY 列，避免额外排序步骤
+
+-- P2-5：知识库分页查询优化
+-- 覆盖场景：按状态/分类/可见性筛选 + 按更新时间排序（最常见的列表页操作）
+
+-- 复合索引 1：状态 + 更新时间（支持筛选已发布文档并按时间排序）
+-- 覆盖查询：SELECT * FROM sys_knowledge_doc WHERE status = 'PUBLISHED' ORDER BY update_time DESC LIMIT 20
+CREATE INDEX IF NOT EXISTS idx_doc_status_update_time
+    ON sys_knowledge_doc (status, update_time DESC);
+
+-- 复合索引 2：分类 + 更新时间（支持按分类筛选并排序）
+-- 覆盖查询：SELECT * FROM sys_knowledge_doc WHERE category = 'MySQL' ORDER BY update_time DESC LIMIT 20
+CREATE INDEX IF NOT EXISTS idx_doc_category_update_time
+    ON sys_knowledge_doc (category, update_time DESC);
+
+-- 复合索引 3：可见性 + 更新时间（支持权限筛选 + 排序）
+-- 覆盖查询：SELECT * FROM sys_knowledge_doc WHERE visibility = 'PUBLIC' ORDER BY update_time DESC
+CREATE INDEX IF NOT EXISTS idx_doc_visibility_update_time
+    ON sys_knowledge_doc (visibility, update_time DESC);
+
+-- 注：已有的单列索引保留（支持单独筛选或其他排序方式）
+-- 已有：idx_doc_status, idx_doc_category, idx_doc_update_time, idx_doc_title
+
+-- P2-7：工单查询索引优化
+-- 覆盖场景：工单列表页的筛选 + 排序组合（状态、经办人、服务、优先级）
+
+-- 复合索引 1：状态 + 创建时间（最常见：按状态筛选并按时间排序）
+-- 覆盖查询：SELECT * FROM sys_devops_ticket WHERE status = 'OPEN' ORDER BY create_time DESC LIMIT 20
+CREATE INDEX IF NOT EXISTS idx_ticket_status_create_time
+    ON sys_devops_ticket (status, create_time DESC);
+
+-- 复合索引 2：经办人 + 状态（我的工单 + 状态筛选）
+-- 覆盖查询：SELECT * FROM sys_devops_ticket WHERE assignee = 'admin' AND status = 'IN_PROGRESS'
+CREATE INDEX IF NOT EXISTS idx_ticket_assignee_status
+    ON sys_devops_ticket (assignee, status);
+
+-- 复合索引 3：服务模块 + 创建时间（按服务筛选 + 时间排序）
+-- 覆盖查询：SELECT * FROM sys_devops_ticket WHERE module = 'DATABASE' ORDER BY create_time DESC LIMIT 20
+CREATE INDEX IF NOT EXISTS idx_ticket_module_create_time
+    ON sys_devops_ticket (module, create_time DESC);
+
+-- 复合索引 4：优先级 + 状态（紧急工单看板）
+-- 覆盖查询：SELECT * FROM sys_devops_ticket WHERE priority = 'P0' AND status IN ('OPEN', 'IN_PROGRESS')
+CREATE INDEX IF NOT EXISTS idx_ticket_priority_status
+    ON sys_devops_ticket (priority, status);
+
+-- 注：已有单列索引保留（支持单独筛选或其他排序方式）
+-- 已有：idx_ticket_status, idx_ticket_assignee, idx_ticket_module, idx_ticket_priority, idx_ticket_create_time
+
+-- ---------------------------------------------------------------------
+-- 批 87（2026-09-14）：补充缺失的高频查询索引
+-- 目的：避免全表扫描，支撑未来数据量增长（1000+ 工单/告警）
+-- 策略：为列表页常见查询添加复合索引，覆盖 WHERE + ORDER BY
+-- ---------------------------------------------------------------------
+
+-- P0-1：工单活动流查询优化
+-- 覆盖场景：工单详情页加载活动流（按工单ID + 时间倒序）
+-- 覆盖查询：SELECT * FROM sys_ticket_activity WHERE ticket_id = ? ORDER BY create_time DESC
+CREATE INDEX IF NOT EXISTS idx_ticket_activity_ticket_time
+    ON sys_ticket_activity (ticket_id, create_time DESC);
+
+-- P0-2：工单回复查询优化
+-- 覆盖场景：工单详情页加载回复列表（按工单ID + 时间倒序）
+-- 覆盖查询：SELECT * FROM sys_ticket_reply WHERE ticket_id = ? ORDER BY create_time DESC
+CREATE INDEX IF NOT EXISTS idx_ticket_reply_ticket_time
+    ON sys_ticket_reply (ticket_id, create_time DESC);
+
+-- P0-3：告警表复合索引优化
+-- 覆盖场景：告警列表筛选（状态 + 级别组合 + 时间排序）
+-- 覆盖查询：SELECT * FROM sys_alert WHERE status = 'FIRING' AND level = 'P0' ORDER BY first_occurred_at DESC
+CREATE INDEX IF NOT EXISTS idx_alert_status_level_time
+    ON sys_alert (status, level, first_occurred_at DESC);
+
+-- P0-4：告警按服务筛选优化
+-- 覆盖场景：告警列表按服务筛选 + 时间排序
+-- 覆盖查询：SELECT * FROM sys_alert WHERE service = 'mysql' ORDER BY first_occurred_at DESC
+CREATE INDEX IF NOT EXISTS idx_alert_service_time
+    ON sys_alert (service, first_occurred_at DESC);
+
+-- P0-5：审批列表查询优化
+-- 覆盖场景：审批中心列表（按状态 + 时间排序）
+-- 覆盖查询：SELECT * FROM sys_approval_request WHERE status = 'PENDING' ORDER BY create_time DESC
+CREATE INDEX IF NOT EXISTS idx_approval_status_time_desc
+    ON sys_approval_request (status, create_time DESC);
+
+-- P0-6：审批按风险级别筛选优化
+-- 覆盖场景：审批列表按风险级别筛选 + 时间排序
+-- 覆盖查询：SELECT * FROM sys_approval_request WHERE risk_level = 'HIGH_RISK_EXECUTION' ORDER BY create_time DESC
+CREATE INDEX IF NOT EXISTS idx_approval_risk_time
+    ON sys_approval_request (risk_level, create_time DESC);
+
+-- P1-1：SLA 超时扫描已有覆盖索引（idx_ticket_response_deadline / idx_ticket_response_deadline_pending，
+-- 见上方 sys_devops_ticket 建表节），不重复建。
+
+-- P1-2：知识库全文搜索索引（三元组模糊匹配）
+-- 覆盖场景：知识库搜索（标题 + 内容模糊搜索）
+-- 注：需要安装 pg_trgm 扩展
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_knowledge_doc_title_trgm
+    ON sys_knowledge_doc USING gin (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_knowledge_doc_content_trgm
+    ON sys_knowledge_doc USING gin (content gin_trgm_ops);
+
+-- P1-3：AI 分析查询索引
+-- 覆盖场景：工单详情页加载 AI 分析（按工单ID + 版本倒序）
+-- 覆盖查询：SELECT * FROM sys_ticket_ai_analysis WHERE ticket_id = ? ORDER BY analysis_version DESC
+CREATE INDEX IF NOT EXISTS idx_ai_analysis_ticket_version
+    ON sys_ticket_ai_analysis (ticket_id, analysis_version DESC);
+
+-- P1-4：会话摘要查询索引
+-- 覆盖场景：AI 对话加载历史会话（按 session_id + 时间倒序）
+-- 覆盖查询：SELECT * FROM sys_agent_session_summary WHERE session_id = ? ORDER BY create_time DESC
+CREATE INDEX IF NOT EXISTS idx_session_summary_session_time
+    ON sys_agent_session_summary (session_id, create_time DESC);
+
+-- P2-1：审计日志查询索引
+-- 覆盖场景：审计日志查询（按操作者 + 时间范围）
+-- 覆盖查询：SELECT * FROM sys_operation_audit WHERE actor_id = ? AND create_time > ? ORDER BY create_time DESC
+CREATE INDEX IF NOT EXISTS idx_audit_actor_time
+    ON sys_operation_audit (actor_id, create_time DESC);
+
+-- P2-2：审计日志按动作类型查询
+-- 覆盖场景：审计日志按动作类型筛选（如查看所有删除操作）
+-- 覆盖查询：SELECT * FROM sys_operation_audit WHERE action LIKE 'ticket.delete%' ORDER BY create_time DESC
+CREATE INDEX IF NOT EXISTS idx_audit_action_time
+    ON sys_operation_audit (action, create_time DESC);
+
+-- 索引补充完成
+-- 验证方法：
+--   1. 重建数据库：docker-compose down -v && docker-compose up -d
+--   2. 查看 Flyway 迁移日志确认成功
+--   3. 执行 \d+ sys_devops_ticket 确认索引存在
+--   4. 使用 EXPLAIN ANALYZE 查看查询计划（应使用索引扫描，不是全表扫描）

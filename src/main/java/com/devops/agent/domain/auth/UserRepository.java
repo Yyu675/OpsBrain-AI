@@ -1,5 +1,7 @@
 package com.devops.agent.domain.auth;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -26,13 +28,15 @@ public class UserRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /** 按登录名查询（登录校验用）。不存在返回 empty。 */
+    /** 按登录名查询（登录校验用）。不存在返回 empty。P2-3：缓存 5 分钟 */
+    @Cacheable(value = "users", key = "#username", unless = "#result == null")
     public Optional<User> findByUsername(String username) {
         String sql = "SELECT * FROM sys_user WHERE username = ?";
         return jdbcTemplate.query(sql, new UserRowMapper(), username).stream().findFirst();
     }
 
-    /** 按 id 查询（token 校验后取当前用户用）。 */
+    /** 按 id 查询（token 校验后取当前用户用）。P2-3：缓存 5 分钟 */
+    @Cacheable(value = "users", key = "#id", unless = "#result == null")
     public Optional<User> findById(Long id) {
         String sql = "SELECT * FROM sys_user WHERE id = ?";
         return jdbcTemplate.query(sql, new UserRowMapper(), id).stream().findFirst();
@@ -58,7 +62,8 @@ public class UserRepository {
                 u.getDisplayName(), u.getRole(), u.getStatus());
     }
 
-    /** 更新末次登录时刻 */
+    /** 更新末次登录时刻。P2-3：清除该用户缓存 */
+    @CacheEvict(value = "users", key = "#id")
     public void updateLastLogin(Long id, LocalDateTime at) {
         jdbcTemplate.update(
                 "UPDATE sys_user SET last_login_at = ?, update_time = CURRENT_TIMESTAMP WHERE id = ?",

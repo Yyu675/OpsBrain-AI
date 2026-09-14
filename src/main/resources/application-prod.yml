@@ -25,6 +25,21 @@ devops:
     # ——这个组合曾经真实发生过（当时是为了预览临时注释掉拦截器）。
     auth-enabled: true
 
+    # ==================== 安全响应头（P3-3 批 86）====================
+    # 生产环境启用安全响应头，防护 XSS、点击劫持、MIME 嗅探等攻击。
+    #
+    # SecurityHeadersFilter 会自动添加以下响应头：
+    #   · X-Frame-Options: DENY（防点击劫持）
+    #   · X-Content-Type-Options: nosniff（防 MIME 嗅探）
+    #   · X-XSS-Protection: 1; mode=block（启用 XSS 过滤器）
+    #   · Content-Security-Policy（内容安全策略，防 XSS）
+    #   · Strict-Transport-Security（强制 HTTPS）
+    #   · Referrer-Policy（控制 Referer 泄露）
+    #   · Permissions-Policy（限制浏览器特性）
+    #
+    # ⚠️ 注意：CSP 策略较严格，若前端使用 CDN 或第三方脚本需要调整
+    headers-enabled: true
+
   auth:
     seed:
       # 生产强制要求显式提供种子密码，不接受内置默认值。
@@ -46,6 +61,62 @@ devops:
     # 刻意不写死 REAL：误部署就开始烧 API 额度。
     # 由部署方通过环境变量显式打开（docker-compose.yml 默认给 MOCK）。
     mode: ${AI_MODE:MOCK}
+
+  # ==================== CORS 跨域配置（P3-1 批 86 加固）====================
+  # 生产强制要求显式提供 CORS 白名单，不接受通配符 *。
+  #
+  # 为什么必须限制：本项目 allowCredentials=true（允许携带 Cookie），
+  # 若 allowed-origins=*，等价于「任意站点可携带用户凭证调用本站 API」——
+  # 攻击者可在自己的站点（evil.com）发起请求，浏览器会自动带上用户的
+  # 登录态 Cookie，从而以用户身份执行任意操作（删工单、改权限等）。
+  #
+  # 占位值 __MUST_SET_CORS_ALLOWED_ORIGINS__ 会被 WebConfig 启动检查拦截，
+  # 强制要求部署方显式提供。
+  #
+  # 正确配置示例：
+  #   CORS_ALLOWED_ORIGINS=https://ops.example.com,https://admin.example.com
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:__MUST_SET_CORS_ALLOWED_ORIGINS__}
+
+  # ==================== API 限流（P3-2 批 86 加固）====================
+  # 生产环境收紧限流阈值，防止 API 滥用和成本失控。
+  #
+  # 基准阈值（application.yml）适合开发/测试环境，生产需要更保守的配置：
+  #   · login：10→5 /60s（暴力破解防护）
+  #   · chat：20→10 /60s（AI 成本控制，每次调用≈0.01¥）
+  #   · file-upload：30→20 /60s（带宽滥用防护）
+  #   · knowledge-ingest：10→5 /60s（向量化成本高）
+  #   · batch-reindex：2→1 /60s（资源密集型操作）
+  #
+  # 可通过环境变量进一步调整，例如：
+  #   RATE_LIMIT_LOGIN_PERMITS=3 RATE_LIMIT_CHAT_PERMITS=5
+  rate-limit:
+    rules:
+      - name: login
+        paths: /api/v1/auth/login
+        permits: ${RATE_LIMIT_LOGIN_PERMITS:5}
+        period-seconds: 60
+      - name: chat
+        paths: /api/v1/chat
+        permits: ${RATE_LIMIT_CHAT_PERMITS:10}
+        period-seconds: 60
+      - name: file-upload
+        paths: /api/v1/tickets/*/attachments
+        permits: ${RATE_LIMIT_UPLOAD_PERMITS:20}
+        period-seconds: 60
+      - name: knowledge-ingest
+        paths: /api/v1/knowledge-docs
+        permits: ${RATE_LIMIT_INGEST_PERMITS:5}
+        period-seconds: 60
+      - name: batch-reindex
+        paths: /api/v1/knowledge-docs/reindex/pending
+        permits: ${RATE_LIMIT_REINDEX_PERMITS:1}
+        period-seconds: 60
+      - name: alert-webhook
+        paths: /api/v1/alerts/webhook
+        permits: ${RATE_LIMIT_WEBHOOK_PERMITS:60}
+        period-seconds: 60
+
 
 spring:
   datasource:
