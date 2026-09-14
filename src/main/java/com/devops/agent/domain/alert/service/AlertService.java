@@ -388,8 +388,10 @@ public class AlertService {
             String title = "【告警】" + alertName + (service != null && !service.isBlank() ? " - " + service : "");
             String description = alert.getDescription() != null ? alert.getDescription() : title;
 
+            // 9 参重载：末参传 dedup_key 建立工单→告警反向溯源链
+            //（告警侧 ticket_id 回填是正向链，此前工单侧恒空、无法反向跳转）
             DevOpsTicket ticket = ticketService.createTicket(title, priority, module, description,
-                    null, category, sla, alertCreator);
+                    null, category, sla, alertCreator, alert.getDedupKey());
 
             // 回填工单号：不回填则告警与工单彻底失联——列表页与详情页的「关联工单」
             // 永远显示「—」，运维看到告警却找不到对应工单，自动建单等于白做。

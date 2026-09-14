@@ -90,7 +90,7 @@ class AlertHealingTriggerWiringTest {
         });
         // assignee 传 null —— anyString() 不匹配 null，必须 any()（AlertServiceTest 同款坑）
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString()))
+                any(), anyString(), anyString(), anyString(), anyString()))
                 .thenAnswer(inv -> {
                     DevOpsTicket t = new DevOpsTicket();
                     t.setId("TK-2026-0001");
@@ -178,7 +178,7 @@ class AlertHealingTriggerWiringTest {
 
         verify(alertRepository).insertOrIncrement(any(Alert.class));
         verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -191,6 +191,6 @@ class AlertHealingTriggerWiringTest {
 
         verify(alertRepository).insertOrIncrement(any(Alert.class));
         verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
     }
 }

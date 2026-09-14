@@ -22,9 +22,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -158,7 +160,7 @@ class TicketControllerWebTest {
     @DisplayName("创建工单：请求体字段被正确透传给 Service")
     void createTicket_passesFieldsThrough() throws Exception {
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), any(), any(), any(), any())).thenReturn(sampleTicket());
+                any(), any(), any(), any(), nullable(List.class))).thenReturn(sampleTicket());
 
         String body = objectMapper.writeValueAsString(Map.of(
                 "title", "order-service Pod CrashLoopBackOff",
@@ -289,7 +291,7 @@ class TicketControllerWebTest {
     @DisplayName("旧优先级值（HIGH）仍放行 —— 收严会打死存量客户端")
     void legacyPriorityStillAccepted() throws Exception {
         when(ticketService.createTicket(anyString(), anyString(), any(), anyString(),
-                any(), any(), any(), any(), any())).thenReturn(sampleTicket());
+                any(), any(), any(), any(), nullable(List.class))).thenReturn(sampleTicket());
 
         String body = objectMapper.writeValueAsString(Map.of(
                 "title", "标题",

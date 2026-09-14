@@ -187,7 +187,24 @@ public class TicketService {
     public DevOpsTicket createTicket(String title, String priority, String module,
                                      String description, String assignee,
                                      String category, String sla, String creator) {
-        return createTicket(title, priority, module, description, assignee, category, sla, creator, null);
+        return createTicket(title, priority, module, description, assignee,
+                category, sla, creator, (List<String>) null, null);
+    }
+
+    /**
+     * 告警自动建单入口（含来源溯源）。
+     * <p>
+     * {@code sourceTraceId} 传告警 {@code dedup_key}——告警侧已回填 {@code ticket_id}
+     * （6.50 契约），但工单侧此前恒为 null，工单详情页无法反向跳转告警。
+     * 双向链：工单 source_trace_id=dedup_key ↔ 告警 ticket_id=工单号。
+     * </p>
+     */
+    public DevOpsTicket createTicket(String title, String priority, String module,
+                                     String description, String assignee,
+                                     String category, String sla, String creator,
+                                     String sourceTraceId) {
+        return createTicket(title, priority, module, description, assignee,
+                category, sla, creator, (List<String>) null, sourceTraceId);
     }
 
     /**
@@ -199,6 +216,15 @@ public class TicketService {
                                      String description, String assignee,
                                      String category, String sla, String creator,
                                      List<String> tags) {
+        return createTicket(title, priority, module, description, assignee,
+                category, sla, creator, tags, null);
+    }
+
+    /** 全参内圈：tags 与 sourceTraceId 由各入口分流到此 */
+    private DevOpsTicket createTicket(String title, String priority, String module,
+                                      String description, String assignee,
+                                      String category, String sla, String creator,
+                                      List<String> tags, String sourceTraceId) {
         // 入参校验：标题与描述是工单可处理的最低信息量
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException("工单标题不能为空");
@@ -220,7 +246,8 @@ public class TicketService {
         ticket.setDescription(description.trim());
         ticket.setStackTrace(null);
         ticket.setStatus("PENDING");
-        ticket.setSourceTraceId(null);  // 手动创建无关联会话
+        // 手动单为空；告警自动单传 dedup_key（见 9 参重载注释：双向溯源链）
+        ticket.setSourceTraceId(sourceTraceId);
         ticket.setAssignee((assignee == null || assignee.isBlank()) ? "待分配" : assignee.trim());
         ticket.setCreator((creator == null || creator.isBlank()) ? "devops-admin" : creator.trim());
         ticket.setCategory((category == null || category.isBlank())

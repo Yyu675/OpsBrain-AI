@@ -114,7 +114,7 @@ class AlertReplayEvaluationTest {
             return null;
         }).when(alertRepository).incrementOccurrence(any(Long.class));
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString()))
+                any(), anyString(), anyString(), anyString(), anyString()))
                 .thenAnswer(inv -> {
                     DevOpsTicket t = new DevOpsTicket();
                     t.setId("TKT-EVAL-" + (savedAlerts.size()));
@@ -154,7 +154,7 @@ class AlertReplayEvaluationTest {
 
         assertEquals(1, distinctSavedKeys(), "同键风暴只产生 1 个事件");
         verify(ticketService, times(1)).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
         assertEquals(2, incrementCalls, "第 2、3 条同键应走计次而非建单(upsert 返回 false)");
     }
 
@@ -168,7 +168,7 @@ class AlertReplayEvaluationTest {
 
         assertEquals(2, distinctSavedKeys(), "不同 alertName 应产生 2 个 dedupKey");
         verify(ticketService, times(2)).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -181,7 +181,7 @@ class AlertReplayEvaluationTest {
 
         assertEquals(2, distinctSavedKeys());
         verify(ticketService, times(2)).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -194,7 +194,7 @@ class AlertReplayEvaluationTest {
 
         assertEquals(1, distinctSavedKeys(), "severity 不参与去重键");
         verify(ticketService, times(1)).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
         assertEquals(1, incrementCalls);
     }
 
@@ -208,7 +208,7 @@ class AlertReplayEvaluationTest {
 
         assertEquals(1, distinctSavedKeys(), "labels 顺序无关（TreeMap 排序）");
         verify(ticketService, times(1)).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test

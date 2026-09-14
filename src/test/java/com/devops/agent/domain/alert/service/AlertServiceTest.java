@@ -101,7 +101,7 @@ class AlertServiceTest {
         // 而 Mockito 的 anyString() **不匹配 null**，写成 anyString() 桩不会生效，
         // createTicket 返回 null，回填工单号与通知那段就被静默跳过了
         when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString()))
+                any(), anyString(), anyString(), anyString(), anyString()))
                 .thenAnswer(inv -> {
                     DevOpsTicket t = new DevOpsTicket();
                     t.setId("TK-2026-0001");
@@ -156,7 +156,7 @@ class AlertServiceTest {
 
             verify(alertRepository, never()).insertOrIncrement(any());
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), any(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
         }
 
         @Test
@@ -221,7 +221,7 @@ class AlertServiceTest {
             verify(alertRepository, never()).save(any());
             // 重复告警不该再建一张工单——否则一次持续故障会刷屏
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), any(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
             verify(notifier).broadcastUpdate(existing);
         }
 
@@ -312,7 +312,7 @@ class AlertServiceTest {
                     labels("alertname", "X", "service", "api", "severity", severity))));
             ArgumentCaptor<String> pr = ArgumentCaptor.forClass(String.class);
             verify(ticketService).createTicket(anyString(), pr.capture(), anyString(),
-                    anyString(), any(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
             return pr.getValue();
         }
 
@@ -368,7 +368,7 @@ class AlertServiceTest {
 
             ArgumentCaptor<String> creator = ArgumentCaptor.forClass(String.class);
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                    any(), anyString(), anyString(), creator.capture());
+                    any(), anyString(), anyString(), creator.capture(), anyString());
             assertEquals("alert-bot", creator.getValue());
 
             verify(notifier).broadcastNew(saved);
@@ -412,7 +412,7 @@ class AlertServiceTest {
 
             verify(alertRepository).insertOrIncrement(any(Alert.class));
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), any(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
         }
 
         @Test
@@ -430,7 +430,7 @@ class AlertServiceTest {
             // 一次节点宕机会引发十几条不同告警，各建一张工单会把值班人淹没
             verify(alertRepository).updateTicketId(1L, "TK-2026-0001");
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
-                    anyString(), any(), anyString(), anyString(), anyString());
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
             // 但被抑制的告警本身仍然入库、仍然可见
             verify(alertRepository).insertOrIncrement(any(Alert.class));
         }
@@ -467,7 +467,7 @@ class AlertServiceTest {
 
             // 关掉聚合后必须自己建一张新单
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                    any(), anyString(), anyString(), anyString());
+                    any(), anyString(), anyString(), anyString(), anyString());
             // updateTicketId 仍会被调用——但那是「回填自己新建的工单号」，
             // 不是「挂到组工单」。断言它拿到的是新单号而非组单号，
             // 光断言 never() 是错的：成功建单本来就要回填，否则告警与工单失联
@@ -489,7 +489,7 @@ class AlertServiceTest {
 
             // 组告警没有工单号时不能聚合过去，必须自己建单
             verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                    any(), anyString(), anyString(), anyString());
+                    any(), anyString(), anyString(), anyString(), anyString());
             // 同上：这里的 updateTicketId 是回填自己新建的单号。
             // 关键是绝不能回填 null——那等于把告警与工单的关联抹掉
             verify(alertRepository).updateTicketId(1L, "TK-2026-0001");
@@ -551,7 +551,7 @@ class AlertServiceTest {
         verify(diagnosisOrchestrator, never()).submit(anyLong(), any(), anyString());
         // 建单仍发生（开关只关诊断）
         verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
-                any(), anyString(), anyString(), anyString());
+                any(), anyString(), anyString(), anyString(), anyString());
     }
 
 }
