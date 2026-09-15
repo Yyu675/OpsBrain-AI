@@ -130,7 +130,17 @@ public class ToolRuntimeManager {
         checkCircuitBreaker(toolName);
 
         // 6. 执行工具（含超时、重试）
-        Object result = executeWithTimeoutAndRetry(meta, toolInstance, method, args, toolName);
+        Object result;
+        try {
+            result = executeWithTimeoutAndRetry(meta, toolInstance, method, args, toolName);
+        } catch (Exception e) {
+            // 执行失败：释放幂等锁。
+            // 此前失败路径不删锁，setIfAbsent 的 "PROCESSING" 会驻留 24h，
+            // 期间同参数的工具全部抛「正在执行中」——一次失败冻结该工具一整天。
+            // 仅当 key 仍为 PROCESSING 时删除（CAS，避免把并发成功的缓存结果误删）。
+            releaseIdempotencyLock(idempotencyKey);
+            throw e;
+        }
 
         // 7. 成功：记录幂等结果、更新熔断统计
         if (idempotencyKey != null && result != null) {
@@ -188,7 +198,10 @@ public class ToolRuntimeManager {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                // 使用 CompletableFuture 实现超时控制
+                // 使用 CompletableFuture 实现超时控制。
+                // 用共享线程池执行工具——runAsync 不阻塞调用线程。
+                // 超时后必须 cancel(true) 中断底层任务：若放任其在后台继续跑，
+                // 慢工具会与指数退避后的重试副本并行执行，副作用（建单/写库）堆积。
                 CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
                     try {
                         return method.invoke(toolInstance, args);
@@ -197,7 +210,13 @@ public class ToolRuntimeManager {
                     }
                 });
 
-                return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+                try {
+                    return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+                } catch (Exception te) {
+                    // 超时或中断：主动中断底层计算，避免后台副本堆积
+                    future.cancel(true);
+                    throw te;
+                }
 
             } catch (Exception e) {
                 // P1-2：InvocationTargetException 必须循环解包至根因再分类。
@@ -414,6 +433,33 @@ public class ToolRuntimeManager {
                 throw new IllegalStateException("工具正在执行中，请勿重复调用: " + toolName);
             }
             return redisKey; // 已完成，返回 Key 以便读取缓存结果
+        }
+    }
+
+    /**
+     * 释放幂等锁（仅当 key 仍为 PROCESSING 时删除）
+     * <p>
+     * 用 Lua 脚本保证「读值→判断→删除」原子。若不用 CAS 而直接 delete：
+     * 工具 B 在 A 失败后紧接着成功并把结果写进同一 key（值变 JSON 结果），
+     * A 的删除会把 B 的缓存误删，导致幂等失效、下一个调用重复执行。
+     * </p>
+     *
+     * @param redisKey 幂等锁 key；null/空表示未启用幂等，直接返回
+     */
+    private void releaseIdempotencyLock(String redisKey) {
+        if (redisKey == null || redisKey.isBlank()) {
+            return;
+        }
+        try {
+            // 仅当当前值 == "PROCESSING" 时删除；返回 1 表示已删除，0 表示值已变（已完成）
+            String lua = "if redis.call('get', KEYS[1]) == ARGV[1] then " +
+                    "return redis.call('del', KEYS[1]) else return 0 end";
+            redisTemplate.execute(
+                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(lua, Long.class),
+                    java.util.List.of(redisKey), "PROCESSING");
+        } catch (Exception e) {
+            // 锁释放失败只告警：主执行已抛给调用方，此处不应再吞掉或掩盖主异常
+            log.warn("⚠️ [ToolRuntime] 幂等锁释放失败 | key={} | {}", redisKey, e.getMessage());
         }
     }
 

@@ -118,6 +118,36 @@ public class ToolExecutionRepository {
     }
 
     /**
+     * 原子抢占补偿状态（SUCCESS/PARTIAL_SUCCESS → COMPENSATING，带状态条件）
+     * <p>
+     * 补偿必须做 SQL 层 CAS：否则人工重试与调度扫描并发触发时，
+     * 两个线程都通过 {@code canTransition} 检查、都执行补偿动作
+     * （如删单），副作用执行两次。带 {@code WHERE state IN (...)} 条件后，
+     * 后到者返回 0 行，判定「已被他人抢占」而跳过——补偿动作天然幂等。
+     * </p>
+     *
+     * @return 1=本次成功抢占（应执行补偿）；0=已被他人抢占/状态已变
+     */
+    public int markCompensating(Long id) {
+        String sql = """
+            UPDATE sys_agent_tool_execution
+               SET state = ?, update_time = CURRENT_TIMESTAMP
+             WHERE id = ?
+               AND state IN (?, ?)
+               AND compensated_at IS NULL
+            """;
+        try {
+            return jdbcTemplate.update(sql,
+                    ToolExecutionState.COMPENSATING.name(), id,
+                    ToolExecutionState.SUCCESS.name(),
+                    ToolExecutionState.PARTIAL_SUCCESS.name());
+        } catch (Exception e) {
+            log.warn("⚠️ [ToolExecRepo] 原子抢占补偿状态失败 | id={} | {}", id, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * 仅更新状态（补偿流转用）
      */
     public int updateState(Long id, ToolExecutionState state) {

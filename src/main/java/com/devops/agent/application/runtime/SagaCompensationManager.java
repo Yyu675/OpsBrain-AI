@@ -123,7 +123,16 @@ public class SagaCompensationManager {
             log.warn("⚠️ [Saga] 非法补偿迁移，跳过 | id={} | from={}", id, record.getState());
             return false;
         }
-        execRepo.updateState(id, ToolExecutionState.COMPENSATING);
+
+        // SQL 层 CAS 抢占：人工重试与调度可能并发触发补偿。
+        // 此前这里是「canTransition 检查 + updateState(id, COMPENSATING)」两步，
+        // 两个线程都能通过检查并各自执行补偿动作（删单等）——副作用执行两次。
+        // 改为带状态条件的原子 UPDATE 后，后到者返回 0 行即判定「已被处理」而跳过。
+        if (execRepo.markCompensating(id) == 0) {
+            log.warn("⚠️ [Saga] 补偿被并发抢占，跳过 | id={} | step={}",
+                    id, record.getStepSeq());
+            return false;
+        }
 
         try {
             Object result = invokeCompensation(record.getToolName(), action, businessKey);
@@ -162,12 +171,25 @@ public class SagaCompensationManager {
             throw new IllegalStateException("找不到工具 Bean，无法执行补偿: " + toolName);
         }
 
+        // 反射调用白名单：compensationAction 存于数据库，若被旁路/脏数据污染为
+        // 任意方法名，getMethod(action, String.class) 会反射调用 Bean 上任何
+        // 单 String 入参方法（如 deleteAll/clear 之类）——需限制为明确的补偿语义方法名。
+        // 显式允许：现有 voidTicket（建单据补偿）+ 按约定以 compensate/rollback 前缀
+        // 命名的扩展方法。三者之外一律拒绝。
+        String safeAction = action == null ? "" : action.trim();
+        if (!("voidTicket".equals(safeAction)
+                || safeAction.startsWith("compensate")
+                || safeAction.startsWith("rollback"))) {
+            throw new IllegalStateException(
+                    "非法的补偿方法名（须为 voidTicket 或以 compensate/rollback 前缀开头）: " + safeAction);
+        }
+
         Method method;
         try {
-            method = toolBean.getClass().getMethod(action, String.class);
+            method = toolBean.getClass().getMethod(safeAction, String.class);
         } catch (NoSuchMethodException e) {
             throw new IllegalStateException(
-                    "补偿方法不存在（签名须为 " + action + "(String)）: " + toolBean.getClass().getSimpleName() + "." + action);
+                    "补偿方法不存在（签名须为 " + safeAction + "(String)）: " + toolBean.getClass().getSimpleName() + "." + safeAction);
         }
 
         return method.invoke(toolBean, businessKey);
