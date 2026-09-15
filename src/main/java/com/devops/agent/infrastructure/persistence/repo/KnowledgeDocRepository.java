@@ -257,8 +257,14 @@ public class KnowledgeDocRepository {
      * 查找近似重复候选（同分类已发布/草稿，限最近）
      */
     public List<KnowledgeDoc> findSimhashCandidates(String category, Long excludeDocId, int limit) {
+        // ⚠️ SELECT 列表必须覆盖 row mapper 读取的全部列：
+        // 此前漏了 category_id，mapper 里 rs.getLong("category_id") 抛
+        // SQLException（列不存在），被 Spring 包装成 BadSqlGrammarException——
+        // 表现为「创建文档失败: bad SQL grammar」，但 SQL 本身完全合法，
+        // psql 直接执行也正常，极具误导性。只在库里存在 simhash 候选时
+        // 才会走到 mapper，测试 mock 不了这个组合，真机越权矩阵联调首次暴露。
         StringBuilder sql = new StringBuilder("""
-            SELECT id, title, content_hash, simhash, status, version, category
+            SELECT id, title, content_hash, simhash, status, version, category, category_id
               FROM sys_knowledge_doc
              WHERE simhash IS NOT NULL
                AND status IN ('PUBLISHED', 'DRAFT')
