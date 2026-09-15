@@ -30,7 +30,10 @@ TOTAL=$((RATE * DURATION))
 echo "=== T6 告警风暴压测: ${RATE} 条/秒 × ${DURATION}s = ${TOTAL} 条 ==="
 
 # 预检:后端活着
-curl -s -o /dev/null --max-time 5 "$BASE/actuator/health" || {
+# 用 /api/v1/health（业务健康端点，无需鉴权）。此前用 /ai/actuator/health：
+# actuator 依赖 management 暴露配置与 Sa-Token 拦截放行，部分运行实例上不可达（000），
+# 会把「后端健康」误判为「未启动」——探活应以最稳定的业务健康端点为准。
+curl -s -o /dev/null --max-time 5 "$BASE/api/v1/health" || {
   echo "✗ 后端未在 ${PORT} 起动——先起后端再压测"; exit 1; }
 
 # 基线:压测前告警/工单数——改用「压测开始时刻」+ 专属前缀直查 DB 作准,
