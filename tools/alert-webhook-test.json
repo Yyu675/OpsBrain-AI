@@ -1,0 +1,19 @@
+{
+  "receiver": "opsbrain-webhook",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighCPUUsage",
+        "service": "audit-test-service",
+        "severity": "warning",
+        "instance": "10.0.0.42:9100"
+      },
+      "annotations": {
+        "description": "审计联调：CPU 使用率持续超过 90%（5 分钟均值 93.2%），实例 10.0.0.42"
+      },
+      "startsAt": "2026-09-16T04:50:00.000Z"
+    }
+  ]
+}

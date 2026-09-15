@@ -58,6 +58,40 @@ event:complete     → costRmb=4.38E-4 | latencyMs=18714 | toolResults | citatio
 
 **审计落库**：`sys_agent_call_log` 中 CHAT 记录正常写入（traceId 可回查）。
 
+## 二.5 E2E 业务闭环联调（追加，2026-09-16）
+
+### 告警 → 自动建单 → 双向溯源链（批 88-B1 真机证据）
+
+构造真实 Alertmanager 载荷打 webhook：
+
+```
+POST /ai/api/v1/alerts/webhook → code:0
+告警 #2866（HighCPUUsage / P2 / FIRING）入库
+自动建单：ticket_id = TKT-20260916-0001（正向链回填 ✅）
+工单 source_trace_id = 52233453c9…（精确等于告警 dedup_key，反向链 ✅）
+```
+
+批 88-B1 修复的「工单侧反向溯源」从代码验证升级为**真机证据闭环**。
+
+### 工单写路径（批次 3 业务闭环）
+
+| 操作 | 结果 |
+|---|---|
+| PATCH /tickets/{id}/status（PENDING→PROCESSING） | ✅ 乐观锁版本推进 |
+| POST /tickets/{id}/replies（中文回复） | ✅ 落库（role 归一化为 agent） |
+| GET /tickets/{id}/activities | ✅ 活动流真实记录：工单创建 / 首次响应（SLA 自动计时）/ 状态变更 |
+
+### 前端全链路
+
+```
+http://localhost:5173/（vite）→ proxy → http://localhost:8088/ai → REAL UP + 登录成功
+```
+
+### 过程备注
+
+- Windows curl 对中文 JSON body 的编码问题在回复端点复现，`--data-binary @file` 绕开（工具限制，非缺陷）。
+- 联调数据（告警 #2866 / 工单 TKT-20260916-0001 / 回复 #11）留存于 dev 库，可作为演示数据或手工清理。
+
 ## 三、过程性说明
 
 - 登录密码曾被修改（admin123 不匹配）：已重置为本地默认 admin/admin123（BCrypt，
