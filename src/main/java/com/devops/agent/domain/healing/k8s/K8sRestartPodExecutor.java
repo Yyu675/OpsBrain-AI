@@ -29,7 +29,9 @@ import java.util.Map;
 public class K8sRestartPodExecutor extends AbstractK8sHealingExecutor {
 
     public static final String ACTION_KEY = "k8s.pod.restart";
-    public static final String EXECUTOR_KEY = "k8s-fabric8";
+    // 执行器实例标识须唯一：此前与 ScaleReplicas 共用 "k8s-fabric8"（技术栈名），
+    // executors 端点会重复展示两项，管理页无法区分是哪只「手」
+    public static final String EXECUTOR_KEY = "k8s-fabric8-restart-pod";
 
     @Override
     public String executorKey() {

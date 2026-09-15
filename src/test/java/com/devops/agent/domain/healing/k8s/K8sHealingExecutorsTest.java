@@ -243,9 +243,9 @@ class K8sHealingExecutorsTest {
         var registry = new com.devops.agent.domain.healing.ExecutorRegistry(
                 java.util.List.of(new K8sRestartPodExecutor(), new K8sScaleReplicasExecutor(),
                         new com.devops.agent.domain.healing.MockActionExecutor()));
-        assertEquals("k8s-fabric8",
+        assertEquals("k8s-fabric8-restart-pod",
                 registry.locate("k8s.pod.restart").orElseThrow().executorKey());
-        assertEquals("k8s-fabric8",
+        assertEquals("k8s-fabric8-scale-replicas",
                 registry.locate("k8s.deploy.scale").orElseThrow().executorKey());
         assertEquals("mock", registry.locate("mock.disk.cleanup").orElseThrow().executorKey());
     }

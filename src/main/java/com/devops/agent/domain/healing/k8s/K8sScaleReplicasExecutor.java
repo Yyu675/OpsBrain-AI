@@ -22,7 +22,7 @@ import java.util.Map;
 public class K8sScaleReplicasExecutor extends AbstractK8sHealingExecutor {
 
     public static final String ACTION_KEY = "k8s.deploy.scale";
-    public static final String EXECUTOR_KEY = "k8s-fabric8";
+    public static final String EXECUTOR_KEY = "k8s-fabric8-scale-replicas";
 
     @Override
     public String executorKey() {
