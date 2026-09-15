@@ -124,7 +124,8 @@ public class SagaCompensationManager {
             return false;
         }
 
-        // SQL 层 CAS 抢占：人工重试与调度可能并发触发补偿。
+        // SQL 层 CAS 抢占：流式失败的自动补偿与人工重试（/saga/{id}/compensate）
+        // 可能并发触发补偿——两个入口都经 compensateSaga 到达此处。
         // 此前这里是「canTransition 检查 + updateState(id, COMPENSATING)」两步，
         // 两个线程都能通过检查并各自执行补偿动作（删单等）——副作用执行两次。
         // 改为带状态条件的原子 UPDATE 后，后到者返回 0 行即判定「已被处理」而跳过。

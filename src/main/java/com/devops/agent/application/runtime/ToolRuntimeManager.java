@@ -20,6 +20,9 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -29,7 +32,7 @@ import java.util.concurrent.TimeUnit;
  * <ol>
  *   <li>读取 {@link ToolMeta} 元数据，执行对应治理逻辑</li>
  *   <li>幂等检查（Redis SET NX EX）</li>
- *   <li>超时控制（CompletableFuture + Future.get(timeout)）</li>
+ *   <li>超时控制（可中断线程池 + Future.get(timeout)）</li>
  *   <li>重试策略（指数退避、按 {@link ToolFailureType#isRetryable()} 分类）</li>
  *   <li>熔断保护（失败率统计）</li>
  *   <li>失败登记（FAILED 态写入 sys_agent_tool_execution，供运维回放）</li>
@@ -92,6 +95,22 @@ public class ToolRuntimeManager {
      * 熔断统计：toolName -> {totalCalls, failedCalls, lastFailureTime}
      */
     private final Map<String, CircuitBreakerStats> circuitBreakers = new ConcurrentHashMap<>();
+
+    /**
+     * 工具超时执行专用线程池。
+     * <p>
+     * 必须是 {@code ExecutorService}（FutureTask 语义）而非
+     * {@code CompletableFuture.supplyAsync}（commonPool）——前者的
+     * {@code cancel(true)} 会真正 interrupt 执行线程，后者明确忽略中断参数。
+     * 工具自带超时上限（@ToolMeta.timeoutMs），任务结束即释放线程，
+     * cached 池不会无界增长；daemon 线程不阻塞 JVM 关停。
+     * </p>
+     */
+    private final ExecutorService toolExecPool = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "tool-exec");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
      * 执行工具调用（统一治理入口）
@@ -159,6 +178,16 @@ public class ToolRuntimeManager {
     }
 
     /**
+     * 关停工具执行池。
+     * <p>应用关闭时不再接受新工具任务；对仍在执行中的工具发中断
+     * （与超时中断同一语义），避免挂着的建单/写库在停机窗口落库。</p>
+     */
+    @jakarta.annotation.PreDestroy
+    public void shutdownToolExecPool() {
+        toolExecPool.shutdownNow();
+    }
+
+    /**
      * 供编排层查询工具元数据（用于登记 Saga 步骤的风险等级与补偿动作）
      *
      * @param toolName 工具名
@@ -198,11 +227,19 @@ public class ToolRuntimeManager {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                // 使用 CompletableFuture 实现超时控制。
-                // 用共享线程池执行工具——runAsync 不阻塞调用线程。
-                // 超时后必须 cancel(true) 中断底层任务：若放任其在后台继续跑，
-                // 慢工具会与指数退避后的重试副本并行执行，副作用（建单/写库）堆积。
-                CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
+                // 用专用线程池 + FutureTask 做超时控制。
+                //
+                // ⚠️ 不能用 CompletableFuture.supplyAsync：其 cancel(mayInterruptIfRunning)
+                // 的中断参数被 JDK 明确忽略（Javadoc: "this value has no effect"）——
+                // 超时后 cancel(true) 只标记 future 完成，底层 commonPool 里的任务
+                // 会继续跑满全程。批88-B4 曾在此处用 CompletableFuture 试图中断，
+                // 被专项测试抓出「中断标志始终为 false」——副作用堆积问题根本没修上。
+                //
+                // ExecutorService.submit 返回的 Future（FutureTask）则不同：
+                // cancel(true) 会真正 interrupt 执行线程，sleep/IO 感知中断后退出。
+                // 若放任慢工具后台继续跑，它会与指数退避后的重试副本并行执行，
+                // 副作用（建单/写库）堆积。
+                Future<Object> future = toolExecPool.submit(() -> {
                     try {
                         return method.invoke(toolInstance, args);
                     } catch (Exception e) {

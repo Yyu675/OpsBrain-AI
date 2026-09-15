@@ -371,7 +371,7 @@ public class AlertService {
      * 为告警自动创建工单
      * <p>
      * 建单失败的告警仍可在告警列表查看，运维可手动触发建单。
-     * 使用 8 参 {@link TicketService#createTicket(String, String, String, String, String, String, String, String)}。
+     * 使用 9 参重载（含 sourceTraceId）。
      * </p>
      */
     private void createAutoTicket(Alert alert, String alertName, String service, String module) {

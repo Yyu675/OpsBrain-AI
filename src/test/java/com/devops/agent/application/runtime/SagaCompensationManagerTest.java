@@ -92,10 +92,12 @@ class SagaCompensationManagerTest {
     class Step {
 
         @Test
-        @DisplayName("成功路径：先置 COMPENSATING，调用补偿方法，再标记 COMPENSATED")
+        @DisplayName("成功路径：先 CAS 抢占 COMPENSATING，调用补偿方法，再标记 COMPENSATED")
         void happyPath() {
             ToolExecutionRecord r = pending(1L, 1, "TK-001");
             when(tools.voidTicket("TK-001")).thenReturn("已作废");
+            // 批88-B4：抢占改为 SQL 层 CAS（markCompensating），mock 默认 0 会被判「已被抢占」
+            when(repo.markCompensating(1L)).thenReturn(1);
 
             assertTrue(manager.compensateStep(r));
 
@@ -103,13 +105,32 @@ class SagaCompensationManagerTest {
             // 库里留下「补偿中」而不是「成功」——重启后能识别出这条要接着处理。
             // 若反过来先调用再改状态，崩溃后这条记录看起来还是 SUCCESS，
             // 补偿会被重复执行（补偿动作虽幂等，但审计上无从判断到底做没做）
+            // 批88-B4 后「落 COMPENSATING」由 markCompensating 的原子 UPDATE 承担
             InOrder order = inOrder(repo, tools);
-            order.verify(repo).updateState(1L, ToolExecutionState.COMPENSATING);
+            order.verify(repo).markCompensating(1L);
             order.verify(tools).voidTicket("TK-001");
             order.verify(repo).markCompensated(1L);
 
             verify(repo, never()).markCompensationFailed(anyLong(), anyString());
             verify(repo, never()).updateState(1L, ToolExecutionState.MANUAL_INTERVENTION_REQUIRED);
+        }
+
+        @Test
+        @DisplayName("CAS 抢占失败（返回 0 行）：跳过补偿且不触碰任何后续动作")
+        void casLostIsSkipped() {
+            // 批88-B4 核心语义：流式失败自动补偿与人工重试并发到达时，
+            // 后到者 markCompensating 返回 0 → 必须整体跳过。
+            // 若这里不跳过，两侧都会执行 voidTicket——补偿副作用（作废工单）跑两次，
+            // 第二次虽幂等但审计上会留下两条「已补偿」，混淆对账。
+            ToolExecutionRecord r = pending(2L, 1, "TK-002");
+            when(repo.markCompensating(2L)).thenReturn(0);
+
+            assertFalse(manager.compensateStep(r));
+
+            verify(tools, never()).voidTicket(anyString());
+            verify(repo, never()).markCompensated(anyLong());
+            verify(repo, never()).markCompensationFailed(anyLong(), anyString());
+            verify(repo, never()).updateState(2L, ToolExecutionState.MANUAL_INTERVENTION_REQUIRED);
         }
 
         @Test
@@ -144,6 +165,7 @@ class SagaCompensationManagerTest {
             ToolExecutionRecord r = pending(4L, 1, "TK-004");
             r.setState(ToolExecutionState.PARTIAL_SUCCESS);
             when(tools.voidTicket("TK-004")).thenReturn("ok");
+            when(repo.markCompensating(4L)).thenReturn(1);
 
             assertTrue(manager.compensateStep(r));
             verify(repo).markCompensated(4L);
@@ -160,11 +182,12 @@ class SagaCompensationManagerTest {
             ToolExecutionRecord r = pending(5L, 2, "TK-005");
             when(tools.voidTicket("TK-005"))
                     .thenThrow(new RuntimeException("工单不存在"));
+            when(repo.markCompensating(5L)).thenReturn(1);
 
             assertFalse(manager.compensateStep(r));
 
             InOrder order = inOrder(repo);
-            order.verify(repo).updateState(5L, ToolExecutionState.COMPENSATING);
+            order.verify(repo).markCompensating(5L);
             order.verify(repo).markCompensationFailed(eq(5L), anyString());
             order.verify(repo).updateState(5L, ToolExecutionState.MANUAL_INTERVENTION_REQUIRED);
             verify(repo, never()).markCompensated(anyLong());
@@ -180,6 +203,7 @@ class SagaCompensationManagerTest {
             ToolExecutionRecord r = pending(6L, 1, "TK-006");
             when(tools.voidTicket("TK-006"))
                     .thenThrow(new IllegalStateException("工单 TK-006 不存在"));
+            when(repo.markCompensating(6L)).thenReturn(1);
 
             manager.compensateStep(r);
 
@@ -201,6 +225,7 @@ class SagaCompensationManagerTest {
             // 错误信息里必须能看出「方法根本不存在」，否则会被当成偶发失败反复重试
             ToolExecutionRecord r = pending(7L, 1, "TK-007");
             r.setCompensationAction("voidTicketTypo");
+            when(repo.markCompensating(7L)).thenReturn(1);
 
             assertFalse(manager.compensateStep(r));
 
@@ -216,6 +241,7 @@ class SagaCompensationManagerTest {
             when(ctx.getBean(DevOpsTools.class))
                     .thenThrow(new NoSuchBeanDefinitionException("DevOpsTools"));
             ToolExecutionRecord r = pending(8L, 1, "TK-008");
+            when(repo.markCompensating(8L)).thenReturn(1);
 
             assertFalse(manager.compensateStep(r));
             verify(repo).markCompensationFailed(eq(8L), anyString());
@@ -230,6 +256,7 @@ class SagaCompensationManagerTest {
             ToolExecutionRecord r = pending(9L, 1, "TK-009");
             when(tools.voidTicket("TK-009"))
                     .thenThrow(new RuntimeException("x".repeat(2000)));
+            when(repo.markCompensating(9L)).thenReturn(1);
 
             manager.compensateStep(r);
 
@@ -281,6 +308,7 @@ class SagaCompensationManagerTest {
             ToolExecutionRecord s1 = pending(10L, 1, "TK-A");
             when(repo.findCompensableBySagaDesc("S2")).thenReturn(List.of(s3, s2, s1));
             when(tools.voidTicket(anyString())).thenReturn("ok");
+            when(repo.markCompensating(anyLong())).thenReturn(1);
 
             SagaCompensationManager.CompensationResult r = manager.compensateSaga("S2", "回滚");
 
@@ -302,6 +330,7 @@ class SagaCompensationManagerTest {
             when(tools.voidTicket("TK-C")).thenReturn("ok");
             when(tools.voidTicket("TK-B")).thenThrow(new RuntimeException("下游超时"));
             when(tools.voidTicket("TK-A")).thenReturn("ok");
+            when(repo.markCompensating(anyLong())).thenReturn(1);
 
             SagaCompensationManager.CompensationResult r = manager.compensateSaga("S3", "回滚");
 
@@ -320,6 +349,7 @@ class SagaCompensationManagerTest {
             ToolExecutionRecord s2 = pending(20L, 2, "TK-B");
             when(repo.findCompensableBySagaDesc("S4")).thenReturn(List.of(s2));
             when(tools.voidTicket("TK-B")).thenThrow(new RuntimeException("boom"));
+            when(repo.markCompensating(20L)).thenReturn(1);
 
             SagaCompensationManager.CompensationResult r = manager.compensateSaga("S4", "回滚");
 
@@ -339,6 +369,7 @@ class SagaCompensationManagerTest {
             ToolExecutionRecord good = pending(41L, 2, "TK-D");
             when(repo.findCompensableBySagaDesc("S5")).thenReturn(List.of(good, broken));
             when(tools.voidTicket("TK-D")).thenReturn("ok");
+            when(repo.markCompensating(41L)).thenReturn(1);
 
             SagaCompensationManager.CompensationResult r = manager.compensateSaga("S5", "回滚");
 
@@ -368,8 +399,9 @@ class SagaCompensationManagerTest {
             // 补偿流程也不会因为「记不下来」而放弃「做不做」
             ToolExecutionRecord r1 = pending(60L, 1, "TK-F");
             when(repo.findCompensableBySagaDesc("S7")).thenReturn(List.of(r1));
+            // 批88-B4 后第一步落库动作是 markCompensating（CAS 抢占）
             doThrow(new RuntimeException("库连接断了"))
-                    .when(repo).updateState(60L, ToolExecutionState.COMPENSATING);
+                    .when(repo).markCompensating(60L);
 
             SagaCompensationManager.CompensationResult r = manager.compensateSaga("S7", "回滚");
 
