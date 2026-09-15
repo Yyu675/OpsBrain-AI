@@ -169,10 +169,15 @@ public class KnowledgeDocController {
      */
     @PostMapping("/{id}/restore")
     public ApiResponse<Object> restore(@PathVariable Long id,
-                                       @RequestBody Map<String, Object> body) {
+                                       @RequestBody(required = false) Map<String, Object> body) {
         writeGuard.requireEdit();
-        int version = ((Number) body.get("version")).intValue();
-        KnowledgeDocService.SaveResult r = docService.restore(id, version, "SYSTEM");
+        // 回滚目标版本是必填项：不传/非数字直接 400 参数错误而非 50001——
+        // NPE 堆栈对排障无益，调用方拿到明确提示才能自纠
+        Object raw = body == null ? null : body.get("version");
+        if (!(raw instanceof Number version)) {
+            throw new IllegalArgumentException("version 是必填字段（要回滚到的历史版本号）");
+        }
+        KnowledgeDocService.SaveResult r = docService.restore(id, version.intValue(), "SYSTEM");
         return ApiResponse.success(Map.of(
                 "id", id,
                 "version", r.version(),
