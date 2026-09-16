@@ -24,6 +24,20 @@
 
 ### 1.2 配置检查
 - [ ] **.env 或环境变量完整性**（AI 端点/MinIO/Redis/PG 连接串）
+- [ ] **⚠️ 生产强制环境变量（2026-09-17 批88审计发现——缺任何一项启动即炸或安全裸奔）**
+
+  | 变量名 | 用途 | 不设的后果 | 示例值 |
+  |---|---|---|---|
+  | `SPRING_DATASOURCE_URL` | 数据库连接 | **启动直接失败**——`application.yml` 无默认 URL，prod 不从 dev 继承连接信息 | `jdbc:postgresql://prod-db:5432/opsbrain` |
+  | `SPRING_DATASOURCE_USERNAME` | 数据库用户 | 同上 | `opsbrain_app` |
+  | `SPRING_DATASOURCE_PASSWORD` | 数据库密码 | 同上 | （强随机） |
+  | `CORS_ALLOWED_ORIGINS` | CORS 白名单 | **启动直接失败**——`__MUST_SET_CORS_ALLOWED_ORIGINS__` 占位符会被 `WebConfig.validateCorsConfig()` 拒启 | `https://ops.example.com` |
+  | `ALERT_WEBHOOK_SECRET` | Webhook 共享密钥 | **安全裸奔**——`/api/v1/alerts/webhook` 免 Sa-Token 鉴权，无密钥任何人都可灌入伪造告警触发自动建单 | （强随机，同步配到 Alertmanager） |
+  | `AUTH_SEED_PASSWORD` | 初始 admin 密码 | 占位符 `__MUST_SET_AUTH_SEED_PASSWORD__` 会导致 seed 失败 | （强随机） |
+
+  > **出处**：2026-09-17 `application-prod.yml` + `WebhookGuard.verify()` 代码走查 + prod profile 实际启动验证（`SPRING_PROFILES_ACTIVE=prod`）。
+  > 开发环境（dev profile）从 `application-dev.yml` 读取默认值，不受此表影响。
+
 - [ ] **敏感配置未提交代码库**（.env 在 .gitignore 中）
 - [ ] **application-prod.yml 激活**（`SPRING_PROFILES_ACTIVE=prod`）
 - [ ] **Flyway 配置确认**
@@ -110,10 +124,10 @@ psql ... -c "SELECT tablename FROM pg_tables WHERE schemaname='public' AND table
 ```
 
 ### 3.3 功能烟测
-- [ ] **告警接收**：POST `/api/v1/alerts` 写入 alert_events 表
-- [ ] **诊断触发**：告警关联工单后诊断会话创建
-- [ ] **RAG 检索**：知识库查询返回有效结果（需先有数据）
-- [ ] **AI 分析**：工单详情页点击「AI 分析」返回非空（需 REAL 模式）
+- [ ] **告警接收**：POST `/api/v1/alerts/webhook` 写入 sys_alert 表
+- [ ] **工单查询**：GET `/api/v1/tickets?page=1&size=5` 返回 200
+- [ ] **知识库访问**：GET `/api/v1/knowledge/docs?page=1&size=3` 返回 200
+- [ ] **鉴权正常**：匿名访问受保护端点返回 401，登录后返回 200
 
 ### 3.4 监控接入
 - [ ] Prometheus metrics 暴露（`/actuator/prometheus`）
