@@ -12,13 +12,14 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import {
-  RefreshCw, AlertTriangle, RotateCcw, ChevronDown, ChevronRight, Clock, XCircle, CheckCircle2, Layers
+  RefreshCw, AlertTriangle, RotateCcw, ChevronDown, ChevronRight, Clock, Layers
 } from 'lucide-vue-next'
 import { ElMessageBox } from 'element-plus'
 import {
   fetchSagaAttention, fetchSagaSteps, compensateSaga,
   type SagaStep, type SagaStepState
 } from '@/api/saga'
+import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { notify } from '@/utils/notify'
 import { formatDate } from '@/utils/time'
 
@@ -205,74 +206,77 @@ const fmtTime = (t: string | null): string => {
       >{{ t.label }}</button>
     </div>
 
-    <!-- 空 / 错误 / 加载 -->
-    <div v-if="loadError" class="state-box">
-      <XCircle :size="20" class="state-icon err" />
-      <span>{{ loadError }}</span>
-      <button class="retry-link" @click="load">重试</button>
-    </div>
-    <div v-else-if="loading" class="state-box"><span class="state-icon">加载中…</span></div>
-    <div v-else-if="!filtered.length" class="state-box">
-      <CheckCircle2 :size="20" class="state-icon ok" />
-      <span>当前没有需要人工介入的 Saga 事务 —— 自动化链路全部收敛 ✅</span>
-    </div>
-
-    <!-- 列表 -->
-    <div v-else class="record-list">
-      <div v-for="rec in filtered" :key="rec.id" class="record-card">
-        <!-- 头部行 -->
-        <div class="record-head" @click="toggleSteps(rec)">
-          <div class="record-main">
-            <span class="state-tag" :class="stateClass(rec.state)">{{ stateLabel(rec.state) }}</span>
-            <span class="tool-name">{{ rec.toolName }}</span>
-            <span class="biz-key" :title="`业务主键：${rec.businessKey ?? '—'}`">
-              {{ rec.businessKey ?? '无业务主键' }}
-            </span>
+    <!-- 加载 / 失败 / 空 / 有内容：统一走 DataStateBoundary -->
+    <!-- count 用 filtered.length：tab 过滤后无命中也走空态（提示当前 tab 无此类事务） -->
+    <DataStateBoundary
+      :loading="loading"
+      :error="loadError || null"
+      :count="filtered.length"
+      :filtered="activeTab !== 'ALL'"
+      :skeleton-rows="4"
+      skeleton-height="72px"
+      empty-title="暂无待介入事务"
+      empty-description="自动化链路全部收敛，没有半残或补偿失败的 Saga ✅"
+      filtered-description="当前分类下没有事务，切到「全部」看看其它状态"
+      @retry="load"
+    >
+      <!-- 列表 -->
+      <div class="record-list">
+        <div v-for="rec in filtered" :key="rec.id" class="record-card">
+          <!-- 头部行 -->
+          <div class="record-head" @click="toggleSteps(rec)">
+            <div class="record-main">
+              <span class="state-tag" :class="stateClass(rec.state)">{{ stateLabel(rec.state) }}</span>
+              <span class="tool-name">{{ rec.toolName }}</span>
+              <span class="biz-key" :title="`业务主键：${rec.businessKey ?? '—'}`">
+                {{ rec.businessKey ?? '无业务主键' }}
+              </span>
+            </div>
+            <div class="record-meta">
+              <span class="meta-time"><Clock :size="12" /> {{ fmtTime(rec.createTime) }}</span>
+              <span class="meta-attempt" v-if="rec.attemptCount > 1">已重试 {{ rec.attemptCount }} 次</span>
+              <button
+                class="act-compensate" :disabled="compensatingId !== null"
+                @click.stop="onCompensate(rec)"
+              >
+                <RotateCcw :size="13" />
+                {{ compensatingId === rec.sagaId ? '补偿中…' : '触发补偿' }}
+              </button>
+              <ChevronDown v-if="expandedSteps[rec.sagaId!]" :size="16" class="chev" />
+              <ChevronRight v-else :size="16" class="chev" />
+            </div>
           </div>
-          <div class="record-meta">
-            <span class="meta-time"><Clock :size="12" /> {{ fmtTime(rec.createTime) }}</span>
-            <span class="meta-attempt" v-if="rec.attemptCount > 1">已重试 {{ rec.attemptCount }} 次</span>
-            <button
-              class="act-compensate" :disabled="compensatingId !== null"
-              @click.stop="onCompensate(rec)"
-            >
-              <RotateCcw :size="13" />
-              {{ compensatingId === rec.sagaId ? '补偿中…' : '触发补偿' }}
-            </button>
-            <ChevronDown v-if="expandedSteps[rec.sagaId!]" :size="16" class="chev" />
-            <ChevronRight v-else :size="16" class="chev" />
-          </div>
-        </div>
 
-        <!-- 失败信息 -->
-        <div v-if="rec.errorMessage || rec.failureHint" class="record-error">
-          <AlertTriangle :size="13" class="err-icon" />
-          <div class="err-body">
-            <div v-if="rec.errorMessage" class="err-msg">{{ rec.errorMessage }}</div>
-            <div v-if="rec.failureHint" class="err-hint">💡 {{ rec.failureHint }}</div>
+          <!-- 失败信息 -->
+          <div v-if="rec.errorMessage || rec.failureHint" class="record-error">
+            <AlertTriangle :size="13" class="err-icon" />
+            <div class="err-body">
+              <div v-if="rec.errorMessage" class="err-msg">{{ rec.errorMessage }}</div>
+              <div v-if="rec.failureHint" class="err-hint">💡 {{ rec.failureHint }}</div>
+            </div>
           </div>
-        </div>
 
-        <!-- 步骤链路 -->
-        <div v-if="expandedSteps[rec.sagaId!]" class="steps-panel">
-          <div class="steps-title"><Layers :size="13" /> 执行链路（按执行顺序，补偿为逆序回滚）</div>
-          <div v-if="stepsLoading.has(rec.sagaId!)" class="steps-loading">加载中…</div>
-          <div v-else class="steps-list">
-            <div
-              v-for="s in expandedSteps[rec.sagaId!]" :key="s.id"
-              class="step-row" :class="{ 'step-attention': s.needsAttention }"
-            >
-              <span class="step-seq">{{ s.stepSeq }}</span>
-              <span class="step-tool">{{ s.toolName }}</span>
-              <span class="step-state" :class="stateClass(s.state)">{{ stateLabel(s.state) }}</span>
-              <span class="step-dur" v-if="s.durationMs != null">{{ s.durationMs }}ms</span>
-              <span class="step-err" v-if="s.errorMessage" :title="s.errorMessage">{{ s.errorMessage }}</span>
-              <span class="step-hint" v-else-if="s.failureHint">{{ s.failureHint }}</span>
+          <!-- 步骤链路 -->
+          <div v-if="expandedSteps[rec.sagaId!]" class="steps-panel">
+            <div class="steps-title"><Layers :size="13" /> 执行链路（按执行顺序，补偿为逆序回滚）</div>
+            <div v-if="stepsLoading.has(rec.sagaId!)" class="steps-loading">加载中…</div>
+            <div v-else class="steps-list">
+              <div
+                v-for="s in expandedSteps[rec.sagaId!]" :key="s.id"
+                class="step-row" :class="{ 'step-attention': s.needsAttention }"
+              >
+                <span class="step-seq">{{ s.stepSeq }}</span>
+                <span class="step-tool">{{ s.toolName }}</span>
+                <span class="step-state" :class="stateClass(s.state)">{{ stateLabel(s.state) }}</span>
+                <span class="step-dur" v-if="s.durationMs != null">{{ s.durationMs }}ms</span>
+                <span class="step-err" v-if="s.errorMessage" :title="s.errorMessage">{{ s.errorMessage }}</span>
+                <span class="step-hint" v-else-if="s.failureHint">{{ s.failureHint }}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </DataStateBoundary>
   </div>
 </template>
 
@@ -296,11 +300,6 @@ const fmtTime = (t: string | null): string => {
 .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
 .tab { padding: 6px 14px; border-radius: 6px; border: 1px solid transparent; background: transparent; cursor: pointer; font-size: .85rem; color: var(--color-text-secondary, var(--text-2)); }
 .tab.active { background: rgba(37, 99, 235, .1); color: var(--primary, #2563eb); border-color: rgba(37, 99, 235, .3); }
-
-.state-box { display: flex; align-items: center; gap: 8px; padding: 32px; justify-content: center; color: var(--color-text-tertiary, var(--text-3)); font-size: .9rem; }
-.state-icon.ok { color: #67c23a; }
-.state-icon.err { color: #f56c6c; }
-.retry-link { color: var(--primary, #2563eb); cursor: pointer; background: none; border: none; }
 
 .record-list { display: flex; flex-direction: column; gap: 10px; }
 .record-card { border: 1px solid var(--border-color, #ebeef5); border-radius: 8px; background: var(--bg-card, #fff); overflow: hidden; }

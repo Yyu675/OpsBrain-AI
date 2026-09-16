@@ -187,13 +187,15 @@ describe('列表加载与分组', () => {
     const w = await mountPage([], { listError: new Error('boom') })
 
     expect(vmOf(w).loadError).toBeTruthy()
-    expect(w.find('.retry-link').exists()).toBe(true)
+    // DataStateBoundary 的错误态由 ApiErrorState 渲染，重试按钮 class=api-error-retry
+    expect(w.find('.api-error-retry').exists()).toBe(true)
     expect(notifyMock.error).toHaveBeenCalled()
   })
 
   it('空列表显示空态而非空白', async () => {
     const w = await mountPage([])
-    expect(w.find('.state-box').exists()).toBe(true)
+    // DataStateBoundary 的空态由 AppEmpty 渲染，根 class=app-empty
+    expect(w.find('.app-empty').exists()).toBe(true)
     expect(w.findAll('.record-card')).toHaveLength(0)
   })
 
