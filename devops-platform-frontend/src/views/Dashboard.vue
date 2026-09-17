@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { parseDate } from '@/utils/time'
 import { computed, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { RefreshCw } from 'lucide-vue-next'
 import {
   useClosureMetricsQuery,
@@ -251,9 +252,19 @@ const rootCauseTop = computed(() =>
 
           <!-- KPI 卡片 -->
           <div class="kpi-grid">
-            <div v-for="(kpi, index) in kpis" :key="index" class="kpi-card">
-              <div class="kpi-label">{{ kpi.label }}</div>
-              <div class="kpi-value">{{ kpi.value }}</div>
+            <div
+              v-for="(kpi, index) in kpis" :key="index"
+              class="kpi-card"
+              :class="{ 'kpi-card--link': kpi.label === '总工单数' }"
+            >
+              <RouterLink v-if="kpi.label === '总工单数'" to="/tickets" class="kpi-link">
+                <div class="kpi-label">{{ kpi.label }}</div>
+                <div class="kpi-value">{{ kpi.value }}</div>
+              </RouterLink>
+              <template v-else>
+                <div class="kpi-label">{{ kpi.label }}</div>
+                <div class="kpi-value">{{ kpi.value }}</div>
+              </template>
             </div>
           </div>
 
@@ -582,6 +593,40 @@ const rootCauseTop = computed(() =>
 
 .kpi-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* 可点击 KPI 卡片——右缘出现 → 暗示可跳转 */
+.kpi-card--link {
+  cursor: pointer;
+  position: relative;
+}
+
+.kpi-card--link:hover {
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.15);
+}
+
+.kpi-card--link::after {
+  content: '→';
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  color: #bbb;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.kpi-card--link:hover::after {
+  opacity: 1;
+  color: var(--color-primary, #2563eb);
+}
+
+/* RouterLink 去默认样式，继承卡片内文字颜色 */
+.kpi-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
 }
 
 .kpi-label {
