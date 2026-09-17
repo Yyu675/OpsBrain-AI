@@ -208,9 +208,9 @@ const clearFilters = () => {
           <RouterLink to="/tickets" class="btn-primary">
             提交工单
           </RouterLink>
-          <button class="btn-outline is-disabled" type="button" disabled title="在线咨询将在 L2 阶段接入">
-            在线咨询（即将上线）
-          </button>
+          <a href="/openapi.json" class="btn-outline" title="下载 OpenAPI 规范文件（可供 Postman/Scalar 导入）">
+            API 文档
+          </a>
         </div>
       </section>
     </main>

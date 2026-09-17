@@ -5,7 +5,7 @@
  * 用户名密码登录 → app.login（调后端 + 存 token）→ 跳回来源页或首页。
  * 未登录被路由守卫重定向到此，带 ?redirect= 来源路径，登录后回跳。
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { Bot, User, Lock, Loader2 } from 'lucide-vue-next'
@@ -20,6 +20,7 @@ const app = useAppStore()
 const username = ref('')
 const password = ref('')
 const submitting = ref(false)
+const usernameRef = ref<HTMLInputElement | null>(null)
 
 /**
  * 登录后的回跳目标。
@@ -52,7 +53,10 @@ onMounted(() => {
   // 已登录用户直接跳走，不停留在登录页
   if (app.isAuthenticated) {
     router.replace(redirectTarget())
+    return
   }
+  // 未登录时自动聚焦用户名框，用户可立即输入
+  nextTick(() => usernameRef.value?.focus())
 })
 </script>
 
@@ -69,6 +73,7 @@ onMounted(() => {
         <div class="field">
           <User :size="16" class="field-icon" />
           <input
+            ref="usernameRef"
             v-model="username"
             type="text"
             class="field-input"
