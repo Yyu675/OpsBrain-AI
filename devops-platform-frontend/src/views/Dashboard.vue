@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { parseDate } from '@/utils/time'
 import { computed, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { RefreshCw } from 'lucide-vue-next'
 import {
   useClosureMetricsQuery,
@@ -16,7 +16,14 @@ import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import TrendChart, { type TrendSeries } from '@/components/common/TrendChart.vue'
 import SlaRiskPanel from '@/components/dashboard/SlaRiskPanel.vue'
 
+const router = useRouter()
+
 defineOptions({ name: 'Dashboard' })
+
+/** 趋势图点击下钻：跳转到对应日期的工单列表 */
+const onTrendClick = (p: { seriesName: string; label: string; value: number }) => {
+  router.push({ path: '/tickets', query: { date: p.label } })
+}
 
 /**
  * 四个区块各自独立查询（TanStack Query）。
@@ -321,6 +328,7 @@ const rootCauseTop = computed(() =>
                     height="240px"
                     left-axis-name="%"
                     right-axis-name="元"
+                    @chart-click="onTrendClick"
                   />
                   <AppEmpty v-else size="sm" description="暂无趋势数据" />
                 </PanelErrorBoundary>

@@ -67,6 +67,11 @@ const props = withDefaults(defineProps<{
   enableZoom: false
 })
 
+const emit = defineEmits<{
+  /** 点击数据点：{ seriesName, label(横轴标签), value } */
+  'chart-click': [payload: { seriesName: string; label: string; value: number }]
+}>()
+
 const chartEl = ref<HTMLDivElement | null>(null)
 /** shallowRef：ECharts 实例是重对象，深响应式会递归代理导致性能骤降与内部状态异常 */
 const chartInstance = shallowRef<echarts.ECharts | null>(null)
@@ -189,6 +194,12 @@ const render = () => {
   // notMerge=true：系列数量变化时（如切换维度）旧系列必须清掉，
   // 否则 merge 语义会残留上一次的线
   chartInstance.value.setOption(buildOption(), true)
+
+  // chart-click：点击数据点发出钻取事件（供父组件导航到筛选列表）
+  chartInstance.value.off('click')
+  chartInstance.value.on('click', (params: { seriesName: string; name: string; value: number }) => {
+    emit('chart-click', { seriesName: params.seriesName, label: params.name, value: params.value })
+  })
 }
 
 /** 容器尺寸变化时重绘——折叠面板展开、窗口缩放都会触发 */
