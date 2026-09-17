@@ -208,7 +208,7 @@ const clearFilters = () => {
           <RouterLink to="/tickets" class="btn-primary">
             提交工单
           </RouterLink>
-          <a href="/openapi.json" class="btn-outline" title="下载 OpenAPI 规范文件（可供 Postman/Scalar 导入）">
+          <a href="/ai/v3/api-docs" class="btn-outline" title="OpenAPI 3 规范（SpringDoc 自动生成，可导入 Postman/Scalar）">
             API 文档
           </a>
         </div>
