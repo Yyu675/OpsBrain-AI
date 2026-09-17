@@ -124,6 +124,14 @@ server:
   port: 8088
   servlet:
     context-path: /ai
+  # GZIP 压缩（批88 P2：此前未配置，API 响应原样传输）
+  # 工单列表/告警列表等 JSON 响应通常在数十 KB，gzip 压缩比>70%，
+  # 单行配置即省带宽、降延迟。仅压缩 text/json/xml/javascript，
+  # 图片/PDF 等已完成压缩的二进制格式跳过。
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/javascript,application/json
+    min-response-size: 1024
 
 # ==================== 日志（A5：全链路 traceId）====================
 # %X{traceId} 从 MDC 读取，由 TraceIdFilter 在请求入口写入。
