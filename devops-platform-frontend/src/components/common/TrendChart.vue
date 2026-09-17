@@ -197,8 +197,12 @@ const render = () => {
 
   // chart-click：点击数据点发出钻取事件（供父组件导航到筛选列表）
   chartInstance.value.off('click')
-  chartInstance.value.on('click', (params: { seriesName: string; name: string; value: number }) => {
-    emit('chart-click', { seriesName: params.seriesName, label: params.name, value: params.value })
+  chartInstance.value.on('click', (params: any) => {
+    emit('chart-click', {
+      seriesName: String(params.seriesName ?? ''),
+      label: String(params.name ?? ''),
+      value: Number(params.value ?? 0)
+    })
   })
 }
 

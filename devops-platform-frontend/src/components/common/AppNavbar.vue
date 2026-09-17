@@ -6,6 +6,7 @@ import { ElMessageBox } from 'element-plus'
 import { Monitor, Bell, User, Settings, LogOut, LogIn, CheckCheck, Menu, X } from 'lucide-vue-next'
 import ProfileDialog from '@/components/common/ProfileDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
+import GlobalSearchBar from '@/components/common/GlobalSearchBar.vue'
 import AvatarFallback from '@/components/common/AvatarFallback.vue'
 import { useAppStore } from '@/stores/app'
 import { useNotificationsStore, type AppNotification } from '@/stores/notifications'
@@ -247,6 +248,8 @@ onBeforeUnmount(() => {
           >{{ approvalPending > 99 ? '99+' : approvalPending }}</span>
         </RouterLink>
       </div>
+
+      <GlobalSearchBar v-if="app.isAuthenticated" />
 
       <div class="navbar-actions">
         <!-- 访客态：通知与用户菜单都无意义（通知需受保护 API、用户信息为空），改为登录入口 -->
