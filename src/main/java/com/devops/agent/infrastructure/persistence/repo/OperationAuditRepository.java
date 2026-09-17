@@ -27,6 +27,11 @@ public class OperationAuditRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
+    /** 定时清理：删除 N 天前的操作审计记录（默认 180 天） */
+    private static final String DELETE_OLDER_THAN = """
+            DELETE FROM sys_operation_audit WHERE create_time < ?
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public OperationAuditRepository(JdbcTemplate jdbcTemplate) {
@@ -52,6 +57,28 @@ public class OperationAuditRepository {
         } catch (Exception e) {
             log.error("❌ [Audit] 审计写入失败（业务不受影响）| action={} | trace={} | err={}",
                     r.action(), r.traceId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 清理指定天数之前的审计日志。
+     *
+     * @param retentionDays 保留天数（如 180），早于此时间的行会被删除
+     * @return 删除的行数（-1 表示异常，不阻塞定时任务）
+     */
+    public int deleteOlderThan(int retentionDays) {
+        try {
+            Timestamp cutoff = Timestamp.valueOf(
+                    java.time.LocalDateTime.now().minusDays(retentionDays));
+            int deleted = jdbcTemplate.update(DELETE_OLDER_THAN, cutoff);
+            if (deleted > 0) {
+                log.info("🧹 [Audit] 清理 {} 天前的审计日志 | 删除 {} 条 | 截止 {}",
+                        retentionDays, deleted, cutoff);
+            }
+            return deleted;
+        } catch (Exception e) {
+            log.warn("⚠️ [Audit] 审计清理失败（不阻塞定时链）| {}", e.getMessage());
+            return -1;
         }
     }
 }
