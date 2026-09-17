@@ -644,6 +644,11 @@ public class KnowledgeDocService {
         if (doc.getContent() == null) {
             throw new IllegalArgumentException("文档内容不能为空");
         }
+        if (doc.getContent().length() > 500000) {
+            throw new IllegalArgumentException(
+                    "文档内容过长（上限 500,000 字符），当前 " + doc.getContent().length()
+                            + " 字符。超长文档建议拆分后逐篇导入。");
+        }
 
         // 内容清洗（P1-3）：脏数据不进向量库
         KnowledgeContentCleaner.CleanResult cr = contentCleaner.clean(doc.getContent());
