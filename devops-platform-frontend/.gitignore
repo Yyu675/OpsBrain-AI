@@ -25,3 +25,4 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+e2e/.auth/
