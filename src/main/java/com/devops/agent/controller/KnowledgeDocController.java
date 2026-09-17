@@ -9,6 +9,7 @@ import com.devops.agent.domain.rag.KnowledgeDocService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +98,86 @@ public class KnowledgeDocController {
             log.error("创建文档失败", e);
             return ApiResponse.error(ApiCode.INTERNAL_ERROR, "创建文档失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 批量导入文档（批88 P1：知识库冷启动通道）
+     *
+     * <p>POST /api/v1/knowledge/docs/batch-import</p>
+     *
+     * <p>一次性提交 N 篇文档，每篇独立调用 create（去重/SimHash/向量化全生效），
+     * 单条失败不阻断其余——返回每条的成功/失败明细，供调用方复核。</p>
+     *
+     * <p>知识库冷启动场景：从 Confluence/Wiki/旧系统导出 Markdown 后
+     * 一次性灌入，无需逐篇手动创建。</p>
+     */
+    @PostMapping("/batch-import")
+    public ApiResponse<Object> batchImport(@RequestBody KnowledgeDocDto.BatchImportRequest req) {
+        writeGuard.requireEdit();
+        if (req == null || req.items() == null || req.items().isEmpty()) {
+            return ApiResponse.error(ApiCode.BAD_REQUEST, "批量导入条目不能为空");
+        }
+
+        int successCount = 0;
+        int failCount = 0;
+        List<Map<String, Object>> results = new ArrayList<>();
+
+        for (int i = 0; i < req.items().size(); i++) {
+            KnowledgeDocDto.CreateRequest item = req.items().get(i);
+            try {
+                KnowledgeDoc doc = new KnowledgeDoc();
+                doc.setTitle(item.title());
+                doc.setCategory(item.category());
+                doc.setCategoryId(item.categoryId());
+                doc.setAuthor(item.author());
+                doc.setContent(item.content());
+                doc.setSummary(item.summary());
+                doc.setKnowledgeSource(item.knowledgeSource());
+                doc.setSourceTicketId(item.sourceTicketId());
+                doc.setSourceType(item.sourceType() != null ? item.sourceType() : "IMPORT");
+                doc.setEffectiveAt(item.effectiveAt());
+                doc.setExpiredAt(item.expiredAt());
+
+                KnowledgeDocService.SaveResult r
+                        = docService.create(doc, item.tags(), req.publish(), "BATCH_IMPORT");
+
+                Map<String, Object> itemResult = new LinkedHashMap<>();
+                itemResult.put("index", i);
+                itemResult.put("title", item.title());
+                itemResult.put("status", "SUCCESS");
+                itemResult.put("docId", r.docId());
+                itemResult.put("indexStatus", r.indexOutcome().status());
+                itemResult.put("retrievable", r.indexOutcome().isRetrievable());
+                results.add(itemResult);
+                successCount++;
+
+            } catch (KnowledgeDocService.DuplicateContentException e) {
+                Map<String, Object> itemResult = new LinkedHashMap<>();
+                itemResult.put("index", i);
+                itemResult.put("title", item.title());
+                itemResult.put("status", "SKIPPED_DUPLICATE");
+                itemResult.put("duplicateDocId", e.getDuplicateDocId());
+                itemResult.put("duplicateTitle", e.getDuplicateTitle());
+                results.add(itemResult);
+                failCount++;
+
+            } catch (Exception e) {
+                Map<String, Object> itemResult = new LinkedHashMap<>();
+                itemResult.put("index", i);
+                itemResult.put("title", item.title());
+                itemResult.put("status", "FAILED");
+                itemResult.put("error", e.getMessage());
+                results.add(itemResult);
+                failCount++;
+            }
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("total", req.items().size());
+        data.put("success", successCount);
+        data.put("failed", failCount);
+        data.put("results", results);
+        return ApiResponse.success(data);
     }
 
     /**

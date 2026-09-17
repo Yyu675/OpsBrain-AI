@@ -315,4 +315,18 @@ public class KnowledgeDocDto {
             return new DocPage(content, totalElements, totalPages, currentPage, pageSize);
         }
     }
+
+    /**
+     * 批量导入请求（批88 P1：知识库冷启动通道）
+     *
+     * <p>items 里的每条等价于 CreateRequest（不含 publish 标志——批量统一控制）。
+     * 服务端逐条独立执行 create（复用去重/向量化/SimHash），单条失败不阻断其余。</p>
+     *
+     * @param items   导入条目列表（空数组返回 400）
+     * @param publish true=发布后立即向量化；false=存草稿
+     */
+    public record BatchImportRequest(
+            List<CreateRequest> items,
+            boolean publish
+    ) {}
 }
