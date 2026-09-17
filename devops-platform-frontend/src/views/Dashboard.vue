@@ -15,6 +15,7 @@ import PageLoading from '@/components/common/PageLoading.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import TrendChart, { type TrendSeries } from '@/components/common/TrendChart.vue'
 import SlaRiskPanel from '@/components/dashboard/SlaRiskPanel.vue'
+import AlertFeed from '@/components/dashboard/AlertFeed.vue'
 
 const router = useRouter()
 
@@ -282,6 +283,11 @@ const rootCauseTop = computed(() =>
           -->
           <div class="data-grid data-grid--single sla-risk-row">
             <SlaRiskPanel />
+          </div>
+
+          <!-- 实时告警流（复用 AlertStreamMode 的 WebSocket 通道，紧凑侧栏） -->
+          <div class="data-grid data-grid--single">
+            <AlertFeed />
           </div>
 
           <!-- 数据详情 -->

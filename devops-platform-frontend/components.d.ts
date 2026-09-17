@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AgentTraceDrawer: typeof import('./src/components/ai/AgentTraceDrawer.vue')['default']
+    AlertFeed: typeof import('./src/components/dashboard/AlertFeed.vue')['default']
     AlertStreamMode: typeof import('./src/components/ai/AlertStreamMode.vue')['default']
     AnalysisCard: typeof import('./src/components/ticket/AnalysisCard.vue')['default']
     AnalyticsMode: typeof import('./src/components/ai/AnalyticsMode.vue')['default']
