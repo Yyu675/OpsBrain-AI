@@ -93,14 +93,13 @@ test.describe('工单列表与创建', () => {
     await page.goto('/tickets')
     await expect(page.locator('.el-table__row').first()).toBeVisible({ timeout: 15_000 })
 
-    const search = page.locator('input[placeholder*="搜索"], input.search-input').first()
-    if (await search.isVisible()) {
-      const respPromise = page.waitForResponse((r) => r.url().includes('/api/v1/tickets?'), { timeout: 10_000 })
-      await search.fill('告警')
-      await page.keyboard.press('Enter')
-      const resp = await respPromise
-      expect(resp.url()).toContain('keyword=')
-    }
+    const search = page.locator('input.filter-search-input').first()
+    await expect(search).toBeVisible({ timeout: 10_000 })
+    const respPromise = page.waitForResponse((r) => r.url().includes('/api/v1/tickets?'), { timeout: 10_000 })
+    await search.fill('告警')
+    await search.press('Enter')
+    const resp = await respPromise
+    expect(resp.url()).toContain('keyword=')
   })
 
   test('点击工单号进入详情页', async ({ page }) => {
