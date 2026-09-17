@@ -48,6 +48,12 @@ const api = vi.hoisted(() => ({
 vi.mock('@/api/dashboard', () => api)
 // AI 效果区（4-4.1 半部先行）：query hook 经 dashboard.query 间接 import 此模块
 vi.mock('@/api/ticketAiAnalysis', () => ({ fetchAiAnalysisStats: api.fetchAiAnalysisStats }))
+// 批88 P3：Dashboard 用 useRouter（KPI 点击跳转 + 趋势下钻），smoke 测试需桩
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ query: {}, params: {} }),
+  RouterLink: { template: '<a><slot /></a>', props: ['to'] },
+}))
 
 import Dashboard from '../Dashboard.vue'
 
