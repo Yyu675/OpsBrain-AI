@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount } from 'vue'
-import { WifiOff, Wifi } from 'lucide-vue-next'
+import { ref, watch } from 'vue'
+import { WifiOff, Wifi, Database } from 'lucide-vue-next'
 import { useNetworkHeartbeat } from '@/composables/useNetworkHeartbeat'
+import { API_BASE } from '@/config/api'
 
 /**
- * 断网横幅：浏览器 online/offline + 心跳探测。
- * 仅监听事件无法发现「网通但后端不可达」；断网后心跳 fetch favicon，
- * 恢复后提示并停止轮询。
+ * 断网/基础设施故障横幅。
+ * - 浏览器离线 + 心跳探测失败 → 断网横幅
+ * - 网络正常但后端 DB 探测失败 → 基础设施故障横幅（区分于断网）
  */
-const { online } = useNetworkHeartbeat({
+const { online, infraHealthy } = useNetworkHeartbeat({
   url: '/favicon.ico',
   intervalMs: 10000,
-  timeoutMs: 4000
+  timeoutMs: 4000,
+  // 后端 DB 连通性探针（免鉴权、零成本、返回 UP/DOWN）。
+  // 必须用 API_BASE（绝对后端地址）而非相对路径——相对路径会打到前端自身。
+  infraUrl: `${API_BASE}/health/db`,
+  infraIntervalMs: 15000
 })
 
 const recoveredVisible = ref(false)
@@ -30,18 +35,21 @@ watch(online, (now, prev) => {
     window.clearTimeout(recoveredTimer)
   }
 })
-
-onBeforeUnmount(() => {
-  window.clearTimeout(recoveredTimer)
-})
 </script>
 
 <template>
   <transition name="network-slide">
+    <!-- 网络断开 -->
     <div v-if="!online" class="network-banner network-banner-offline" role="status">
       <WifiOff :size="14" />
       <span>当前网络已断开，部分功能可能不可用</span>
     </div>
+    <!-- 网络正常但后端基础设施（DB/Redis）故障 -->
+    <div v-else-if="!infraHealthy" class="network-banner network-banner-infra" role="status">
+      <Database :size="14" />
+      <span>后端数据服务异常（数据库/缓存），部分查询可能不可用</span>
+    </div>
+    <!-- 网络刚恢复 -->
     <div v-else-if="recoveredVisible" class="network-banner network-banner-online" role="status">
       <Wifi :size="14" />
       <span>网络已恢复</span>
@@ -70,6 +78,12 @@ onBeforeUnmount(() => {
   background: var(--danger-subtle);
   color: var(--danger);
   border-bottom: 1px solid #FCA5A5;
+}
+
+.network-banner-infra {
+  background: #FEF3C7;
+  color: #B45309;
+  border-bottom: 1px solid #FDE68A;
 }
 
 .network-banner-online {

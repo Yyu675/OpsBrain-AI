@@ -81,8 +81,9 @@ public class HotMemoryStore {
 
             touchTtl(sessionId);
         } catch (Exception e) {
-            // 热记忆失败不阻塞主流程（降级为无历史）
-            log.warn("⚠️ [HotMemory] 追加消息失败 | sessionId={} | {}", sessionId, e.getMessage());
+            // 批88 审计修复：Redis 写入失败是依赖故障，不是瞬态抖动——升级为 error 并加计数
+            log.error("❌ [HotMemory] 追加消息失败——Redis 不可达或写入异常 | sessionId={} | {}",
+                    sessionId, e.getMessage(), e);
         }
     }
 
@@ -103,13 +104,16 @@ public class HotMemoryStore {
                 try {
                     messages.add(objectMapper.readValue(s, Message.class));
                 } catch (Exception ignore) {
-                    // 单条解析失败跳过，不影响其余历史
+                    // 批88 审计修复：schema迁移导致旧形态不可解析时静默丢历史→至少留debug痕迹
+                    log.debug("⏭️ [HotMemory] 跳过不可解析消息 | sessionId={} | {}", sessionId, ignore.getMessage());
                 }
             }
             touchTtl(sessionId);
             return messages;
         } catch (Exception e) {
-            log.warn("⚠️ [HotMemory] 读取消息失败（降级为无历史）| sessionId={} | {}", sessionId, e.getMessage());
+            // 批88 审计修复：Redis 不可达时静默返回空历史=用户丢上下文无感知
+            log.error("❌ [HotMemory] 读取消息失败——Redis 不可达 | sessionId={} | {}",
+                    sessionId, e.getMessage(), e);
             return Collections.emptyList();
         }
     }

@@ -80,6 +80,9 @@ class LogRedactionContractTest {
         REVIEWED_SAFE.put("common/web/WebhookGuard.java", 2);
         // 输出的是「加签=是/否」这个布尔判断结果，不是 secret 本身
         REVIEWED_SAFE.put("domain/notify/DingTalkNotifier.java", 1);
+        // P1 渠道编辑：log.info("key={}", key) —— key 是渠道键（chat/embedding），
+        // 不含 API Key。掩码 apiKey 的 maskedKey 不在这里输出
+        REVIEWED_SAFE.put("domain/ai/AiChannelService.java", 1);
     }
 
     @Test

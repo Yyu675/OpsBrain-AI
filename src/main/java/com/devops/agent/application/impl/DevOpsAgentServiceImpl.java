@@ -1074,6 +1074,11 @@ public class DevOpsAgentServiceImpl implements DevOpsAgentService {
             }
         } catch (Exception e) {
             log.error("🚨 [Saga] 触发补偿时异常 | traceId={} | {}", traceId, e.getMessage(), e);
+            // 批88 审计修复：补偿触发本身失败也必须转 MANUAL_ESCALATED——
+            // 否则脏数据残留且无任何告警信号，运维根本不知道有问题
+            transitionOrWarn(traceId, AgentState.MANUAL_ESCALATED,
+                    AgentStateTransition.TriggerType.MANUAL_TAKEOVER,
+                    "Saga 补偿触发异常，需人工介入: " + e.getMessage());
         }
     }
 

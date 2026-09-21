@@ -199,7 +199,8 @@ public class AgentMemoryManager {
         try {
             return summaryRepo.findRecent(tenantId != null ? tenantId : "default", limit, offset);
         } catch (Exception e) {
-            log.warn("⚠️ [Memory] 查询会话列表失败 | {}", e.getMessage());
+            log.error("❌ [Memory] 查询会话列表失败——DB 不可达或查询异常 | tenant={} | {}",
+                    tenantId, e.getMessage(), e);
             return List.of();
         }
     }
@@ -211,6 +212,8 @@ public class AgentMemoryManager {
         try {
             return summaryRepo.countByTenant(tenantId != null ? tenantId : "default");
         } catch (Exception e) {
+            log.error("❌ [Memory] 统计会话总数失败——DB 不可达或查询异常 | tenant={} | {}",
+                    tenantId, e.getMessage(), e);
             return 0L;
         }
     }

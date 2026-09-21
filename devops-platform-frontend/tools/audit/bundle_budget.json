@@ -1,0 +1,10 @@
+{
+  "description": "首屏构建预算（gzip 前），超标阻断 CI 构建。",
+  "rules": [
+    { "resource": "总构建产物", "type": "total", "maxKB": 5500, "level": "error", "note": "超 5.5MB 阻断" },
+    { "resource": "vendor-echarts", "type": "chunk", "maxKB": 600, "level": "warn", "note": "ECharts 按需引入可省 200KB" },
+    { "resource": "KnowledgeRichEditor", "type": "chunk", "maxKB": 850, "level": "warn", "note": "富文本编辑器超标时警告" },
+    { "resource": "vendor-element", "type": "chunk", "maxKB": 500, "level": "warn", "note": "Element Plus 图标全量引入会推高此值" },
+    { "resource": "首屏入口 JS", "type": "entry", "maxKB": 200, "level": "error", "note": "首屏 JS >200KB 阻断" }
+  ]
+}

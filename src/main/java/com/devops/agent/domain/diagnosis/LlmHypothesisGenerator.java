@@ -123,9 +123,10 @@ public class LlmHypothesisGenerator implements HypothesisGenerator {
                 items.add(item);
             }
             return objectMapper.writeValueAsString(items);
-        } catch (Exception ignored) {
-            // 序列化理论上不会失败（LinkedHashMap + 基本类型）；收口时留痕不再裸吞
-            log.debug("[Hypothesis] 证据摘要 JSON 序列化失败，给 LLM 传空数组：{}", ignored.getMessage());
+        } catch (Exception e) {
+            // 批88 审计修复：证据丢失会让 LLM 无据诊断——不能只有 debug 级日志
+            log.warn("⚠️ [Hypothesis] 证据摘要 JSON 序列化失败，给 LLM 传空数组——诊断将无据: {}",
+                    e.getMessage());
             return "[]";
         }
     }

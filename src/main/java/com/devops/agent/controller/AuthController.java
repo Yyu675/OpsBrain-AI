@@ -109,8 +109,10 @@ public class AuthController {
     public ApiResponse<String> logout() {
         try {
             StpUtil.logout();
-        } catch (Exception ignored) {
-            // 未登录时 logout 无副作用，忽略
+        } catch (Exception e) {
+            // 批88 审计修复：登出失败需留痕——若 Redis 挂了导致 token 未失效，
+            // 运维需要能从日志中发现「登出操作未真正生效」
+            log.warn("⚠️ [Auth] 登出调用失败（token 可能仍有效）| {}", e.getMessage());
         }
         return ApiResponse.success("已登出");
     }

@@ -213,7 +213,8 @@ public class ToolRuntimeManager {
                 }
             }
         } catch (Exception e) {
-            log.debug("查找工具元数据失败 | tool={} | {}", toolName, e.getMessage());
+            // 批88 审计修复：反射失败静默跳过会导致工具不可用——debug 不足以及时发现
+            log.warn("⚠️ 查找工具元数据失败 | tool={} | {}", toolName, e.getMessage());
         }
         return null;
     }

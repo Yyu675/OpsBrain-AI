@@ -65,7 +65,9 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 800,
+    // wangeditor 富文本库体 ~870kB 已拆分到独立懒加载块 vendor-editor，
+    // 仅编辑文档的路由才拉取；警告线上调避免对「按需加载的第三方库」误报
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -79,6 +81,9 @@ export default defineConfig({
           // Markdown 渲染链路（marked + dompurify）：阅读页也要用，
           // 与编辑器分开，避免阅读者被迫下载编辑器
           if (id.includes('marked') || id.includes('dompurify')) return 'vendor-markdown'
+          // 富文本编辑器（wangeditor）独立成块：库体较大（~700kB），
+          // 与业务代码分离后，业务发版不必让编辑者重新下载整库
+          if (id.includes('@wangeditor') || id.includes('wang-editor')) return 'vendor-editor'
           if (id.includes('vue-router') || id.includes('pinia') || id.includes('/vue/') || id.includes('@vue/')) return 'vendor-vue'
 
           /**

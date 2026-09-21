@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -159,8 +160,8 @@ public class KnowledgeIngestionService {
             log.debug("扫描路径 [{}] 找到 {} 个文件", KNOWLEDGE_BASE_PATH, resources.length);
 
             for (Resource resource : resources) {
-                try {
-                    String content = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                try (InputStream is = resource.getInputStream()) {
+                    String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                     String filename = resource.getFilename();
 
                     Metadata metadata = new Metadata();

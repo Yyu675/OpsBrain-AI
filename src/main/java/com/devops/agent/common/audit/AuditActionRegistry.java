@@ -94,6 +94,9 @@ public final class AuditActionRegistry {
         // 的时刻，事故复盘时要能直接按这个 action 过滤出来，
         // 而不是在一堆 update 里翻 diff
         put("POST",   "/api/v1/governance/policies/*/dry-run", "governance.policy.dry-run");
+
+        // ── 模型渠道配置（P1：渠道编辑留痕）─────────────────────
+        put("PUT",    "/api/v1/model-channels/*",            "ai-channel.update");
     }
 
     private AuditActionRegistry() {

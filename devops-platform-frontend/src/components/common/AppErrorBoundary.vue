@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { notify } from '@/utils/notify'
 import { ref, onErrorCaptured, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { AlertTriangle, RefreshCw, Home, Copy } from 'lucide-vue-next'
 import { copyText } from '@/utils/clipboard'
@@ -28,9 +28,10 @@ const retry = () => {
   err.value = null
 }
 
+const router = useRouter()
 const backHome = () => {
   err.value = null
-  window.location.href = '/'
+  router.push('/')
 }
 
 /**

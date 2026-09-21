@@ -22,6 +22,9 @@ const password = ref('')
 const submitting = ref(false)
 const usernameRef = ref<HTMLInputElement | null>(null)
 
+// import.meta 只能在 <script> 中使用，不能出现在模板表达式里（Vue 编译器/打包器无法解析）
+const isDev = import.meta.env.DEV
+
 /**
  * 登录后的回跳目标。
  *
@@ -100,7 +103,8 @@ onMounted(() => {
         </button>
       </form>
 
-      <p class="login-hint">默认账号 admin / admin123（首次登录后请及时改密）</p>
+      <p v-if="isDev" class="login-hint">开发模式：默认账号 admin / admin123</p>
+      <p v-else class="login-hint production-hint">请输入您的账号密码登录</p>
     </div>
   </div>
 </template>

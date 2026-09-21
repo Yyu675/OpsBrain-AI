@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { loadPersisted, savePersisted, type Migrator } from '@/utils/persist'
+import { loadPersisted, savePersisted, clearPersisted, type Migrator } from '@/utils/persist'
 import { getAuthToken, setAuthToken, clearAuthToken, HttpError } from '@/utils/http'
 import { login as apiLogin, getMe as apiGetMe, logout as apiLogout, type AuthUser } from '@/api/auth'
 
@@ -119,7 +119,7 @@ const loadCachedUser = (): AuthUser | null =>
 
 const clearCachedUser = (): void => {
   try {
-    localStorage.removeItem(AUTH_USER_CACHE_KEY)
+    clearPersisted(AUTH_USER_CACHE_KEY)
   } catch {
     /* 隐私模式：忽略 */
   }

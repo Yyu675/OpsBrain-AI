@@ -207,7 +207,13 @@ public class SagaCompensationManager {
         try {
             return applicationContext.getBean(com.devops.agent.domain.tools.DevOpsTools.class);
         } catch (Exception e) {
-            log.error("❌ [Saga] 获取工具 Bean 失败 | tool={} | {}", toolName, e.getMessage());
+            // 批88 审计修复：补充 Spring 上下文诊断信息，帮助运维快速定位 Bean 缺失原因
+            String[] beanNames = applicationContext.getBeanNamesForType(Object.class);
+            boolean hasDevOpsTools = java.util.Arrays.stream(beanNames)
+                    .anyMatch(n -> n.toLowerCase().contains("devopstools"));
+            log.error("❌ [Saga] 获取工具 Bean 失败 | tool={} | hasDevOpsToolsInContext={} "
+                    + "| beanCount={} | {}",
+                    toolName, hasDevOpsTools, beanNames.length, e.getMessage(), e);
             return null;
         }
     }
