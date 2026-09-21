@@ -7,7 +7,9 @@ import com.devops.agent.domain.tools.ToolFailureType;
 import com.devops.agent.domain.tools.ToolMeta;
 import com.devops.agent.domain.tools.ToolParameterValidator;
 import com.devops.agent.domain.tools.ToolRiskLevel;
+import com.devops.agent.infrastructure.concurrent.ManagedExecutors;
 import com.devops.agent.infrastructure.persistence.repo.ToolExecutionRepository;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -21,8 +23,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -102,15 +104,17 @@ public class ToolRuntimeManager {
      * 必须是 {@code ExecutorService}（FutureTask 语义）而非
      * {@code CompletableFuture.supplyAsync}（commonPool）——前者的
      * {@code cancel(true)} 会真正 interrupt 执行线程，后者明确忽略中断参数。
-     * 工具自带超时上限（@ToolMeta.timeoutMs），任务结束即释放线程，
-     * cached 池不会无界增长；daemon 线程不阻塞 JVM 关停。
+     * </p>
+     * <p>
+     * 池型选 {@link ManagedExecutors#forTimeoutBoundWork}（有界 + 快速失败）：
+     * cached 池的线程数无上限，会话突发时线程爆炸；CallerRuns 会让 submit
+     * 同步执行、Future.get(timeout) 失效；Discard 会让任务静默消失、
+     * 调用方干等到超时。快速失败把饱和信号立刻转成明确的「繁忙」错误。
+     * 任务自带超时上限（@ToolMeta.timeoutMs），结束即释放线程。
      * </p>
      */
-    private final ExecutorService toolExecPool = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "tool-exec");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService toolExecPool =
+            ManagedExecutors.forTimeoutBoundWork("tool-exec", 4, 64);
 
     /**
      * 执行工具调用（统一治理入口）
@@ -182,7 +186,7 @@ public class ToolRuntimeManager {
      * <p>应用关闭时不再接受新工具任务；对仍在执行中的工具发中断
      * （与超时中断同一语义），避免挂着的建单/写库在停机窗口落库。</p>
      */
-    @jakarta.annotation.PreDestroy
+    @PreDestroy
     public void shutdownToolExecPool() {
         toolExecPool.shutdownNow();
     }
@@ -239,13 +243,21 @@ public class ToolRuntimeManager {
                 // cancel(true) 会真正 interrupt 执行线程，sleep/IO 感知中断后退出。
                 // 若放任慢工具后台继续跑，它会与指数退避后的重试副本并行执行，
                 // 副作用（建单/写库）堆积。
-                Future<Object> future = toolExecPool.submit(() -> {
-                    try {
-                        return method.invoke(toolInstance, args);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                });
+                Future<Object> future;
+                try {
+                    future = toolExecPool.submit(() -> {
+                        try {
+                            return method.invoke(toolInstance, args);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+                } catch (RejectedExecutionException rje) {
+                    // 池饱和快速失败（forTimeoutBoundWork 的 AbortPolicy）：
+                    // 转成明确的「繁忙」语义——不带 cause，避免 unwrapToRootCause
+                    // 把这层翻译剥掉、让生涩的 RejectedExecutionException 冒泡给模型
+                    throw new IllegalStateException("工具执行池已饱和，请稍后重试");
+                }
 
                 try {
                     return future.get(timeoutMs, TimeUnit.MILLISECONDS);

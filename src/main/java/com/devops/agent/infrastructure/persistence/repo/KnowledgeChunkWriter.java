@@ -60,12 +60,12 @@ public class KnowledgeChunkWriter {
                  chunk_meta, embedding,
                  doc_id, content_hash,
                  version, effective_at, expired_at, status, knowledge_source,
-                 visibility, owner_dept,
+                 visibility, owner_dept, kb_id,
                  create_time, update_time)
             VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::vector,
                     ?, ?,
                     ?, ?, ?, ?, ?,
-                    ?, ?,
+                    ?, ?, ?,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """;
 
@@ -97,7 +97,10 @@ public class KnowledgeChunkWriter {
                         // 列有 NOT NULL 约束，且「未标注即公开」与存量数据语义一致。
                         // 真正的收紧由文档侧显式设置后同步下来。
                         e.getVisibility() != null ? e.getVisibility() : "PUBLIC",
-                        e.getOwnerDept()
+                        e.getOwnerDept(),
+                        // V2：知识库归属冗余下沉（免 JOIN 保 HNSW），可为 NULL
+                        // （classpath 摄取链路不挂库）
+                        e.getKbId()
                 });
             }
 

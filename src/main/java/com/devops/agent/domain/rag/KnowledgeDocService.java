@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -46,6 +47,7 @@ public class KnowledgeDocService {
     private final KnowledgeContentCleaner contentCleaner;
     private final KnowledgeCategoryRepository categoryRepo;
     private final KnowledgeTagRepository tagCatalog;
+    private final KnowledgeBaseService kbService;
 
     public KnowledgeDocService(KnowledgeDocRepository docRepo,
                                KnowledgeDocHistoryRepository historyRepo,
@@ -55,7 +57,8 @@ public class KnowledgeDocService {
                                SemanticCacheService semanticCache,
                                KnowledgeContentCleaner contentCleaner,
                                KnowledgeCategoryRepository categoryRepo,
-                               KnowledgeTagRepository tagCatalog) {
+                               KnowledgeTagRepository tagCatalog,
+                               KnowledgeBaseService kbService) {
         this.docRepo = docRepo;
         this.historyRepo = historyRepo;
         this.tagRepo = tagRepo;
@@ -65,6 +68,7 @@ public class KnowledgeDocService {
         this.contentCleaner = contentCleaner;
         this.categoryRepo = categoryRepo;
         this.tagCatalog = tagCatalog;
+        this.kbService = kbService;
     }
 
     // ==================== 创建 ====================
@@ -79,6 +83,9 @@ public class KnowledgeDocService {
     @Transactional(rollbackFor = Exception.class)
     public SaveResult create(KnowledgeDoc doc, List<String> tags, boolean publish, String operator) {
         resolveCategory(doc);
+        // 知识库归属：未指定落默认库；显式指定的库必须存在且 ACTIVE。
+        // 归属决定索引时的切片参数（ChunkProfile 随库配置）。
+        doc.setKbId(kbService.resolveForNewDoc(doc.getKbId()).getId());
         validateForSave(doc);
 
         String hash = fingerprint.sha256(doc.getContent());
@@ -215,6 +222,14 @@ public class KnowledgeDocService {
             existing.setOwnerDept(patch.getOwnerDept());
             visibilityChanged = true;
         }
+        // 知识库归属变更：切片参数随库不同，且 chunk.kb_id 是下沉冗余列，
+        // 不换索引就会出现「文档已换库但切片仍挂在旧库、仍按旧参数切」。
+        boolean kbChanged = false;
+        if (patch.getKbId() != null && !patch.getKbId().equals(existing.getKbId())) {
+            kbService.requireActive(patch.getKbId());
+            existing.setKbId(patch.getKbId());
+            kbChanged = true;
+        }
         existing.setContent(newContent);
         existing.setContentHash(newHash);
 
@@ -228,7 +243,7 @@ public class KnowledgeDocService {
         // 供检索层免 JOIN 过滤，若只改文档不刷切片，切片上仍是旧的宽松权限——
         // 表现为「文档已设为受限，但 AI 与检索接口仍能读到它」，是无声的越权。
         boolean needReindex = shouldIndexNow
-                && (contentChanged || visibilityChanged || !currentlyIndexed);
+                && (contentChanged || visibilityChanged || kbChanged || !currentlyIndexed);
         if (needReindex) {
             existing.setIndexStatus(KnowledgeDocLifecycle.INDEX_PENDING);
         }
@@ -445,9 +460,10 @@ public class KnowledgeDocService {
     }
 
     public List<KnowledgeDoc> findPage(int page, int size, String status,
-                                       String category, String keyword, String tag, String sort) {
+                                       String category, String keyword, String tag, String sort,
+                                       Long kbId) {
         List<KnowledgeDoc> docs = docRepo.findPage(
-                page, size, status, category, keyword, tag, sort);
+                page, size, status, category, keyword, tag, sort, kbId);
         if (!docs.isEmpty()) {
             List<Long> ids = docs.stream().map(KnowledgeDoc::getId).toList();
             Map<Long, List<String>> tagMap = tagRepo.findByDocIds(ids);
@@ -458,8 +474,8 @@ public class KnowledgeDocService {
         return docs;
     }
 
-    public long countByQuery(String status, String category, String keyword, String tag) {
-        return docRepo.countByQuery(status, category, keyword, tag);
+    public long countByQuery(String status, String category, String keyword, String tag, Long kbId) {
+        return docRepo.countByQuery(status, category, keyword, tag, kbId);
     }
 
     /**
@@ -630,6 +646,48 @@ public class KnowledgeDocService {
             log.info("🔄 [KnowledgeDoc] 补偿向量化 | 待处理={} | 成功={}", pending.size(), succeeded);
         }
         return succeeded;
+    }
+
+    /**
+     * 重建某知识库下全部已发布文档的索引（「按库切片参数」对存量生效的唯一途径）。
+     *
+     * <p>逐篇执行完整的「删旧切片 → 按库参数重切 → 向量化 → 写入」，
+     * 单篇失败不阻断其余——失败文档落 {@code index_status=FAILED}，
+     * 可经 {@code POST /docs/reindex/pending} 补偿，与发布链路同一状态机。</p>
+     *
+     * <p>成本提示：每篇至少一次远程 embedding 调用。本方法本身不设文档数上界
+     * （库内文档全集就是操作目标），入口由控制器以 requireDestructive 把守。</p>
+     *
+     * @return 统计明细：total / success / failed / failures[docId,title,error]
+     */
+    public Map<String, Object> reindexByKnowledgeBase(Long kbId) {
+        List<KnowledgeDoc> docs = docRepo.findPublishedByKbId(kbId);
+        int succeeded = 0;
+        List<Map<String, Object>> failures = new ArrayList<>();
+
+        for (KnowledgeDoc doc : docs) {
+            IndexOutcome outcome = indexIfNeeded(doc);
+            if (outcome.status() == IndexOutcome.Status.INDEXED) {
+                succeeded++;
+            } else {
+                Map<String, Object> failure = new LinkedHashMap<>();
+                failure.put("docId", doc.getId());
+                failure.put("title", doc.getTitle());
+                failure.put("indexStatus", outcome.status().name());
+                failure.put("error", outcome.error() != null ? outcome.error() : "");
+                failures.add(failure);
+            }
+        }
+
+        log.info("🔄 [KnowledgeDoc] 按库重建索引 | kbId={} | 总数={} | 成功={} | 失败={}",
+                kbId, docs.size(), succeeded, failures.size());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", docs.size());
+        result.put("success", succeeded);
+        result.put("failed", failures.size());
+        result.put("failures", failures);
+        return result;
     }
 
     // ==================== 辅助 ====================

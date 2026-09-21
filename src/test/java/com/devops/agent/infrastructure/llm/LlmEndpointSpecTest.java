@@ -1,12 +1,15 @@
 package com.devops.agent.infrastructure.llm;
 
+import com.devops.agent.domain.ai.AiChannelRepository;
 import com.devops.agent.infrastructure.AiModelConfig;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -14,6 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * LLM 端点配置收敛的单元测试。
@@ -202,9 +208,16 @@ class LlmEndpointSpecTest {
     @DisplayName("AiModelConfig 的配置解读")
     class ConfigWiring {
 
-        /** 按 application.yml 的键名手工装配一个 AiModelConfig（无需 Spring 上下文） */
+        /** 按 application.yml 的键名手工装配一个 AiModelConfig（无需 Spring 上下文）。
+         *  channelRepo 传 null：DB 无渠道时所有 spec 回落 yml 字段（P1 权威源回落语义）。 */
         private AiModelConfig configured() {
-            AiModelConfig cfg = new AiModelConfig();
+            AiChannelRepository repo = mock(AiChannelRepository.class);
+            when(repo.findByKey(anyString())).thenReturn(Optional.empty());
+            RateLimiterRegistry rlReg = mock(RateLimiterRegistry.class);
+            when(rlReg.rateLimiter(anyString())).thenReturn(mock(io.github.resilience4j.ratelimiter.RateLimiter.class));
+            io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry cbReg = mock(io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry.class);
+            when(cbReg.circuitBreaker(anyString())).thenReturn(mock(io.github.resilience4j.circuitbreaker.CircuitBreaker.class));
+            AiModelConfig cfg = new AiModelConfig(repo, rlReg, cbReg);
             ReflectionTestUtils.setField(cfg, "chatBaseUrl", URL);
             ReflectionTestUtils.setField(cfg, "chatApiKey", KEY);
             ReflectionTestUtils.setField(cfg, "turboModel", "qwen-plus");

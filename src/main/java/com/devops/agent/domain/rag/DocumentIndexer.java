@@ -47,6 +47,7 @@ public class DocumentIndexer {
     private final EmbeddingModel embeddingModel;
     private final KnowledgeChunkWriter chunkWriter;
     private final ContentFingerprint fingerprint;
+    private final KnowledgeBaseService kbService;
 
     private final AtomicReference<Long> currentDocId = new AtomicReference<>(null);
 
@@ -81,11 +82,13 @@ public class DocumentIndexer {
     public DocumentIndexer(ParentChildDocumentSplitter splitter,
                           EmbeddingModel embeddingModel,
                           KnowledgeChunkWriter chunkWriter,
-                          ContentFingerprint fingerprint) {
+                          ContentFingerprint fingerprint,
+                          KnowledgeBaseService kbService) {
         this.splitter = splitter;
         this.embeddingModel = embeddingModel;
         this.chunkWriter = chunkWriter;
         this.fingerprint = fingerprint;
+        this.kbService = kbService;
     }
 
     public IndexResult reindex(KnowledgeDoc doc) throws Exception {
@@ -126,7 +129,10 @@ public class DocumentIndexer {
                 log.debug("🧹 [Indexer] 清除旧切片 {} 个 | docId={}", removed, doc.getId());
             }
 
-            // 2. 切片
+            // 2. 切片（参数随所属知识库配置：SOP 长文与故障 FAQ 的最优粒度不同，
+            //    见 ChunkProfile；库未配置或未挂库时回落全局默认）
+            ChunkProfile profile = kbService.resolveProfile(doc.getKbId());
+
             Metadata meta = new Metadata();
             meta.put("doc_title", doc.getTitle());
             meta.put("doc_id", String.valueOf(doc.getId()));
@@ -134,7 +140,7 @@ public class DocumentIndexer {
             if (doc.getCategory() != null) meta.put("category", doc.getCategory());
 
             List<TextSegment> segments = splitter.splitWithParentChild(
-                    Document.from(doc.getContent(), meta));
+                    Document.from(doc.getContent(), meta), profile);
 
             if (segments.isEmpty()) {
                 return new IndexResult(0, 0, System.currentTimeMillis() - start);
@@ -217,6 +223,8 @@ public class DocumentIndexer {
                     // 「文档已受限但切片仍能被检索到」的越权（见 KnowledgeChunkEntity 注释）。
                     .visibility(doc.getVisibility() != null ? doc.getVisibility() : "PUBLIC")
                     .ownerDept(doc.getOwnerDept())
+                    // V2：知识库归属同步下沉（与 visibility 同一理由）。
+                    .kbId(doc.getKbId())
                     .build());
         }
         return entities;

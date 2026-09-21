@@ -2,14 +2,23 @@ package com.devops.agent.infrastructure;
 
 import com.devops.agent.infrastructure.llm.LlmEndpointSpec;
 import com.devops.agent.infrastructure.llm.OpenAiCompatibleModelFactory;
+import com.devops.agent.infrastructure.llm.ApiKeyCrypt;
+import com.devops.agent.infrastructure.llm.RateLimitedEmbeddingModel;
 import com.devops.agent.infrastructure.guard.ModelFingerprintGuard;
+import com.devops.agent.infrastructure.ai.FallbackChatModel;
+import com.devops.agent.infrastructure.ai.FallbackStreamingChatModel;
+import com.devops.agent.infrastructure.ai.RefreshableChatModel;
+import com.devops.agent.infrastructure.ai.RefreshableEmbeddingModel;
+import com.devops.agent.infrastructure.ai.RefreshableStreamingChatModel;
+import com.devops.agent.domain.ai.AiChannel;
+import com.devops.agent.domain.ai.AiChannelRepository;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import com.devops.agent.infrastructure.llm.RateLimitedEmbeddingModel;
+import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,6 +41,37 @@ import java.time.Duration;
 @Slf4j
 @Configuration
 public class AiModelConfig {
+
+    // ==================== 三渠道运行时配置（DB 权威源，P1）====================
+    // 模型的 base-url / model / api-key 在<b>启动装配时</b>从 sys_ai_channel 读取；
+    // P3-1 起渠道编辑保存后由 ChannelRefreshService 调 build* 原子热替换，无需重启。
+    // application.yml 的 devops.ai.channels.* 仍是<b>空库种子与回落默认</b>——
+    // AiChannelMirror 只在渠道不存在时把 yml 值种进表。
+    private final AiChannelRepository channelRepo;
+
+    private RateLimiter embeddingRateLimiter;
+    // 主备降级熔断器注册表（方案 A）：实例名 llm-chat-turbo / llm-chat-reasoner
+    private final io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry circuitBreakerRegistry;
+
+    @Value("${MODEL_KEY_CRYPT_SECRET:}")
+    private String modelKeyCryptSecret;
+
+    public AiModelConfig(AiChannelRepository channelRepo, RateLimiterRegistry rateLimiterRegistry,
+                         io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry circuitBreakerRegistry) {
+        this.channelRepo = channelRepo;
+        this.embeddingRateLimiter = rateLimiterRegistry.rateLimiter("llm-embedding");
+        this.circuitBreakerRegistry = circuitBreakerRegistry;
+    }
+
+    /** chat 渠道当前生效配置（DB 为主，缺失回落已装配的 yml 字段）。 */
+    private AiChannel chatChannel() {
+        return channelRepo.findByKey(AiChannel.KEY_CHAT).orElse(null);
+    }
+
+    /** embedding 渠道当前生效配置。 */
+    private AiChannel embeddingChannel() {
+        return channelRepo.findByKey(AiChannel.KEY_EMBEDDING).orElse(null);
+    }
 
     // ==================== 多渠道配置（方案 C，批 74）====================
     // 三角色各自独立渠道。AI_CHAT_* / AI_EMBEDDING_* 未配置时回落
@@ -74,6 +114,8 @@ public class AiModelConfig {
     @Value("${devops.ai.vector.dimension}")
     private int vectorDimension;
 
+    public int vectorDimension() { return vectorDimension; }
+
     // ==================== 端点描述（配置 → 中性模型）====================
     //
     // 五个 Bean 曾各自手写一遍 baseUrl/apiKey/modelName/timeout/maxRetries，
@@ -82,121 +124,170 @@ public class AiModelConfig {
     // 故障要到写库那一刻才以 expected 1536 dimensions, not 3072 暴露。
     // 现在配置的解读只发生在下面三个方法里，且它们是纯函数、可单测。
 
-    /** Turbo（日常对话）端点——chat 渠道 */
+    /** Turbo（日常对话）端点——chat 渠道。baseUrl/apiKey/model 以 DB 为准，缺则回落 yml。 */
     public LlmEndpointSpec turboSpec() {
-        return LlmEndpointSpec.chat(chatBaseUrl, chatApiKey, turboModel,
-                Duration.ofMillis(timeout), maxRetries);
+        AiChannel ch = chatChannel();
+        String url = ch != null && notBlank(ch.baseUrl()) ? ch.baseUrl() : chatBaseUrl;
+        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc()) : chatApiKey;
+        String model = ch != null && notBlank(ch.turboModel()) ? ch.turboModel() : turboModel;
+        return LlmEndpointSpec.chat(url, key, model, Duration.ofMillis(timeout), maxRetries);
     }
 
     /** Reasoner（复杂推理）端点，超时按 REASONER_TIMEOUT_MULTIPLIER 放大——chat 渠道 */
     public LlmEndpointSpec reasonerSpec() {
-        return LlmEndpointSpec.reasoner(chatBaseUrl, chatApiKey, reasonerModel,
-                Duration.ofMillis(timeout), maxRetries);
+        AiChannel ch = chatChannel();
+        String url = ch != null && notBlank(ch.baseUrl()) ? ch.baseUrl() : chatBaseUrl;
+        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc()) : chatApiKey;
+        String model = ch != null && notBlank(ch.reasonerModel()) ? ch.reasonerModel() : reasonerModel;
+        return LlmEndpointSpec.reasoner(url, key, model, Duration.ofMillis(timeout), maxRetries);
     }
 
-    /** Embedding 端点——embedding 独立渠道（可与 chat 不同厂商），维度取自铁律键 */
+    // ---- 备用模型端点（方案 A）：未配置返回 null，build* 据此决定是否包装 ----
+
+    /** chat 渠道 Turbo 备用端点；DB 里 fallback 未配置（或非 chat 渠道）返回 null。 */
+    public LlmEndpointSpec turboFallbackSpec() {
+        return chatFallbackSpec(false);
+    }
+
+    /** chat 渠道 Reasoner 备用端点（超时同主 reasoner 放大规则）。 */
+    public LlmEndpointSpec reasonerFallbackSpec() {
+        return chatFallbackSpec(true);
+    }
+
+    private LlmEndpointSpec chatFallbackSpec(boolean reasoner) {
+        AiChannel ch = chatChannel();
+        if (ch == null || !ch.hasFallback()) return null;
+        String key = notBlank(ch.fallbackApiKeyEnc()) ? decrypt(ch.fallbackApiKeyEnc()) : null;
+        if (!notBlank(key)) {
+            log.warn("⚠️ [AiModelConfig] chat 备用模型已配置但 key 缺失/不可解密——本次装配忽略备用（降级不可用）");
+            return null;
+        }
+        return reasoner
+                ? LlmEndpointSpec.reasoner(ch.fallbackBaseUrl(), key, ch.fallbackModel(),
+                        Duration.ofMillis(timeout), maxRetries)
+                : LlmEndpointSpec.chat(ch.fallbackBaseUrl(), key, ch.fallbackModel(),
+                        Duration.ofMillis(timeout), maxRetries);
+    }
+
+    /** Embedding 端点——embedding 独立渠道（DB 为准，缺则回落 yml），维度取自铁律键 */
     public LlmEndpointSpec embeddingSpec() {
-        return LlmEndpointSpec.embedding(embeddingBaseUrl, embeddingApiKey, embeddingModel,
+        AiChannel ch = embeddingChannel();
+        String url = ch != null && notBlank(ch.baseUrl()) ? ch.baseUrl() : embeddingBaseUrl;
+        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc()) : embeddingApiKey;
+        String model = ch != null && notBlank(ch.model()) ? ch.model() : embeddingModel;
+        return LlmEndpointSpec.embedding(url, key, model,
                 Duration.ofMillis(embeddingTimeout), embeddingMaxRetries, vectorDimension);
     }
 
     /** 当前 embedding 渠道指纹（base-url+model+dimension 摘要）——指纹锁用 */
     public String embeddingFingerprint() {
-        return ModelFingerprintGuard.fingerprint(embeddingBaseUrl, embeddingModel, vectorDimension);
+        AiChannel ch = embeddingChannel();
+        String url = ch != null && notBlank(ch.baseUrl()) ? ch.baseUrl() : embeddingBaseUrl;
+        String model = ch != null && notBlank(ch.model()) ? ch.model() : embeddingModel;
+        return ModelFingerprintGuard.fingerprint(url, model, vectorDimension);
+    }
+
+    private static boolean notBlank(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    /** 解密 DB 里加密的 key；非 enc:v1: 前缀（明文/降级）原样返回。 */
+    private String decrypt(String enc) {
+        return ApiKeyCrypt.decrypt(enc, modelKeyCryptSecret);
     }
 
     // ==================== Real 模式（生产模式）====================
 
-    /**
-     * Turbo 模型（主力模型,日常对话）
-     * 特点：快速响应、成本低，适合 80% 的日常咨询场景
-     */
+    // P3-1：每个 @Bean 返回 Refreshable 包装器，Spring 注入的引用永不变化，
+    // 但内部 delegate 可被 ChannelRefreshService 原子替换——热更新无需重启。
+    // 方案 A：chat 渠道 build* 在备用已配置时包一层 Fallback 装饰器（主备降级）；
+    // embedding 不包——维度铁律禁止换模型（见 V4 注释）。
+
+    public ChatModel buildTurboChat() {
+        ChatModel primary = OpenAiCompatibleModelFactory.chat(turboSpec(), true);
+        LlmEndpointSpec fb = turboFallbackSpec();
+        if (fb == null) return primary;
+        log.info("🛡 [AiModelConfig] Turbo 备用模型已启用: {}（主模型熔断/失败自动切换）", fb.describe());
+        return new FallbackChatModel(primary, OpenAiCompatibleModelFactory.chat(fb, true),
+                circuitBreakerRegistry.circuitBreaker("llm-chat-turbo"),
+                turboSpec().modelName(), fb.modelName());
+    }
+
+    public ChatModel buildReasonerChat() {
+        ChatModel primary = OpenAiCompatibleModelFactory.chat(reasonerSpec(), true);
+        LlmEndpointSpec fb = reasonerFallbackSpec();
+        if (fb == null) return primary;
+        log.info("🛡 [AiModelConfig] Reasoner 备用模型已启用: {}（主模型熔断/失败自动切换）", fb.describe());
+        return new FallbackChatModel(primary, OpenAiCompatibleModelFactory.chat(fb, true),
+                circuitBreakerRegistry.circuitBreaker("llm-chat-reasoner"),
+                reasonerSpec().modelName(), fb.modelName());
+    }
+
+    public StreamingChatModel buildTurboStreaming() {
+        StreamingChatModel primary = OpenAiCompatibleModelFactory.streamingChat(turboSpec().streaming(), true);
+        LlmEndpointSpec fb = turboFallbackSpec();
+        if (fb == null) return primary;
+        return new FallbackStreamingChatModel(primary,
+                OpenAiCompatibleModelFactory.streamingChat(fb.streaming(), true),
+                circuitBreakerRegistry.circuitBreaker("llm-chat-turbo"),
+                turboSpec().modelName(), fb.modelName());
+    }
+
+    public StreamingChatModel buildReasonerStreaming() {
+        StreamingChatModel primary = OpenAiCompatibleModelFactory.streamingChat(reasonerSpec().streaming(), true);
+        LlmEndpointSpec fb = reasonerFallbackSpec();
+        if (fb == null) return primary;
+        return new FallbackStreamingChatModel(primary,
+                OpenAiCompatibleModelFactory.streamingChat(fb.streaming(), true),
+                circuitBreakerRegistry.circuitBreaker("llm-chat-reasoner"),
+                reasonerSpec().modelName(), fb.modelName());
+    }
+
+    public EmbeddingModel buildEmbedding() {
+        LlmEndpointSpec spec = embeddingSpec();
+        return new RateLimitedEmbeddingModel(
+                OpenAiCompatibleModelFactory.embedding(spec), embeddingRateLimiter);
+    }
+
     @Bean(name = "turboModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
-    public ChatModel turboModel() {
-        LlmEndpointSpec spec = turboSpec();
-        log.info("🚀 [AiModelConfig] 初始化 Turbo 模型: {}", spec.describe());
-        return OpenAiCompatibleModelFactory.chat(spec, true);
+    public RefreshableChatModel turboModel() {
+        RefreshableChatModel r = new RefreshableChatModel(buildTurboChat());
+        log.info("🚀 [AiModelConfig] 初始化 Turbo 模型（热更新就绪）: {}", turboSpec().describe());
+        return r;
     }
 
-    /**
-     * Reasoner 模型（推理模型，复杂问题）
-     * 特点：推理能力强、延迟高、成本高，仅用于复杂堆栈问题（由 DevOpsIntentRouter 路由）
-     */
     @Bean(name = "reasonerModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
-    public ChatModel reasonerModel() {
-        // 超时翻倍这条规则由 LlmEndpointSpec.reasoner() 统一表达，
-        // 不再以裸的 timeout * 2 散落在两个方法里
-        LlmEndpointSpec spec = reasonerSpec();
-        log.info("🚀 [AiModelConfig] 初始化 Reasoner 模型: {}", spec.describe());
-        return OpenAiCompatibleModelFactory.chat(spec, true);
+    public RefreshableChatModel reasonerModel() {
+        RefreshableChatModel r = new RefreshableChatModel(buildReasonerChat());
+        log.info("🚀 [AiModelConfig] 初始化 Reasoner 模型（热更新就绪）: {}", reasonerSpec().describe());
+        return r;
     }
 
-    /**
-     * Turbo 流式模型（原生 SSE 流式 + 工具调用，供 Agent 引擎使用）
-     * <p>与同步 turboModel 独立：同步版供 HealthCheck 连通性探测，流式版供对话链路。</p>
-     */
     @Bean(name = "turboStreamingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
-    public StreamingChatModel turboStreamingModel() {
-        // .streaming() 把重试数显式归零：LangChain4j 1.1.0 的流式 builder
-        // 没有 maxRetries 方法，配置里留个非 0 值会让人误以为流式也会重试。
-        // 流式重试需在更上层（编排层/HTTP 客户端层）兜底。
-        LlmEndpointSpec spec = turboSpec().streaming();
-        log.info("🚀 [AiModelConfig] 初始化 Turbo 流式模型: {} (流式无 maxRetries，由编排层兜底)",
-                spec.describe());
-        return OpenAiCompatibleModelFactory.streamingChat(spec, true);
+    public RefreshableStreamingChatModel turboStreamingModel() {
+        RefreshableStreamingChatModel r = new RefreshableStreamingChatModel(buildTurboStreaming());
+        log.info("🚀 [AiModelConfig] 初始化 Turbo 流式模型（热更新就绪）: {}", turboSpec().streaming().describe());
+        return r;
     }
 
-    /**
-     * Reasoner 流式模型（复杂推理，超时时间翻倍）
-     */
     @Bean(name = "reasonerStreamingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
-    public StreamingChatModel reasonerStreamingModel() {
-        LlmEndpointSpec spec = reasonerSpec().streaming();
-        log.info("🚀 [AiModelConfig] 初始化 Reasoner 流式模型: {} (流式无 maxRetries，由编排层兜底)",
-                spec.describe());
-        return OpenAiCompatibleModelFactory.streamingChat(spec, true);
+    public RefreshableStreamingChatModel reasonerStreamingModel() {
+        RefreshableStreamingChatModel r = new RefreshableStreamingChatModel(buildReasonerStreaming());
+        log.info("🚀 [AiModelConfig] 初始化 Reasoner 流式模型（热更新就绪）: {}", reasonerSpec().streaming().describe());
+        return r;
     }
 
-    /**
-     * Embedding 模型（向量化模型）
-     * <p>
-     * <b>维度铁律</b>：输出维度必须等于 {@code devops.ai.vector.dimension}，
-     * 该值同时决定 {@code V1__baseline.sql} 的 {@code VECTOR(n)} 与
-     * {@link VectorStoreConfig} 的配置。三者同源，不允许各写一份。
-     * </p>
-     * <p>
-     * 注意别把「模型原生维度」当成 1536——那是 {@code text-embedding-v2}
-     * 的特性，不是通用规律。当前网关的三个模型原生维度分别是
-     * 3072（gemini）、4096（qwen3 / nv-embed），全都需要显式降维。
-     * </p>
-     */
     @Bean(name = "embeddingModel")
     @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
-    public EmbeddingModel embeddingModel(RateLimiterRegistry rateLimiterRegistry) {
-        // 维度取自配置（devops.ai.vector.dimension），与 V1__baseline.sql 的
-        // VECTOR(n) 同源。
-        //
-        // 必须显式传 dimensions：多数现代 Embedding 模型的原生维度并非 1536
-        // （gemini-embedding-001 是 3072、qwen3-embedding-8b 是 4096），
-        // 但它们支持 MRL 截断降维。不传这个参数就会拿到原生维度，
-        // 而故障只在**写库那一刻**才暴露：
-        //   ERROR: expected 1536 dimensions, not 3072
-        // 此前这里不传参，日志却硬编码打印「(输出维度: 1536)」——
-        // 日志在说谎，反而掩盖了真实维度，排查时会误以为配置已生效。
-        LlmEndpointSpec spec = embeddingSpec();
-        log.info("🚀 [AiModelConfig] 初始化 Embedding 模型: {}（与 V1 基线 VECTOR({}) 对齐）",
-                spec.describe(), vectorDimension);
-        // S0-3 + 方案 C 批 74：Bean 收口限流（llm-embedding 独立实例）——
-        // chat 与 embedding 可能来自不同厂商不同配额档位，独立桶防连带饿死。
-        // 装饰而非注解贴调用方——无论检索、摄取还是重建索引，拿到的
-        // embeddingModel 都已带配额护栏
-        return new RateLimitedEmbeddingModel(
-                OpenAiCompatibleModelFactory.embedding(spec),
-                rateLimiterRegistry.rateLimiter("llm-embedding"));
+    public RefreshableEmbeddingModel embeddingModel() {
+        RefreshableEmbeddingModel r = new RefreshableEmbeddingModel(buildEmbedding());
+        log.info("🚀 [AiModelConfig] 初始化 Embedding 模型（热更新就绪）: {}（与 V1 基线 VECTOR({}) 对齐）",
+                embeddingSpec().describe(), vectorDimension);
+        return r;
     }
 
     // ==================== Mock 模式（开发模式）====================

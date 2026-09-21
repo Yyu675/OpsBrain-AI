@@ -61,7 +61,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@TestPropertySource(properties = "devops.security.rate-limit.enabled=false")
+// secret 显式固定：本地 .env 配了 ALERT_WEBHOOK_SECRET 时守卫处于启用态，
+// 不带 token 的用例会 401——测试自带密钥并带头，守卫开启下测链路，
+// 比「测试环境留空跳过校验」更强，且与运行环境配置解耦
+@TestPropertySource(properties = {
+        "devops.security.rate-limit.enabled=false",
+        "devops.alert.webhook.secret=itest-webhook-secret"
+})
 @DisplayName("L2 告警链路端到端（Webhook → 去重 → 建单 → 可查）")
 class AlertWebhookChainIntegrationTest {
 
@@ -121,6 +127,8 @@ class AlertWebhookChainIntegrationTest {
     private void postWebhook(Map<String, Object> body) throws Exception {
         mockMvc.perform(post("/api/v1/alerts/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
+                        // 守卫密钥（与 @TestPropertySource 注入的一致）
+                        .header("X-Webhook-Token", "itest-webhook-secret")
                         .content(objectMapper.writeValueAsString(body)))
                 // 契约：无论内部处理结果如何都必须 200——
                 // Alertmanager 对非 200 会重试，返回错误会造成告警反复推送

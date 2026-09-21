@@ -6,25 +6,28 @@ import {
   Search, Plus, Layers, Server, Network, Database, Boxes, ShieldCheck,
   GitBranch, Folder, Clock, RefreshCw, List, LayoutGrid,
   ChevronLeft, ChevronRight, FileText, Settings2, Pencil, Trash2, GitMerge,
-  Tag as TagIcon
+  Tag as TagIcon, Upload
 } from 'lucide-vue-next'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import {
   createKnowledgeTag,
   deleteKnowledgeTag,
+  fetchKnowledgeBases,
   fetchKnowledgeTags,
   indexStatusLabel,
   mergeKnowledgeTag,
   statusLabel,
   updateKnowledgeTag,
 } from '@/api/knowledge'
-import type { KnowledgeCategoryEntity, KnowledgeTag } from '@/api/types'
+import type { KnowledgeBaseItem, KnowledgeCategoryEntity, KnowledgeTag } from '@/api/types'
 import { debounce } from '@/utils/persist'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
 import CollapseToggle from '@/components/common/CollapseToggle.vue'
 import RailButton from '@/components/common/RailButton.vue'
+import KnowledgeBaseManageDialog from '@/components/knowledge/KnowledgeBaseManageDialog.vue'
+import KnowledgeUploadDialog from '@/components/knowledge/KnowledgeUploadDialog.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
 import { notify, handleServerError } from '@/utils/notify'
 
@@ -59,6 +62,30 @@ const managedTags = ref<KnowledgeTag[]>([])
 const tagsLoading = ref(false)
 const newTagName = ref('')
 
+// ==================== 知识库（V2 顶层实体） ====================
+// activeKbId 是「范围」而非普通筛选：切片参数随库不同，用户需要先知道自己
+// 正在哪个库里浏览。URL 参数 kb 可分享直达（与 cat/tag 同一约定）。
+const kbList = ref<KnowledgeBaseItem[]>([])
+const kbLoadError = ref(false)
+const activeKbId = ref<number | null>(route.query.kb ? Number(route.query.kb) : null)
+const kbManageOpen = ref(false)
+const uploadOpen = ref(false)
+
+const loadBases = async () => {
+  kbLoadError.value = false
+  try {
+    kbList.value = await fetchKnowledgeBases()
+  } catch (error) {
+    kbLoadError.value = true
+    handleServerError(error, { action: '加载知识库列表' })
+  }
+}
+
+const selectKb = (id: number | null) => {
+  activeKbId.value = activeKbId.value === id ? null : id
+  reload()
+}
+
 const categoryLabel = (category: KnowledgeCategoryEntity) => {
   const names: string[] = [category.name]
   const seen = new Set<number>([category.id])
@@ -88,7 +115,11 @@ const noActiveCategory = computed(() => !activeCategory.value && !activeTag.valu
 
 const openCreate = () => router.push({
   path: '/knowledge/editor/new',
-  query: { draft: crypto.randomUUID() },
+  query: {
+    draft: crypto.randomUUID(),
+    // 带着库筛选点「新建」时，新文档默认归属当前库（编辑器仍可改）
+    ...(activeKbId.value != null ? { kb: String(activeKbId.value) } : {}),
+  },
 })
 
 const loadManagedTags = async () => {
@@ -191,7 +222,8 @@ const reload = () => {
     category: activeCategory.value || undefined,
     tag: activeTag.value || undefined,
     status: activeStatus.value || undefined,
-    sort: activeSort.value
+    sort: activeSort.value,
+    kbId: activeKbId.value ?? undefined
   })
 }
 
@@ -210,13 +242,14 @@ const syncUrl = debounce(() => {
   if (activeCategory.value) query.cat = activeCategory.value
   if (activeTag.value) query.tag = activeTag.value
   if (activeStatus.value) query.status = activeStatus.value
+  if (activeKbId.value != null) query.kb = String(activeKbId.value)
   if (activeSort.value !== 'UPDATED_DESC') query.sort = activeSort.value
   if (viewMode.value !== 'list') query.view = viewMode.value
   if (store.currentPage > 1) query.page = String(store.currentPage)
   router.replace({ query })
 }, 200)
 
-watch([appliedQuery, activeCategory, activeTag, activeStatus, activeSort, viewMode, () => store.currentPage], syncUrl)
+watch([appliedQuery, activeCategory, activeTag, activeStatus, activeSort, activeKbId, viewMode, () => store.currentPage], syncUrl)
 
 /**
  * 卸载时**取消**尚未落定的 URL 同步。
@@ -252,6 +285,7 @@ const clearFilters = () => {
   activeCategory.value = null
   activeTag.value = null
   activeStatus.value = ''
+  activeKbId.value = null
   searchQuery.value = ''
   appliedQuery.value = ''
   if (activeSort.value === 'RELEVANCE') activeSort.value = 'UPDATED_DESC'
@@ -304,6 +338,7 @@ function avatarChar(name?: string | null): string {
 onMounted(() => {
   store.loadCategories()
   store.loadHotTags()
+  void loadBases()
   // 从 URL 恢复页码
   const page = Number(route.query.page) || 1
   // loadLibraryTotal 已删除：loadList 成功后已写 libraryTotal，无需冗余请求
@@ -313,7 +348,8 @@ onMounted(() => {
     category: activeCategory.value || undefined,
     tag: activeTag.value || undefined,
     status: activeStatus.value || undefined,
-    sort: activeSort.value
+    sort: activeSort.value,
+    kbId: activeKbId.value ?? undefined
   })
 })
 </script>
@@ -326,10 +362,20 @@ onMounted(() => {
         <h1 class="page-title">知识库</h1>
         <p class="page-subtitle">统一管理运维文档，智能检索排障方案</p>
       </div>
-      <button class="btn-new" @click="openCreate">
-        <Plus :size="16" />
-        新建文档
-      </button>
+      <div class="header-actions">
+        <button class="btn-plain" type="button" @click="kbManageOpen = true">
+          <Settings2 :size="16" />
+          知识库管理
+        </button>
+        <button class="btn-plain" type="button" @click="uploadOpen = true">
+          <Upload :size="16" />
+          上传文档
+        </button>
+        <button class="btn-new" @click="openCreate">
+          <Plus :size="16" />
+          新建文档
+        </button>
+      </div>
     </div>
 
     <!-- ===== Search Bar ===== -->
@@ -394,6 +440,47 @@ onMounted(() => {
 
         <template #default="{ toggle }">
         <aside class="sidebar">
+        <!-- Knowledge Bases（V2 顶层实体：切片参数随库配置，先选库再浏览） -->
+        <div class="sidebar-section">
+          <div class="sidebar-title sidebar-title-actions">
+            <span>知识库</span>
+            <button class="kb-manage-btn" type="button" title="知识库管理" @click="kbManageOpen = true">
+              <Settings2 :size="14" />
+            </button>
+          </div>
+          <div class="category-list">
+            <button
+              class="category-header"
+              :class="{ active: activeKbId === null }"
+              @click="selectKb(null)"
+            >
+              <span class="category-name">
+                <Layers :size="16" />
+                全部知识库
+              </span>
+            </button>
+            <template v-if="kbList.length">
+              <button
+                v-for="kb in kbList"
+                :key="kb.id"
+                class="category-header"
+                :class="{ active: activeKbId === kb.id }"
+                @click="selectKb(kb.id)"
+              >
+                <span class="category-name" :title="kb.description || kb.name">
+                  <Database :size="16" />
+                  {{ kb.name }}
+                </span>
+                <span class="child-count" :class="{ active: activeKbId === kb.id }">
+                  {{ kb.docCount }}
+                </span>
+              </button>
+            </template>
+            <button v-else-if="kbLoadError" class="sidebar-empty sidebar-retry" type="button" @click="loadBases">知识库加载失败，点击重试</button>
+            <p v-else class="sidebar-empty">暂无知识库</p>
+          </div>
+        </div>
+
         <!-- Categories -->
         <div class="sidebar-section">
           <div class="sidebar-title sidebar-title-actions">
@@ -669,6 +756,10 @@ onMounted(() => {
       </div>
     </div>
   </el-dialog>
+
+  <!-- V2：知识库管理（新建/编辑切片参数/重建索引）与文件上传入库 -->
+  <KnowledgeBaseManageDialog v-model="kbManageOpen" @changed="loadBases" />
+  <KnowledgeUploadDialog v-model="uploadOpen" :active-kb-id="activeKbId" @uploaded="reload" />
 </template>
 
 <style scoped lang="scss">
@@ -1292,6 +1383,43 @@ onMounted(() => {
 }
 
 .tag-manager-create .btn-new { height: 34px; white-space: nowrap; }
+
+/* ===== V2：页头操作组与知识库管理入口 ===== */
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.btn-plain {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  font-family: var(--font-body);
+  background: var(--color-bg-primary, #fff);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border, #dcdfe6);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+}
+.kb-manage-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+
+  &:hover { color: var(--color-primary); background: var(--color-primary-lighter); }
+}
 .tag-manager-state { padding: 28px 0; color: var(--color-text-tertiary); text-align: center; font-size: 13px; }
 .tag-manager-list { border-top: 1px solid var(--color-border-light); }
 .tag-manager-row { display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px solid var(--color-border-light); }

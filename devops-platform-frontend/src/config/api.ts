@@ -68,6 +68,9 @@ export const API_ENDPOINTS = {
 
   // 健康检查
   HEALTH: `${API_BASE}/health`,
+
+  // AI 模型渠道配置（阶段A-P0 只读展示，后端 ModelChannelController，ADMIN）
+  MODEL_CHANNELS: `${API_BASE}/model-channels`,
 } as const
 
 // 超时配置（统一来源，http.ts 引用此值）

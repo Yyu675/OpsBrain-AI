@@ -121,6 +121,7 @@ type Vm = {
   activeCategory: string | null
   activeTag: string | null
   activeStatus: string
+  activeKbId: number | null
   viewMode: string
 }
 
@@ -185,6 +186,30 @@ describe('筛选状态写回 URL', () => {
     // 排序仍是默认的 UPDATED_DESC、视图仍是默认的 list，都不该出现
     expect(q.sort).toBeUndefined()
     expect(q.view).toBeUndefined()
+  })
+
+  it('V2：选中知识库写回 ?kb=，清空时移除——库是「范围」不是普通筛选，分享链接要能直达', async () => {
+    const w = await mountPage()
+    const vm = w.vm as unknown as Vm
+
+    vm.activeKbId = 3
+    await w.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(router.currentRoute.value.query.kb).toBe('3')
+
+    vm.activeKbId = null
+    await w.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(router.currentRoute.value.query.kb).toBeUndefined()
+  })
+
+  it('V2：带 ?kb=3 进入时恢复为当前库，且首屏查询就带上 kbId', async () => {
+    // 若不恢复，用户从分享链接进来看到的是全量文档，
+    // 与分享者截图里的列表对不上——「链接直达」承诺失效
+    await mountPage('?kb=3')
+    expect(storeStub.loadList).toHaveBeenCalledWith(
+      expect.objectContaining({ kbId: 3 }),
+    )
   })
 })
 

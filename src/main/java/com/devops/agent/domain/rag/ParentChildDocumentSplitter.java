@@ -33,21 +33,6 @@ import java.util.regex.Pattern;
 public class ParentChildDocumentSplitter implements DocumentSplitter {
 
     /**
-     * 父段落目标大小（约 800 token，按 3 字符 ≈ 1 token 估算）
-     */
-    private static final int PARENT_CHUNK_SIZE = 2400;
-
-    /**
-     * 子段落目标大小（约 200 token）
-     */
-    private static final int CHILD_CHUNK_SIZE = 600;
-
-    /**
-     * 段落重叠大小（用于保持上下文连贯性）
-     */
-    private static final int OVERLAP_SIZE = 100;
-
-    /**
      * Markdown 二级标题正则（## 开头）
      */
     private static final Pattern SECTION_PATTERN = Pattern.compile("(?m)^##\\s+(.+)$");
@@ -74,18 +59,29 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
     }
 
     /**
+     * 父子结构化切片核心逻辑（全局默认参数）。
+     *
+     * <p>知识库维度的参数化入口是 {@link #splitWithParentChild(Document, ChunkProfile)}；
+     * 本方法等价于传入 {@link ChunkProfile#DEFAULT}。</p>
+     */
+    public List<TextSegment> splitWithParentChild(Document document) {
+        return splitWithParentChild(document, ChunkProfile.DEFAULT);
+    }
+
+    /**
      * 父子结构化切片核心逻辑
      *
      * @param document 原始文档
+     * @param profile  切片参数（随知识库配置，见 {@link ChunkProfile}）
      * @return 切片列表（父段落 + 子段落）
      */
-    public List<TextSegment> splitWithParentChild(Document document) {
+    public List<TextSegment> splitWithParentChild(Document document, ChunkProfile profile) {
         List<TextSegment> allSegments = new ArrayList<>();
         String content = document.text();
         Metadata baseMetadata = document.metadata();
 
         // 1. 按 ## 标题切分父段落
-        List<Section> sections = extractSections(content);
+        List<Section> sections = extractSections(content, profile);
 
         log.debug("文档 [{}] 共切分出 {} 个父段落", baseMetadata.getString("doc_title"), sections.size());
 
@@ -96,7 +92,7 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
             String sectionHeader = section.header;
 
             // 2.1 如果父段落本身就很小（< 子段落阈值），直接作为一个切片
-            if (parentText.length() <= CHILD_CHUNK_SIZE) {
+            if (parentText.length() <= profile.childChunkSize()) {
                 Metadata meta = Metadata.from(baseMetadata.toMap());
                 meta.put("parent_id", parentId);
                 meta.put("parent_text", parentText);
@@ -108,7 +104,7 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
             }
 
             // 2.2 父段落较大，需要切子段落
-            List<String> childChunks = splitIntoChildren(parentText);
+            List<String> childChunks = splitIntoChildren(parentText, profile);
 
             log.debug("  父段落 [{}] 切分出 {} 个子段落", sectionHeader, childChunks.size());
 
@@ -133,9 +129,10 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
      * 按 ## 标题提取章节（父段落）
      *
      * @param content 文档内容
+     * @param profile 切片参数
      * @return 章节列表
      */
-    private List<Section> extractSections(String content) {
+    private List<Section> extractSections(String content, ChunkProfile profile) {
         List<Section> sections = new ArrayList<>();
         Matcher matcher = SECTION_PATTERN.matcher(content);
         // fenced code block 区间：块内的 ## 是代码不是标题，必须跳过，
@@ -169,8 +166,8 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
             String header = headers.get(i);
 
             // 如果父段落过大，按字符数强制切分
-            if (sectionContent.length() > PARENT_CHUNK_SIZE * 2) {
-                List<String> largeSectionChunks = splitBySize(sectionContent, PARENT_CHUNK_SIZE);
+            if (sectionContent.length() > profile.parentChunkSize() * 2) {
+                List<String> largeSectionChunks = splitBySize(sectionContent, profile.parentChunkSize(), profile.overlap());
                 for (int j = 0; j < largeSectionChunks.size(); j++) {
                     String subHeader = header + " (part " + (j + 1) + ")";
                     sections.add(new Section(subHeader, largeSectionChunks.get(j)));
@@ -231,10 +228,11 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
      * 将父段落切分为子段落（固定大小 + 重叠，fence 感知）
      *
      * @param parentText 父段落文本
+     * @param profile    切片参数
      * @return 子段落列表
      */
-    private List<String> splitIntoChildren(String parentText) {
-        return splitBySize(parentText, CHILD_CHUNK_SIZE);
+    private List<String> splitIntoChildren(String parentText, ChunkProfile profile) {
+        return splitBySize(parentText, profile.childChunkSize(), profile.overlap());
     }
 
     /**
@@ -242,15 +240,16 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
      *
      * @param text      原始文本
      * @param chunkSize 切片大小
+     * @param overlap   重叠大小
      * @return 切片列表
      */
-    private List<String> splitBySize(String text, int chunkSize) {
+    private List<String> splitBySize(String text, int chunkSize, int overlap) {
         List<String> chunks = new ArrayList<>();
         if (text == null || text.isEmpty()) {
             return chunks;
         }
         // 防御非法配置：重叠必须小于切片大小，否则窗口无法前进
-        int overlap = Math.min(OVERLAP_SIZE, Math.max(0, chunkSize - 1));
+        int effectiveOverlap = Math.min(overlap, Math.max(0, chunkSize - 1));
 
         // fenced code block 区间：size 窗口不得从围栏中间切断代码块
         List<int[]> codeBlocks = findCodeBlocks(text);
@@ -281,7 +280,7 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
             // 无法保持原子，退化为块内切分（不可避免）。
             if (end < len) {
                 int[] cut = codeBlockAt(codeBlocks, end);
-                if (cut != null && cut[1] - start <= chunkSize + OVERLAP_SIZE) {
+                if (cut != null && cut[1] - start <= chunkSize + effectiveOverlap) {
                     end = cut[1];
                 }
             }
@@ -307,7 +306,7 @@ public class ParentChildDocumentSplitter implements DocumentSplitter {
 
             // 下一个切片起点（带重叠）。
             // 强制至少前进 1 个字符，兜住边界调整使 end 过小的情况
-            int next = end - overlap;
+            int next = end - effectiveOverlap;
             start = Math.max(next, start + 1);
         }
 

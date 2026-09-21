@@ -44,9 +44,13 @@ class KnowledgeWriteGuardCoverageTest {
 
     /** 知识库相关控制器 → 该文件里应受守卫的写端点数 */
     private static final Map<String, Integer> KNOWLEDGE_CONTROLLERS = Map.of(
-            "KnowledgeDocController.java", 7,
+            // 2026-09-18 V2：upload 端点新增（requireEdit）；
+            // 顺带补登记 batch-import（9d2b8ff 引入时漏了更新此处）
+            "KnowledgeDocController.java", 9,
             "KnowledgeCategoryController.java", 4,
-            "KnowledgeTagController.java", 4
+            "KnowledgeTagController.java", 4,
+            // V2 知识库顶层实体：create/update（requireEdit）+ reindex-all（requireDestructive）
+            "KnowledgeBaseController.java", 3
     );
 
     /** 写操作注解 */
@@ -121,7 +125,9 @@ class KnowledgeWriteGuardCoverageTest {
         Map<String, List<String>> mustBeDestructive = Map.of(
                 "KnowledgeDocController.java", List.of("deprecate", "retryIndexing"),
                 "KnowledgeCategoryController.java", List.of("delete"),
-                "KnowledgeTagController.java", List.of("merge", "delete")
+                "KnowledgeTagController.java", List.of("merge", "delete"),
+                // 按库重建索引 = 逐篇远程 embedding 调用，与全量重建同级（仅 ADMIN）
+                "KnowledgeBaseController.java", List.of("reindexAll")
         );
 
         List<String> downgraded = new ArrayList<>();

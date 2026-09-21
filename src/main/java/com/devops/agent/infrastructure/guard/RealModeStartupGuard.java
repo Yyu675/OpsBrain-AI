@@ -1,48 +1,27 @@
 package com.devops.agent.infrastructure.guard;
 
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.data.embedding.Embedding;
+import com.devops.agent.domain.ai.AiChannel;
+import com.devops.agent.domain.ai.AiChannelRepository;
 import com.devops.agent.infrastructure.cache.SemanticCacheService;
+import com.devops.agent.infrastructure.llm.ApiKeyCrypt;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * REAL 模式启动期 AI 渠道契约自检（方案 C 第一道防线，批 74）。
+ * REAL 模式启动期 AI 渠道契约自检（方案 C 第一道防线，批 74；P1 适配 DB 权威源，批 82）。
  *
- * <h3>防什么</h3>
- * <p>
- * 批 73 实测暴露的真实故障形态：配置的 embedding 模型维度与铁律不符
- * （qwen3-embedding-8b 在网关上仅支持 ≤1024，配置 1536 三连败）。
- * 此类错误此前要等到<b>第一次写库或检索</b>才以
- * {@code expected 1536 dimensions, not 1024} 暴露——运行期才炸，
- * 排障面在业务日志里，不如启动期 fail-fast 直接。
- * </p>
- *
- * <h3>做什么</h3>
- * <ol>
- *   <li><b>维度契约自检</b>：真实调一次 embed("维度自检")，实测维度 ≠
- *       {@code devops.ai.vector.dimension} → 抛异常拒绝启动；</li>
- *   <li><b>指纹锁校验</b>：调 {@link ModelFingerprintGuard#verifyOrRecord()}——
- *       embedding 模型与上次入库记录不一致 → 抛异常并给出重算指引，
- *       拒绝「新旧向量静默混用」。</li>
- * </ol>
- *
- * <h3>为什么用 ApplicationReadyEvent 而不是 Bean 初始化期</h3>
- * <p>
- * embed 实调需要完整的 Bean 依赖链（OkHttp/限流装饰器）就位；
- * Ready 事件时全链已备，且此时拒绝启动对外表现一致（进程退出、
- * 编排器重启退避），无需在 Bean 依赖序上做精细手术。
- * </p>
- *
- * <p>MOCK 模式不装配本组件——假向量确定性生成，无契约可检。</p>
- *
- * @author OpsBrain AI
- * @since 2026-09-10（批 74，方案 C）
+ * <h3>P1 适配（批 82）</h3>
+ * 占位 key 检测从 yml 升级为 DB 优先：chat / embedding 渠道的 API key 先从
+ * {@code sys_ai_channel} 取（解密后），DB 缺失或无 key 才回落 yml。
+ * 消掉「yml 占位 key 未改但 DB 已编辑真 key → 启动被误拦」的假阳性。
  */
 @Component
 @ConditionalOnProperty(name = "devops.ai.mode", havingValue = "REAL")
@@ -53,33 +32,40 @@ public class RealModeStartupGuard {
     private final EmbeddingModel embeddingModel;
     private final ModelFingerprintGuard fingerprintGuard;
     private final SemanticCacheService semanticCacheService;
-    @org.springframework.beans.factory.annotation.Value("${devops.ai.vector.dimension:1536}")
+    private final AiChannelRepository channelRepo;
+
+    @Value("${devops.ai.channels.chat.api-key:}")
+    private String ymlChatKey;
+
+    @Value("${devops.ai.channels.embedding.api-key:}")
+    private String ymlEmbeddingKey;
+
+    @Value("${MODEL_KEY_CRYPT_SECRET:}")
+    private String cryptSecret;
+
+    @Value("${devops.ai.vector.dimension:1536}")
     private int vectorDimension;
-
-    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.chat.api-key:}")
-    private String chatApiKey;
-
-    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.embedding.api-key:}")
-    private String embeddingApiKey;
 
     public RealModeStartupGuard(@Qualifier("embeddingModel") EmbeddingModel embeddingModel,
                                  ModelFingerprintGuard fingerprintGuard,
-                                 SemanticCacheService semanticCacheService) {
+                                 SemanticCacheService semanticCacheService,
+                                 AiChannelRepository channelRepo) {
         this.embeddingModel = embeddingModel;
         this.fingerprintGuard = fingerprintGuard;
         this.semanticCacheService = semanticCacheService;
+        this.channelRepo = channelRepo;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void verifyOnStartup() {
-        // ---- 0) 占位 key 检测：embedding 有实调自检兜底，chat 渠道若带
-        // 默认占位 key 启动，故障要拖到用户第一次对话才以 401 暴露——
-        // 此处提前到启动期 fail-fast（批 88 A 阶段发现）
-        for (String key : new String[]{chatApiKey, embeddingApiKey}) {
+        // ---- 0) 占位 key 检测（P1：DB 优先，yml 回落） ----
+        String chatKey = effectiveKey(AiChannel.KEY_CHAT, ymlChatKey);
+        String embKey = effectiveKey(AiChannel.KEY_EMBEDDING, ymlEmbeddingKey);
+        for (String key : new String[]{chatKey, embKey}) {
             if (key == null || key.isBlank() || key.startsWith("your-") || key.contains("-here")) {
                 throw new IllegalStateException(
                         "[RealModeStartupGuard] AI 渠道 api-key 为空或占位符（" + key + "）——"
-                        + "REAL 模式拒绝启动。设置 AI_CHAT_API_KEY / AI_EMBEDDING_API_KEY 环境变量。");
+                        + "REAL 模式拒绝启动。请在「模型渠道配置」页面编辑 Key 或设置环境变量。");
             }
         }
 
@@ -98,22 +84,19 @@ public class RealModeStartupGuard {
             throw new IllegalStateException(String.format(
                     "[RealModeStartupGuard] 维度铁律违约：embedding 模型实测输出 %d 维 ≠ 配置 %d 维。"
                     + "修法二选一：① 换支持 %d 维的模型（推荐，基线/索引不动）；"
-                    + "② 全链路改维（V1 基线 VECTOR(n) + vector.dimension + 全库向量重建 + 索引重建）。"
-                    + "当前错误源于「配置了模型不支持的维度」，见 AGENTS §3.3 三处联动铁律。",
+                    + "② 全链路改维（V1 基线 VECTOR(n) + vector.dimension + 全库向量重建 + 索引重建）。",
                     actual, vectorDimension, vectorDimension));
         }
         log.info("✅ [RealModeStartupGuard] 维度契约自检通过：实测 {} 维 = 配置 {} 维", actual, vectorDimension);
 
-        // ---- 2) 指纹锁：模型变更检测 ----
+        // ---- 2) 指纹锁 ----
         String stale = fingerprintGuard.verifyOrRecord();
         if (stale != null) {
-            // 语义缓存同步作废：缓存里的查询向量是旧模型算的，新模型下相似度比对全错。
-            // 在拒绝启动前先清——运维重算向量+解锁后直接可跑，不留脏缓存。
             try {
                 semanticCacheService.clearAllCache();
-                log.warn("🗑️ [RealModeStartupGuard] 检测到模型变更，语义缓存已同步清空");
+                log.warn(" [RealModeStartupGuard] 检测到模型变更，语义缓存已同步清空");
             } catch (Exception cacheEx) {
-                log.error("⛔ [RealModeStartupGuard] 语义缓存清空失败——需手工清 devops:cache:ans:*", cacheEx);
+                log.error("[RealModeStartupGuard] 语义缓存清空失败——需手工清 devops:cache:ans:*", cacheEx);
             }
             throw new IllegalStateException(String.format(
                     "[RealModeStartupGuard] embedding 模型已变更（库中指纹 %s ≠ 当前 %s）。"
@@ -124,5 +107,18 @@ public class RealModeStartupGuard {
                     stale, fingerprintGuard.currentFingerprint()));
         }
         log.info("✅ [RealModeStartupGuard] 模型指纹锁校验通过");
+    }
+
+    /** DB 优先取加密 key 并解密，缺失/异常回落 yml。 */
+    private String effectiveKey(String channelKey, String ymlKey) {
+        try {
+            AiChannel ch = channelRepo.findByKey(channelKey).orElse(null);
+            if (ch != null && ch.apiKeyEnc() != null && !ch.apiKeyEnc().isBlank()) {
+                return ApiKeyCrypt.decrypt(ch.apiKeyEnc(), cryptSecret);
+            }
+        } catch (Exception e) {
+            log.warn("[RealModeStartupGuard] 解密 {} key 失败，回落 yml: {}", channelKey, e.getMessage());
+        }
+        return ymlKey;
     }
 }

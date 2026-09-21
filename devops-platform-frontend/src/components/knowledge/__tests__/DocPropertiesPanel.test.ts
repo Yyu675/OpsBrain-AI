@@ -19,13 +19,34 @@
 import { describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
-import type { KnowledgeCategoryEntity, KnowledgeTag } from '@/api/types'
+import type { KnowledgeBaseItem, KnowledgeCategoryEntity, KnowledgeTag } from '@/api/types'
 import { MAX_TAGS } from '@/utils/editorContent'
 import DocPropertiesPanel from '../DocPropertiesPanel.vue'
 
 const categories: KnowledgeCategoryEntity[] = [
   { id: 1, parentId: null, name: '运维', sortOrder: 0, docCount: 0 },
   { id: 2, parentId: 1, name: '容器', sortOrder: 0, docCount: 0 },
+]
+
+const knowledgeBases: KnowledgeBaseItem[] = [
+  {
+    id: 1, name: '默认知识库', code: 'default', description: null,
+    parentChunkSize: null, childChunkSize: null, chunkOverlap: null,
+    effectiveParentChunkSize: 2400, effectiveChildChunkSize: 600, effectiveChunkOverlap: 100,
+    status: 'ACTIVE', docCount: 10, indexedCount: 9, failedCount: 1, createTime: '', updateTime: '',
+  },
+  {
+    id: 2, name: '故障 FAQ 库', code: 'faq', description: null,
+    parentChunkSize: 1200, childChunkSize: 300, chunkOverlap: 50,
+    effectiveParentChunkSize: 1200, effectiveChildChunkSize: 300, effectiveChunkOverlap: 50,
+    status: 'ACTIVE', docCount: 5, indexedCount: 5, failedCount: 0, createTime: '', updateTime: '',
+  },
+  {
+    id: 3, name: '已停用的旧库', code: 'legacy', description: null,
+    parentChunkSize: null, childChunkSize: null, chunkOverlap: null,
+    effectiveParentChunkSize: 2400, effectiveChildChunkSize: 600, effectiveChunkOverlap: 100,
+    status: 'DISABLED', docCount: 2, indexedCount: 2, failedCount: 0, createTime: '', updateTime: '',
+  },
 ]
 
 const managedTags: KnowledgeTag[] = [
@@ -40,6 +61,8 @@ function mountPanel(overrides: Record<string, unknown> = {}): VueWrapper {
       summary: '',
       publishOnCreate: false,
       changeReason: '',
+      kbId: null,
+      knowledgeBases,
       categories,
       managedTags,
       hotTags: [{ tag: 'mysql' }, { tag: 'redis' }],
@@ -181,6 +204,41 @@ describe('DocPropertiesPanel', () => {
       // 显示了也点不出东西——没有正文就没法生成摘要，
       // 给一个必然失败的按钮不如不给
       expect(wrapper.find('.ce-auto-excerpt').exists()).toBe(false)
+    })
+  })
+
+  describe('知识库选择（V2）', () => {
+    // 面板上第一个 ce-side-group 就是知识库组（库 > 分类的层级与后端一致）
+    const kbOptions = (wrapper: VueWrapper) =>
+      wrapper.findAll('.ce-side-group')[0].findAll('.el-option')
+
+    it('停用库不出现在可选集——否则新建会被后端 requireActive 拒绝，白点一次', () => {
+      const wrapper = mountPanel({ kbId: 1 })
+
+      const labels = kbOptions(wrapper).map(o => o.attributes('label'))
+      expect(labels?.some(l => l?.includes('默认知识库'))).toBe(true)
+      expect(labels?.some(l => l?.includes('故障 FAQ 库'))).toBe(true)
+      expect(labels?.some(l => l?.includes('已停用的旧库'))).toBe(false)
+    })
+
+    it('编辑「所属库后来被停用」的文档时当前库仍要显示——否则下拉空白，用户不知道文档挂在哪', () => {
+      const wrapper = mountPanel({ isNew: false, kbId: 3 })
+
+      const labels = kbOptions(wrapper).map(o => o.attributes('label'))
+      expect(labels?.some(l => l?.includes('已停用的旧库') && l?.includes('已停用'))).toBe(true)
+    })
+
+    it('选项标注生效切片粒度，用户选库时知道选了什么', () => {
+      const wrapper = mountPanel({ kbId: 2 })
+
+      const labels = kbOptions(wrapper).map(o => o.attributes('label'))
+      expect(labels?.some(l => l?.includes('300 字/片'))).toBe(true)
+    })
+
+    it('编辑模式提示换库会重建索引——这是付费 API 成本，不该无声发生', () => {
+      const wrapper = mountPanel({ isNew: false, kbId: 1 })
+
+      expect(wrapper.find('.ce-kb-tip').text()).toContain('重建索引')
     })
   })
 

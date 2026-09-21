@@ -23,6 +23,11 @@ import type {
   KnowledgeVersionDiff,
   KnowledgeCategoryEntity,
   KnowledgeCategoryTreeResponse,
+  KnowledgeBaseItem,
+  KnowledgeBaseCreateRequest,
+  KnowledgeBaseUpdateRequest,
+  KnowledgeBaseReindexResult,
+  KnowledgeDocUploadResult,
 } from './types'
 
 // ==================== 文档级 CRUD + 生命周期（6.21）====================
@@ -165,6 +170,8 @@ export async function fetchKnowledgeDocs(params: {
   keyword?: string
   tag?: string
   sort?: string
+  /** 按知识库过滤（V2） */
+  kbId?: number
 } = {}): Promise<KnowledgeDocPageResponse> {
   const queryParams = new URLSearchParams()
   if (params.page !== undefined) queryParams.append('page', String(params.page))
@@ -174,6 +181,7 @@ export async function fetchKnowledgeDocs(params: {
   if (params.keyword) queryParams.append('keyword', params.keyword)
   if (params.tag) queryParams.append('tag', params.tag)
   if (params.sort) queryParams.append('sort', params.sort)
+  if (params.kbId !== undefined) queryParams.append('kbId', String(params.kbId))
 
   const url = `${API_ENDPOINTS.KNOWLEDGE_DOCS}${
     queryParams.toString() ? `?${queryParams.toString()}` : ''
@@ -326,6 +334,84 @@ export async function retryIndexing(limit = 20): Promise<{ retried: number }> {
     `${API_ENDPOINTS.KNOWLEDGE_DOCS}/reindex/pending?limit=${limit}`
   )
   return unwrapDoc(payload, '重试向量化失败')
+}
+
+/**
+ * 获取上传文档原件的预签名下载 URL（V2）。
+ *
+ * <p>仅对 sourceType=UPLOAD 且 originalStored=true 的文档有效；
+ * 无原件时后端返回 40400，由调用方如实提示。</p>
+ */
+export async function fetchKnowledgeDocOriginalUrl(
+  id: number
+): Promise<{ url: string; filename: string; expiresInSeconds: number }> {
+  const payload = await http.get<unknown>(`${API_ENDPOINTS.KNOWLEDGE_DOCS}/${id}/original-url`)
+  return unwrapDoc(payload, '获取原件下载链接失败')
+}
+
+// ==================== 知识库管理（V2 顶层实体） ====================
+const KNOWLEDGE_BASES_URL = `${API_ENDPOINTS.KNOWLEDGE_BASE}/bases`
+
+/** 知识库列表（含文档计数与生效切片参数） */
+export async function fetchKnowledgeBases(): Promise<KnowledgeBaseItem[]> {
+  const payload = await http.get<unknown>(KNOWLEDGE_BASES_URL)
+  return unwrapBiz<KnowledgeBaseItem[]>(payload, '查询知识库失败')
+}
+
+/** 新建知识库（切片参数可缺省=跟随全局默认） */
+export async function createKnowledgeBase(req: KnowledgeBaseCreateRequest): Promise<KnowledgeBaseItem> {
+  const payload = await http.post<unknown>(KNOWLEDGE_BASES_URL, req)
+  return unwrapDoc<KnowledgeBaseItem>(payload, '创建知识库失败')
+}
+
+/** 更新知识库（null 字段不修改；clearChunkParams=true 清空切片参数回默认） */
+export async function updateKnowledgeBase(
+  id: number,
+  req: KnowledgeBaseUpdateRequest
+): Promise<KnowledgeBaseItem> {
+  const payload = await http.put<unknown>(`${KNOWLEDGE_BASES_URL}/${id}`, req)
+  return unwrapDoc<KnowledgeBaseItem>(payload, '更新知识库失败')
+}
+
+/**
+ * 重建库内全部已发布文档的索引（让新切片参数对存量生效）。
+ * <p>仅 ADMIN；每篇文档一次远程 embedding 调用，大库执行前确认配额。</p>
+ */
+export async function reindexKnowledgeBase(id: number): Promise<KnowledgeBaseReindexResult> {
+  const payload = await http.post<unknown>(`${KNOWLEDGE_BASES_URL}/${id}/reindex-all`)
+  return unwrapDoc<KnowledgeBaseReindexResult>(payload, '重建库索引失败')
+}
+
+/**
+ * 上传文件入库（V2：PDF/Word/Excel/PPT/TXT/Markdown → Tika 解析 → 标准创建链路）。
+ *
+ * <p>走 http.post + FormData（http 工具对 FormData 自动跳过 JSON Content-Type）。
+ * 写操作不重试（与 create 同理，避免重复建文档）。</p>
+ */
+export async function uploadKnowledgeDocument(req: {
+  file: File
+  title?: string
+  kbId?: number | null
+  categoryId?: number | null
+  category?: string
+  author?: string
+  tags?: string[]
+  publish: boolean
+  knowledgeSource?: string
+}): Promise<KnowledgeDocUploadResult> {
+  const form = new FormData()
+  form.append('file', req.file)
+  if (req.title) form.append('title', req.title)
+  if (req.kbId != null) form.append('kbId', String(req.kbId))
+  if (req.categoryId != null) form.append('categoryId', String(req.categoryId))
+  if (req.category) form.append('category', req.category)
+  if (req.author) form.append('author', req.author)
+  if (req.tags) req.tags.forEach(t => form.append('tags', t))
+  form.append('publish', String(req.publish))
+  if (req.knowledgeSource) form.append('knowledgeSource', req.knowledgeSource)
+
+  const payload = await http.post<unknown>(`${API_ENDPOINTS.KNOWLEDGE_DOCS}/upload`, form)
+  return unwrapDoc<KnowledgeDocUploadResult>(payload, '上传文件失败')
 }
 
 // ==================== 索引状态文案（前端统一展示）====================

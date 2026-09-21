@@ -22,11 +22,14 @@
  * 面板自己持有状态会立刻产生两份真相——用户改了分类却没进草稿，
  * 是这类拆分最典型的回归。
  */
+import { computed } from 'vue'
 import { Plus, Settings2, Sparkles } from 'lucide-vue-next'
 
-import type { KnowledgeCategoryEntity, KnowledgeTag } from '@/api/types'
+import type { KnowledgeBaseItem, KnowledgeCategoryEntity, KnowledgeTag } from '@/api/types'
 import { buildCategoryPath, MAX_TAGS } from '@/utils/editorContent'
 
+/** 所属知识库 ID——与 formData.kbId 一致；决定索引时的切片粒度（按库参数） */
+const kbId = defineModel<number | null>('kbId', { required: true })
 /** 分类名（非 ID）——与 formData.category 一致，ID 由主文件按名反查 */
 const category = defineModel<string>('category', { required: true })
 const tags = defineModel<string[]>('tags', { required: true })
@@ -36,6 +39,8 @@ const publishOnCreate = defineModel<boolean>('publishOnCreate', { required: true
 const changeReason = defineModel<string>('changeReason', { required: true })
 
 const props = defineProps<{
+  /** 知识库全集（含 DISABLED），面板自行过滤出可选集 */
+  knowledgeBases: KnowledgeBaseItem[]
   /** 目录分类全集，用于下拉与路径展示 */
   categories: KnowledgeCategoryEntity[]
   /** 已登记标签，供下拉选择（用户仍可 allow-create 新建） */
@@ -72,12 +77,40 @@ const categoryLabel = (cat: KnowledgeCategoryEntity) =>
  */
 const hotTagDisabled = (tag: string) =>
   tags.value.includes(tag) || tags.value.length >= MAX_TAGS
+
+/**
+ * 可选知识库：ACTIVE 全集 + 当前所属库（即便它已停用）。
+ *
+ * 只列 ACTIVE 的话，编辑一篇「所属库后来被停用」的文档时，
+ * 下拉会显示空白——用户不知道文档现在挂在哪。
+ * 停用的库拒收新文档由后端 requireActive 把守，前端只负责如实展示。
+ */
+const selectableBases = computed(() => {
+  const active = props.knowledgeBases.filter(b => b.status === 'ACTIVE')
+  const current = props.knowledgeBases.find(b => b.id === kbId.value)
+  return current && !active.some(b => b.id === current.id) ? [...active, current] : active
+})
 </script>
 
 <template>
   <div class="ce-side-head">
     <Settings2 :size="15" />
     <span>文档属性</span>
+  </div>
+
+  <div class="ce-side-group">
+    <label class="ce-side-label">所属知识库</label>
+    <el-select v-model="kbId" placeholder="选择知识库">
+      <el-option
+        v-for="kb in selectableBases"
+        :key="kb.id"
+        :value="kb.id"
+        :label="`${kb.name}（${kb.effectiveChildChunkSize} 字/片${kb.status === 'DISABLED' ? '·已停用' : ''}）`"
+      />
+    </el-select>
+    <p class="ce-kb-tip">
+      {{ isNew ? '切片粒度随库生效，缺省落默认库' : '换库将按新库的切片参数重建索引（存量切片同步刷新）' }}
+    </p>
   </div>
 
   <div class="ce-side-group">
@@ -210,6 +243,13 @@ const hotTagDisabled = (tag: string) =>
 .ce-side-label {
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
+  color: var(--color-text-tertiary);
+}
+
+.ce-kb-tip {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
   color: var(--color-text-tertiary);
 }
 

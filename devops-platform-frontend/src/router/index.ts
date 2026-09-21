@@ -141,6 +141,17 @@ const router = createRouter({
       }
     },
     {
+      // 阶段A-P0：模型渠道配置只读展示。
+      // 后端 ModelChannelController 有 @SaCheckRole("ADMIN") 兜底，此处提前拦截改善体验。
+      path: '/model-channels', name: 'model-channels',
+      component: lazy(() => import('../views/ModelChannels.vue'), 'ModelChannels', 'list'),
+      meta: {
+        title: '模型渠道配置', stage: 'L1', roles: ['admin'],
+        description: '查看当前生效的 AI 模型渠道配置（chat/embedding/reranker）。',
+        capabilities: ['三渠道配置', '脱敏 Key 展示', '向量维度', '状态标识']
+      }
+    },
+    {
       path: '/approvals', name: 'approvals', component: lazy(() => import('../views/ApprovalCenter.vue'), 'ApprovalCenter', 'dashboard'),
       meta: { title: '人机协同审批中心', stage: 'L3', roles: ['admin'], description: '对中高风险自动化建议执行分级审批并保留完整决策依据。', capabilities: ['待审批队列', 'AI 决策依据', '风险校验', '审批记录'] }
     },

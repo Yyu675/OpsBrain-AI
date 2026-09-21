@@ -196,6 +196,18 @@ public class KnowledgeChunkEntity {
     private String ownerDept;
 
     /**
+     * 所属知识库 ID（V2）：冗余自所属文档，供检索按库过滤免 JOIN
+     * （与 {@link #visibility} 同一理由——JOIN 会让 PG 放弃 HNSW 索引）。
+     * <p>
+     * 代价同样是写入需同步：文档换库后必须重建其切片，
+     * 否则切片仍挂在旧库（{@code KnowledgeDocService.update} 已把
+     * 换库纳入重建触发条件）。
+     * </p>
+     */
+    @Column(name = "kb_id")
+    private Long kbId;
+
+    /**
      * 创建时间
      */
     @Column(name = "create_time", nullable = false, updatable = false)

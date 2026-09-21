@@ -31,12 +31,15 @@ import java.util.Map;
 public class KnowledgeDocController {
 
     private final KnowledgeDocService docService;
+    private final com.devops.agent.domain.rag.KnowledgeUploadService uploadService;
     /** 知识库写权限守卫（F-5）：可逆操作 ADMIN+OPS，不可逆操作仅 ADMIN */
     private final KnowledgeWriteGuard writeGuard;
 
     public KnowledgeDocController(KnowledgeDocService docService,
+                                  com.devops.agent.domain.rag.KnowledgeUploadService uploadService,
                                   KnowledgeWriteGuard writeGuard) {
         this.docService = docService;
+        this.uploadService = uploadService;
         this.writeGuard = writeGuard;
     }
 
@@ -66,6 +69,7 @@ public class KnowledgeDocController {
             // L1.5 来源回链：由工单沉淀时记录源工单，非工单沉淀时为 null
             doc.setSourceTicketId(req.sourceTicketId());
             doc.setSourceType(req.sourceType());
+            doc.setKbId(req.kbId());
             doc.setEffectiveAt(req.effectiveAt());
             doc.setExpiredAt(req.expiredAt());
 
@@ -135,6 +139,7 @@ public class KnowledgeDocController {
                 doc.setKnowledgeSource(item.knowledgeSource());
                 doc.setSourceTicketId(item.sourceTicketId());
                 doc.setSourceType(item.sourceType() != null ? item.sourceType() : "IMPORT");
+                doc.setKbId(item.kbId());
                 doc.setEffectiveAt(item.effectiveAt());
                 doc.setExpiredAt(item.expiredAt());
 
@@ -162,6 +167,10 @@ public class KnowledgeDocController {
                 failCount++;
 
             } catch (Exception e) {
+                // 单条失败不阻断整批，但必须留下日志——否则运维只能看到
+                // 结果里的 FAILED 计数，没有任何指向失败原因的现场证据
+                log.warn("⚠️ [KnowledgeDoc] 批量导入单条失败 | index={} | title={} | {}",
+                        i, item.title(), e.getMessage());
                 Map<String, Object> itemResult = new LinkedHashMap<>();
                 itemResult.put("index", i);
                 itemResult.put("title", item.title());
@@ -181,6 +190,97 @@ public class KnowledgeDocController {
     }
 
     /**
+     * 上传文件入库（V2：二进制文档解析通道）
+     *
+     * <p>POST /api/v1/knowledge/docs/upload（multipart/form-data）</p>
+     *
+     * <p>PDF/Word/Excel/PPT/TXT/Markdown 经 Tika 解析出纯文本后，
+     * 走与手工新建完全相同的链路（清洗/去重/SimHash/向量化）；
+     * 原件留存 MinIO 供审计与重解析。同步处理：发布即索引，
+     * 超时或失败由既有 {@code index_status} 状态机 + 重试端点兜底。</p>
+     *
+     * @param file    上传文件（必填，≤20MB，类型白名单见 KnowledgeUploadService）
+     * @param title   文档标题（可选，默认取文件名去扩展名）
+     * @param publish true=发布并向量化；false=存草稿
+     */
+    @PostMapping("/upload")
+    public ApiResponse<Object> upload(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) Long kbId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String author,
+            @RequestParam(required = false) List<String> tags,
+            @RequestParam(defaultValue = "true") boolean publish,
+            @RequestParam(required = false) String knowledgeSource) {
+        writeGuard.requireEdit();
+        try {
+            com.devops.agent.domain.rag.KnowledgeUploadService.UploadResult r =
+                    uploadService.upload(file, title, kbId, categoryId, category,
+                            author, tags, publish, knowledgeSource, "UPLOAD");
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("id", r.docId());
+            data.put("title", r.title());
+            data.put("version", r.version());
+            data.put("status", publish ? "PUBLISHED" : "DRAFT");
+            data.put("indexStatus", r.indexOutcome().status());
+            data.put("retrievable", r.indexOutcome().isRetrievable());
+            data.put("parsedLength", r.parsedLength());
+            data.put("originalStored", r.objectKey() != null);
+            data.put("nearDuplicates", r.nearDuplicates().stream()
+                    .map(KnowledgeDocDto.NearDuplicate::from).toList());
+            if (r.indexOutcome().status() == KnowledgeDocService.IndexOutcome.Status.FAILED) {
+                data.put("indexError", r.indexOutcome().error());
+            }
+            return ApiResponse.success(data);
+
+        } catch (KnowledgeDocService.DuplicateContentException e) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("duplicateDocId", e.getDuplicateDocId());
+            data.put("duplicateTitle", e.getDuplicateTitle());
+            return ApiResponse.<Object>error(ApiCode.DUPLICATE_CONTENT, e.getMessage(), data);
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
+        } catch (Exception e) {
+            log.error("上传文件入库失败", e);
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "上传文件入库失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 下载上传文档的原件（预签名 URL，V2）
+     *
+     * <p>GET /api/v1/knowledge/docs/{id}/original-url</p>
+     *
+     * <p>仅对 sourceType=UPLOAD 且原件留存成功的文档有意义：
+     * 手工录入或上传时对象存储降级（originalStored=false）的文档
+     * 没有原件，如实返回 40400 而非伪造一个空文件。</p>
+     */
+    @GetMapping("/{id}/original-url")
+    public ApiResponse<Object> originalUrl(@PathVariable Long id) {
+        try {
+            com.devops.agent.domain.rag.KnowledgeUploadService.OriginalDownload download =
+                    uploadService.presignOriginalUrl(id);
+            if (download == null) {
+                return ApiResponse.error(ApiCode.NOT_FOUND, "文档不存在");
+            }
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("url", download.url());
+            data.put("filename", download.filename());
+            data.put("expiresInSeconds", download.expiresInSeconds());
+            return ApiResponse.success(data);
+        } catch (IllegalStateException e) {
+            // 无留存原件 / 签名失败——消息可直接展示
+            return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
+        } catch (Exception e) {
+            log.error("获取原件下载链接失败 | docId={}", id, e);
+            return ApiResponse.error(ApiCode.INTERNAL_ERROR, "获取原件下载链接失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 更新文档（带乐观锁）
      */
     @PutMapping("/{id}")
@@ -196,6 +296,8 @@ public class KnowledgeDocController {
         patch.setAuthor(req.author());
         patch.setContent(req.content());
         patch.setSummary(req.summary());
+        // 换库：非 null 即视为显式变更（会触发重建索引）；null=保持原归属
+        patch.setKbId(req.kbId());
 
         KnowledgeDocService.SaveResult r = docService.update(
                 id, patch, req.tags(), req.version(), "SYSTEM", req.changeReason());
@@ -292,14 +394,15 @@ public class KnowledgeDocController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String tag,
+            @RequestParam(required = false) Long kbId,
             @RequestParam(defaultValue = "UPDATED_DESC") String sort) {
 
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, size), 200);
 
         List<KnowledgeDoc> docs = docService.findPage(
-                safePage, safeSize, status, category, keyword, tag, sort);
-        long total = docService.countByQuery(status, category, keyword, tag);
+                safePage, safeSize, status, category, keyword, tag, sort, kbId);
+        long total = docService.countByQuery(status, category, keyword, tag, kbId);
 
         // 用 record 而非 Map（P0-2 第二步）：Map 让 OpenAPI 只能生成
         // additionalProperties:true，前端拿不到类型；且 data.put("totalElements", ...)

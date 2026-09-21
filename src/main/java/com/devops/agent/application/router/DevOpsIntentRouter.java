@@ -1,7 +1,11 @@
 package com.devops.agent.application.router;
 
+import com.devops.agent.domain.ai.AiChannel;
+import com.devops.agent.domain.ai.AiChannelRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.regex.Pattern;
@@ -61,21 +65,49 @@ public class DevOpsIntentRouter {
     private final DevOpsAgentEngine reasoningAgentEngine;
 
     /**
-     * Turbo 模型名（从配置读取，供 SSE start 事件展示真实模型名）
+     * Turbo 模型名（P1 起 DB 优先，yml 回落）。供 SSE start 事件展示真实模型名。
      */
-    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.chat.turbo-model:turbo}")
-    private String turboModelName;
+    @Value("${devops.ai.channels.chat.turbo-model:turbo}")
+    private String ymlTurboModelName;
 
     /**
-     * Reasoner 模型名（从配置读取）
+     * Reasoner 模型名（P1 起 DB 优先，yml 回落）。
      */
-    @org.springframework.beans.factory.annotation.Value("${devops.ai.channels.chat.reasoner-model:reasoner}")
-    private String reasonerModelName;
+    @Value("${devops.ai.channels.chat.reasoner-model:reasoner}")
+    private String ymlReasonerModelName;
 
-    public DevOpsIntentRouter(@org.springframework.beans.factory.annotation.Qualifier("turboAgentEngine") DevOpsAgentEngine turboAgentEngine,
-                              @org.springframework.beans.factory.annotation.Qualifier("reasoningAgentEngine") DevOpsAgentEngine reasoningAgentEngine) {
+    private final AiChannelRepository channelRepo;
+
+    public DevOpsIntentRouter(@Qualifier("turboAgentEngine") DevOpsAgentEngine turboAgentEngine,
+                              @Qualifier("reasoningAgentEngine") DevOpsAgentEngine reasoningAgentEngine,
+                              AiChannelRepository channelRepo) {
         this.turboAgentEngine = turboAgentEngine;
         this.reasoningAgentEngine = reasoningAgentEngine;
+        this.channelRepo = channelRepo;
+    }
+
+    /** DB 优先取有效 turbo 模型名，缺则回落 yml。 */
+    private String effectiveTurboName() {
+        try {
+            AiChannel ch = channelRepo.findByKey(AiChannel.KEY_CHAT).orElse(null);
+            if (ch != null && ch.turboModel() != null && !ch.turboModel().isBlank())
+                return ch.turboModel();
+        } catch (Exception e) {
+            log.debug("[IntentRouter] 读 DB 渠道配置失败，回落 yml turbo 模型名 | {}", e.toString());
+        }
+        return ymlTurboModelName;
+    }
+
+    /** DB 优先取有效 reasoner 模型名，缺则回落 yml。 */
+    private String effectiveReasonerName() {
+        try {
+            AiChannel ch = channelRepo.findByKey(AiChannel.KEY_CHAT).orElse(null);
+            if (ch != null && ch.reasonerModel() != null && !ch.reasonerModel().isBlank())
+                return ch.reasonerModel();
+        } catch (Exception e) {
+            log.debug("[IntentRouter] 读 DB 渠道配置失败，回落 yml reasoner 模型名 | {}", e.toString());
+        }
+        return ymlReasonerModelName;
     }
 
     /**
@@ -106,16 +138,16 @@ public class DevOpsIntentRouter {
         if ("REASONING".equals(routeDecision(userQuery))) {
             log.info("🧠 [Router] 路由到 Reasoner 引擎 | 原因: 复杂推理场景");
             try {
-                return RoutingResult.of(reasoningAgentEngine, reasonerModelName);
+                return RoutingResult.of(reasoningAgentEngine, effectiveReasonerName());
             } catch (Exception e) {
                 // 返回 Bean 引用本身不会抛异常，但 Bean 可能在运行时处于不可用状态
                 // （如底层 StreamingChatModel 连接异常），提前捕获让降级路径清晰
                 log.warn("⚠️ [Router] Reasoner 引擎不可用，降级到 Turbo | error={}", e.getMessage());
-                return RoutingResult.of(turboAgentEngine, turboModelName);
+                return RoutingResult.of(turboAgentEngine, effectiveTurboName());
             }
         } else {
             log.info("⚡ [Router] 路由到 Turbo 引擎 | 原因: 日常问答场景");
-            return RoutingResult.of(turboAgentEngine, turboModelName);
+            return RoutingResult.of(turboAgentEngine, effectiveTurboName());
         }
     }
 

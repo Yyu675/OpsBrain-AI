@@ -77,7 +77,8 @@ class KnowledgeCategoryMoveRenameTest {
         KnowledgeTagRepository tagCatalog = mock(KnowledgeTagRepository.class);
 
         service = new KnowledgeDocService(docRepo, historyRepo, tagRepo, fingerprint,
-                indexer, semanticCache, contentCleaner, categoryRepo, tagCatalog);
+                indexer, semanticCache, contentCleaner, categoryRepo, tagCatalog,
+                mock(KnowledgeBaseService.class));
 
         // 与既有 KnowledgeDocServiceWriteTest 相同的默认桩：
         // 不打这些桩时 Mockito 返回 0/null，会让用例以「与被测行为无关的异常」告终

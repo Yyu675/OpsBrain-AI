@@ -94,6 +94,25 @@ class ParentChildDocumentSplitterTest {
     // ==================== 正确性测试 ====================
 
     @Test
+    @DisplayName("自定义 ChunkProfile：小参数切出更多更小的切片（按库参数化生效）")
+    void customProfileProducesSmallerChunks() {
+        String body = "## 章节一\n" + buildText(4000);
+
+        List<TextSegment> defaultSegments = splitter.splitWithParentChild(docOf(body));
+        // FAQ 库典型定制：子段落压到 ~100 token
+        List<TextSegment> smallSegments = splitter.splitWithParentChild(docOf(body),
+                ChunkProfile.ofNullable(1200, 300, 50));
+
+        assertTrue(smallSegments.size() > defaultSegments.size(),
+                "更小的切片参数应产出更多切片：custom=" + smallSegments.size()
+                        + " default=" + defaultSegments.size());
+        int maxDefault = defaultSegments.stream().mapToInt(s -> s.text().length()).max().orElse(0);
+        int maxSmall = smallSegments.stream().mapToInt(s -> s.text().length()).max().orElse(0);
+        assertTrue(maxSmall < maxDefault,
+                "更小的切片参数应压低最大切片长度：custom=" + maxSmall + " default=" + maxDefault);
+    }
+
+    @Test
     @DisplayName("切片应覆盖原文——不能丢内容")
     void chunksShouldCoverSourceText() {
         String marker = "这是一个不会被重复的唯一标记字符串XYZ";

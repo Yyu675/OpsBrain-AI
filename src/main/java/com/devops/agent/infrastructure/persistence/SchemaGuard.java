@@ -65,8 +65,8 @@ public class SchemaGuard {
 
     static {
         // 知识可见性（C1）。缺失会让检索 SQL 直接报错
-        REQUIRED_COLUMNS.put("sys_knowledge_doc", List.of("visibility", "owner_dept"));
-        REQUIRED_COLUMNS.put("sys_knowledge_chunk", List.of("visibility", "owner_dept"));
+        REQUIRED_COLUMNS.put("sys_knowledge_doc", List.of("visibility", "owner_dept", "kb_id"));
+        REQUIRED_COLUMNS.put("sys_knowledge_chunk", List.of("visibility", "owner_dept", "kb_id"));
         REQUIRED_COLUMNS.put("sys_user", List.of("dept"));
     }
 
@@ -84,7 +84,7 @@ public class SchemaGuard {
      */
     private static final List<String> REQUIRED_TABLES = List.of(
             "sys_operation_audit", "sys_risk_policy", "sys_action_allowlist",
-            "sys_automation_policy");
+            "sys_automation_policy", "sys_knowledge_base");
 
     @Value("${devops.schema.fail-fast:false}")
     private boolean failFast;

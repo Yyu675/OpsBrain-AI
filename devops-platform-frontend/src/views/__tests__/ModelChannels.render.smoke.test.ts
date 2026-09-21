@@ -1,0 +1,208 @@
+/**
+ * ModelChannels —— 渲染冒烟测试（阶段A-P0 只读展示页）。
+ *
+ * ── 为什么需要这一组 ──────────────────────────────────────────
+ * `ModelChannels.vue` 是本仓最「新」的页面（阶段A 渠道可视化），
+ * 后端契约已由 ModelChannelControllerWebTest（3 例）锁住——但那只证了
+ * 「接口返回对」，不证「页面画对」。按批 28 教训：vm 层断言与渲染断言
+ * 是两层皮，各自只证一半。
+ *
+ * ── 本页画错的代价 ────────────────────────────────────────────
+ * 它是**渠道配置的控制面**。最需要锁住的三个点：
+ *
+ * <ol>
+ *   <li><b>脱敏 key 展示</b>——后端只给 maskedKey 不给明文，页面绝不能
+ *       自行还原/拼接（前端本就没有解密能力）；这里锁「展示的是脱敏串」。</li>
+ *   <li><b>向量维度徽章</b>——embedding 的 dimension 是 RAG 链路健康的关键
+ *       读数，展示错会让运维误判「检索维度不对」排查方向。</li>
+ *   <li><b>四态齐全</b>——加载/空/错误/有数据，缺哪一态用户都得不到
+ *       准确反馈。尤其空态不能把「没镜像过」说成「渠道崩了」。</li>
+ * </ol>
+ *
+ * ── 分工 ──────────────────────────────────────────────────────
+ * 后端契约测试证「接口给对」，本文件证「页面把渠道状态画对了」。
+ * 这里不 stub DataStateBoundary——需要它真实执行四态逻辑，
+ * 才能断言空态/错误态文案（stub 成只透 slot 会把这些文案吞掉）。
+ */
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+
+const api = vi.hoisted(() => ({
+  fetchModelChannels: vi.fn(),
+}))
+vi.mock('@/api/modelChannels', () => api)
+
+import ModelChannels from '../ModelChannels.vue'
+
+/** 页面默认加载三个渠道的夹具。 */
+function fixtureChannels() {
+  return {
+    channels: [
+      {
+        channelKey: 'chat',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        maskedKey: 'sk-ws-****7890',
+        turboModel: 'qwen-turbo',
+        reasonerModel: 'deepseek-v4-flash-0731',
+        model: null,
+        dimension: null,
+        status: 'ACTIVE',
+        updatedAt: '2026-09-20T10:00:00',
+      },
+      {
+        channelKey: 'embedding',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        maskedKey: 'sk-ws-****1234',
+        turboModel: null,
+        reasonerModel: null,
+        model: 'qwen3.7-text-embedding',
+        dimension: 1536,
+        status: 'ACTIVE',
+        updatedAt: '2026-09-20T10:00:00',
+      },
+      {
+        channelKey: 'reranker',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        maskedKey: null,
+        turboModel: null,
+        reasonerModel: null,
+        model: 'qwen3-reranker-8b',
+        dimension: null,
+        status: 'ACTIVE',
+        updatedAt: '2026-09-20T10:00:00',
+      },
+    ],
+  }
+}
+
+function mountPage() {
+  return mount(ModelChannels, {
+    global: {
+      stubs: {
+        // el-tag 未注册时按未知元素渲染会丢 slot；stub 成 span 保住状态文本
+        'el-tag': { template: '<span class="el-tag-stub"><slot /></span>' },
+      },
+    },
+  })
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+describe('有数据：三渠道卡片渲染', () => {
+  it('渲染三张卡片，脱敏 key / 模型 / 维度徽章各就各位', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const cards = wrapper.findAll('.channel-card')
+    expect(cards).toHaveLength(3)
+
+    // chat 卡片：turbo + reasoner 模型、脱敏 key
+    const chat = wrapper.findAll('.channel-card')[0]
+    expect(chat.text()).toContain('chat')
+    expect(chat.text()).toContain('qwen-turbo')
+    expect(chat.text()).toContain('deepseek-v4-flash-0731')
+    // 脱敏 key：只出现 mask 后的串，绝不出现明文形态
+    expect(chat.text()).toContain('sk-ws-****7890')
+    expect(chat.text()).not.toContain('H.aaaabbbbcccc')
+    expect(wrapper.text()).not.toMatch(/H\.[A-Za-z]+/)
+
+    // embedding 卡片：model + 维度徽章（1536 是铁律关键读数）
+    const emb = wrapper.findAll('.channel-card')[1]
+    expect(emb.text()).toContain('embedding')
+    expect(emb.text()).toContain('qwen3.7-text-embedding')
+    const dimBadge = emb.find('.dimension-badge')
+    expect(dimBadge.exists()).toBe(true)
+    expect(dimBadge.text()).toBe('1536')
+
+    // reranker：model 在、无 dimension
+    const rerank = wrapper.findAll('.channel-card')[2]
+    expect(rerank.text()).toContain('qwen3-reranker-8b')
+    expect(rerank.find('.dimension-badge').exists()).toBe(false)
+
+    // 状态标签：三渠道都是 ACTIVE
+    expect(wrapper.text()).toContain('ACTIVE')
+  })
+
+  it('reranker 未配置 key 时展示 — 而非 null 字符', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const rerank = wrapper.findAll('.channel-card')[2]
+    // 脱敏 Key 行为空 → 页面用 dash() 显示为 —
+    expect(rerank.text()).toContain('—')
+    expect(rerank.text()).not.toContain('null')
+  })
+
+  it('chat 未配置备用模型时显示「未配置」提示（方案 A）', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const chat = wrapper.findAll('.channel-card')[0]
+    expect(chat.text()).toContain('备用模型')
+    expect(chat.text()).toContain('未配置')
+  })
+
+  it('chat 已配置备用模型时显示备用模型名 tag（方案 A）', async () => {
+    const data = fixtureChannels()
+    data.channels[0] = {
+      ...data.channels[0],
+      fallbackBaseUrl: 'https://api.deepseek.com/v1',
+      fallbackModel: 'deepseek-chat',
+      fallbackMaskedKey: 'sk-fb-****5678',
+    }
+    api.fetchModelChannels.mockResolvedValue(data)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const chat = wrapper.findAll('.channel-card')[0]
+    expect(chat.text()).toContain('deepseek-chat')
+    // 备用密文/明文绝不展示，只有脱敏串
+    expect(chat.text()).not.toContain('sk-fb-RealKey')
+  })
+})
+
+describe('空态', () => {
+  it('无渠道数据时显示「暂无渠道配置」而非空白', async () => {
+    api.fetchModelChannels.mockResolvedValue({ channels: [] })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('暂无渠道配置')
+    expect(wrapper.findAll('.channel-card')).toHaveLength(0)
+  })
+})
+
+describe('错误态', () => {
+  it('接口失败显示错误并可重试', async () => {
+    api.fetchModelChannels.mockRejectedValue(new Error('503 backend down'))
+    const wrapper = mountPage()
+    await flushPromises()
+
+    // DataStateBoundary 错误态渲染（含"重试"标签），同时没有卡片
+    expect(wrapper.text()).toContain('重试')
+    expect(wrapper.findAll('.channel-card')).toHaveLength(0)
+
+    // 重试：页面刷新按钮（@click=loadChannels）→ 重新拉取成功 → 渲染三渠道
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    wrapper.find('.btn-retry').trigger('click')
+    await flushPromises()
+    expect(api.fetchModelChannels).toHaveBeenCalledTimes(2)
+    expect(wrapper.findAll('.channel-card')).toHaveLength(3)
+  })
+
+  it('刷新按钮（页面级）重新拉取', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(api.fetchModelChannels).toHaveBeenCalledTimes(1)
+
+    wrapper.find('.btn-retry').trigger('click')
+    await flushPromises()
+    expect(api.fetchModelChannels).toHaveBeenCalledTimes(2)
+  })
+})

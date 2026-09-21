@@ -57,8 +57,9 @@ public class KnowledgeDocRepository {
                  effective_at, expired_at, knowledge_source,
                  source_ticket_id, source_type,
                  visibility, owner_dept,
+                 kb_id, original_filename, original_file_path,
                  create_time, update_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """;
 
@@ -97,6 +98,11 @@ public class KnowledgeDocRepository {
             // C1 可见性。列 NOT NULL，null 兜底为 PUBLIC（与存量语义一致）
             ps.setString(18, doc.getVisibility() != null ? doc.getVisibility() : "PUBLIC");
             ps.setString(19, doc.getOwnerDept());
+            // 知识库归属：新建时已由 KnowledgeBaseService 解析落定（未指定→默认库）
+            if (doc.getKbId() != null) ps.setLong(20, doc.getKbId());
+            else ps.setNull(20, java.sql.Types.BIGINT);
+            ps.setString(21, doc.getOriginalFilename());
+            ps.setString(22, doc.getOriginalFilePath());
             return ps;
         }, keyHolder);
 
@@ -120,7 +126,7 @@ public class KnowledgeDocRepository {
                    index_status = ?, index_error = NULL,
                    effective_at = ?, expired_at = ?, knowledge_source = ?,
                    source_ticket_id = ?, source_type = ?,
-                   visibility = ?, owner_dept = ?,
+                   visibility = ?, owner_dept = ?, kb_id = ?,
                    version = version + 1, update_time = CURRENT_TIMESTAMP
              WHERE id = ? AND version = ?
             """ : """
@@ -130,7 +136,7 @@ public class KnowledgeDocRepository {
                    index_status = ?, index_error = NULL,
                    effective_at = ?, expired_at = ?, knowledge_source = ?,
                    source_ticket_id = ?, source_type = ?,
-                   visibility = ?, owner_dept = ?,
+                   visibility = ?, owner_dept = ?, kb_id = ?,
                    version = version + 1, update_time = CURRENT_TIMESTAMP
              WHERE id = ?
             """;
@@ -153,6 +159,7 @@ public class KnowledgeDocRepository {
         args.add(doc.getSourceType());
         args.add(doc.getVisibility() != null ? doc.getVisibility() : "PUBLIC");
         args.add(doc.getOwnerDept());
+        args.add(doc.getKbId());
         args.add(doc.getId());
         if (withCas) {
             args.add(expectedVersion);
@@ -300,7 +307,7 @@ public class KnowledgeDocRepository {
     }
 
     public List<KnowledgeDoc> findPage(int page, int size, String status, String category,
-                                       String keyword, String tag, String sort) {
+                                       String keyword, String tag, String sort, Long kbId) {
         StringBuilder sql = new StringBuilder("SELECT * FROM sys_knowledge_doc WHERE 1=1");
         List<Object> args = new ArrayList<>();
 
@@ -311,6 +318,10 @@ public class KnowledgeDocRepository {
         if (notBlank(category)) {
             sql.append(" AND category = ?");
             args.add(category.trim());
+        }
+        if (kbId != null) {
+            sql.append(" AND kb_id = ?");
+            args.add(kbId);
         }
         if (notBlank(keyword)) {
             sql.append(" AND (LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\')");
@@ -348,7 +359,7 @@ public class KnowledgeDocRepository {
         return jdbcTemplate.query(sql.toString(), new DocRowMapper(), args.toArray());
     }
 
-    public long countByQuery(String status, String category, String keyword, String tag) {
+    public long countByQuery(String status, String category, String keyword, String tag, Long kbId) {
         StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM sys_knowledge_doc WHERE 1=1");
         List<Object> args = new ArrayList<>();
 
@@ -359,6 +370,10 @@ public class KnowledgeDocRepository {
         if (notBlank(category)) {
             sql.append(" AND category = ?");
             args.add(category.trim());
+        }
+        if (kbId != null) {
+            sql.append(" AND kb_id = ?");
+            args.add(kbId);
         }
         if (notBlank(keyword)) {
             sql.append(" AND (LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\')");
@@ -397,6 +412,18 @@ public class KnowledgeDocRepository {
                     + " WHERE t.doc_id = sys_knowledge_doc.id AND t.tag = ?)");
             args.add(tag.trim());
         }
+    }
+
+    /**
+     * 查找某知识库下全部已发布文档（供「重建库索引」逐篇重嵌）。
+     * <p>只查 PUBLISHED：草稿/废弃/归档本就不该有索引，重嵌它们纯浪费配额。</p>
+     */
+    public List<KnowledgeDoc> findPublishedByKbId(Long kbId) {
+        return jdbcTemplate.query("""
+            SELECT * FROM sys_knowledge_doc
+             WHERE kb_id = ? AND status = 'PUBLISHED'
+             ORDER BY id
+            """, new DocRowMapper(), kbId);
     }
 
     /**
@@ -504,6 +531,10 @@ public class KnowledgeDocRepository {
             String vis = rs.getString("visibility");
             d.setVisibility(vis != null ? vis : "PUBLIC");
             d.setOwnerDept(rs.getString("owner_dept"));
+            long kbId = rs.getLong("kb_id");
+            d.setKbId(rs.wasNull() ? null : kbId);
+            d.setOriginalFilename(rs.getString("original_filename"));
+            d.setOriginalFilePath(rs.getString("original_file_path"));
             d.setCreateTime(rs.getObject("create_time", LocalDateTime.class));
             d.setUpdateTime(rs.getObject("update_time", LocalDateTime.class));
             return d;

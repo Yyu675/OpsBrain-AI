@@ -46,6 +46,8 @@ interface KnowledgeQueryParams {
   tag?: string
   status?: string
   sort?: string
+  /** 按知识库过滤（V2） */
+  kbId?: number
 }
 
 export const useKnowledgeStore = defineStore('knowledge', () => {
@@ -90,6 +92,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         tag: params?.tag,
         status: params?.status,
         sort: params?.sort,
+        kbId: params?.kbId,
       })
       // 搜索防抖期间可能连续发出请求，只允许最后一次请求覆盖页面。
       if (requestSequence !== listRequestSequence) return result
@@ -98,7 +101,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       totalPages.value = result.totalPages
       currentPage.value = result.currentPage
       pageSize.value = result.pageSize
-      if (!params?.keyword && !params?.category && !params?.tag && !params?.status) {
+      if (!params?.keyword && !params?.category && !params?.tag && !params?.status && !params?.kbId) {
         libraryTotal.value = result.totalElements
       }
       return result

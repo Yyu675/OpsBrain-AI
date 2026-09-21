@@ -104,6 +104,23 @@ public class KnowledgeDoc {
     /** 归属部门（C1）：仅在 visibility=RESTRICTED 时参与可见性判定 */
     private String ownerDept;
 
+    /**
+     * 所属知识库 ID（关联 sys_knowledge_base）。
+     * <p>
+     * 决定索引时使用的切片参数（{@link ChunkProfile} 随库配置）。
+     * 与 visibility 同理：<b>字段默认必须是 null</b>——本类兼任「更新补丁」，
+     * update 只覆盖非空字段，null 表示「不改归属」。
+     * 新建文档未指定时由 {@code KnowledgeBaseService.resolveForNewDoc} 落默认库。
+     * </p>
+     */
+    private Long kbId;
+
+    /** 上传原件文件名（source_type=UPLOAD 时记录，审计展示用；手工录入为 null） */
+    private String originalFilename;
+
+    /** 上传原件的 MinIO 对象键（审计/重解析用；手工录入为 null） */
+    private String originalFilePath;
+
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -189,6 +206,15 @@ public class KnowledgeDoc {
 
     public String getOwnerDept() { return ownerDept; }
     public void setOwnerDept(String ownerDept) { this.ownerDept = ownerDept; }
+
+    public Long getKbId() { return kbId; }
+    public void setKbId(Long kbId) { this.kbId = kbId; }
+
+    public String getOriginalFilename() { return originalFilename; }
+    public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
+
+    public String getOriginalFilePath() { return originalFilePath; }
+    public void setOriginalFilePath(String originalFilePath) { this.originalFilePath = originalFilePath; }
 
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }

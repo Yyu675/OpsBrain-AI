@@ -574,6 +574,10 @@ devops:
       # 冷记忆归档专用桶。与附件桶分离：两者保留期与访问模式不同，
       # 混用会让对象生命周期策略无法分别配置。桶由归档任务启动时兜底创建（private）
       archive-bucket: ${MINIO_ARCHIVE_BUCKET:devops-memory-archive}
+      # 知识库上传原件专用桶（V2）。与附件桶分离的理由同上：
+      # 知识原件是长期留存的审计资产，附件是工单上下文的短期材料。
+      # 桶由 KnowledgeUploadService 首次使用时兜底创建。
+      knowledge-bucket: ${MINIO_KNOWLEDGE_BUCKET:devops-knowledge-source}
       # 预签名 URL 有效期（秒）。短有效期降低链接泄露风险，
       # 又足够用户完成一次下载。
       presign-expiry-seconds: 300

@@ -40,11 +40,13 @@ import {
 import {
   createKnowledgeCategory,
   DuplicateContentError,
+  fetchKnowledgeBases,
   fetchKnowledgeCategories,
   fetchKnowledgeTags,
   VersionConflictError,
 } from '@/api/knowledge'
 import type {
+  KnowledgeBaseItem,
   KnowledgeCategoryEntity,
   KnowledgeDocCreateRequest,
   KnowledgeDocSaveResult,
@@ -99,7 +101,9 @@ const emptyForm = () => ({
   category: '',
   summary: '',
   tags: [] as string[],
-  content: ''
+  content: '',
+  /** 所属知识库（V2）：null = 落默认库（新建）/ 不变更（编辑） */
+  kbId: null as number | null,
 })
 const formData = ref(emptyForm())
 type EditorForm = ReturnType<typeof emptyForm>
@@ -328,12 +332,35 @@ const loadCategoriesAndTags = async () => {
   }
 }
 
+/**
+ * 知识库列表（V2）。onMounted 与 loadDoc 并发起跑，loadDoc 的
+ * 「新建默认落默认库」需要等它——单例 Promise 保证只拉一次且可等待。
+ */
+const knowledgeBases = ref<KnowledgeBaseItem[]>([])
+let knowledgeBasesPromise: Promise<void> | null = null
+const loadKnowledgeBases = () => {
+  knowledgeBasesPromise ??= fetchKnowledgeBases()
+    .then(list => { knowledgeBases.value = list })
+    .catch(e => { console.warn('[KnowledgeEditor] 加载知识库列表失败', e) })
+  return knowledgeBasesPromise
+}
+
 const loadDoc = async () => {
   // 编辑态加载失败或跳转后，重置干净状态
   if (isNew.value) {
     starterDismissed.value = false
     formData.value = emptyForm()
     formData.value.category = typeof route.query.category === 'string' ? route.query.category : ''
+    // 默认归属：列表页带着库筛选点「新建」时跟随该库（?kb=），否则落默认库。
+    // 等库列表到达再定默认——onMounted 里它与本函数并发起跑，见 loadKnowledgeBases
+    const routeKb = Number(route.query.kb)
+    if (Number.isInteger(routeKb) && routeKb > 0) {
+      formData.value.kbId = routeKb
+    } else {
+      await loadKnowledgeBases()
+      formData.value.kbId =
+        knowledgeBases.value.find(b => b.code.toLowerCase() === 'default')?.id ?? null
+    }
     currentVersion.value = 0
     changeReason.value = ''
     publishOnCreate.value = false
@@ -388,6 +415,8 @@ const loadDoc = async () => {
       summary: d.summary ?? '',
       tags: [...d.tags],
       content: await toVisualContent(d.content),
+      // 回填当前归属：面板据此展示所在库；保存时若与库中一致，后端视为未变更
+      kbId: d.kbId ?? null,
     }
     currentVersion.value = d.version
     publishOnCreate.value = false
@@ -458,6 +487,8 @@ onMounted(async () => {
   syncEditorViewport()
   window.addEventListener('resize', syncEditorViewport, { passive: true })
   loadCategoriesAndTags()
+  // 与 loadDoc 并发：新建分支默认库的解析会 await 这个单例 Promise
+  void loadKnowledgeBases()
   await mountEditor()
   startAutoSave()
 })
@@ -636,6 +667,9 @@ const handleSave = async (publishAfterSave = false) => {
     summary: formData.value.summary.trim() || undefined,
     tags: formData.value.tags,
     content: contentForStorage,
+    // 知识库归属（V2）：null/undefined 时新建落默认库、编辑不变更；
+    // 编辑时换库会触发后端按新库切片参数重建索引
+    kbId: formData.value.kbId ?? undefined,
   }
 
   saving.value = true
@@ -1062,6 +1096,8 @@ const primaryLabel = computed(() =>
             v-model:summary="formData.summary"
             v-model:publish-on-create="publishOnChange"
             v-model:change-reason="changeReason"
+            v-model:kb-id="formData.kbId"
+            :knowledge-bases="knowledgeBases"
             :categories="directoryCategories"
             :managed-tags="managedTags"
             :hot-tags="store.hotTags"

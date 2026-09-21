@@ -41,6 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -120,6 +121,12 @@ class KnowledgeDocControllerWebTest {
 
     @MockitoBean
     private KnowledgeDocService docService;
+
+    /**
+     * V2 文件上传服务。控制器构造依赖，切片内不加载必须 mock。
+     */
+    @MockitoBean
+    private com.devops.agent.domain.rag.KnowledgeUploadService uploadService;
 
     @BeforeEach
     void setUpMockMvc() {
@@ -477,9 +484,9 @@ class KnowledgeDocControllerWebTest {
         @Test
         @DisplayName("默认第 1 页 10 条，分页元信息完整")
         void defaultPaging() throws Exception {
-            when(docService.findPage(eq(1), eq(10), any(), any(), any(), any(), eq("UPDATED_DESC")))
+            when(docService.findPage(eq(1), eq(10), any(), any(), any(), any(), eq("UPDATED_DESC"), any()))
                     .thenReturn(List.of(doc(1L, "PUBLISHED", "INDEXED")));
-            when(docService.countByQuery(any(), any(), any(), any())).thenReturn(21L);
+            when(docService.countByQuery(any(), any(), any(), any(), any())).thenReturn(21L);
 
             mockMvc.perform(get("/api/v1/knowledge/docs"))
                     .andExpect(status().isOk())
@@ -494,9 +501,9 @@ class KnowledgeDocControllerWebTest {
         @Test
         @DisplayName("列表项不含正文 —— 列表页拉全文会让响应体膨胀几个数量级")
         void listItemsExcludeContent() throws Exception {
-            when(docService.findPage(anyInt(), anyInt(), any(), any(), any(), any(), anyString()))
+            when(docService.findPage(anyInt(), anyInt(), any(), any(), any(), any(), anyString(), any()))
                     .thenReturn(List.of(doc(1L, "PUBLISHED", "INDEXED")));
-            when(docService.countByQuery(any(), any(), any(), any())).thenReturn(1L);
+            when(docService.countByQuery(any(), any(), any(), any(), any())).thenReturn(1L);
 
             mockMvc.perform(get("/api/v1/knowledge/docs"))
                     .andExpect(status().isOk())
@@ -508,24 +515,24 @@ class KnowledgeDocControllerWebTest {
         @Test
         @DisplayName("分页参数钳制：page≥1、size∈[1,200]")
         void clampsPaging() throws Exception {
-            when(docService.findPage(anyInt(), anyInt(), any(), any(), any(), any(), anyString()))
+            when(docService.findPage(anyInt(), anyInt(), any(), any(), any(), any(), anyString(), any()))
                     .thenReturn(List.of());
-            when(docService.countByQuery(any(), any(), any(), any())).thenReturn(0L);
+            when(docService.countByQuery(any(), any(), any(), any(), any())).thenReturn(0L);
 
             mockMvc.perform(get("/api/v1/knowledge/docs").param("page", "0").param("size", "9999"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.currentPage").value(1))
                     .andExpect(jsonPath("$.data.pageSize").value(200));
 
-            verify(docService).findPage(eq(1), eq(200), any(), any(), any(), any(), anyString());
+            verify(docService).findPage(eq(1), eq(200), any(), any(), any(), any(), anyString(), any());
         }
 
         @Test
         @DisplayName("筛选条件透传，且列表与计数用同一套条件")
         void filtersAreConsistentBetweenListAndCount() throws Exception {
-            when(docService.findPage(anyInt(), anyInt(), any(), any(), any(), any(), anyString()))
+            when(docService.findPage(anyInt(), anyInt(), any(), any(), any(), any(), anyString(), any()))
                     .thenReturn(List.of());
-            when(docService.countByQuery(any(), any(), any(), any())).thenReturn(0L);
+            when(docService.countByQuery(any(), any(), any(), any(), any())).thenReturn(0L);
 
             mockMvc.perform(get("/api/v1/knowledge/docs")
                             .param("status", "PUBLISHED")
@@ -536,9 +543,9 @@ class KnowledgeDocControllerWebTest {
 
             // 条件不一致会出现「列表 0 条但总数 100」这种自相矛盾
             verify(docService).findPage(eq(1), eq(10), eq("PUBLISHED"), eq("容器/K8s"),
-                    eq("CrashLoop"), eq("k8s"), anyString());
+                    eq("CrashLoop"), eq("k8s"), anyString(), isNull());
             verify(docService).countByQuery(eq("PUBLISHED"), eq("容器/K8s"),
-                    eq("CrashLoop"), eq("k8s"));
+                    eq("CrashLoop"), eq("k8s"), isNull());
         }
 
         @Test
@@ -688,5 +695,137 @@ class KnowledgeDocControllerWebTest {
                 .andExpect(jsonPath("$.data.retried").value(3));
 
         verify(docService).retryFailedIndexing(20);
+    }
+
+    @Nested
+    @DisplayName("文件上传（V2 二进制文档解析通道）")
+    class Upload {
+
+        private org.springframework.mock.web.MockMultipartFile uploadFile() {
+            return new org.springframework.mock.web.MockMultipartFile(
+                    "file", "k8s手册.pdf", "application/pdf", "binary".getBytes());
+        }
+
+        private com.devops.agent.domain.rag.KnowledgeUploadService.UploadResult okUpload() {
+            return new com.devops.agent.domain.rag.KnowledgeUploadService.UploadResult(
+                    7L, "k8s手册", 1,
+                    KnowledgeDocService.IndexOutcome.indexed(5, 0),
+                    List.of(), "2026/09/18/abc.pdf", 1234);
+        }
+
+        @Test
+        @DisplayName("上传成功：发布态 + 解析长度 + 原件留存标记如实返回")
+        void uploadSuccess() throws Exception {
+            when(uploadService.upload(any(), any(), any(), any(), any(),
+                    any(), any(), eq(true), any(), anyString())).thenReturn(okUpload());
+
+            mockMvc.perform(multipart("/api/v1/knowledge/docs/upload")
+                            .file(uploadFile())
+                            .param("title", "k8s手册")
+                            .param("kbId", "2")
+                            .param("publish", "true"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.id").value(7))
+                    .andExpect(jsonPath("$.data.status").value("PUBLISHED"))
+                    .andExpect(jsonPath("$.data.indexStatus").value("INDEXED"))
+                    .andExpect(jsonPath("$.data.retrievable").value(true))
+                    .andExpect(jsonPath("$.data.parsedLength").value(1234))
+                    // 原件是否留存 MinIO 必须如实区分——审计依赖这个字段
+                    .andExpect(jsonPath("$.data.originalStored").value(true));
+
+            // kbId 必须透传到服务层——它决定切片参数随哪个库生效
+            verify(uploadService).upload(any(), eq("k8s手册"), eq(2L), any(), any(),
+                    any(), any(), eq(true), any(), anyString());
+        }
+
+        @Test
+        @DisplayName("解析失败 / 扫描件 → 40001（消息可直接展示，如「未能提取有效文本」）")
+        void uploadParseFailureMapsTo40001() throws Exception {
+            when(uploadService.upload(any(), any(), any(), any(), any(),
+                    any(), any(), anyBoolean(), any(), anyString()))
+                    .thenThrow(new IllegalArgumentException(
+                            "未能从文件中提取到有效文本（可能是扫描件或图片型文档）: scan.pdf"));
+
+            mockMvc.perform(multipart("/api/v1/knowledge/docs/upload").file(uploadFile()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40001))
+                    .andExpect(jsonPath("$.message").value(
+                            org.hamcrest.Matchers.containsString("有效文本")));
+        }
+
+        @Test
+        @DisplayName("内容完全重复 → 40021 + 已有文档 ID/标题（前端据此引导用户去看原文档）")
+        void uploadDuplicateMapsTo40021() throws Exception {
+            when(uploadService.upload(any(), any(), any(), any(), any(),
+                    any(), any(), anyBoolean(), any(), anyString()))
+                    .thenThrow(new KnowledgeDocService.DuplicateContentException(
+                            "内容与已有文档完全相同", 42L, "K8s 排障手册"));
+
+            mockMvc.perform(multipart("/api/v1/knowledge/docs/upload").file(uploadFile()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40021))
+                    .andExpect(jsonPath("$.data.duplicateDocId").value(42))
+                    .andExpect(jsonPath("$.data.duplicateTitle").value("K8s 排障手册"));
+        }
+
+        @Test
+        @DisplayName("向量化失败不吞：code=0 但 indexStatus=FAILED + indexError（状态机如实透传）")
+        void uploadIndexFailureHonest() throws Exception {
+            when(uploadService.upload(any(), any(), any(), any(), any(),
+                    any(), any(), anyBoolean(), any(), anyString()))
+                    .thenReturn(new com.devops.agent.domain.rag.KnowledgeUploadService.UploadResult(
+                            7L, "k8s手册", 1,
+                            KnowledgeDocService.IndexOutcome.failed("embedding 超时"),
+                            List.of(), null, 1234));
+
+            mockMvc.perform(multipart("/api/v1/knowledge/docs/upload").file(uploadFile()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.indexStatus").value("FAILED"))
+                    .andExpect(jsonPath("$.data.retrievable").value(false))
+                    .andExpect(jsonPath("$.data.indexError").value("embedding 超时"))
+                    // MinIO 留存失败降级时 originalStored=false 也必须如实呈现
+                    .andExpect(jsonPath("$.data.originalStored").value(false));
+        }
+
+        @Test
+        @DisplayName("原件下载链接：返回预签名 URL 与原始文件名")
+        void originalUrlSuccess() throws Exception {
+            when(uploadService.presignOriginalUrl(7L))
+                    .thenReturn(new com.devops.agent.domain.rag.KnowledgeUploadService.OriginalDownload(
+                            "http://minio/presigned?sig=abc", "k8s手册.pdf", 300));
+
+            mockMvc.perform(get("/api/v1/knowledge/docs/7/original-url"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.url").value("http://minio/presigned?sig=abc"))
+                    .andExpect(jsonPath("$.data.filename").value("k8s手册.pdf"))
+                    .andExpect(jsonPath("$.data.expiresInSeconds").value(300));
+        }
+
+        @Test
+        @DisplayName("无留存原件 → 40400 如实告知（手工录入或留存降级），不伪造下载链接")
+        void originalUrlMissing() throws Exception {
+            when(uploadService.presignOriginalUrl(8L))
+                    .thenThrow(new IllegalStateException("该文档无留存原件（手工录入，或上传时对象存储不可用降级为未留存）"));
+
+            mockMvc.perform(get("/api/v1/knowledge/docs/8/original-url"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40400))
+                    .andExpect(jsonPath("$.message").value(
+                            org.hamcrest.Matchers.containsString("无留存原件")));
+        }
+
+        @Test
+        @DisplayName("文档不存在 → 40400「文档不存在」")
+        void originalUrlDocNotFound() throws Exception {
+            when(uploadService.presignOriginalUrl(99L)).thenReturn(null);
+
+            mockMvc.perform(get("/api/v1/knowledge/docs/99/original-url"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40400))
+                    .andExpect(jsonPath("$.message").value("文档不存在"));
+        }
     }
 }

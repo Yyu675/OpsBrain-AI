@@ -237,6 +237,13 @@
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-pgvector</artifactId>
         </dependency>
+        <!-- 文档解析（知识库文件上传：PDF/Word/Excel/PPT/TXT/HTML）。
+             BOM 托管版本。选 Tika 而非定向 PDFBox+POI：格式全覆盖，
+             且是 LangChain4j 原生 DocumentParser 接口，与切片链无缝衔接。 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-document-parser-apache-tika</artifactId>
+        </dependency>
 
         <!-- ================= 工具 ================= -->
         <dependency>

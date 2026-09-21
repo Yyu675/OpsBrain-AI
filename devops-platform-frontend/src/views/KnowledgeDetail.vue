@@ -13,13 +13,14 @@ import {
   GitCompare,
   AlertTriangle,
   Ticket,
+  Upload,
   FileText,
 } from 'lucide-vue-next'
 import { showUndoToast } from '@/utils/undoToast'
 import { copyText } from '@/utils/clipboard'
 import { safeMarkdown } from '@/utils/safeMarkdown'
 import { useKnowledgeStore } from '@/stores/knowledge'
-import { statusLabel, indexStatusLabel, fetchKnowledgeDocs } from '@/api/knowledge'
+import { statusLabel, indexStatusLabel, fetchKnowledgeDocs, fetchKnowledgeDocOriginalUrl } from '@/api/knowledge'
 import type { KnowledgeDocListItem } from '@/api/types'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import KnowledgeTreeSidebar from '@/components/knowledge/KnowledgeTreeSidebar.vue'
@@ -170,6 +171,31 @@ const openEdit = () => {
     return
   }
   router.push(`/knowledge/editor/${doc.value.id}`)
+}
+
+/**
+ * 下载上传原件（V2）：取预签名 URL 后新窗口打开。
+ *
+ * 原件未留存（originalStored=false）时不发起请求——
+ * 留存降级是上传时的如实状态，点击应解释而非报错。
+ */
+const downloadingOriginal = ref(false)
+const downloadOriginal = async () => {
+  const d = doc.value
+  if (!d) return
+  if (!d.originalStored) {
+    notify.info('该文档上传时对象存储不可用，原件未留存，无法下载')
+    return
+  }
+  downloadingOriginal.value = true
+  try {
+    const { url } = await fetchKnowledgeDocOriginalUrl(d.id)
+    window.open(url, '_blank', 'noopener')
+  } catch (e) {
+    handleServerError(e, { action: '获取原件下载链接' })
+  } finally {
+    downloadingOriginal.value = false
+  }
 }
 
 /** 发布（草稿 → 已发布，触发向量化） */
@@ -526,6 +552,22 @@ const compareAction = async (version: number) => {
                 <Ticket :size="13" />
                 来源工单 #{{ doc.sourceTicketId }}
               </router-link>
+              <!-- V2 上传溯源：经文件上传解析入库的文档标注原件名（审计展示）；
+                   原件留存成功时可点击下载（预签名 URL，短时效） -->
+              <button
+                v-if="doc.sourceType === 'UPLOAD' && doc.originalFilename"
+                type="button"
+                class="source-ticket-badge source-original-badge"
+                :class="{ 'source-original-downloadable': doc.originalStored }"
+                :disabled="downloadingOriginal"
+                :title="doc.originalStored
+                  ? `下载上传原件：${doc.originalFilename}`
+                  : `本文档由上传文件解析入库：${doc.originalFilename}（原件未留存，无法下载）`"
+                @click="downloadOriginal"
+              >
+                <Upload :size="13" />
+                {{ doc.originalFilename }}
+              </button>
             </div>
 
             <div ref="articleContentRef" class="article-content" v-html="safeHtml"></div>
@@ -1028,6 +1070,21 @@ const compareAction = async (version: number) => {
   &:hover {
     opacity: 0.8;
     text-decoration: none;
+  }
+}
+
+/* V2 上传原件徽章（button 形态）：默认可看不可点，留存成功才是下载入口 */
+.source-original-badge {
+  border: 0;
+  font-family: inherit;
+  cursor: default;
+
+  &.source-original-downloadable {
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.8;
+    }
   }
 }
 

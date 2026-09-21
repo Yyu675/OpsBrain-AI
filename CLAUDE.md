@@ -279,6 +279,7 @@
 - ✅ **方案 A：L2 告警链路收官**（补建 sys_alert 存量表、工单号回填、告警详情页 `/alerts/:id` + 列表入口 + 通知直达，见 6.50）
 - ✅ **方案 B-1：多维趋势分析**（`/dashboard/trends` 三条线 + 共享 TrendChart + AnalyticsMode/Dashboard/TicketInsights 三处接入，见 6.51）
 - ✅ **方案 B-2：冷记忆归档**（`ColdMemoryArchiveScheduler` → MinIO 独立桶，幂等 + 单条失败隔离 + 开关默认关；顺带修正 6.7「冷层=历史全量」失实描述，见 6.52）
+- ✅ **知识库 V2：多知识库 + 按库切片参数 + 二进制上传解析**（`sys_knowledge_base` 三层结构 base→doc→chunk，切片三参数挂库维度逐字段回落全局默认；`kb_id` 冗余下沉 chunk 免 JOIN 保 HNSW；`POST /docs/upload` 走 Tika 解析 + MinIO 原件留存（Fail-Safe）+ 复用既有清洗/去重/向量化链路。决策全文见 `docs/09-decisions/多知识库按库切片参数与二进制上传解析.md`）
 
 ### 7.2 下一步计划
 

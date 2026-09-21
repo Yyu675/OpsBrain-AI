@@ -19,19 +19,19 @@ class KnowledgeDocRepositorySortTest {
     @Test
     void supportedSortModesExecuteAndTitleSortIsStable() {
         List<KnowledgeDoc> titleSorted = repository.findPage(
-                1, 200, null, null, null, null, "TITLE_ASC");
+                1, 200, null, null, null, null, "TITLE_ASC", null);
 
         assertThat(titleSorted)
                 .extracting(KnowledgeDoc::getTitle)
                 .isSortedAccordingTo(Comparator.comparing(String::toLowerCase));
 
         assertThat(repository.findPage(
-                1, 20, null, null, "K8s", null, "RELEVANCE")).isNotNull();
+                1, 20, null, null, "K8s", null, "RELEVANCE", null)).isNotNull();
         assertThat(repository.findPage(
-                1, 20, null, null, "%_", null, "RELEVANCE")).isNotNull();
+                1, 20, null, null, "%_", null, "RELEVANCE", null)).isNotNull();
         assertThat(repository.findPage(
-                1, 20, null, null, null, null, "CREATED_DESC")).isNotNull();
+                1, 20, null, null, null, null, "CREATED_DESC", null)).isNotNull();
         assertThat(repository.findPage(
-                1, 20, null, null, null, null, "UNTRUSTED_SQL")).isNotNull();
+                1, 20, null, null, null, null, "UNTRUSTED_SQL", null)).isNotNull();
     }
 }

@@ -135,8 +135,10 @@ export interface KnowledgeDocListItem {
   tags: string[]
   /** L1.5 来源回链：源工单 ID，非工单沉淀为 null */
   sourceTicketId: number | null
-  /** 来源类型：TICKET / MANUAL / IMPORT 等 */
+  /** 来源类型：TICKET / MANUAL / IMPORT / UPLOAD 等 */
   sourceType: string | null
+  /** 所属知识库 ID（V2） */
+  kbId?: number | null
 }
 
 /**
@@ -168,6 +170,12 @@ export interface KnowledgeDocDetail {
   sourceType: string | null
   /** 是否可检索：status=PUBLISHED 且 index=INDEXED */
   retrievable: boolean
+  /** 所属知识库 ID（V2） */
+  kbId?: number | null
+  /** 上传原件文件名（sourceType=UPLOAD 时非空） */
+  originalFilename?: string | null
+  /** 原件是否留存在对象存储（V2）：false=上传时留存降级，无原件可下载 */
+  originalStored?: boolean
 }
 
 /**
@@ -190,6 +198,8 @@ export interface KnowledgeDocCreateRequest {
   sourceTicketId?: number
   /** 来源类型：TICKET / MANUAL / IMPORT 等 */
   sourceType?: string
+  /** 所属知识库（V2）；不传落默认库 */
+  kbId?: number | null
 }
 
 /**
@@ -206,6 +216,83 @@ export interface KnowledgeDocUpdateRequest {
   /** 乐观锁版本号 */
   version?: number
   changeReason?: string
+  /** 变更知识库归属（V2）；不传=不变。换库会触发重建索引 */
+  kbId?: number | null
+}
+
+// ==================== 知识库（V2 顶层实体） ====================
+
+/**
+ * 知识库列表/详情项
+ * <p>切片三参数为 null 表示跟随全局默认；effective* 是合并默认后的生效值。</p>
+ */
+export interface KnowledgeBaseItem {
+  id: number
+  name: string
+  code: string
+  description: string | null
+  parentChunkSize: number | null
+  childChunkSize: number | null
+  chunkOverlap: number | null
+  effectiveParentChunkSize: number
+  effectiveChildChunkSize: number
+  effectiveChunkOverlap: number
+  status: 'ACTIVE' | 'DISABLED'
+  docCount: number
+  /** 已索引文档数（库级索引健康度） */
+  indexedCount: number
+  /** 索引失败文档数——发现「文档在库里但检索不到」空洞的入口 */
+  failedCount: number
+  createTime: string
+  updateTime: string
+}
+
+/** 创建知识库请求（切片参数可全部缺省=跟随全局默认） */
+export interface KnowledgeBaseCreateRequest {
+  name: string
+  code: string
+  description?: string
+  parentChunkSize?: number | null
+  childChunkSize?: number | null
+  chunkOverlap?: number | null
+}
+
+/** 更新知识库请求：null/undefined 字段不修改；clearChunkParams=true 清空切片参数回默认 */
+export interface KnowledgeBaseUpdateRequest {
+  name?: string
+  code?: string
+  description?: string
+  parentChunkSize?: number | null
+  childChunkSize?: number | null
+  chunkOverlap?: number | null
+  status?: 'ACTIVE' | 'DISABLED'
+  clearChunkParams?: boolean
+}
+
+/** 按库重建索引结果 */
+export interface KnowledgeBaseReindexResult {
+  kbId: number
+  kbName: string
+  total: number
+  success: number
+  failed: number
+  failures: Array<{ docId: number; title: string; indexStatus: string; error: string }>
+}
+
+/** 文件上传入库结果（V2） */
+export interface KnowledgeDocUploadResult {
+  id: number
+  title: string
+  version: number
+  status: KnowledgeDocStatus
+  indexStatus: KnowledgeIndexStatus | null
+  retrievable: boolean
+  /** Tika 解析出的文本长度 */
+  parsedLength: number
+  /** 原件是否已留存 MinIO（false=留存失败降级，不影响入库） */
+  originalStored: boolean
+  nearDuplicates: KnowledgeNearDuplicate[]
+  indexError?: string
 }
 
 /**
@@ -409,5 +496,70 @@ export interface AlertsResponse {
   page: number
   size: number
   totalPages: number
+}
+
+// ==================== AI 模型渠道配置（P1：可编辑 + 重启生效）====================
+// 对应后端 ModelChannelController.ChannelView（record，camelCase 序列化）。
+// P1 起支持编辑（PUT /model-channels/{channelKey}），重启后端后生效。
+
+export interface AiChannelView {
+  /** 渠道键（chat/embedding/reranker） */
+  channelKey: 'chat' | 'embedding' | 'reranker'
+  /** 端点地址 */
+  baseUrl: string | null
+  /** 脱敏展示 key（如 sk-ws-****7890）。明文/密文 key 永不流出后端。 */
+  maskedKey: string | null
+  /** chat 渠道：turbo 模型 */
+  turboModel: string | null
+  /** chat 渠道：reasoner 模型 */
+  reasonerModel: string | null
+  /** embedding/reranker 渠道：模型名 */
+  model: string | null
+  /** 向量维度（仅 embedding 有值；铁律 1536，不可编辑） */
+  dimension: number | null
+  /** 状态（ACTIVE/DISABLED） */
+  status: string | null
+  /** 更新时间 */
+  updatedAt: string | null
+  /** true = 本次编辑已保存，需重启后端才对新请求生效（仅 PUT 响应携带） */
+  restartRequired?: boolean
+  /** 备用模型端点（仅 chat 渠道；方案 A 模型池降级） */
+  fallbackBaseUrl?: string | null
+  /** 备用模型名（主模型熔断/失败时自动切换） */
+  fallbackModel?: string | null
+  /** 备用 key 脱敏展示（明文/密文永不流出） */
+  fallbackMaskedKey?: string | null
+}
+
+export interface AiChannelListResponse {
+  channels: AiChannelView[]
+}
+
+/** PUT /model-channels/{channelKey} 请求体。空串/null = 不修改该字段。 */
+export interface AiChannelUpdatePayload {
+  baseUrl?: string
+  turboModel?: string
+  reasonerModel?: string
+  model?: string
+  dimension?: number
+  /** 新 API Key（可选；空 = 保留既有。后端加密落库，永不回显） */
+  apiKey?: string
+  status?: 'ACTIVE' | 'DISABLED'
+  /** 备用模型端点（仅 chat 渠道；与 fallbackModel 必须同时提交） */
+  fallbackBaseUrl?: string
+  /** 备用模型名（仅 chat 渠道） */
+  fallbackModel?: string
+  /** 备用模型新 Key（可选；空 = 保留既有备用 key） */
+  fallbackApiKey?: string
+  /** true = 清除整组备用配置（含备用 key） */
+  clearFallback?: boolean
+}
+
+/** POST /model-channels/{key}/test-connectivity 响应（P2-3 连通性测试） */
+export interface ConnectivityResult {
+  success: boolean
+  latencyMs: number
+  dimension: number | null
+  message: string
 }
 

@@ -86,6 +86,21 @@ public class AttachmentSecurityGuard {
      * @throws IllegalArgumentException 校验失败，消息可直接展示给用户
      */
     public void validate(MultipartFile file) {
+        validate(file, allowed());
+    }
+
+    /**
+     * 校验上传文件（调用方自定义扩展名白名单）。
+     *
+     * <p>工单附件与知识库文档的合法类型集合不同（日志/配置 vs PDF/Word），
+     * 但路径穿越、双扩展名、大小、畸形名这些攻击面完全一致——
+     * 集中在此处一份实现，白名单作为参数传入。</p>
+     *
+     * @param file              上传文件
+     * @param allowedExtensions 扩展名白名单（小写，不含点）
+     * @throws IllegalArgumentException 校验失败，消息可直接展示给用户
+     */
+    public void validate(MultipartFile file, Set<String> allowedExtensions) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("上传文件为空");
         }
@@ -135,10 +150,10 @@ public class AttachmentSecurityGuard {
         String extension = baseName.substring(lastDot + 1).toLowerCase();
 
         // 白名单校验
-        if (!allowed().contains(extension)) {
+        if (!allowedExtensions.contains(extension)) {
             log.warn("🚫 [AttachGuard] 扩展名不在白名单: {} | 文件={}", extension, baseName);
             throw new IllegalArgumentException(
-                    "不支持的文件类型 ." + extension + "，允许：" + String.join("、", allowed()));
+                    "不支持的文件类型 ." + extension + "，允许：" + String.join("、", allowedExtensions));
         }
 
         // 双扩展名绕过检测：检查除末位外的所有分段

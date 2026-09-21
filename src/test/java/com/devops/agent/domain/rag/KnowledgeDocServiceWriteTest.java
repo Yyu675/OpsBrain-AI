@@ -62,6 +62,7 @@ class KnowledgeDocServiceWriteTest {
     private KnowledgeContentCleaner contentCleaner;
     private KnowledgeCategoryRepository categoryRepo;
     private com.devops.agent.infrastructure.persistence.repo.KnowledgeTagRepository tagCatalog;
+    private KnowledgeBaseService kbService;
 
     private KnowledgeDocService service;
 
@@ -76,9 +77,19 @@ class KnowledgeDocServiceWriteTest {
         contentCleaner = mock(KnowledgeContentCleaner.class);
         categoryRepo = mock(KnowledgeCategoryRepository.class);
         tagCatalog = mock(com.devops.agent.infrastructure.persistence.repo.KnowledgeTagRepository.class);
+        kbService = mock(KnowledgeBaseService.class);
 
         service = new KnowledgeDocService(docRepo, historyRepo, tagRepo, fingerprint,
-                indexer, semanticCache, contentCleaner, categoryRepo, tagCatalog);
+                indexer, semanticCache, contentCleaner, categoryRepo, tagCatalog, kbService);
+
+        // V2：默认知识库解析——所有创建用例都会经过归属解析，mock 不落库直接给 id=1
+        when(kbService.resolveForNewDoc(any())).thenAnswer(i -> {
+            KnowledgeBase kb = new KnowledgeBase();
+            kb.setId(1L);
+            kb.setCode(KnowledgeBase.CODE_DEFAULT);
+            kb.setStatus(KnowledgeBase.STATUS_ACTIVE);
+            return kb;
+        });
 
         // 默认：内容清洗放行、指纹稳定
         when(contentCleaner.clean(anyString())).thenAnswer(i ->

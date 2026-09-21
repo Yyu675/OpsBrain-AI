@@ -43,6 +43,7 @@ vi.mock('@/stores/knowledge', () => ({ useKnowledgeStore: () => store }))
 const api = vi.hoisted(() => ({
   fetchKnowledgeCategories: vi.fn(),
   fetchKnowledgeTags: vi.fn(),
+  fetchKnowledgeBases: vi.fn().mockResolvedValue([]),
   createKnowledgeCategory: vi.fn(),
 }))
 vi.mock('@/api/knowledge', async () => {

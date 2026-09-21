@@ -86,6 +86,30 @@ public final class ManagedExecutors {
         return build(name, threads, queueCapacity, discardWithWarn);
     }
 
+    /**
+     * 超时有界池：队列满时<b>快速失败</b>（AbortPolicy + 告警）。
+     *
+     * <p>用于「{@code submit + Future.get(timeout)}」形态的请求路径任务
+     * （如工具执行池 ToolRuntimeManager）。这类池另外两个策略都不适用：</p>
+     * <ul>
+     *   <li>CallerRuns 会让 {@code submit()} 在调用线程同步执行，
+     *       {@code future.get(timeout)} 永远等不到超时——超时机制失效；</li>
+     *   <li>Discard 会让任务静默消失，{@code future.get(timeout)} 干等到
+     *       超时才以「执行超时」报错——把「池满了」误报成「工具慢了」。</li>
+     * </ul>
+     * 快速失败把饱和信号立刻抛给调用方，由调用方转成「系统繁忙，稍后重试」。
+     */
+    public static ExecutorService forTimeoutBoundWork(String name, int threads, int queueCapacity) {
+        RejectedExecutionHandler abortWithWarn = (r, executor) -> {
+            log.warn("⚠️ [Executor] 池已饱和，快速失败 | pool={} | threads={} | queueSize={}",
+                    name, executor.getPoolSize(), executor.getQueue().size());
+            throw new java.util.concurrent.RejectedExecutionException(
+                    "pool " + name + " saturated (threads=" + executor.getPoolSize()
+                            + ", queue=" + executor.getQueue().size() + ")");
+        };
+        return build(name, threads, queueCapacity, abortWithWarn);
+    }
+
     /** 单线程调度池（清扫、心跳等周期任务） */
     public static ScheduledExecutorService forScheduling(String name) {
         ScheduledThreadPoolExecutor ex = new ScheduledThreadPoolExecutor(1, namedFactory(name, true));

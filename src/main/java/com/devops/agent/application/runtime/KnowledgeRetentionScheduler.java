@@ -196,7 +196,7 @@ public class KnowledgeRetentionScheduler {
         try {
             archivedCount = knowledgeDocRepository.countByQuery(
                     com.devops.agent.domain.rag.KnowledgeDocLifecycle.STATUS_ARCHIVED,
-                    null, null, null);
+                    null, null, null, null);
         } catch (Exception e) {
             log.warn("📋 [Retention] 归档文档查询跳过（ARCHIVED 状态尚未启用）| {}", e.getMessage());
             return;

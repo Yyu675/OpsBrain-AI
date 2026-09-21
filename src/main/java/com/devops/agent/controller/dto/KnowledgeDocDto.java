@@ -41,7 +41,9 @@ public class KnowledgeDocDto {
             /** L1.5 来源回链：由工单沉淀时传源工单 ID */
             Long sourceTicketId,
             /** 来源类型：TICKET / MANUAL / IMPORT 等 */
-            String sourceType
+            String sourceType,
+            /** 所属知识库；不传则落默认库（code=default） */
+            Long kbId
     ) {}
 
     /**
@@ -61,7 +63,9 @@ public class KnowledgeDocDto {
             String summary,
             List<String> tags,
             Integer version,
-            String changeReason
+            String changeReason,
+            /** 变更知识库归属；null=不变。换库会触发重建索引（切片参数随库不同） */
+            Long kbId
     ) {}
 
     // ==================== 响应 DTO ====================
@@ -85,7 +89,9 @@ public class KnowledgeDocDto {
             List<String> tags,
             /** L1.5 来源回链：源工单 ID，非工单沉淀为 null */
             Long sourceTicketId,
-            String sourceType
+            String sourceType,
+            /** 所属知识库 ID */
+            Long kbId
     ) {
         public static ListItem from(KnowledgeDoc d) {
             return new ListItem(
@@ -103,7 +109,8 @@ public class KnowledgeDocDto {
                     d.getUpdateTime(),
                     d.getTags() != null ? d.getTags() : List.of(),
                     d.getSourceTicketId(),
-                    d.getSourceType());
+                    d.getSourceType(),
+                    d.getKbId());
         }
     }
 
@@ -135,7 +142,13 @@ public class KnowledgeDocDto {
             LocalDateTime updateTime,
             List<String> tags,
             /** 是否可检索：status=PUBLISHED 且 index=INDEXED */
-            boolean retrievable
+            boolean retrievable,
+            /** 所属知识库 ID */
+            Long kbId,
+            /** 上传原件文件名（sourceType=UPLOAD 时非空） */
+            String originalFilename,
+            /** 原件是否留存在对象存储（false=上传时留存降级，无原件可下载） */
+            boolean originalStored
     ) {
         public static Detail from(KnowledgeDoc d) {
             return new Detail(
@@ -148,7 +161,10 @@ public class KnowledgeDocDto {
                     d.getSourceTicketId(), d.getSourceType(),
                     d.getCreateTime(), d.getUpdateTime(),
                     d.getTags() != null ? d.getTags() : List.of(),
-                    d.isRetrievable());
+                    d.isRetrievable(),
+                    d.getKbId(),
+                    d.getOriginalFilename(),
+                    d.getOriginalFilePath() != null && !d.getOriginalFilePath().isBlank());
         }
     }
 
