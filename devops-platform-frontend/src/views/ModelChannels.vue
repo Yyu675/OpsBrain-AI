@@ -853,7 +853,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .channel-card {
   border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   overflow: hidden;
 }
 
@@ -939,7 +939,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   padding: 7px 14px;
   border: 1px solid var(--border-color, #d1d5db);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   color: var(--text-primary, #374151);
   font-size: 13px;
   cursor: pointer;
@@ -1032,7 +1032,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   border-radius: 4px;
   padding: 6px 10px;
   font-size: 13px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
 }
 
 .edit-input:disabled { background: #f3f4f6; color: #9ca3af; }
@@ -1074,7 +1074,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 
 .edit-btn-cancel {
   border: 1px solid var(--border-color, #d1d5db);
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   color: #374151;
   margin-right: 8px;
 }
@@ -1121,7 +1121,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   padding: 2px 8px;
   border: 1px solid #d1d5db;
   border-radius: 12px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   font-size: 11px;
   cursor: pointer;
 }
@@ -1162,7 +1162,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   padding: 5px 0;
   border: 1px solid var(--border-color, #d1d5db);
   border-radius: 4px;
-  background: #fff;
+  background: var(--color-surface, var(--surface-1));
   color: #4b5563;
   font-size: 12px;
   cursor: pointer;

@@ -70,36 +70,28 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return
-          if (id.includes('echarts') || id.includes('zrender')) return 'vendor-echarts'
-          if (id.includes('element-plus') || id.includes('@element-plus')) return 'vendor-element'
-          if (id.includes('lucide-vue-next')) return 'vendor-icons'
-          // TanStack Query 独立成块：它是稳定依赖，与业务代码分离后
-          // 业务发版不会让用户重新下载它
-          if (id.includes('@tanstack')) return 'vendor-query'
-          // Markdown 渲染链路（marked + dompurify）：阅读页也要用，
-          // 与编辑器分开，避免阅读者被迫下载编辑器
-          if (id.includes('marked') || id.includes('dompurify')) return 'vendor-markdown'
-          // 富文本编辑器（wangeditor）独立成块：库体较大（~700kB），
-          // 与业务代码分离后，业务发版不必让编辑者重新下载整库
-          if (id.includes('@wangeditor') || id.includes('wang-editor')) return 'vendor-editor'
-          if (id.includes('vue-router') || id.includes('pinia') || id.includes('/vue/') || id.includes('@vue/')) return 'vendor-vue'
-
-          /**
-           * 其余依赖**不再归入兜底 'vendor' 块**。
-           *
-           * 原先 `return 'vendor'` 把所有剩余依赖强行合成一个块。
-           * 只要其中有任意一个被入口用到，整块（含只被懒加载路由使用的
-           * 编辑器等）就会被预加载——2.9MB 首屏下发，而其中大半
-           * 普通用户永远用不到。
-           *
-           * 返回 undefined 交回 Rollup 自动分块：它会按实际引用关系
-           * 把「入口用的」与「仅懒加载路由用的」分开，
-           * 只有真正进入对应路由才拉取。
-           */
-          return undefined
-        }
+        /**
+         * 分包用 rolldown 原生 codeSplitting，不用兼容层 manualChunks——
+         * Vite 8（rolldown）下 manualChunks 对「被多 chunk 再导出的符号」
+         * （element-plus/es/utils/easings.mjs 的 easeInOutCubic）会触发
+         * `should belong to a chunk` panic。
+         * 组按数组顺序先匹配先生效；不命中任何组的模块交回 rolldown
+         * 自动分块（同原 manualChunks return undefined 语义）。
+         */
+        codeSplitting: {
+          groups: [
+            { name: 'vendor-echarts', test: /node_modules[\\/](echarts|zrender)/ },
+            { name: 'vendor-element', test: /node_modules[\\/](element-plus|@element-plus)/ },
+            { name: 'vendor-icons', test: /node_modules[\\/]lucide-vue-next/ },
+            // TanStack Query 独立成块：稳定依赖，业务发版不让用户重下
+            { name: 'vendor-query', test: /node_modules[\\/]@tanstack/ },
+            // Markdown 渲染链路（marked + dompurify）：阅读页也要用，与编辑器分开
+            { name: 'vendor-markdown', test: /node_modules[\\/](marked|dompurify)/ },
+            // 富文本编辑器（wangeditor）独立成块：库体 ~700kB，仅编辑路由拉取
+            { name: 'vendor-editor', test: /node_modules[\\/](@wangeditor|wang-editor)/ },
+            { name: 'vendor-vue', test: /node_modules[\\/](vue-router|pinia|vue|@vue)/ },
+          ],
+        },
       }
     }
   }
