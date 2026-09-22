@@ -29,6 +29,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 const api = vi.hoisted(() => ({
   fetchModelChannels: vi.fn(),
+  fetchChannelHistory: vi.fn(),
+  rollbackModelChannel: vi.fn(),
+  probeChannelCapabilities: vi.fn(),
+  fetchChannelCapabilities: vi.fn(),
 }))
 vi.mock('@/api/modelChannels', () => api)
 
@@ -81,6 +85,9 @@ function mountPage() {
       stubs: {
         // el-tag 未注册时按未知元素渲染会丢 slot；stub 成 span 保住状态文本
         'el-tag': { template: '<span class="el-tag-stub"><slot /></span>' },
+        // el-dialog 同理：未知元素只渲染默认 slot，#footer 命名 slot 会被丢弃，
+        // 导致「重新实测/保存」等按钮在断言里不可见——stub 把两个 slot 都铺平
+        'el-dialog': { template: '<div class="el-dialog-stub"><slot /><slot name="footer" /></div>' },
       },
     },
   })
@@ -204,5 +211,104 @@ describe('错误态', () => {
     wrapper.find('.btn-retry').trigger('click')
     await flushPromises()
     expect(api.fetchModelChannels).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ==================================================================
+
+describe('V5 能力探测三态展示', () => {
+  it('已探测渠道显示三态摘要徽标；UNKNOWN 不画成「不支持」', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    api.fetchChannelCapabilities.mockImplementation((key: string) => {
+      if (key === 'chat') return Promise.resolve({
+        channelKey: 'chat',
+        capabilities: {
+          chat: { state: 'SUPPORTED', detail: '基础对话正常' },
+          streaming: { state: 'UNKNOWN', detail: '超时' },
+        },
+        probedAt: '2026-09-23T10:00:00',
+      })
+      return Promise.resolve(null)
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const chat = wrapper.findAll('.channel-card')[0]
+    // 有 UNKNOWN → warning 态「1/2 项支持」，绝不能是「不支持」
+    expect(chat.text()).toContain('1/2 项支持')
+    const emb = wrapper.findAll('.channel-card')[1]
+    expect(emb.text()).toContain('未实测')
+  })
+
+  it('打开能力探测 Dialog 显示三态明细（UNKNOWN 灰非红语义在场）', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    api.fetchChannelCapabilities.mockImplementation((key: string) => {
+      if (key === 'chat') return Promise.resolve({
+        channelKey: 'chat',
+        capabilities: {
+          function_calling: { state: 'UNSUPPORTED', detail: '上游明确不支持' },
+          json_mode: { state: 'UNKNOWN', detail: '探测超时' },
+        },
+        probedAt: '2026-09-23T10:00:00',
+      })
+      return Promise.resolve(null)
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const chat = wrapper.findAll('.channel-card')[0]
+    await chat.findAll('.tool-btn')[1].trigger('click')  // 能力探测按钮
+    await flushPromises()
+
+    const dialogText = wrapper.text()
+    expect(dialogText).toContain('function_calling')
+    expect(dialogText).toContain('不支持')
+    expect(dialogText).toContain('未测成')
+    expect(dialogText).toContain('2026-09-23 10:00')
+    // 重测按钮在场（真实 API 调用，故为用户手动触发）
+    expect(dialogText).toContain('重新实测')
+  })
+})
+
+// ==================================================================
+
+describe('V5 变更历史与回滚', () => {
+  it('打开历史 Dialog 展示快照列表（id/说明/时间/操作人）', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    api.fetchChannelHistory.mockResolvedValue({
+      history: [{
+        id: 5, channelKey: 'chat', baseUrl: 'https://api.deepseek.com/v1',
+        maskedKey: 'sk-ws-****7890', turboModel: 'qwen-turbo', reasonerModel: 'deepseek-v4-flash-0731',
+        model: null, dimension: null, status: 'ACTIVE',
+        fallbackBaseUrl: null, fallbackModel: null, fallbackMaskedKey: null,
+        changedAt: '2026-09-22T10:00:00', changedBy: 'admin', changeNote: '编辑',
+      }],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const chat = wrapper.findAll('.channel-card')[0]
+    await chat.findAll('.tool-btn')[0].trigger('click')  // 变更历史按钮
+    await flushPromises()
+
+    expect(api.fetchChannelHistory).toHaveBeenCalledWith('chat')
+    const dialogText = wrapper.text()
+    expect(dialogText).toContain('#5')
+    expect(dialogText).toContain('编辑')
+    expect(dialogText).toContain('admin')
+    expect(dialogText).toContain('qwen-turbo / deepseek-v4-flash-0731')
+    expect(dialogText).toContain('回滚到此版本')
+  })
+
+  it('空历史显示「暂无变更记录」而非空白', async () => {
+    api.fetchModelChannels.mockResolvedValue(fixtureChannels())
+    api.fetchChannelHistory.mockResolvedValue({ history: [] })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const chat = wrapper.findAll('.channel-card')[0]
+    await chat.findAll('.tool-btn')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('暂无变更记录')
   })
 })

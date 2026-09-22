@@ -563,3 +563,53 @@ export interface ConnectivityResult {
   message: string
 }
 
+// ==================== V5：变更历史 + 能力探测 ====================
+
+/**
+ * GET /model-channels/{key}/history 单条历史视图。
+ * 与渠道视图同一安全契约：只给 maskedKey，密文不出 API。
+ */
+export interface AiChannelHistoryView {
+  /** 历史行 id（回滚目标的引用） */
+  id: number
+  channelKey: string
+  baseUrl: string | null
+  maskedKey: string | null
+  turboModel: string | null
+  reasonerModel: string | null
+  model: string | null
+  dimension: number | null
+  status: string | null
+  fallbackBaseUrl: string | null
+  fallbackModel: string | null
+  fallbackMaskedKey: string | null
+  /** 快照时间（变更发生时刻） */
+  changedAt: string | null
+  /** 操作人（Sa-Token loginId；系统触发=system） */
+  changedBy: string
+  /** 变更说明（编辑/回滚前快照#N/重置为 yml 默认值） */
+  changeNote: string | null
+}
+
+export interface AiChannelHistoryListResponse {
+  history: AiChannelHistoryView[]
+}
+
+/**
+ * 能力探测三态（V5）。UNKNOWN = 探测本身失败（超时/限流），
+ * 不代表不支持——前端绝不能把 UNKNOWN 画成红叉。
+ */
+export type CapabilityState = 'SUPPORTED' | 'UNSUPPORTED' | 'UNKNOWN'
+
+export interface CapabilityItem {
+  state: CapabilityState
+  detail: string
+}
+
+/** 能力探测整轮结果（POST capability-probe / GET capabilities 共用） */
+export interface ChannelProbeResult {
+  channelKey: string
+  capabilities: Record<string, CapabilityItem>
+  probedAt: string | null
+}
+

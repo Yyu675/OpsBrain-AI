@@ -10,7 +10,7 @@
 
 import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz } from '../utils/http'
-import type { AiChannelListResponse, AiChannelUpdatePayload, AiChannelView, ConnectivityResult } from './types'
+import type { AiChannelHistoryListResponse, AiChannelListResponse, AiChannelUpdatePayload, AiChannelView, ChannelProbeResult, ConnectivityResult } from './types'
 
 /**
  * 拉取全部生效的模型渠道配置（chat/embedding/reranker）。
@@ -75,4 +75,65 @@ export async function fetchAvailableModels(
   )
   const r = unwrapBiz<{ data?: string[] }>(payload, '获取模型列表失败')
   return r.data ?? []
+}
+
+// ==================== V5：变更历史 + 回滚 ====================
+
+/**
+ * 拉渠道变更历史（新→旧）。历史行承载变更前整行快照（脱敏视图）。
+ * limit 后端 clamp 到 1~100，默认 20 足够「改错了回去看一眼」。
+ */
+export async function fetchChannelHistory(
+  channelKey: 'chat' | 'embedding' | 'reranker',
+  limit = 20,
+): Promise<AiChannelHistoryListResponse> {
+  const payload = await http.get<unknown>(
+    `${API_ENDPOINTS.MODEL_CHANNELS}/${channelKey}/history?limit=${limit}`,
+  )
+  return unwrapBiz<AiChannelHistoryListResponse>(payload, '查询渠道变更历史失败')
+}
+
+/**
+ * 回滚到指定历史版本。回滚也是变更：后端会先快照当前态再写回，
+ * 滚错了还能再滚回来。响应带 restartRequired（同编辑的热更新契约）。
+ */
+export async function rollbackModelChannel(
+  channelKey: 'chat' | 'embedding' | 'reranker',
+  historyId: number,
+): Promise<AiChannelView> {
+  const payload = await http.post<unknown>(
+    `${API_ENDPOINTS.MODEL_CHANNELS}/${channelKey}/rollback/${historyId}`,
+    {},
+  )
+  return unwrapBiz<AiChannelView>(payload, '回滚渠道配置失败')
+}
+
+// ==================== V5：能力探测（P4） ====================
+
+/**
+ * 触发一轮能力实测（真实 API 调用，计费 + 秒级延迟，故为用户手动触发）。
+ * 结果落库复用。三态语义：SUPPORTED/UNSUPPORTED/UNKNOWN，
+ * UNKNOWN 是探测本身失败（超时/限流），不代表不支持。
+ */
+export async function probeChannelCapabilities(
+  channelKey: 'chat' | 'embedding' | 'reranker',
+): Promise<ChannelProbeResult> {
+  const payload = await http.post<unknown>(
+    `${API_ENDPOINTS.MODEL_CHANNELS}/${channelKey}/capability-probe`,
+    {},
+  )
+  return unwrapBiz<ChannelProbeResult>(payload, '能力探测失败')
+}
+
+/**
+ * 读已落库的最近探测结果（不重新实测，页面加载用）。
+ * 从未探测过时后端 data 为 null → 前端返回 null（渲染「未实测」态）。
+ */
+export async function fetchChannelCapabilities(
+  channelKey: 'chat' | 'embedding' | 'reranker',
+): Promise<ChannelProbeResult | null> {
+  const payload = await http.get<unknown>(
+    `${API_ENDPOINTS.MODEL_CHANNELS}/${channelKey}/capabilities`,
+  )
+  return unwrapBiz<ChannelProbeResult | null>(payload, '查询能力探测结果失败')
 }

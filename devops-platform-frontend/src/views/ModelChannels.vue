@@ -14,14 +14,16 @@
  */
 
 import { ref, onMounted, computed } from 'vue'
-import { RefreshCw, Cpu, Layers, Search } from 'lucide-vue-next'
+import { RefreshCw, Cpu, Layers, Search, History, FlaskConical } from 'lucide-vue-next'
 
-import { fetchModelChannels, updateModelChannel, resetModelChannel, testModelChannelConnectivity, fetchAvailableModels } from '@/api/modelChannels'
-import type { AiChannelView, AiChannelUpdatePayload } from '@/api/types'
+import { fetchModelChannels, updateModelChannel, resetModelChannel, testModelChannelConnectivity, fetchAvailableModels, fetchChannelHistory, rollbackModelChannel, probeChannelCapabilities, fetchChannelCapabilities } from '@/api/modelChannels'
+import type { AiChannelHistoryView, AiChannelView, AiChannelUpdatePayload, CapabilityItem, CapabilityState, ChannelProbeResult } from '@/api/types'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { notify, handleServerError } from '@/utils/notify'
 
 defineOptions({ name: 'ModelChannels' })
+
+type ChannelKey = 'chat' | 'embedding' | 'reranker'
 
 // ==================== 数据状态 ====================
 
@@ -35,6 +37,8 @@ const loadChannels = async () => {
   try {
     const resp = await fetchModelChannels()
     channels.value = resp.channels ?? []
+    // 能力探测结果一并拉取（GET 不触发实测，零成本）——探测过的渠道卡片直接显示三态摘要
+    await loadAllCapabilities()
   } catch (e) {
     console.error('[模型渠道配置] 加载失败', e)
     loadError.value = e
@@ -185,6 +189,124 @@ async function confirmDialog(msg: string): Promise<boolean> {
   }
 }
 
+// ==================== V5：变更历史 + 回滚 ====================
+
+const historyOpen = ref(false)
+const historyTarget = ref<AiChannelView | null>(null)
+const historyList = ref<AiChannelHistoryView[]>([])
+const historyLoading = ref(false)
+const rollingBackId = ref<number | null>(null)
+
+const openHistory = async (ch: AiChannelView) => {
+  historyTarget.value = ch
+  historyList.value = []
+  historyOpen.value = true
+  await loadHistory(ch.channelKey)
+}
+
+const loadHistory = async (channelKey: ChannelKey) => {
+  historyLoading.value = true
+  try {
+    const resp = await fetchChannelHistory(channelKey)
+    historyList.value = resp.history ?? []
+  } catch (e) {
+    handleServerError(e, { action: '查询变更历史' })
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+/**
+ * 回滚到历史版本。后端会先快照当前态再写回（滚错了能再滚回来），
+ * 返回带 restartRequired 的视图，同编辑热更新契约。
+ */
+const rollbackTo = async (h: AiChannelHistoryView) => {
+  if (!historyTarget.value || rollingBackId.value !== null) return
+  try {
+    await import('element-plus').then((m) =>
+      m.ElMessageBox.confirm(
+        `确认回滚到 #${h.id}（${fmtTime(h.changedAt)} 的快照）？当前配置会被覆盖，但会先自动快照——回滚错了还能再滚回来。`,
+        '回滚确认',
+        { confirmButtonText: '确定回滚', cancelButtonText: '取消', type: 'warning' }
+      )
+    )
+  } catch {
+    return
+  }
+  rollingBackId.value = h.id
+  try {
+    const saved = await rollbackModelChannel(historyTarget.value.channelKey, h.id)
+    const idx = channels.value.findIndex((c) => c.channelKey === saved.channelKey)
+    if (idx >= 0) channels.value[idx] = saved
+    notify.success(`已回滚到 #${h.id}` + (saved.restartRequired ? '——热更新失败，重启后端后生效' : '，已即时生效'))
+    // 回滚本身产生了新快照，刷新历史列表保持时序正确
+    await loadHistory(saved.channelKey)
+  } catch (e) {
+    handleServerError(e, { action: '回滚渠道配置' })
+  } finally {
+    rollingBackId.value = null
+  }
+}
+
+// ==================== V5：能力探测（三态） ====================
+
+/** 每个渠道最近一次的落库探测结果（null = 从未探测） */
+const capabilityMap = ref<Record<string, ChannelProbeResult | null>>({})
+const capabilityOpen = ref(false)
+const capabilityTarget = ref<AiChannelView | null>(null)
+const probing = ref(false)
+
+const loadAllCapabilities = async () => {
+  const keys: ChannelKey[] = ['chat', 'embedding', 'reranker']
+  await Promise.all(keys.map(async (k) => {
+    try {
+      capabilityMap.value[k] = await fetchChannelCapabilities(k)
+    } catch {
+      capabilityMap.value[k] = null  // 读不出当未探测，不阻断页面
+    }
+  }))
+}
+
+const openCapability = (ch: AiChannelView) => {
+  capabilityTarget.value = ch
+  capabilityOpen.value = true
+}
+
+/** 手动触发实测（真实 API 调用，计费+秒级延迟） */
+const runProbe = async () => {
+  if (!capabilityTarget.value || probing.value) return
+  probing.value = true
+  try {
+    const result = await probeChannelCapabilities(capabilityTarget.value.channelKey)
+    capabilityMap.value[result.channelKey] = result
+    notify.success('能力探测完成')
+  } catch (e) {
+    handleServerError(e, { action: '能力探测' })
+  } finally {
+    probing.value = false
+  }
+}
+
+/** 三态 → Element Plus tag type。UNKNOWN 是探测失败而非不支持——灰，不是红。 */
+const capabilityTagType = (state: CapabilityState | undefined) =>
+  state === 'SUPPORTED' ? 'success' : state === 'UNSUPPORTED' ? 'danger' : 'info'
+
+const capabilityTagText = (state: CapabilityState | undefined) =>
+  state === 'SUPPORTED' ? '支持' : state === 'UNSUPPORTED' ? '不支持' : '未测成'
+
+/** 渠道卡片上的三态摘要徽标 */
+const capabilitySummary = (channelKey: string) => {
+  const r = capabilityMap.value[channelKey]
+  if (!r) return { text: '未实测', type: 'info' as const }
+  const items = Object.values(r.capabilities)
+  const supported = items.filter((i: CapabilityItem) => i.state === 'SUPPORTED').length
+  const unsupported = items.filter((i: CapabilityItem) => i.state === 'UNSUPPORTED').length
+  if (unsupported > 0) return { text: `${supported}/${items.length} 项支持`, type: 'danger' as const }
+  const unknown = items.length - supported
+  if (unknown > 0) return { text: `${supported}/${items.length} 项支持`, type: 'warning' as const }
+  return { text: `全部 ${items.length} 项支持`, type: 'success' as const }
+}
+
 const isChatChannel = computed(() => editTarget.value?.channelKey === 'chat')
 const isEmbeddingChannel = computed(() => editTarget.value?.channelKey === 'embedding')
 
@@ -268,7 +390,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
       <p class="page-desc">
         当前生效的 AI 模型渠道配置（DB 权威源）。编辑需管理员权限；
         保存后<b>即时生效</b>（Refreshable 包装器原子替换模型实例），仅热更新失败时才需重启。
-        明文 Key 永不流出后端。
+        明文 Key 永不流出后端。变更历史可回滚到任意版本；能力探测为手动触发的真实 API 实测。
       </p>
     </div>
 
@@ -322,7 +444,23 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
               <span class="field-label">更新时间</span>
               <span class="field-value">{{ fmtTime(chatChannel?.updatedAt ?? null) }}</span>
             </div>
+            <div v-if="chatChannel" class="field-row">
+              <span class="field-label">能力探测</span>
+              <span class="field-value">
+                <el-tag :type="capabilitySummary('chat').type" size="small" effect="plain">
+                  {{ capabilitySummary('chat').text }}
+                </el-tag>
+              </span>
+            </div>
             <button v-if="chatChannel" class="edit-btn" @click="openEdit(chatChannel)">编辑</button>
+            <div v-if="chatChannel" class="btn-pair">
+              <button class="tool-btn" @click="openHistory(chatChannel)">
+                <History class="tool-icon" />变更历史
+              </button>
+              <button class="tool-btn" @click="openCapability(chatChannel)">
+                <FlaskConical class="tool-icon" />能力探测
+              </button>
+            </div>
             <button v-if="chatChannel" class="reset-btn" @click="resetChannel(chatChannel)">重置为 yml 默认值</button>
           </div>
         </div>
@@ -362,7 +500,23 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
               <span class="field-label">更新时间</span>
               <span class="field-value">{{ fmtTime(embeddingChannel?.updatedAt ?? null) }}</span>
             </div>
+            <div v-if="embeddingChannel" class="field-row">
+              <span class="field-label">能力探测</span>
+              <span class="field-value">
+                <el-tag :type="capabilitySummary('embedding').type" size="small" effect="plain">
+                  {{ capabilitySummary('embedding').text }}
+                </el-tag>
+              </span>
+            </div>
             <button v-if="embeddingChannel" class="edit-btn" @click="openEdit(embeddingChannel)">编辑</button>
+            <div v-if="embeddingChannel" class="btn-pair">
+              <button class="tool-btn" @click="openHistory(embeddingChannel)">
+                <History class="tool-icon" />变更历史
+              </button>
+              <button class="tool-btn" @click="openCapability(embeddingChannel)">
+                <FlaskConical class="tool-icon" />能力探测
+              </button>
+            </div>
             <button v-if="embeddingChannel" class="reset-btn" @click="resetChannel(embeddingChannel)">重置为 yml 默认值</button>
           </div>
         </div>
@@ -393,7 +547,23 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
               <span class="field-label">更新时间</span>
               <span class="field-value">{{ fmtTime(rerankerChannel?.updatedAt ?? null) }}</span>
             </div>
+            <div v-if="rerankerChannel" class="field-row">
+              <span class="field-label">能力探测</span>
+              <span class="field-value">
+                <el-tag :type="capabilitySummary('reranker').type" size="small" effect="plain">
+                  {{ capabilitySummary('reranker').text }}
+                </el-tag>
+              </span>
+            </div>
             <button v-if="rerankerChannel" class="edit-btn" @click="openEdit(rerankerChannel)">编辑</button>
+            <div v-if="rerankerChannel" class="btn-pair">
+              <button class="tool-btn" @click="openHistory(rerankerChannel)">
+                <History class="tool-icon" />变更历史
+              </button>
+              <button class="tool-btn" @click="openCapability(rerankerChannel)">
+                <FlaskConical class="tool-icon" />能力探测
+              </button>
+            </div>
             <button v-if="rerankerChannel" class="reset-btn" @click="resetChannel(rerankerChannel)">重置为 yml 默认值</button>
           </div>
         </div>
@@ -531,6 +701,92 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             {{ saving ? '保存中…' : '保存' }}
           </button>
         </div>
+      </template>
+    </el-dialog>
+
+    <!-- V5 变更历史 Dialog：快照列表 + 一键回滚（非抽屉，遵循 UI 约定） -->
+    <el-dialog
+      v-model="historyOpen"
+      :title="historyTarget ? `变更历史 — ${historyTarget.channelKey}` : '变更历史'"
+      width="720px"
+    >
+      <div class="history-body">
+        <p class="history-desc">
+          每次编辑/回滚/重置前的<b>整行快照</b>（新→旧）。回滚任意版本前会先自动快照当前态——滚错了还能再滚回来。
+        </p>
+        <div v-if="historyLoading" class="history-empty">加载中…</div>
+        <div v-else-if="historyList.length === 0" class="history-empty">
+          暂无变更记录——渠道自镜像以来未被编辑过
+        </div>
+        <div v-else class="history-list">
+          <div v-for="h in historyList" :key="h.id" class="history-item">
+            <div class="history-item__main">
+              <div class="history-item__meta">
+                <span class="history-id">#{{ h.id }}</span>
+                <span class="history-note">{{ h.changeNote || '变更' }}</span>
+                <span class="history-time">{{ fmtTime(h.changedAt) }} · {{ h.changedBy }}</span>
+              </div>
+              <div class="history-item__config">
+                <span class="history-url">{{ h.baseUrl || '—' }}</span>
+                <span class="history-model">
+                  {{ h.turboModel ? `${h.turboModel} / ${h.reasonerModel}` : h.model || '—' }}
+                </span>
+                <el-tag v-if="h.status === 'DISABLED'" type="info" size="small">DISABLED</el-tag>
+              </div>
+            </div>
+            <button
+              class="rollback-btn"
+              :disabled="rollingBackId !== null"
+              @click="rollbackTo(h)"
+            >{{ rollingBackId === h.id ? '回滚中…' : '回滚到此版本' }}</button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- V5 能力探测 Dialog：三态明细 + 手动重新实测（非抽屉） -->
+    <el-dialog
+      v-model="capabilityOpen"
+      :title="capabilityTarget ? `能力探测 — ${capabilityTarget.channelKey}` : '能力探测'"
+      width="560px"
+    >
+      <div v-if="capabilityTarget" class="capability-body">
+        <p class="capability-desc">
+          连通性测试只证明「能调通」，这里实测平台真正依赖的能力：
+          Agent 靠<b>工具调用</b>、SSE 靠<b>流式</b>、分析卡片靠 <b>JSON 模式</b>。
+          探测是真实 API 调用（计费 + 秒级延迟），结果落库复用。
+        </p>
+
+        <div v-if="!capabilityMap[capabilityTarget.channelKey]" class="capability-empty">
+          尚未实测过——点击下方按钮触发第一轮探测
+        </div>
+
+        <div v-else class="capability-list">
+          <div
+            v-for="(item, cap) in capabilityMap[capabilityTarget.channelKey]!.capabilities"
+            :key="cap"
+            class="capability-item"
+          >
+            <div class="capability-item__head">
+              <span class="capability-name">{{ cap }}</span>
+              <el-tag :type="capabilityTagType(item.state)" size="small">
+                {{ capabilityTagText(item.state) }}
+              </el-tag>
+            </div>
+            <div class="capability-detail">{{ item.detail }}</div>
+          </div>
+          <p class="capability-probed-at">
+            实测时间：{{ fmtTime(capabilityMap[capabilityTarget.channelKey]!.probedAt) }}
+            <span class="edit-label-hint">（UNKNOWN = 探测失败如超时/限流，不代表不支持）</span>
+          </p>
+        </div>
+      </div>
+
+      <template #footer>
+        <button class="edit-btn-cancel" @click="capabilityOpen = false">关闭</button>
+        <button class="edit-btn-save" :disabled="probing" @click="runProbe">
+          {{ probing ? '实测中（最长约 60s）…' : (capabilityMap[capabilityTarget?.channelKey ?? ''] ? '重新实测' : '开始实测') }}
+        </button>
       </template>
     </el-dialog>
 
@@ -888,4 +1144,177 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .edit-label-btn:hover:not(:disabled) { background: #e5e7eb; }
 
 .edit-label-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── V5：工具按钮对（变更历史 / 能力探测） ── */
+
+.btn-pair {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tool-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 0;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 4px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.tool-btn:hover { background: #f0f9ff; border-color: #93c5fd; color: #1d4ed8; }
+
+.tool-icon { width: 13px; height: 13px; }
+
+/* ── V5：变更历史 Dialog ── */
+
+.history-body { display: flex; flex-direction: column; gap: 10px; }
+
+.history-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.history-empty {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.history-item__main { flex: 1; min-width: 0; }
+
+.history-item__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.history-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: #6366f1;
+  font-weight: 600;
+}
+
+.history-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  background: #f3f4f6;
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
+.history-time { font-size: 11px; color: #9ca3af; }
+
+.history-item__config {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.history-url {
+  font-family: monospace;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.history-model { color: #111827; font-weight: 500; }
+
+.rollback-btn {
+  flex-shrink: 0;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: #eef2ff;
+  color: #4338ca;
+  cursor: pointer;
+}
+
+.rollback-btn:hover:not(:disabled) { background: #e0e7ff; }
+
+.rollback-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── V5：能力探测 Dialog ── */
+
+.capability-body { display: flex; flex-direction: column; gap: 10px; }
+
+.capability-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.capability-empty {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  padding: 24px 0;
+  border: 1px dashed var(--border-color, #e5e7eb);
+  border-radius: 6px;
+}
+
+.capability-list { display: flex; flex-direction: column; gap: 8px; }
+
+.capability-item {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.capability-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.capability-name {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.capability-detail { font-size: 12px; color: #6b7280; line-height: 1.5; }
+
+.capability-probed-at {
+  font-size: 11px;
+  color: #9ca3af;
+  margin: 4px 0 0;
+}
 </style>
