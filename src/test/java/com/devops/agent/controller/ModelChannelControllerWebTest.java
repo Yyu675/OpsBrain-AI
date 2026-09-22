@@ -30,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.hamcrest.Matchers.nullValue;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -94,7 +95,13 @@ class ModelChannelControllerWebTest {
     private AiChannelService channelService;
 
     @MockitoBean
+    private com.devops.agent.domain.ai.AiChannelHistoryRepository historyRepo;
+
+    @MockitoBean
     private ChannelRefreshService refreshService;
+
+    @MockitoBean
+    private com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe;
 
     @MockitoBean
     @Qualifier("turboModel")
@@ -191,7 +198,7 @@ class ModelChannelControllerWebTest {
         @Test
         @DisplayName("编辑成功：脱敏 key 在场、密文不离库、热更新成功 restartRequired=false（即时生效）")
         void updateReturnsMaskedViewAndRestartFlag() throws Exception {
-            when(channelService.update(any(ChannelUpdate.class)))
+            when(channelService.update(any(ChannelUpdate.class), any()))
                     .thenReturn(new AiChannel("chat", "https://dashscope.aliyuncs.com/compatible-mode/v1",
                             "enc:v1:AbCdEfGhIjKlMnOp", "sk-ws-****7890",
                             "qwen-turbo", "deepseek-v4-flash-0731", null, null,
@@ -215,7 +222,7 @@ class ModelChannelControllerWebTest {
         @Test
         @DisplayName("编辑保存成功但热更新失败 → restartRequired=true（回退重启生效，保存不丢）")
         void updateWithFailedHotReloadFallsBackToRestart() throws Exception {
-            when(channelService.update(any(ChannelUpdate.class)))
+            when(channelService.update(any(ChannelUpdate.class), any()))
                     .thenReturn(new AiChannel("embedding", "https://dashscope.aliyuncs.com/compatible-mode/v1",
                             "enc:v1:XyZw1234567890ab", "sk-ws-****1234",
                             null, null, "qwen3.7-text-embedding", 1536,
@@ -236,7 +243,7 @@ class ModelChannelControllerWebTest {
         @Test
         @DisplayName("渠道不存在 → 404（不静默成功）")
         void unknownChannelReturns404() throws Exception {
-            when(channelService.update(any(ChannelUpdate.class)))
+            when(channelService.update(any(ChannelUpdate.class), any()))
                     .thenThrow(new IllegalStateException("渠道不存在: unknown-key"));
 
             mockMvc.perform(put("/api/v1/model-channels/unknown-key")
@@ -249,7 +256,7 @@ class ModelChannelControllerWebTest {
         @Test
         @DisplayName("参数不合法（占位 key / 坏 base-url / 未知渠道）→ 400")
         void invalidInputReturns400() throws Exception {
-            when(channelService.update(any(ChannelUpdate.class)))
+            when(channelService.update(any(ChannelUpdate.class), any()))
                     .thenThrow(new IllegalArgumentException("拒绝占位 API Key（your-… / …-here）"));
 
             mockMvc.perform(put("/api/v1/model-channels/chat")
@@ -304,6 +311,193 @@ class ModelChannelControllerWebTest {
                             .post("/api/v1/model-channels/unknown/reset"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(40001));
+        }
+
+        @Test
+        @DisplayName("重置前把当前自定义行快照进历史表（V5：重置错了可回滚）")
+        void resetSnapshotsCurrentRowIntoHistory() throws Exception {
+            AiChannel current = channel("chat", "https://custom.example.com/v1",
+                    "enc:v1:Custom", "sk-cu-****0000", "custom-model", null);
+            when(repo.findByKey("chat")).thenReturn(java.util.Optional.of(current));
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/chat/reset"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0));
+
+            org.mockito.ArgumentCaptor<com.devops.agent.domain.ai.AiChannelHistory> captor =
+                    org.mockito.ArgumentCaptor.forClass(com.devops.agent.domain.ai.AiChannelHistory.class);
+            org.mockito.Mockito.verify(historyRepo).snapshot(captor.capture());
+            com.devops.agent.domain.ai.AiChannelHistory snap = captor.getValue();
+            assertThat(snap.baseUrl()).isEqualTo("https://custom.example.com/v1");
+            assertThat(snap.apiKeyEnc()).isEqualTo("enc:v1:Custom");
+            assertThat(snap.changeNote()).contains("重置");
+        }
+
+        @Test
+        @DisplayName("快照失败不阻断重置（历史是兜底，主流程降级不丢）")
+        void resetSnapshotFailureDoesNotBlock() throws Exception {
+            when(repo.findByKey("chat")).thenReturn(java.util.Optional.of(
+                    channel("chat", "https://custom.example.com/v1", "enc:v1:Custom", "sk-cu-****0000", "m", null)));
+            org.mockito.Mockito.doThrow(new RuntimeException("history table missing"))
+                    .when(historyRepo).snapshot(org.mockito.ArgumentMatchers.any());
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/chat/reset"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0));
+        }
+    }
+
+    // ==================================================================
+
+    @Nested
+    @DisplayName("变更历史与回滚（V5）")
+    class HistoryAndRollback {
+
+        private com.devops.agent.domain.ai.AiChannelHistory historyRow(long id, String key,
+                String baseUrl, String encKey, String masked, String turbo) {
+            return new com.devops.agent.domain.ai.AiChannelHistory(id, key, baseUrl, encKey, masked,
+                    turbo, "deepseek-v4-flash-0731", null, null, "ACTIVE",
+                    null, null, null, null,
+                    LocalDateTime.of(2026, 9, 22, 10, 0), "admin", "编辑");
+        }
+
+        @Test
+        @DisplayName("拉历史：返回脱敏视图，密文 apiKeyEnc 永不外泄")
+        void historyReturnsMaskedViewWithoutCipher() throws Exception {
+            when(channelService.history("chat", 20)).thenReturn(List.of(
+                    historyRow(5L, "chat", "https://api.deepseek.com/v1", "enc:v1:Secret", "sk-ws-****7890", "qwen-turbo")));
+
+            mockMvc.perform(get("/api/v1/model-channels/chat/history").param("limit", "20"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.history.length()").value(1))
+                    .andExpect(jsonPath("$.data.history[0].id").value(5))
+                    .andExpect(jsonPath("$.data.history[0].maskedKey").value("sk-ws-****7890"))
+                    .andExpect(jsonPath("$.data.history[0].turboModel").value("qwen-turbo"))
+                    .andExpect(jsonPath("$.data.history[0].changedBy").value("admin"))
+                    // ---- 安全底线：历史表同样承载密文，绝不透出 ----
+                    .andExpect(jsonPath("$.data.history[0].apiKeyEnc").doesNotExist())
+                    .andExpect(jsonPath("$.data.history[0].fallbackApiKeyEnc").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("回滚成功且热更新成功 → restartRequired=false，返回回滚后视图")
+        void rollbackWithHotReloadSucceeds() throws Exception {
+            when(channelService.rollback("chat", 5L, "system")).thenReturn(
+                    channel("chat", "https://api.deepseek.com/v1", "enc:v1:Old", "sk-ws-****7890", "qwen-turbo", null));
+            when(refreshService.refresh("chat")).thenReturn("chat 渠道已热更新");
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/chat/rollback/5"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.channelKey").value("chat"))
+                    .andExpect(jsonPath("$.data.restartRequired").value(false))
+                    .andExpect(jsonPath("$.data.apiKeyEnc").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("回滚落库成功但热更新失败 → restartRequired=true（配置已回滚不丢）")
+        void rollbackWithHotReloadFailureFallsBackToRestart() throws Exception {
+            when(channelService.rollback("chat", 5L, "system")).thenReturn(
+                    channel("chat", "https://api.deepseek.com/v1", "enc:v1:Old", "sk-ws-****7890", "qwen-turbo", null));
+            when(refreshService.refresh("chat")).thenThrow(new IllegalStateException("模型构建失败"));
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/chat/rollback/5"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.restartRequired").value(true));
+        }
+
+        @Test
+        @DisplayName("回滚历史不存在 → 404；跨渠道回滚 → 400")
+        void rollbackValidationErrors() throws Exception {
+            when(channelService.rollback("chat", 99L, "system"))
+                    .thenThrow(new IllegalStateException("历史版本不存在: #99"));
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/chat/rollback/99"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40400));
+
+            when(channelService.rollback("chat", 8L, "system"))
+                    .thenThrow(new IllegalArgumentException("历史版本 #8 属于渠道 embedding，不能回滚到 chat"));
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/chat/rollback/8"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40001));
+        }
+    }
+
+    // ==================================================================
+
+    @Nested
+    @DisplayName("能力探测（P4：三态语义 + 落库复用）")
+    class CapabilityProbe {
+
+        @Test
+        @DisplayName("触发探测：返回三态结果（SUPPORTED/UNSUPPORTED/UNKNOWN 各字段齐全）")
+        void probeReturnsTriStateResult() throws Exception {
+            when(capabilityProbe.probe("chat")).thenReturn(new com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.ProbeResult(
+                    "chat",
+                    java.util.Map.of(
+                            "chat", new com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.CapabilityItem("SUPPORTED", "基础对话正常"),
+                            "function_calling", new com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.CapabilityItem("UNSUPPORTED", "不支持工具调用"),
+                            "streaming", new com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.CapabilityItem("UNKNOWN", "超时")),
+                    "2026-09-23T10:00:00"));
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/chat/capability-probe"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.channelKey").value("chat"))
+                    .andExpect(jsonPath("$.data.capabilities.chat.state").value("SUPPORTED"))
+                    .andExpect(jsonPath("$.data.capabilities.chat.detail").value("基础对话正常"))
+                    .andExpect(jsonPath("$.data.capabilities.function_calling.state").value("UNSUPPORTED"))
+                    .andExpect(jsonPath("$.data.capabilities.streaming.state").value("UNKNOWN"));
+        }
+
+        @Test
+        @DisplayName("触发探测：渠道不存在 → 404")
+        void probeUnknownChannelReturns404() throws Exception {
+            when(capabilityProbe.probe("unknown-key"))
+                    .thenThrow(new IllegalStateException("渠道不存在: unknown-key"));
+
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/model-channels/unknown-key/capability-probe"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40400));
+        }
+
+        @Test
+        @DisplayName("读已落库结果：不重新实测，返回存储态（含 probedAt）")
+        void readStoredCapabilitiesWithoutReProbe() throws Exception {
+            when(capabilityProbe.readStored("chat")).thenReturn(new com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.ProbeResult(
+                    "chat",
+                    java.util.Map.of("embed", new com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.CapabilityItem("SUPPORTED", "向量化正常，维度 1536")),
+                    "2026-09-23T09:00:00"));
+
+            mockMvc.perform(get("/api/v1/model-channels/chat/capabilities"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.capabilities.embed.state").value("SUPPORTED"))
+                    .andExpect(jsonPath("$.data.probedAt").value("2026-09-23T09:00:00"));
+
+            // 关键：读操作不触发探测（省钱契约）
+            org.mockito.Mockito.verify(capabilityProbe, org.mockito.Mockito.never()).probe(org.mockito.ArgumentMatchers.anyString());
+        }
+
+        @Test
+        @DisplayName("从未探测过 → data 为 null（前端渲染「未实测」态）")
+        void noStoredResultReturnsNullData() throws Exception {
+            when(capabilityProbe.readStored("chat")).thenReturn(null);
+
+            mockMvc.perform(get("/api/v1/model-channels/chat/capabilities"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data", nullValue()));
         }
     }
 }

@@ -27,7 +27,8 @@ class AiChannelServiceTest {
     private static final String BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
     private final AiChannelRepository repo = mock(AiChannelRepository.class);
-    private final AiChannelService service = new AiChannelService(repo, 1536, "test-secret");
+    private final AiChannelHistoryRepository historyRepo = mock(AiChannelHistoryRepository.class);
+    private final AiChannelService service = new AiChannelService(repo, historyRepo, 1536, "test-secret");
 
     private AiChannel chatRow(String baseUrl, String key, String turbo, String reasoner) {
         return new AiChannel("chat", baseUrl, key, key == null ? null : "sk-ws-****7890",
@@ -303,6 +304,103 @@ class AiChannelServiceTest {
             AiChannel merged = captor.getValue();
             assertThat(merged.fallbackModel()).isEqualTo("deepseek-chat-v2");
             assertThat(merged.fallbackApiKeyEnc()).isEqualTo("enc:v1:FbOld");
+        }
+    }
+
+    // ==================================================================
+
+    @Nested
+    @DisplayName("变更历史与回滚（V5）")
+    class HistoryAndRollback {
+
+        @Test
+        @DisplayName("编辑前快照旧行——历史表收到变更前状态（回滚依据）")
+        void updateSnapshotsOldRow() {
+            AiChannel old = chatRow(BASE, "enc:v1:Old", "qwen-turbo", "deepseek-v4-flash-0731");
+            when(repo.findByKey("chat")).thenReturn(Optional.of(old));
+            when(repo.updateMerged(any())).thenReturn(1);
+
+            service.update(new ChannelUpdate("chat", null, "qwen5-custom", null,
+                    null, null, null, null, null, null, null, null), "admin");
+
+            org.mockito.ArgumentCaptor<AiChannelHistory> captor =
+                    org.mockito.ArgumentCaptor.forClass(AiChannelHistory.class);
+            org.mockito.Mockito.verify(historyRepo).snapshot(captor.capture());
+            AiChannelHistory snap = captor.getValue();
+            // 快照的是「变更前」的旧模型，不是新值
+            assertThat(snap.turboModel()).isEqualTo("qwen-turbo");
+            assertThat(snap.apiKeyEnc()).isEqualTo("enc:v1:Old");
+            assertThat(snap.changedBy()).isEqualTo("admin");
+            assertThat(snap.changeNote()).isEqualTo("编辑");
+        }
+
+        @Test
+        @DisplayName("快照失败不阻断编辑（历史是兜底不是主流程），但编辑仍生效")
+        void snapshotFailureDoesNotBlockUpdate() {
+            AiChannel old = chatRow(BASE, "enc:v1:Old", "qwen-turbo", "deepseek-v4-flash-0731");
+            when(repo.findByKey("chat")).thenReturn(Optional.of(old));
+            when(repo.updateMerged(any())).thenReturn(1);
+            org.mockito.Mockito.doThrow(new RuntimeException("history table missing"))
+                    .when(historyRepo).snapshot(any());
+
+            AiChannel saved = service.update(new ChannelUpdate("chat", null, "qwen5-custom", null,
+                    null, null, null, null, null, null, null, null));
+
+            org.mockito.Mockito.verify(repo).updateMerged(any());
+            assertThat(saved).isNotNull();
+        }
+
+        @Test
+        @DisplayName("回滚：当前态先快照，历史行整行写回")
+        void rollbackRestoresHistoryAndSnapshotsCurrent() {
+            AiChannel current = chatRow(BASE, "enc:v1:New", "qwen5-custom", "deepseek-v5-custom");
+            AiChannelHistory history = AiChannelHistory.snapshotOf(
+                    chatRow(BASE, "enc:v1:Old", "qwen-turbo", "deepseek-v4-flash-0731"), "admin", "编辑");
+            AiChannel restored = history.toChannel();
+            // findByKey 两次调用：第一次取当前态（供回滚前快照），第二次取写回后状态（模拟 DB 已生效）
+            when(repo.findByKey("chat")).thenReturn(Optional.of(current), Optional.of(restored));
+            when(historyRepo.findById(7L)).thenReturn(Optional.of(history));
+            when(repo.updateMerged(any())).thenReturn(1);
+
+            AiChannel result = service.rollback("chat", 7L, "admin");
+
+            // 当前态被快照（回滚错了还能再回滚回来）
+            org.mockito.ArgumentCaptor<AiChannelHistory> snapCaptor =
+                    org.mockito.ArgumentCaptor.forClass(AiChannelHistory.class);
+            org.mockito.Mockito.verify(historyRepo).snapshot(snapCaptor.capture());
+            assertThat(snapCaptor.getValue().turboModel()).isEqualTo("qwen5-custom");
+            assertThat(snapCaptor.getValue().changeNote()).contains("#7");
+
+            // 历史行整行写回
+            org.mockito.ArgumentCaptor<AiChannel> chCaptor = org.mockito.ArgumentCaptor.forClass(AiChannel.class);
+            org.mockito.Mockito.verify(repo).updateMerged(chCaptor.capture());
+            assertThat(chCaptor.getValue().turboModel()).isEqualTo("qwen-turbo");
+            assertThat(chCaptor.getValue().apiKeyEnc()).isEqualTo("enc:v1:Old");
+            assertThat(result.turboModel()).isEqualTo("qwen-turbo");
+        }
+
+        @Test
+        @DisplayName("回滚不存在的历史 → 404；跨渠道回滚 → 400")
+        void rollbackValidation() {
+            when(historyRepo.findById(99L)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.rollback("chat", 99L, "admin"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("历史版本不存在");
+
+            AiChannelHistory other = AiChannelHistory.snapshotOf(embeddingRow("qwen3.7-text-embedding"), "admin", "编辑");
+            when(historyRepo.findById(8L)).thenReturn(Optional.of(other));
+            assertThatThrownBy(() -> service.rollback("chat", 8L, "admin"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("不能回滚");
+        }
+
+        @Test
+        @DisplayName("拉历史：未知渠道 400，正常渠道透传仓储结果")
+        void historyQuery() {
+            assertThatThrownBy(() -> service.history("unknown", 20))
+                    .isInstanceOf(IllegalArgumentException.class);
+            when(historyRepo.findByChannel("chat", 20)).thenReturn(java.util.List.of());
+            assertThat(service.history("chat", 20)).isEmpty();
         }
     }
 }

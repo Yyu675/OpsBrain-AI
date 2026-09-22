@@ -36,13 +36,16 @@ public class AiChannelService {
     private static final Set<String> STATUSES = Set.of("ACTIVE", "DISABLED");
 
     private final AiChannelRepository repo;
+    private final AiChannelHistoryRepository historyRepo;
     private final int vectorDimension;
     private final String cryptSecret;
 
     public AiChannelService(AiChannelRepository repo,
+                            AiChannelHistoryRepository historyRepo,
                             @Value("${devops.ai.vector.dimension:1536}") int vectorDimension,
                             @Value("${MODEL_KEY_CRYPT_SECRET:}") String cryptSecret) {
         this.repo = repo;
+        this.historyRepo = historyRepo;
         this.vectorDimension = vectorDimension;
         this.cryptSecret = cryptSecret;
     }
@@ -50,8 +53,14 @@ public class AiChannelService {
     /**
      * 合并 patch 后写回。渠道不存在抛 {@link IllegalStateException}（映射 404）；
      * 参数不合法抛 {@link IllegalArgumentException}（映射 400）。
+     * 变更前把旧行快照进历史表（V5），操作人不明时记 system。
      */
     public AiChannel update(ChannelUpdate patch) {
+        return update(patch, "system");
+    }
+
+    /** 带操作人的编辑入口（Controller 传 Sa-Token loginId）。 */
+    public AiChannel update(ChannelUpdate patch, String operator) {
         if (patch == null || patch.channelKey() == null || patch.channelKey().isBlank()) {
             throw new IllegalArgumentException("channelKey 不能为空");
         }
@@ -62,6 +71,11 @@ public class AiChannelService {
 
         AiChannel existing = repo.findByKey(key)
                 .orElseThrow(() -> new IllegalStateException("渠道不存在: " + key));
+
+        // 读-改-写之间无版本 CAS：findByKey → 校验合并 → updateMerged 不是原子的，
+        // 两个管理员并发编辑会丢更新且历史快照错位。这是**有意接受**的取舍——
+        // 渠道配置是低频管理操作（撞车概率极低），且后果不致命（旧值还在历史表里）。
+        // 若将来撞车成为现实问题，参照 6.11 乐观锁先例：加 version 列 + WHERE version = ?。
 
         String baseUrl = firstNonBlank(patch.baseUrl(), existing.baseUrl());
         validateBaseUrl(baseUrl);
@@ -152,6 +166,14 @@ public class AiChannelService {
                 dimension, status, null,
                 fbUrl, fbModel, fbKeyEnc, fbMasked);
 
+        // V5：变更前快照旧行——回滚的唯一依据。快照失败不阻断编辑（历史是兜底，不是主流程），
+        // 但必须留 WARN 痕迹，否则「改错了回不去」时无任何线索（静默 catch 契约）。
+        try {
+            historyRepo.snapshot(AiChannelHistory.snapshotOf(existing, operator, "编辑"));
+        } catch (Exception e) {
+            log.warn("⚠️ [AiChannel] 变更历史快照失败（本次编辑仍生效，但回滚链将缺一环）| key={} | {}", key, e.toString());
+        }
+
         int rows = repo.updateMerged(merged);
         if (rows == 0) {
             throw new IllegalStateException("渠道不存在: " + key);
@@ -163,6 +185,48 @@ public class AiChannelService {
                 patch.apiKey() != null && !patch.apiKey().isBlank(),
                 AiChannel.KEY_CHAT.equals(key) && !blank(fbModel) ? fbModel : "无");
         return repo.findByKey(key).orElse(merged);
+    }
+
+    /**
+     * 回滚到指定历史版本（V5）。把当前行先快照（回滚本身也是一次变更，可再回滚回来），
+     * 再把历史行整行写回。历史不存在抛 {@link IllegalStateException}（404）；
+     * 历史行渠道与请求不符抛 {@link IllegalArgumentException}（400，防跨渠道回滚）。
+     */
+    public AiChannel rollback(String channelKey, long historyId, String operator) {
+        if (!KNOWN_KEYS.contains(channelKey)) {
+            throw new IllegalArgumentException("未知渠道: " + channelKey);
+        }
+        AiChannelHistory history = historyRepo.findById(historyId)
+                .orElseThrow(() -> new IllegalStateException("历史版本不存在: #" + historyId));
+        if (!channelKey.equals(history.channelKey())) {
+            throw new IllegalArgumentException(
+                    "历史版本 #" + historyId + " 属于渠道 " + history.channelKey() + "，不能回滚到 " + channelKey);
+        }
+        AiChannel current = repo.findByKey(channelKey)
+                .orElseThrow(() -> new IllegalStateException("渠道不存在: " + channelKey));
+
+        // 回滚前快照当前态——回滚错了还能再回滚回来，链路不设单向门。
+        // 【有意不捕获快照异常，与 update() 的"失败不阻断"相反】
+        // update 快照失败只丢「改前旧值」、主流程仍能生效；rollback 快照失败
+        // 若放行，当前自定义态会被历史行整行覆盖且**永久无处可寻**。
+        // 所以回滚对快照是硬依赖：快照失败必须阻断回滚，让用户知道危险再决定。
+        historyRepo.snapshot(AiChannelHistory.snapshotOf(current, operator, "回滚前快照（目标 #" + historyId + "）"));
+
+        AiChannel restored = history.toChannel();
+        int rows = repo.updateMerged(restored);
+        if (rows == 0) {
+            throw new IllegalStateException("渠道不存在: " + channelKey);
+        }
+        log.info("⏪ [AiChannel] 渠道已回滚 | key={} | 到历史 #{} | operator={}", channelKey, historyId, operator);
+        return repo.findByKey(channelKey).orElse(restored);
+    }
+
+    /** 拉渠道的变更历史（新→旧），供「变更历史」弹窗。 */
+    public java.util.List<AiChannelHistory> history(String channelKey, int limit) {
+        if (!KNOWN_KEYS.contains(channelKey)) {
+            throw new IllegalArgumentException("未知渠道: " + channelKey);
+        }
+        return historyRepo.findByChannel(channelKey, limit);
     }
 
     private static void validateBaseUrl(String baseUrl) {

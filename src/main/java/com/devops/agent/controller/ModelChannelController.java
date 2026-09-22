@@ -1,12 +1,16 @@
 package com.devops.agent.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.stp.StpUtil;
 import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.ai.AiChannel;
+import com.devops.agent.domain.ai.AiChannelHistory;
+import com.devops.agent.domain.ai.AiChannelHistoryRepository;
 import com.devops.agent.domain.ai.AiChannelRepository;
 import com.devops.agent.domain.ai.AiChannelService;
 import com.devops.agent.domain.ai.ChannelUpdate;
+import com.devops.agent.infrastructure.ai.ChannelCapabilityProbe;
 import com.devops.agent.infrastructure.ai.ChannelRefreshService;
 import com.devops.agent.infrastructure.llm.ApiKeyCrypt;
 import org.slf4j.Logger;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
@@ -39,6 +44,8 @@ public class ModelChannelController {
 
     private final AiChannelRepository repo;
     private final AiChannelService channelService;
+    private final AiChannelHistoryRepository historyRepo;
+    private final com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe;
     // MOCK 模式下 Refreshable* 模型 Bean 与 ChannelRefreshService 均不装配（热更新无对象），
     // 故用 ObjectProvider 延迟解析，保证 MOCK 上下文正常启动；编辑后的热更新尝试只在 REAL 模式有意义。
     private final org.springframework.beans.factory.ObjectProvider<ChannelRefreshService> refreshServiceProvider;
@@ -57,9 +64,13 @@ public class ModelChannelController {
     @Value("${MODEL_KEY_CRYPT_SECRET:}") private String cryptSecret;
 
     public ModelChannelController(AiChannelRepository repo, AiChannelService channelService,
+            AiChannelHistoryRepository historyRepo,
+            com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe,
             org.springframework.beans.factory.ObjectProvider<ChannelRefreshService> refreshServiceProvider) {
         this.repo = repo;
         this.channelService = channelService;
+        this.historyRepo = historyRepo;
+        this.capabilityProbe = capabilityProbe;
         this.refreshServiceProvider = refreshServiceProvider;
     }
 
@@ -79,7 +90,7 @@ public class ModelChannelController {
                     readString(rawBody, "status"),
                     readString(rawBody, "fallbackBaseUrl"), readString(rawBody, "fallbackModel"),
                     readString(rawBody, "fallbackApiKey"), readBoolean(rawBody, "clearFallback"));
-            AiChannel saved = channelService.update(patch);
+            AiChannel saved = channelService.update(patch, currentOperator());
             boolean hotReloaded = false;
             ChannelRefreshService refreshService = refreshServiceProvider.getIfAvailable();
             if (refreshService != null) {
@@ -89,6 +100,44 @@ public class ModelChannelController {
             return ApiResponse.success(toView(saved, !hotReloaded));
         } catch (IllegalArgumentException e) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, "渠道配置未保存：" + e.getMessage());
+        } catch (IllegalStateException e) {
+            return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /**
+     * 拉渠道变更历史（新→旧，脱敏视图）。历史表承载密文，
+     * 视图只透出脱敏串——与列表同一安全契约。
+     */
+    @GetMapping("/{channelKey}/history")
+    public ApiResponse<HistoryList> history(@PathVariable String channelKey, @RequestParam int limit) {
+        try {
+            int safeLimit = Math.min(Math.max(limit, 1), 100);
+            List<HistoryView> views = channelService.history(channelKey, safeLimit).stream()
+                    .map(this::toHistoryView).toList();
+            return ApiResponse.success(new HistoryList(views));
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /**
+     * 回滚到指定历史版本（V5）。回滚也是变更：service 会先快照当前态再写回，
+     * 滚错了还能再滚回来。写回后与编辑同路径触发热更新，失败降级为需重启。
+     */
+    @PostMapping("/{channelKey}/rollback/{historyId}")
+    public ApiResponse<ChannelView> rollback(@PathVariable String channelKey, @PathVariable long historyId) {
+        try {
+            AiChannel restored = channelService.rollback(channelKey, historyId, currentOperator());
+            boolean hotReloaded = false;
+            ChannelRefreshService refreshService = refreshServiceProvider.getIfAvailable();
+            if (refreshService != null) {
+                try { refreshService.refresh(channelKey); hotReloaded = true; }
+                catch (Exception e) { log.warn("[ModelChannel] 回滚后热更新失败（配置已落库，需重启生效）| {}", e.getMessage()); }
+            }
+            return ApiResponse.success(toView(restored, !hotReloaded));
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.error(ApiCode.BAD_REQUEST, "回滚未执行：" + e.getMessage());
         } catch (IllegalStateException e) {
             return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
         }
@@ -135,6 +184,27 @@ public class ModelChannelController {
         return ids.stream().distinct().sorted().toList();
     }
 
+    // ==================== 能力探测（P4） ====================
+
+    /**
+     * 触发一轮能力实测（真实 API 调用，计费+秒级延迟，故为 POST 手动触发）。
+     * 结果落库复用；三态语义见 {@link ChannelCapabilityProbe}。
+     */
+    @PostMapping("/{channelKey}/capability-probe")
+    public ApiResponse<com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.ProbeResult> capabilityProbe(@PathVariable String channelKey) {
+        try {
+            return ApiResponse.success(capabilityProbe.probe(channelKey));
+        } catch (IllegalStateException e) {
+            return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /** 读已落库的最近探测结果（不重新实测，页面加载用）。从未探测返回 null。 */
+    @GetMapping("/{channelKey}/capabilities")
+    public ApiResponse<com.devops.agent.infrastructure.ai.ChannelCapabilityProbe.ProbeResult> capabilities(@PathVariable String channelKey) {
+        return ApiResponse.success(capabilityProbe.readStored(channelKey));
+    }
+
     @PostMapping("/{channelKey}/reset")
     public ApiResponse<ChannelView> resetToDefaults(@PathVariable String channelKey) {
         AiChannel seed;
@@ -151,6 +221,15 @@ public class ModelChannelController {
                     ApiKeyCrypt.mask(ymlRerankerKey), null, null, nullToEmpty(ymlRerankerModel), null, "ACTIVE", null); break;
             default: return ApiResponse.error(ApiCode.BAD_REQUEST, "未知渠道: " + channelKey);
         }
+        // 重置是最需要回滚的操作——V5 的动机就是「改错了只剩重置、回不到上一个自定义值」。
+        // 快照失败不阻断重置（与编辑同契约：历史是兜底，失败留 WARN 线索）。
+        repo.findByKey(channelKey).ifPresent(current -> {
+            try {
+                historyRepo.snapshot(AiChannelHistory.snapshotOf(current, currentOperator(), "重置为 yml 默认值"));
+            } catch (Exception e) {
+                log.warn("⚠️ [ModelChannel] 重置前历史快照失败（重置仍生效，但当前自定义值将不可回滚）| key={} | {}", channelKey, e.toString());
+            }
+        });
         repo.upsert(seed);
         AiChannel saved = repo.findByKey(channelKey).orElse(seed);
         log.info("🔄 [ModelChannel] {} 已重置为 yml 默认值", channelKey);
@@ -173,6 +252,24 @@ public class ModelChannelController {
         return new ChannelView(c.channelKey(), c.baseUrl(), c.maskedKey(), c.turboModel(), c.reasonerModel(),
                 c.model(), c.dimension(), c.status(), c.updatedAt(), restartRequired,
                 c.fallbackBaseUrl(), c.fallbackModel(), c.fallbackMaskedKey());
+    }
+
+    /** 历史视图：密文字段一概不映射——历史行同样承载 key 密文，安全契约与列表一致。 */
+    private HistoryView toHistoryView(AiChannelHistory h) {
+        return new HistoryView(h.id(), h.channelKey(), h.baseUrl(), h.maskedKey(),
+                h.turboModel(), h.reasonerModel(), h.model(), h.dimension(), h.status(),
+                h.fallbackBaseUrl(), h.fallbackModel(), h.fallbackMaskedKey(),
+                h.changedAt(), h.changedBy(), h.changeNote());
+    }
+
+    /** 与 OperationAuditInterceptor 同款容错：非请求上下文/未登录记 system，不让审计字段炸主流程。 */
+    private String currentOperator() {
+        try {
+            if (StpUtil.isLogin()) return StpUtil.getLoginIdAsString();
+        } catch (Exception ignore) {
+            // 未登录或非请求上下文（单测切片/内部调用）
+        }
+        return "system";
     }
     private String readString(Object raw, String field) {
         if (!(raw instanceof Map<?, ?> map)) return null;
@@ -198,4 +295,9 @@ public class ModelChannelController {
             boolean restartRequired,
             String fallbackBaseUrl, String fallbackModel, String fallbackMaskedKey) {}
     public record ChannelList(List<ChannelView> channels) {}
+    public record HistoryView(Long id, String channelKey, String baseUrl, String maskedKey, String turboModel,
+            String reasonerModel, String model, Integer dimension, String status,
+            String fallbackBaseUrl, String fallbackModel, String fallbackMaskedKey,
+            LocalDateTime changedAt, String changedBy, String changeNote) {}
+    public record HistoryList(List<HistoryView> history) {}
 }
