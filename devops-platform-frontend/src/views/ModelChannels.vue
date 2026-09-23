@@ -146,10 +146,65 @@ const submitEdit = async () => {
     if (saved.restartRequired) {
       editRestartHint.value = true
     }
+    // 改后验证（建议1）：新配置已热更新，立即自动探测——发现问题给强警告
+    // 并可一键回滚到改前状态（V5 历史链在保存时已快照）。
+    // 不做「保存前探测」：探测端点测的是已落库配置，保存前测的是旧配置，无意义。
+    void probeAfterSave(saved)
   } catch (e) {
     handleServerError(e, { action: '保存渠道配置' })
   } finally {
     saving.value = false
+  }
+}
+
+/**
+ * 保存后自动探测（改后验证）：静默跑，全部 SUPPORTED 不打扰用户；
+ * 发现 UNSUPPORTED / 全部 UNKNOWN 时弹强警告，附「一键回滚到改前」。
+ * 探测失败本身（网络/超时）不弹——那属于 UNKNOWN 语义，不是配置错误。
+ */
+const probeAfterSave = async (saved: AiChannelView) => {
+  try {
+    const result = await probeChannelCapabilities(saved.channelKey)
+    capabilityMap.value[result.channelKey] = result
+    const items = Object.entries(result.capabilities)
+    const bad = items.filter(([, i]) => i.state === 'UNSUPPORTED')
+    const allUnknown = items.length > 0 && items.every(([, i]) => i.state === 'UNKNOWN')
+    if (bad.length === 0 && !allUnknown) return
+
+    const lines = allUnknown
+      ? '所有能力项均未测成（探测本身失败：超时/限流/网络）。配置可能没问题，但无法确认——建议稍后手动重新探测。'
+      : bad.map(([cap, i]) => `• ${cap}：${i.detail}`).join('\n')
+    const m = await import('element-plus')
+    m.ElMessageBox.confirm(
+      `新配置已保存并热更新，但能力探测发现问题：\n\n${lines}\n\n可以回滚到改动前的状态（保存时已自动快照）。`,
+      allUnknown ? '探测未能确认配置' : '配置探测发现问题',
+      {
+        confirmButtonText: allUnknown ? '知道了' : '一键回滚到改前',
+        cancelButtonText: '保留新配置',
+        type: 'warning',
+        distinguishCancelAndClose: true,
+      },
+    ).then(async () => {
+      if (allUnknown) return  // 全部 UNKNOWN 时确认键只是「知道了」，不回滚
+      await rollbackToLatestSnapshot(saved.channelKey)
+    }).catch(() => { /* 用户选保留——尊重决定，留 WARNING 痕迹在能力面板 */ })
+  } catch {
+    // 探测请求失败不打扰：保存已成功，探测是旁路验证
+  }
+}
+
+/** 回滚到最近一次快照（= 本次保存前的状态）。V5 契约：保存时后端已快照改前整行。 */
+const rollbackToLatestSnapshot = async (channelKey: ChannelKey) => {
+  try {
+    const resp = await fetchChannelHistory(channelKey, 1)
+    const latest = resp.history?.[0]
+    if (!latest) { notify.warning('未找到可回滚的快照'); return }
+    const restored = await rollbackModelChannel(channelKey, latest.id)
+    const idx = channels.value.findIndex((c) => c.channelKey === restored.channelKey)
+    if (idx >= 0) channels.value[idx] = restored
+    notify.success(`已回滚到 #${latest.id}` + (restored.restartRequired ? '——热更新失败，重启后端后生效' : '，已即时生效'))
+  } catch (e) {
+    handleServerError(e, { action: '回滚到改前状态' })
   }
 }
 
@@ -196,6 +251,43 @@ const historyTarget = ref<AiChannelView | null>(null)
 const historyList = ref<AiChannelHistoryView[]>([])
 const historyLoading = ref(false)
 const rollingBackId = ref<number | null>(null)
+
+// ---- 建议2：当前 vs 目标版本 diff ----
+/** 展开 diff 的历史行 id（null = 收起）。点击历史行切换，再点收起。 */
+const diffOpenId = ref<number | null>(null)
+
+/** 参与对比的字段定义：[标签, 取当前值的访问器, 取历史值的访问器] */
+const DIFF_FIELDS: Array<[string, (c: AiChannelView) => string | null, (h: AiChannelHistoryView) => string | null]> = [
+  ['Base URL', c => c.baseUrl, h => h.baseUrl],
+  ['API Key', c => c.maskedKey, h => h.maskedKey],
+  ['Turbo 模型', c => c.turboModel, h => h.turboModel],
+  ['Reasoner 模型', c => c.reasonerModel, h => h.reasonerModel],
+  ['模型', c => c.model, h => h.model],
+  ['向量维度', c => c.dimension?.toString() ?? null, h => h.dimension?.toString() ?? null],
+  ['状态', c => c.status, h => h.status],
+  ['备用 Base URL', c => c.fallbackBaseUrl ?? null, h => h.fallbackBaseUrl],
+  ['备用模型', c => c.fallbackModel ?? null, h => h.fallbackModel],
+  ['备用 Key', c => c.fallbackMaskedKey ?? null, h => h.fallbackMaskedKey],
+]
+
+interface DiffRow { label: string; current: string; target: string; changed: boolean }
+
+/** 逐字段对比当前配置与选中历史版本；只列两边至少一边有值的字段。 */
+const diffRows = (h: AiChannelHistoryView): DiffRow[] => {
+  const cur = historyTarget.value
+  if (!cur) return []
+  return DIFF_FIELDS
+    .map(([label, getCur, getHis]) => {
+      const current = getCur(cur) ?? '—'
+      const target = getHis(h) ?? '—'
+      return { label, current, target, changed: current !== target }
+    })
+    .filter(r => r.current !== '—' || r.target !== '—')
+}
+
+const toggleDiff = (h: AiChannelHistoryView) => {
+  diffOpenId.value = diffOpenId.value === h.id ? null : h.id
+}
 
 const openHistory = async (ch: AiChannelView) => {
   historyTarget.value = ch
@@ -305,6 +397,34 @@ const capabilitySummary = (channelKey: string) => {
   const unknown = items.length - supported
   if (unknown > 0) return { text: `${supported}/${items.length} 项支持`, type: 'warning' as const }
   return { text: `全部 ${items.length} 项支持`, type: 'success' as const }
+}
+
+// ---- 建议3：探测结果过期提醒 ----
+/** 探测结果保鲜期：7 天。超期不代表结果错，但上游模型可能已变化。 */
+const PROBE_STALE_DAYS = 7
+
+/**
+ * 探测结果是否可能过期。两种情形：
+ * 1. probed_at 超过 7 天——上游模型能力可能已变化（如版本升级新增 function calling）；
+ * 2. 渠道 updatedAt 晚于 probed_at——配置改过但没重探，旧结果描述的是旧配置。
+ */
+const staleReason = (channelKey: string): string | null => {
+  const r = capabilityMap.value[channelKey]
+  if (!r?.probedAt) return null
+  const probedAt = new Date(r.probedAt).getTime()
+  if (Number.isNaN(probedAt)) return null
+  const ch = channels.value.find((c) => c.channelKey === channelKey)
+  if (ch?.updatedAt) {
+    const updatedAt = new Date(ch.updatedAt).getTime()
+    if (!Number.isNaN(updatedAt) && updatedAt > probedAt) {
+      return '配置在探测后已变更，结果描述的是旧配置'
+    }
+  }
+  const ageDays = (Date.now() - probedAt) / 86_400_000
+  if (ageDays > PROBE_STALE_DAYS) {
+    return `探测已过 ${Math.floor(ageDays)} 天，上游模型能力可能已变化`
+  }
+  return null
 }
 
 const isChatChannel = computed(() => editTarget.value?.channelKey === 'chat')
@@ -450,6 +570,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                 <el-tag :type="capabilitySummary('chat').type" size="small" effect="plain">
                   {{ capabilitySummary('chat').text }}
                 </el-tag>
+                <span v-if="staleReason('chat')" class="stale-flag" :title="staleReason('chat')!">结果可能过期</span>
               </span>
             </div>
             <button v-if="chatChannel" class="edit-btn" @click="openEdit(chatChannel)">编辑</button>
@@ -506,6 +627,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                 <el-tag :type="capabilitySummary('embedding').type" size="small" effect="plain">
                   {{ capabilitySummary('embedding').text }}
                 </el-tag>
+                <span v-if="staleReason('embedding')" class="stale-flag" :title="staleReason('embedding')!">结果可能过期</span>
               </span>
             </div>
             <button v-if="embeddingChannel" class="edit-btn" @click="openEdit(embeddingChannel)">编辑</button>
@@ -553,6 +675,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                 <el-tag :type="capabilitySummary('reranker').type" size="small" effect="plain">
                   {{ capabilitySummary('reranker').text }}
                 </el-tag>
+                <span v-if="staleReason('reranker')" class="stale-flag" :title="staleReason('reranker')!">结果可能过期</span>
               </span>
             </div>
             <button v-if="rerankerChannel" class="edit-btn" @click="openEdit(rerankerChannel)">编辑</button>
@@ -720,11 +843,12 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
         </div>
         <div v-else class="history-list">
           <div v-for="h in historyList" :key="h.id" class="history-item">
-            <div class="history-item__main">
+            <div class="history-item__main" @click="toggleDiff(h)">
               <div class="history-item__meta">
                 <span class="history-id">#{{ h.id }}</span>
                 <span class="history-note">{{ h.changeNote || '变更' }}</span>
                 <span class="history-time">{{ fmtTime(h.changedAt) }} · {{ h.changedBy }}</span>
+                <span class="diff-toggle">{{ diffOpenId === h.id ? '收起对比 ▲' : '对比当前 ▼' }}</span>
               </div>
               <div class="history-item__config">
                 <span class="history-url">{{ h.baseUrl || '—' }}</span>
@@ -732,6 +856,27 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                   {{ h.turboModel ? `${h.turboModel} / ${h.reasonerModel}` : h.model || '—' }}
                 </span>
                 <el-tag v-if="h.status === 'DISABLED'" type="info" size="small">DISABLED</el-tag>
+              </div>
+              <!-- 建议2：当前 vs 目标版本 diff（内嵌展开，非抽屉） -->
+              <div v-if="diffOpenId === h.id" class="diff-panel" @click.stop>
+                <div class="diff-head">
+                  <span class="diff-col-label">字段</span>
+                  <span class="diff-col-label">当前配置</span>
+                  <span class="diff-col-label">回滚目标 #{{ h.id }}</span>
+                </div>
+                <div
+                  v-for="row in diffRows(h)"
+                  :key="row.label"
+                  class="diff-row"
+                  :class="{ 'diff-row--changed': row.changed }"
+                >
+                  <span class="diff-cell diff-cell--label">{{ row.label }}</span>
+                  <span class="diff-cell">{{ row.current }}</span>
+                  <span class="diff-cell">{{ row.target }}</span>
+                </div>
+                <p v-if="diffRows(h).every(r => !r.changed)" class="diff-all-same">
+                  与当前配置完全一致——回滚后无变化
+                </p>
               </div>
             </div>
             <button
@@ -762,6 +907,10 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
         </div>
 
         <div v-else class="capability-list">
+          <!-- 建议3：探测结果过期提醒（配置变更后未重探 / 探测超 7 天） -->
+          <div v-if="staleReason(capabilityTarget.channelKey)" class="stale-banner">
+            ⚠️ {{ staleReason(capabilityTarget.channelKey) }}——建议点击下方按钮重新实测
+          </div>
           <div
             v-for="(item, cap) in capabilityMap[capabilityTarget.channelKey]!.capabilities"
             :key="cap"
@@ -1267,6 +1416,83 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .rollback-btn:hover:not(:disabled) { background: #e0e7ff; }
 
 .rollback-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── 建议2：当前 vs 目标版本 diff ── */
+
+.history-item__main { cursor: pointer; }
+
+.diff-toggle {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-primary, #2563eb);
+  user-select: none;
+}
+
+.diff-panel {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border-color, #e5e7eb);
+  padding-top: 8px;
+  cursor: default;
+}
+
+.diff-head, .diff-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.diff-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3, #9ca3af);
+  padding: 2px 6px;
+}
+
+.diff-row {
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.diff-row--changed { background: rgba(245, 158, 11, 0.12); }
+
+.diff-row--changed .diff-cell--label { color: #b45309; font-weight: 600; }
+
+.diff-cell {
+  font-family: monospace;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-cell--label { font-family: inherit; color: var(--text-secondary, #6b7280); }
+
+.diff-all-same {
+  font-size: 12px;
+  color: #16a34a;
+  margin: 6px 6px 2px;
+}
+
+/* ── 建议3：探测结果过期提醒 ── */
+
+.stale-flag {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #b45309;
+  cursor: help;
+}
+
+.stale-banner {
+  font-size: 12px;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
 
 /* ── V5：能力探测 Dialog ── */
 
