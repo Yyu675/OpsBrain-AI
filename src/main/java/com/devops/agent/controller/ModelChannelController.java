@@ -266,8 +266,10 @@ public class ModelChannelController {
     private String currentOperator() {
         try {
             if (StpUtil.isLogin()) return StpUtil.getLoginIdAsString();
-        } catch (Exception ignore) {
-            // 未登录或非请求上下文（单测切片/内部调用）
+        } catch (Exception e) {
+            // 未登录或非请求上下文（单测切片/内部调用）：回落 system 是预期分支，
+            // 但按静默 catch 契约留下 debug 痕迹——真在线上出现时指向明确。
+            log.debug("[ModelChannel] 操作人解析失败，记 system | {}", e.toString());
         }
         return "system";
     }

@@ -49,6 +49,7 @@ import java.util.concurrent.ExecutorService;
 public class OperationAuditInterceptor implements HandlerInterceptor {
 
     private static final String ATTR_START = "audit.startTime";
+    private static final String ATTR_ACTOR = "audit.actorId";
 
     /** 读方法不审计（量大且无审计价值） */
     private static final Set<String> READ_METHODS = Set.of("GET", "HEAD", "OPTIONS");
@@ -115,6 +116,10 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         request.setAttribute(ATTR_START, System.currentTimeMillis());
+        // 操作人必须在请求线程捕获——SSE 等异步请求的 afterCompletion 跑在
+        // async 线程上，SaToken 上下文（ThreadLocal）已随请求线程归还而丢失，
+        // 在那里解析只能得到 ANONYMOUS + 一条 SaTokenContextException 假失败。
+        request.setAttribute(ATTR_ACTOR, resolveActorId());
         return true;
     }
 
@@ -140,9 +145,14 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
             // MDC 在 afterCompletion 仍在同一请求线程，可安全读取
             String traceId = TraceContext.getTraceId();
 
+            // actorId 用 preHandle 在请求线程捕获的值；attribute 缺失
+            // （拦截器链异常等边缘场景）才退化现场解析
+            Object capturedActor = request.getAttribute(ATTR_ACTOR);
+            String actorId = capturedActor instanceof String s && !s.isBlank() ? s : resolveActorId();
+
             OperationAuditRecord record = new OperationAuditRecord(
                     traceId,
-                    resolveActorId(),
+                    actorId,
                     null,
                     AuditActionRegistry.resolve(request.getMethod(), path),
                     null,

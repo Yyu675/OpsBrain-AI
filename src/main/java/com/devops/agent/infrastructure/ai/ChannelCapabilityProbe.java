@@ -159,19 +159,17 @@ public class ChannelCapabilityProbe {
     }
 
     private CapabilityItem probeBasicChat(LlmEndpointSpec spec) {
-        try {
+        return probeSafely("基础对话", () -> {
             ChatModel model = newChatModel(spec);
             ChatResponse resp = model.chat(ChatRequest.builder()
                     .messages(List.of(UserMessage.from("ping"))).build());
             String text = resp.aiMessage() == null ? null : resp.aiMessage().text();
             return CapabilityItem.supported("基础对话正常（响应 " + (text == null ? 0 : text.length()) + " 字符）");
-        } catch (Exception e) {
-            return classifyError(e, "基础对话");
-        }
+        });
     }
 
     private CapabilityItem probeStreaming(LlmEndpointSpec spec) {
-        try {
+        return probeSafely("流式", () -> {
             StreamingChatModel model = newStreamingChatModel(spec.streaming());
             CountDownLatch latch = new CountDownLatch(1);
             AtomicBoolean gotToken = new AtomicBoolean(false);
@@ -193,13 +191,11 @@ public class ChannelCapabilityProbe {
             return gotToken.get()
                     ? CapabilityItem.supported("流式输出正常（收到增量 token）")
                     : CapabilityItem.unsupported("流式调用完成但无增量 token（上游可能不支持流式）");
-        } catch (Exception e) {
-            return classifyError(e, "流式");
-        }
+        });
     }
 
     private CapabilityItem probeFunctionCalling(LlmEndpointSpec spec) {
-        try {
+        return probeSafely("function calling", () -> {
             ChatModel model = newChatModel(spec);
             ToolSpecification tool = ToolSpecification.builder()
                     .name("get_current_time")
@@ -220,13 +216,11 @@ public class ChannelCapabilityProbe {
             return called
                     ? CapabilityItem.supported("function calling 正常（模型按要求发起工具调用）")
                     : CapabilityItem.unsupported("强制 toolChoice=REQUIRED 下模型未发起工具调用（不支持 function calling）");
-        } catch (Exception e) {
-            return classifyError(e, "function calling");
-        }
+        });
     }
 
     private CapabilityItem probeJsonMode(LlmEndpointSpec spec) {
-        try {
+        return probeSafely("JSON 模式", () -> {
             ChatModel model = newChatModel(spec);
             ChatRequestParameters params = ChatRequestParameters.builder()
                     .responseFormat(ResponseFormat.JSON)
@@ -239,9 +233,7 @@ public class ChannelCapabilityProbe {
             return text.contains("{")
                     ? CapabilityItem.supported("JSON 模式正常（返回结构化内容）")
                     : CapabilityItem.unsupported("JSON 模式下未返回 JSON 内容");
-        } catch (Exception e) {
-            return classifyError(e, "JSON 模式");
-        }
+        });
     }
 
     // ==================== embedding 渠道探测 ====================
@@ -256,34 +248,52 @@ public class ChannelCapabilityProbe {
                 PROBE_TIMEOUT, 0, ch.dimension() == null ? 1536 : ch.dimension());
 
         // 1. 单向量
-        try {
+        CapabilityItem single = probeSafely("向量化", () -> {
             EmbeddingModel model = newEmbeddingModel(spec);
             var emb = model.embed("探测").content();
             int dim = emb.vector().length;
-            results.put("embed", dim == (ch.dimension() == null ? 1536 : ch.dimension())
+            return dim == (ch.dimension() == null ? 1536 : ch.dimension())
                     ? CapabilityItem.supported("向量化正常，维度 " + dim)
-                    : CapabilityItem.unsupported("维度不符：实测 " + dim + "≠配置 " + ch.dimension()));
-        } catch (Exception e) {
-            results.put("embed", classifyError(e, "向量化"));
+                    : CapabilityItem.unsupported("维度不符：实测 " + dim + "≠配置 " + ch.dimension());
+        });
+        results.put("embed", single);
+        if (!"SUPPORTED".equals(single.state())) {
             results.put("embed_batch", CapabilityItem.unknown("单向量化不通，未探测"));
             return;
         }
 
         // 2. 批量（摄取链路用 embedAll）
-        try {
+        results.put("embed_batch", probeSafely("批量向量化", () -> {
             EmbeddingModel model = newEmbeddingModel(spec);
             var embs = model.embedAll(List.of(
                     dev.langchain4j.data.segment.TextSegment.from("a"),
                     dev.langchain4j.data.segment.TextSegment.from("b"))).content();
-            results.put("embed_batch", embs.size() == 2
+            return embs.size() == 2
                     ? CapabilityItem.supported("批量向量化正常（" + embs.size() + " 条一次成功）")
-                    : CapabilityItem.unsupported("批量返回条数不符：" + embs.size()));
-        } catch (Exception e) {
-            results.put("embed_batch", classifyError(e, "批量向量化"));
-        }
+                    : CapabilityItem.unsupported("批量返回条数不符：" + embs.size());
+        }));
     }
 
     // ==================== 错误分类（三态判定核心） ====================
+
+    /**
+     * 单项探测的统一异常兜底：任何探测失败都转为 UNKNOWN/UNSUPPORTED 结果
+     * （三态语义：探测失败 ≠ 不支持），并留 WARN 线索（静默 catch 契约）。
+     * 探测结果会落库透出前端，异常细节也写进 detail，故日志用 WARN 不重复堆栈。
+     */
+    private CapabilityItem probeSafely(String what, ProbeCall call) {
+        try {
+            return call.run();
+        } catch (Exception e) {
+            log.warn("[CapabilityProbe] {} 探测异常（已记为 UNKNOWN/UNSUPPORTED）| {}", what, e.toString());
+            return classifyError(e, what);
+        }
+    }
+
+    @FunctionalInterface
+    private interface ProbeCall {
+        CapabilityItem run() throws Exception;
+    }
 
     /**
      * 把异常归为 UNSUPPORTED 或 UNKNOWN。判据是错误消息特征——
@@ -356,7 +366,9 @@ public class ChannelCapabilityProbe {
             return JSON.readValue(json,
                     new com.fasterxml.jackson.core.type.TypeReference<LinkedHashMap<String, CapabilityItem>>() {});
         } catch (Exception e) {
-            // 读不出就当作没有记录——探测结果可重新实测，不该因脏数据让功能挂掉
+            // 读不出就当作没有记录——探测结果可重新实测，不该因脏数据让功能挂掉。
+            // 但脏数据本身是异常信号（有人手改库/版本错位），留 WARN 指向（静默 catch 契约）。
+            log.warn("[CapabilityProbe] 已存探测结果 JSON 解析失败（按未探测处理）| {}", e.toString());
             return new LinkedHashMap<>();
         }
     }
