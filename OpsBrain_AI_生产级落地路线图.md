@@ -68,7 +68,7 @@
 | **L1 问答** | SSE 流式、大小模型分流、三层记忆、上下文预算裁剪、四层防幻觉、成本配额、全链路追踪 | ✅ 可用 | `DevOpsAgentServiceImpl`(985→更多)、`ContextBudgetManager`、`CostQuotaManager`、`SemanticCacheService` |
 | **L2 感知** | Alertmanager webhook → dedupKey 去重 → 5min 窗口聚合抑制 → 自动建单 → WebSocket → 钉钉 | ✅ 可用 | `AlertService`(546 行)、`AlertmanagerWebhook`、`AlertWebSocketNotifier` |
 | **L3 协同** | 风险分级、动作白名单、自动化策略(dry-run)、审批流、Saga 补偿、全量审计 | ✅ 可用（治理对象为建单） | `sys_action_allowlist`/`sys_risk_policy`/`sys_automation_policy` 三表分工、`ApprovalOrchestrator`、`SagaCompensationManager` |
-| **L4 自愈** | 低危自动执行 | ⚠️ 骨架就绪、执行器为零 | 前端 4 条路由指向 `FutureCapability.vue`；`restartPod` 等动作**未注册为工具** |
+| **L4 自愈** | 低危自动执行 | ⚠️ 执行器已落地，待生产实证 | `domain/healing`：K8s `restart pod` / `scale` 两执行器 + 就绪验证 + 失败自动回滚 + 台账九态 + `HealingGate` 治理门 + `HealingAutoTrigger` 告警触发；`GET /healing/stats` 出自动闭环率/验证失败率/撤销成功率。金丝雀爆炸半径拦截与监控联动回滚未做 |
 | **L5 自治** | 预测性运维 | ⏳ 未启动 | — |
 
 ### 1.3 Agent 工具现状（核心瓶颈）
@@ -635,6 +635,8 @@ public String queryServiceMetrics(
 ## 7. 阶段 3：L4 受控自愈（3 周 · 🟠 P1）
 
 > **目标**：把「治理骨架就绪、执行器为零」变成「首批 2 个执行器真实可用，全程走审批 + 灰度 + 验证 + 回滚」。
+>
+> ✅ **2026-09-24 源码实证：本阶段主体已完成。** `domain/healing` 落地了 K8s `restart pod` 与 `scale` 两个真执行器（fabric8），带就绪验证、失败自动回滚、执行台账九态流转、`HealingGate` 三表治理门与 `HealingAutoTrigger` 告警触发；前端自愈路由已从 `FutureCapability.vue` 占位切到 `HealingCenter.vue` / `HealingExecutionDetail.vue`。下方 7.x 的任务拆解保留作实施记录。**尚未做的**：金丝雀爆炸半径拦截、监控联动回滚，以及真实流量下的生产实证——执行器已能跑，还不等于可以放开自动执行。
 
 > ⚠️ **这一阶段风险最高。** 执行器一旦出错就是生产事故。必须严格遵守：**先 dry-run，再人工审批，最后才放开自动**，且爆炸半径强制收敛。
 

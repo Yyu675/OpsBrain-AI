@@ -16,7 +16,7 @@
 >
 > ---
 >
-> **最后更新**：2026-09-09（批 69 瘦身）| **当前阶段**：S0-S1 全线就绪（L1.5 闭环完成，见 PROGRESS.md 与 §七）
+> **最后更新**：2026-09-24（阶段描述校准）| **当前阶段**：L1~L3 已闭环，L4 受控自愈执行器已落地（`domain/healing`，待生产实证），L5 未启动
 
 ---
  
@@ -62,9 +62,9 @@
 | 阶段 | 自治等级 | 核心能力 | 时间线 | 状态 |
 | :---: | :---: | :--- | :---: | :---: |
 | **L1** | 被动问答 | 用户提问 → AI 检索知识库 → 自动创建工单 | 0-6 月 | ✅ **已完成** |
-| **L2** | 实时监测 | Prometheus Webhook → AI 主动分析 → 分级推送 | 6-12 月 | 📝 **规划中** |
-| **L3** | 智能分级 | P0/P1 人机协同审批，P3/P4 低危自动处理 | 12-18 月 | 📅 **待启动** |
-| **L4** | 半自动自愈 | AI 自动执行脚本（需人审批），闭环验证 | 18-24 月 | 📅 **待启动** |
+| **L2** | 实时监测 | Prometheus Webhook → AI 主动分析 → 分级推送 | 6-12 月 | ✅ **已完成**（告警降噪/自动建单/主动触达/趋势） |
+| **L3** | 智能分级 | P0/P1 人机协同审批，P3/P4 低危自动处理 | 12-18 月 | ✅ **闭环完成**（审批中心 + 诊断 + 根因 + 验证 + 复盘） |
+| **L4** | 半自动自愈 | AI 自动执行脚本（需人审批），闭环验证 | 18-24 月 | ⚠️ **执行器/编排已落地**（`domain/healing`：K8s restart/scale + 验证 + undo + 台账 + 告警触发），待生产实证 |
 | **L5** | 全自动自愈 | 预测性运维，容量规划，故障提前 3 天预警 | 24+ 月 | 📅 **待启动** |
 
 **详细演进路线**：见 `docs/02-architecture-design/OpsBrain_AI_L1至L5全自动智能自愈与商业化拓展蓝图.md`
@@ -246,9 +246,7 @@
 
 ## 七、当前工作状态与下一步
 
-### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
-
-### 7.1 当前阶段：L1.5 工单业务闭环（已全部完成）
+### 7.1 当前阶段：L1~L3 闭环 + L4 受控自愈执行器落地（详见 PRD §1.3 / §九）
 
 **已验证通过**：
 - ✅ 代码结构完整（六层架构，M1-M8 全部实现）
@@ -280,20 +278,22 @@
 - ✅ **方案 B-1：多维趋势分析**（`/dashboard/trends` 三条线 + 共享 TrendChart + AnalyticsMode/Dashboard/TicketInsights 三处接入，见 6.51）
 - ✅ **方案 B-2：冷记忆归档**（`ColdMemoryArchiveScheduler` → MinIO 独立桶，幂等 + 单条失败隔离 + 开关默认关；顺带修正 6.7「冷层=历史全量」失实描述，见 6.52）
 - ✅ **知识库 V2：多知识库 + 按库切片参数 + 二进制上传解析**（`sys_knowledge_base` 三层结构 base→doc→chunk，切片三参数挂库维度逐字段回落全局默认；`kb_id` 冗余下沉 chunk 免 JOIN 保 HNSW；`POST /docs/upload` 走 Tika 解析 + MinIO 原件留存（Fail-Safe）+ 复用既有清洗/去重/向量化链路。决策全文见 `docs/09-decisions/多知识库按库切片参数与二进制上传解析.md`）
+- ✅ **L4 受控自愈执行器落地**（`domain/healing`：K8s restart/scale 真执行器（fabric8）+ 就绪验证 + 失败自动回滚 undo + 台账九态流转 + `HealingAutoTrigger` 告警→策略→自愈触发引擎；治理门 `HealingGate` 按风险/白名单/自动化策略三表裁决。2026-09-24 源码实证，此前文档误写「执行器为零」，现修正。金丝雀爆炸半径拦截与监控联动回滚待做）
+- ✅ **数据知识飞轮闭合**（2026-09-24）：复盘保存自动沉淀 DRAFT 知识草稿（`PostmortemDraftOrchestrator`，四道守卫、LLM/结构化模板双轨、AI 不替人决策）；AI 分析反馈后端自取 citations 反查 chunk 回流 `sys_knowledge_boost`（`KnowledgeBoostRepository.resolveChunkIds`）；boost 公式加地板/天花板 [0.2,5.0]；`GET /healing/stats` 台账聚合（自动闭环率/误操作率/回滚率）；工单详情「已沉淀为知识」徽标含反馈计数
+- ✅ **告警源适配器接缝**（`AlertSignal` + `AlertSourceAdapter` + `AlertmanagerSourceAdapter`，核心链按归一化信号处理，接第二信号源不动主流程；2026-09-24）
+- ✅ **契约修复：来源回链 source_ticket_id BIGINT→VARCHAR(64)**（工单号是 `TKT-…` 字符串流水号，BIGINT 存不进 → 前端 `Number('TKT-…')=NaN→null`，回链此前从未写入；V6 迁移，实体/DTO/仓储/前端类型全链同步）
+- ✅ **L1 问答评测集已建**（`eval_dataset.json` 152 条正/负例 + `AgentEvaluationTest` 契约/RAG/端到端三层评测 + `EvalMetricsWriter`/`RetrievalRankMetrics`；此前文档误写「待建（R4）」，实为 D3 已建）
 
 ### 7.2 下一步计划
 
-**Step 1**：L2 告警 Stage 3 ✅ 已完成（见 6.48）
+**Step 1**：L4 受控自愈生产实证（mock 执行器 + 真实告警收集自动闭环率，再小流量开 K8s 只读白名单）
 
-**Step 2**：L2 趋势分析（AnalyticsMode 接 ECharts + `/tickets/stats` 历史趋势）
+**Step 2**：诊断链路接入知识库（`LlmHypothesisGenerator` 出假设前检索落证据，打通「诊断引用知识→诊断反馈回流」飞轮）
 
-**Step 2**：L2 趋势分析（AnalyticsMode 接 ECharts + `/tickets/stats` 历史趋势）
-
-**Step 3**：冷记忆归档 + 归档对象存储落地（L3 前提，待排期）
+**Step 3**：知识运营看板（PRD §5.5）+ 聊天答案反馈按钮接 boost
 
 **已知未实现（均为诚实占位，非缺陷）**：
-- `AnalyticsMode`（趋势分析）—— 空实现 + 「开发中」提示
-- `TicketInsights` / `AIContextPanel` 趋势区 —— 标注「即将上线」
+- 金丝雀爆炸半径拦截、自愈的监控联动回滚（L4 V1.3）
 - 帮助中心「在线咨询」—— disabled + 「即将上线」
 
 ---
