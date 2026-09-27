@@ -29,6 +29,7 @@ import RailButton from '@/components/common/RailButton.vue'
 import KnowledgeBaseManageDialog from '@/components/knowledge/KnowledgeBaseManageDialog.vue'
 import KnowledgeUploadDialog from '@/components/knowledge/KnowledgeUploadDialog.vue'
 import { useHotkeys } from '@/composables/useHotkeys'
+import { useSearchHotkey } from '@/composables/useSearchHotkey'
 import { notify, handleServerError } from '@/utils/notify'
 
 const router = useRouter()
@@ -44,15 +45,12 @@ const store = useKnowledgeStore()
 const sidebarCollapsed = ref(false)
 const sidebarRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
 
-// `[` 收起/展开侧栏、`/` 聚焦搜索、Esc 清空搜索。
-// useHotkeys 已排除输入框聚焦场景，不会干扰搜索框输入
+// `[` 收起/展开侧栏；`/` 聚焦搜索 + Esc 清空走共享 composable（与工单列表同一套）
 const searchInputRef = ref<HTMLInputElement | null>(null)
 useHotkeys([
   { key: '[', description: '收起/展开分类栏', handler: () => sidebarRef.value?.toggle() },
-  // 「/ 聚焦搜索」是检索型页面的行业惯例（GitHub/GitLab/Stripe 同款）——
-  // 值班排障时少一次鼠标找框的动作
-  { key: '/', description: '聚焦搜索框', handler: () => searchInputRef.value?.focus() },
 ])
+const { onSearchEsc } = useSearchHotkey(searchInputRef, () => { searchQuery.value = ''; onSearchInput() })
 
 // 从 URL 恢复筛选状态
 const searchQuery = ref(String(route.query.q ?? ''))
@@ -391,7 +389,7 @@ onMounted(() => {
           ref="searchInputRef"
           v-model="searchQuery"
           @input="onSearchInput"
-          @keydown.esc="searchQuery = ''; onSearchInput(); ($event.target as HTMLInputElement).blur()"
+          @keydown.esc="onSearchEsc"
           type="text"
           class="search-input"
           placeholder="搜索知识文档、排障指南、操作手册..."

@@ -16,6 +16,7 @@ import ServerPagination from '@/components/common/ServerPagination.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
 import { useTicketFilters } from '@/composables/useTicketFilters'
+import { useSearchHotkey } from '@/composables/useSearchHotkey'
 import { useTicketColumns, CONFIGURABLE_COLUMNS } from '@/composables/useTicketColumns'
 import { useTicketBulkActions } from '@/composables/useTicketBulkActions'
 import {
@@ -438,6 +439,10 @@ const applySearch = debounce((v: string) => {
 
 const onSearchInput = () => applySearch(searchQuery.value)
 
+// 「/」聚焦搜索 + Esc 清空（与知识库共用 useSearchHotkey，避免两页各写一套）
+const searchInputRef = ref<HTMLInputElement | null>(null)
+const { onSearchEsc } = useSearchHotkey(searchInputRef, () => { searchQuery.value = ''; onSearchInput() })
+
 onBeforeUnmount(() => {
   applySearch.flush()
 })
@@ -567,8 +572,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
         <div class="filter-search">
           <Search class="filter-search-icon" :size="18" />
           <input
+            ref="searchInputRef"
             v-model="searchQuery"
             @input="onSearchInput"
+            @keydown.esc="onSearchEsc"
             type="text"
             class="filter-search-input"
             placeholder="搜索工单号、标题、描述..."

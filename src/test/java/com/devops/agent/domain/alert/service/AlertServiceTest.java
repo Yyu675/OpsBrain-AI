@@ -1022,6 +1022,19 @@ class AlertServiceTest {
             Alert a = alertWith("P2", "FIRING", null, java.time.LocalDateTime.now().minusMinutes(1));
             org.junit.jupiter.api.Assertions.assertFalse(service.isObserving(a));
         }
+        @Test
+        @DisplayName("风暴模式进行中观察窗不补建 —— 补建等于绕过风暴熔断（9-27 压测实测缺陷）")
+        void stormActiveSkipsBackfill() {
+            enableObservation();
+            ReflectionTestUtils.setField(service, "stormActive", true);
+
+            service.createDelayedTickets();
+
+            // 连到期查询都不该发——风暴期补建没有例外
+            verify(alertRepository, never()).findObservationDue(any(), anyInt(), anyInt(), anyInt());
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+        }
     }
 
 }

@@ -719,6 +719,13 @@ public class AlertService {
         if (!autoTicketEnabled || !observationEnabled) {
             return;
         }
+        // 风暴期不补建：低级别告警已被风暴摘要聚合，此时补建等于绕过风暴熔断
+        // （9-27 风暴压测实测：观察窗补建在风暴期捞了 183 条到期告警，
+        //  靠聚合抑制才收敛到 1 张工单——补上这道闸门后连那次收敛都不需要）
+        if (stormActive) {
+            log.info("🌊 [AlertService] 风暴模式进行中，观察窗补建暂停一轮");
+            return;
+        }
         Set<String> levels = observationLevelSet();
         List<Alert> due = alertRepository.findObservationDue(
                 List.copyOf(levels), observationWindowMinutes, OBSERVATION_LOOKBACK_HOURS, OBSERVATION_BATCH_LIMIT);
