@@ -94,31 +94,31 @@ const onBlur = () => { nextTick(() => { if (!document.activeElement?.closest('.g
 <style scoped>
 .gsearch { position: relative; width: 260px; }
 .gsearch-input {
-  width: 100%; height: 32px; padding: 0 32px 0 12px; border: 1px solid var(--border-color, #d9d9d9);
-  border-radius: 6px; font-size: 13px; background: var(--bg-input, #f5f7fa); outline: none;
+  width: 100%; height: 32px; padding: 0 32px 0 12px; border: 1px solid var(--border-1);
+  border-radius: 6px; font-size: 13px; background: var(--surface-2); outline: none;
   transition: border-color .2s;
 }
-.gsearch-input:focus { border-color: var(--color-primary, #2563eb); background: var(--color-surface, #fff); }
+.gsearch-input:focus { border-color: var(--brand, #2563eb); background: var(--surface-1, #fff); }
 .gsearch-spinner {
   position: absolute; right: 10px; top: 8px; width: 14px; height: 14px;
-  border: 2px solid #d9d9d9; border-top-color: var(--color-primary, #2563eb);
+  border: 2px solid #d9d9d9; border-top-color: var(--brand, #2563eb);
   border-radius: 50%; animation: gs-spin .6s linear infinite;
 }
 @keyframes gs-spin { to { transform: rotate(360deg); } }
 .gsearch-dropdown {
-  position: absolute; top: 38px; left: 0; right: 0; background: var(--color-surface, #fff);
-  border: 1px solid var(--border-color, #e4e7ed); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.1);
+  position: absolute; top: 38px; left: 0; right: 0; background: var(--surface-1, #fff);
+  border: 1px solid var(--border-1); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.1);
   max-height: 360px; overflow-y: auto; z-index: 2000;
 }
 .gsearch-item {
   display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px;
-  border-bottom: 1px solid var(--border-color, #f0f0f0);
+  border-bottom: 1px solid var(--border-1);
 }
 .gsearch-item:last-child { border-bottom: none; }
 .gsearch-item:hover, .gsearch-item--sel { background: rgba(37,99,235,.06); }
 .gsearch-kind { flex-shrink: 0; width: 22px; text-align: center; font-size: 13px; }
 .gsearch-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-1); }
-.gsearch-tag { flex-shrink: 0; font-size: 11px; padding: 1px 6px; border-radius: 3px; background: rgba(37,99,235,.1); color: var(--color-primary, #2563eb); }
+.gsearch-tag { flex-shrink: 0; font-size: 11px; padding: 1px 6px; border-radius: 3px; background: rgba(37,99,235,.1); color: var(--brand, #2563eb); }
 .gsearch-sub { flex-shrink: 0; font-size: 11px; color: var(--text-3, #909399); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gsearch-fade-enter-active, .gsearch-fade-leave-active { transition: opacity .15s; }
 .gsearch-fade-enter-from, .gsearch-fade-leave-to { opacity: 0; }

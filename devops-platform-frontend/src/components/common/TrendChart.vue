@@ -2,7 +2,7 @@
 /**
  * TrendChart — 共享趋势折线/柱状图（ECharts 按需引入）
  *
- * 三处复用（AnalyticsMode / Dashboard / TicketInsights），一处实现避免各写一套配置漂移。
+ * 多处看板复用（Dashboard / TicketInsights / Monitoring / Effectiveness），一处实现避免各写一套配置漂移。
  *
  * 按需引入而非 `import * as echarts`：整包约 1MB，本项目只用折线+柱状+提示框+图例+网格，
  * tree-shaking 后仅几十 KB。vendor 包已有 2.9MB 告警，不宜再无谓增大。
@@ -61,6 +61,8 @@ const props = withDefaults(defineProps<{
   showLegend?: boolean
   /** 数据点较多时启用横向缩放 */
   enableZoom?: boolean
+  /** 目标阈值线（画在左轴上，如 SLA 目标 90%）；虚线 + 右端标注 */
+  targetLine?: { value: number; label: string }
 }>(), {
   height: '280px',
   showLegend: true,
@@ -181,6 +183,22 @@ const buildOption = (): echarts.EChartsCoreOption => {
             opacity: 0.12,
             color: s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]
           }
+        : undefined,
+      // 目标线只挂第一个系列：N 条数据线共用一根左轴，目标线画一次就够，
+      // 每条都画会叠出 N 根重合的虚线
+      markLine: i === 0 && props.targetLine
+        ? {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { color: '#e6a23c', type: 'dashed', width: 1.5 },
+            label: {
+              formatter: props.targetLine.label,
+              position: 'insideEndTop',
+              color: '#e6a23c',
+              fontSize: 11
+            },
+            data: [{ yAxis: props.targetLine.value }]
+          }
         : undefined
     }))
   }
@@ -197,7 +215,9 @@ const render = () => {
 
   // chart-click：点击数据点发出钻取事件（供父组件导航到筛选列表）
   chartInstance.value.off('click')
-  chartInstance.value.on('click', (params: any) => {
+  // ECharts 事件参数是宽对象，这里只取三字段——用结构化类型而非 any，
+  // 否则 emits 的 string/number 转换失去编译期校验
+  chartInstance.value.on('click', (params: { seriesName?: unknown; name?: unknown; value?: unknown }) => {
     emit('chart-click', {
       seriesName: String(params.seriesName ?? ''),
       label: String(params.name ?? ''),

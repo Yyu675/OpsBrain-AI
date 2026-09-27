@@ -3,7 +3,7 @@
  * 对应后端: GET /api/v1/dashboard/overview
  */
 
-import { API_ENDPOINTS } from '../config/api'
+import { API_BASE, API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz } from '../utils/http'
 import type { DashboardOverview } from './types'
 
@@ -29,15 +29,89 @@ export interface ClosureMetrics {
   mttmMinutes: number | null
   mttrMinutes: number | null
   skipRate: number | null
+  /** 告警自动建单数（creator=alert-bot）——告警压缩比的分母 */
+  alertSourced?: number
+  /** 复盘总数（复盘完成率分子） */
+  postmortemTotal?: number
+  /** 已完结工单数（复盘完成率分母） */
+  finishedTotal?: number
+  /** 复盘完成率（%）；已完结单为 0 时给 null——「没有完结单」与「复盘率 0%」是两回事 */
+  postmortemRate?: number | null
+  /** 时间窗口径字段（传 days 才出现）：窗口内告警数与告警建单数 */
+  windowDays?: number
+  alertsInWindow?: number
+  alertSourcedInWindow?: number
+  /** 派生事件数（Incident 方案 C，2026-09-27）：同 system+service+10分钟窗归并为一个事件 */
+  incidentsInWindow?: number
+  /** 全时段派生事件数（不传 days 时出现） */
+  incidentsTotal?: number
 }
 
 /**
  * 获取工单闭环度量
+ *
+ * @param days 时间窗（天）；传了则响应附带同窗的告警/建单计数（压缩比同窗口径）
  */
-export async function getClosureMetrics(): Promise<ClosureMetrics> {
-  const url = `${API_ENDPOINTS.TICKETS}/metrics/closure`
+export async function getClosureMetrics(days?: number): Promise<ClosureMetrics> {
+  const params = days ? `?days=${days}` : ''
+  const url = `${API_ENDPOINTS.TICKETS}/metrics/closure${params}`
   const payload = await http.get<unknown>(url)
   return unwrapBiz<ClosureMetrics>(payload, '获取闭环度量失败')
+}
+
+/** 文档级反馈健康度（知识治理出口） */
+export interface DocHealth {
+  docId: number
+  title: string
+  helpful: number
+  wrong: number
+  net: number
+}
+
+export async function getDocHealth(): Promise<DocHealth[]> {
+  const payload = await http.get<unknown>(`${API_ENDPOINTS.KNOWLEDGE_DOCS}/health`)
+  const data = unwrapBiz<DocHealth[]>(payload, '获取知识健康度失败')
+  return Array.isArray(data) ? data : []
+}
+
+/** 已完结但没有复盘的工单（复盘完成率的行动出口清单） */
+export interface MissingPostmortemItem {
+  id: string
+  title: string
+  status: string
+  create_time: string
+}
+
+export async function getMissingPostmortem(limit = 20): Promise<MissingPostmortemItem[]> {
+  const payload = await http.get<unknown>(`${API_ENDPOINTS.TICKETS}/metrics/closure/missing-postmortem?limit=${limit}`)
+  const data = unwrapBiz<MissingPostmortemItem[]>(payload, '获取未复盘工单失败')
+  return Array.isArray(data) ? data : []
+}
+
+/** 效能指标每日快照行（效能大盘趋势图数据源） */
+export interface EffectivenessSnapshot {
+  snapshot_date: string
+  total_tickets: number
+  finished_tickets: number
+  postmortem_count: number
+  alert_sourced_tickets: number
+  alerts_total: number
+  diagnosis_total: number
+  diagnosis_sufficient: number
+  knowledge_evidence: number
+  knowledge_hits: number
+  healing_total: number
+  healing_succeeded: number
+}
+
+/**
+ * 效能指标趋势（近 N 天快照）。
+ * 快照按天落一行（调度器），读的是历史水位而非每次重算。
+ */
+export async function getEffectivenessTrend(days = 30): Promise<EffectivenessSnapshot[]> {
+  const payload = await http.get<unknown>(`${API_BASE}/dashboard/effectiveness/trend?days=${days}`)
+  const data = unwrapBiz<EffectivenessSnapshot[]>(payload, '获取效能趋势失败')
+  return Array.isArray(data) ? data : []
 }
 
 /**

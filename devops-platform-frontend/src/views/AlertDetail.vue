@@ -14,7 +14,7 @@
  * acknowledgedAt/resolvedAt），不新增表——告警本就是单实体，无子表。
  */
 import { notify } from '@/utils/notify'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
@@ -22,6 +22,7 @@ import {
   RefreshCw, Hash, Server, Boxes, Radio, Ticket
 } from 'lucide-vue-next'
 import { useAlertDetailQuery, useAlertMutations } from '@/api/queries/alerts.query'
+import { fetchTicketById } from '@/api/tickets'
 import { levelTagType, statusTagType, getAlertStatusLabel } from '@/utils/alert'
 import { formatAbsolute, parseDate } from '@/utils/time'
 import RelativeTime from '@/components/common/RelativeTime.vue'
@@ -62,6 +63,28 @@ const acting = computed(() => ackMutation.isPending.value || resolveMutation.isP
 
 /** 手动刷新（加载失败时的重试入口） */
 const loadDetail = () => detailQuery.refetch()
+
+// ==================== 聚合抑制识别 ====================
+// 告警的 ticketId 有两种来路：本告警建的单（ticket.sourceTraceId == 本告警 dedupKey），
+// 或窗口内被并入同组告警的工单（sourceTraceId 属于组代表告警）。
+// 两者界面上一字之差，排障时含义完全不同——并入的单子的处理进展不由本告警驱动。
+const groupTicket = ref<{ sourceTraceId?: string | null } | null>(null)
+watch(() => alert.value?.ticketId, async (tid) => {
+  groupTicket.value = null
+  if (!tid) return
+  try {
+    groupTicket.value = await fetchTicketById(tid)
+  } catch {
+    // 拉不到就只展示工单号——聚合标注是增强信息，拿不到不猜
+  }
+}, { immediate: true })
+
+/** true = 本告警被并入组工单（聚合抑制），并非由它建单 */
+const isAggregated = computed(() => {
+  const cur = alert.value
+  const t = groupTicket.value
+  return !!(cur?.ticketId && t?.sourceTraceId && cur.dedupKey && t.sourceTraceId !== cur.dedupKey)
+})
 
 // ==================== 处置动作 ====================
 // 处置成功后的数据刷新由 mutation 的 onSuccess → invalidateQueries 完成。
@@ -352,8 +375,11 @@ const goList = () => router.push('/alerts')
                 <Ticket :size="15" />
                 {{ alert.ticketId }}
               </RouterLink>
-              <p v-else class="desc-empty">
-                未关联工单（自动建单可能被关闭，或该告警级别未触发建单）
+              <p v-if="alert.ticketId && isAggregated" class="ticket-aggregate-note">
+                聚合抑制：本告警并入同组工单，未单独建单（窗口内同服务已有建单告警）
+              </p>
+              <p v-else-if="!alert.ticketId" class="desc-empty">
+                未关联工单（自动建单可能被关闭，或该告警级别低于建单门槛）
               </p>
             </section>
           </aside>
@@ -366,7 +392,7 @@ const goList = () => router.push('/alerts')
 <style scoped lang="scss">
 .alert-detail {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .main-container {
@@ -391,25 +417,25 @@ const goList = () => router.push('/alerts')
   justify-content: center;
   gap: 10px;
   min-height: 260px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 32px;
 }
 
-.state-icon-warn { color: var(--color-warning, var(--warning)); }
+.state-icon-warn { color: var(--warning, var(--warning)); }
 
 .state-title {
   margin: 0;
   font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .state-text {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .spin { animation: spin 1s linear infinite; }
@@ -421,7 +447,7 @@ const goList = () => router.push('/alerts')
 
 /* ===== 头部卡 ===== */
 .header-card {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 20px 24px;
@@ -449,7 +475,7 @@ const goList = () => router.push('/alerts')
   margin: 0;
   font-size: var(--text-xl);
   font-weight: var(--weight-bold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   word-break: break-word;
 }
 
@@ -459,7 +485,7 @@ const goList = () => router.push('/alerts')
   gap: 8px;
   margin-top: 10px;
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   flex-wrap: wrap;
 }
 
@@ -469,7 +495,7 @@ const goList = () => router.push('/alerts')
   gap: 4px;
 }
 
-.meta-sep { color: var(--color-text-tertiary); }
+.meta-sep { color: var(--text-3); }
 
 .header-actions {
   display: flex;
@@ -483,7 +509,7 @@ const goList = () => router.push('/alerts')
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
   cursor: pointer;
@@ -494,17 +520,17 @@ const goList = () => router.push('/alerts')
 }
 
 .btn-outline {
-  border: 1px solid var(--color-border-light);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-1);
+  color: var(--text-1);
 
-  &:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 }
 
 .btn-primary {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-text-inverse, #fff);
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: var(--text-inverse, #fff);
 
   &:hover:not(:disabled) { filter: brightness(1.06); }
 }
@@ -529,7 +555,7 @@ const goList = () => router.push('/alerts')
 }
 
 .card {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 18px 20px;
@@ -539,14 +565,14 @@ const goList = () => router.push('/alerts')
   margin: 0 0 12px 0;
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .desc-body {
   margin: 0;
   font-size: var(--text-sm);
   line-height: 1.65;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -554,7 +580,7 @@ const goList = () => router.push('/alerts')
 .desc-empty {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 /* ===== 时间线 ===== */
@@ -579,7 +605,7 @@ const goList = () => router.push('/alerts')
     top: 20px;
     bottom: 0;
     width: 2px;
-    background: var(--color-border-light);
+    background: var(--border-1);
   }
 
   &:last-child { padding-bottom: 0; }
@@ -593,14 +619,14 @@ const goList = () => router.push('/alerts')
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--color-border-light);
-  background: var(--color-surface);
+  border: 2px solid var(--border-1);
+  background: var(--surface-1);
   color: transparent;
   z-index: 1;
 
   .tl-node.done & {
-    border-color: var(--state-success, var(--success));
-    background: var(--state-success, var(--success));
+    border-color: var(--success, var(--success));
+    background: var(--success, var(--success));
     color: #fff;
   }
 }
@@ -610,28 +636,28 @@ const goList = () => router.push('/alerts')
 .tl-label {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 
-  .tl-node.pending & { color: var(--color-text-tertiary); font-weight: var(--weight-normal); }
+  .tl-node.pending & { color: var(--text-3); font-weight: var(--weight-normal); }
 }
 
 .tl-pending {
   margin-left: 6px;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .tl-time {
   margin-top: 2px;
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   font-family: var(--font-mono, monospace);
 }
 
 .tl-hint {
   margin-top: 2px;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 /* ===== 属性列表 ===== */
@@ -653,13 +679,13 @@ const goList = () => router.push('/alerts')
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
     flex-shrink: 0;
   }
 
   dd {
     margin: 0;
-    color: var(--color-text-primary);
+    color: var(--text-1);
     text-align: right;
     word-break: break-word;
     min-width: 0;
@@ -678,24 +704,30 @@ const goList = () => router.push('/alerts')
 .dedup {
   margin-top: 4px !important;
   padding: 6px 8px;
-  background: var(--color-bg-sunken, var(--surface-2));
+  background: var(--surface-2, var(--surface-2));
   border-radius: var(--radius-sm);
   word-break: break-all;
 }
 
 .val-warn {
-  color: var(--color-warning, var(--warning));
+  color: var(--warning, var(--warning));
   font-weight: var(--weight-semibold);
 }
 
 /* ===== 关联工单 ===== */
+.ticket-aggregate-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
 .ticket-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: var(--text-sm);
   font-family: var(--font-mono, monospace);
-  color: var(--color-primary);
+  color: var(--brand);
   text-decoration: none;
 
   &:hover { text-decoration: underline; }

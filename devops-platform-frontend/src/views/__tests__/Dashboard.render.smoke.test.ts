@@ -11,17 +11,20 @@
  * **「没有数据」与「数值为 0」必须区分**这条线上：
  *
  * <ul>
- *   <li>MTTA 为 null 表示「还没有任何工单被首响过」，
- *       显示成 `0 分钟` 会让人以为响应快到秒级——方向完全相反；</li>
  *   <li>`totalQueries === 0` 要挂醒目横幅，
- *       否则一排 0 会被当成「系统很闲」而不是「数据没接上」；</li>
- *   <li>跳过验证率为 null 同理。</li>
+ *       否则一排 0 会被当成「系统很闲」而不是「数据没接上」。</li>
  * </ul>
  *
- * ── 四个区块独立降级（6.51 契约） ────────────────────────────
- * 四个查询各自独立：趋势拉失败只让图表区降级，
+ * ── 各区块独立降级（6.51 契约） ──────────────────────────────
+ * 每个查询各自独立：趋势拉失败只让图表区降级，
  * 不能连累已经加载成功的 KPI。这是此前 `Promise.all + catch` 改造的目的，
  * 但改完同样没有测试守着——本文件把它钉住。
+ *
+ * ── 2026-09-26 瘦身 ──────────────────────────────────────────
+ * 闭环度量（MTTA/MTTM/MTTR/阶段完成率）与诊断区（会话/校准/AI 反馈/
+ * 诊断量趋势）迁往效能大盘，相关断言同迁 Effectiveness.test.ts；
+ * 本文件只守瘦身后的范围：KPI、无数据横幅、SLA 风险、告警流、
+ * 模型分布、成本/工单趋势、根因分布。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
@@ -37,17 +40,12 @@ vi.mock('@/utils/notify', () => ({
 
 const api = vi.hoisted(() => ({
   getDashboardOverview: vi.fn(),
-  getClosureMetrics: vi.fn(),
   getRootCauseStats: vi.fn(),
   getTrends: vi.fn(),
-  getDiagnosisBoard: vi.fn(),
   getSlaRisk: vi.fn(),
   getDashboardStats: vi.fn(),
-  fetchAiAnalysisStats: vi.fn(),
 }))
 vi.mock('@/api/dashboard', () => api)
-// AI 效果区（4-4.1 半部先行）：query hook 经 dashboard.query 间接 import 此模块
-vi.mock('@/api/ticketAiAnalysis', () => ({ fetchAiAnalysisStats: api.fetchAiAnalysisStats }))
 // 批88 P3：Dashboard 用 useRouter（KPI 点击跳转 + 趋势下钻），smoke 测试需桩
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -85,19 +83,6 @@ const overview = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-const closure = (over: Record<string, unknown> = {}) => ({
-  total: 100,
-  firstResponded: 90,
-  mitigated: 70,
-  rootCauseConfirmed: 50,
-  verified: 40,
-  mttaMinutes: 12,
-  mttmMinutes: 45,
-  mttrMinutes: 180,
-  skipRate: 8.5,
-  ...over,
-})
-
 const trends = (over: Record<string, unknown> = {}) => ({
   days: ['08-20', '08-21', '08-22'],
   created: [5, 8, 3],
@@ -107,44 +92,10 @@ const trends = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-const diagnosisBoard = (over: Record<string, unknown> = {}) => ({
-  windowDays: 7,
-  sessions: {
-    total: 48,
-    byStatus: [{ status: 'COMPLETED', count: 40 }],
-    avgDurationSeconds: 12.35,
-    avgCostRmb: 0.0123,
-    sufficiency: [{ sufficiency: 'SUFFICIENT', count: 30 }],
-  },
-  evidenceDirections: [
-    { type: 'metrics', total: 40, success: 30, noData: 6, failed: 4, unavailable: 0, successRate: 0.75 },
-    { type: 'logs', total: 10, success: 10, noData: 0, failed: 0, unavailable: 0, successRate: 1 },
-  ],
-  attentionTypes: ['metrics'],
-  sessionTrend: {
-    days: ['09-06', '09-07', '09-08'],
-    created: [3, 0, 1],
-    completed: [2, 0, 1],
-  },
-  ...over,
-})
-
-const aiStats = (over: Record<string, unknown> = {}) => ({
-  total: 120,
-  rated: 60,
-  helpful: 51,
-  unhelpful: 9,
-  helpfulRate: 0.85,
-  ...over,
-})
-
 const mountPage = async (opts: {
   overview?: unknown
-  closure?: unknown
   rootCause?: unknown
   trends?: unknown
-  diagnosis?: unknown
-  aiStats?: unknown
   overviewError?: unknown
   trendsError?: unknown
 } = {}) => {
@@ -153,10 +104,8 @@ const mountPage = async (opts: {
   } else {
     api.getDashboardOverview.mockResolvedValue('overview' in opts ? opts.overview : overview())
   }
-  // 用 'closure' in opts 而非 `?? closure()`：后者会把**显式传入的 null**
-  // 当成「没传」而回落到默认夹具，于是「闭环数据缺失」那一例
-  // 实际测的是「有数据」，断言必然失败且原因极隐蔽
-  api.getClosureMetrics.mockResolvedValue('closure' in opts ? opts.closure : closure())
+  // 用 'rootCause' in opts 而非 `?? 默认夹具`：后者会把**显式传入的空对象**
+  // 当成「没传」而回落到默认夹具，断言必然失败且原因极隐蔽
   api.getRootCauseStats.mockResolvedValue(
     'rootCause' in opts ? opts.rootCause : { CONFIG: 12, CAPACITY: 8, CODE: 5, NETWORK: 3, DATA: 1, HUMAN: 1 }
   )
@@ -165,8 +114,6 @@ const mountPage = async (opts: {
   } else {
     api.getTrends.mockResolvedValue('trends' in opts ? opts.trends : trends())
   }
-  api.getDiagnosisBoard.mockResolvedValue('diagnosis' in opts ? opts.diagnosis : diagnosisBoard())
-  api.fetchAiAnalysisStats.mockResolvedValue('aiStats' in opts ? opts.aiStats : aiStats())
   api.getSlaRisk.mockResolvedValue({ items: [], total: 0 })
   api.getDashboardStats.mockResolvedValue({})
 
@@ -186,6 +133,9 @@ const mountPage = async (opts: {
         TrendChart: { name: 'TrendChart', template: '<div class="stub-chart" />' },
         AppEmpty: { name: 'AppEmpty', template: '<div class="stub-empty" />' },
         SlaRiskPanel: true,
+        // 工作台队列自带查询与角色判断，由它自己的测试守着；
+        // 本页只验证「它挂在趋势之前」这一装配事实
+        WorkbenchQueues: { name: 'WorkbenchQueues', template: '<div class="stub-queues" />' },
       },
     },
   })
@@ -195,8 +145,6 @@ const mountPage = async (opts: {
 
 type Vm = {
   kpis: { label: string; value: string }[]
-  closureKpis: { label: string; value: string }[]
-  stageProgress: { label: string; count: number; pct: number }[]
   rootCauseTop: [string, number][]
   ticketTrendSeries: unknown[]
   costTrendSeries: unknown[]
@@ -228,10 +176,13 @@ describe('三种页面状态互斥', () => {
 describe('KPI 数值与标签配对', () => {
   it('四项 KPI 按固定顺序渲染，标签与值不串位', async () => {
     // 断配对而非「页面上有这几个数」——顺序错位时用户会把
-    // 「缓存命中率 42.5%」读成「总工单数」，是会误导决策的
+    // 「缓存命中率 42.5%」读成「总工单数」，是会误导决策的。
+    // 2026-09-27 KPI 卡加了 icon/tone/subtitle 字段，本测试只关心配对——
+    // 投影掉展示字段，不锁实现细节
     const w = await mountPage()
 
-    expect(vmOf(w).kpis).toEqual([
+    const pairs = vmOf(w).kpis.map((k) => ({ label: k.label, value: k.value }))
+    expect(pairs).toEqual([
       { label: '总工单数', value: '128' },
       { label: '缓存命中率', value: '42.5%' },
       { label: '有效查询数', value: '640' },
@@ -268,63 +219,6 @@ describe('「没有数据」与「数值为 0」必须区分', () => {
     const w = await mountPage()
     expect(w.find('.no-data-banner').exists()).toBe(false)
   })
-
-  it('MTTA 为 null 显示占位符，绝不能显示 0 分钟', async () => {
-    // ── 本组最重要的一条 ────────────────────────────────────
-    // null = 还没有任何工单被首响过；0 分钟 = 秒级响应。
-    // 两者含义完全相反，显示错了会让人以为系统表现极好
-    const w = await mountPage({
-      closure: closure({ mttaMinutes: null, mttmMinutes: null, mttrMinutes: null, skipRate: null }),
-    })
-
-    expect(vmOf(w).closureKpis.map((k) => k.value)).toEqual(['—', '—', '—', '—'])
-  })
-
-  it('MTTA 真的是 0 时显示 0 分钟，不被当成缺失', async () => {
-    // 反向验证：不能用 `if (!m)` 判空，那会把 0 一起吞掉
-    const w = await mountPage({ closure: closure({ mttaMinutes: 0 }) })
-
-    expect(vmOf(w).closureKpis[0]).toEqual({ label: 'MTTA 首响', value: '0 分钟' })
-  })
-
-  it('跨小时的耗时换算成「N 小时 M 分钟」，整点不拖零尾巴', async () => {
-    const w = await mountPage({
-      closure: closure({ mttaMinutes: 45, mttmMinutes: 125, mttrMinutes: 120 }),
-    })
-    const vals = vmOf(w).closureKpis.map((k) => k.value)
-
-    expect(vals[0]).toBe('45 分钟')
-    expect(vals[1]).toBe('2 小时 5 分钟')
-    expect(vals[2]).toBe('2 小时')
-  })
-})
-
-describe('闭环阶段完成率', () => {
-  it('按 total 折算百分比，四个阶段都渲染', async () => {
-    const w = await mountPage({
-      closure: closure({ total: 100, firstResponded: 90, mitigated: 70, rootCauseConfirmed: 50, verified: 40 }),
-    })
-
-    expect(vmOf(w).stageProgress).toEqual([
-      { label: '已首响', count: 90, pct: 90 },
-      { label: '已止损', count: 70, pct: 70 },
-      { label: '根因确认', count: 50, pct: 50 },
-      { label: '已验证', count: 40, pct: 40 },
-    ])
-    expect(w.findAll('.stage-progress-item')).toHaveLength(4)
-  })
-
-  it('total 为 0 时整块不渲染，避免除零得出 NaN%', async () => {
-    const w = await mountPage({ closure: closure({ total: 0 }) })
-
-    expect(vmOf(w).stageProgress).toEqual([])
-    expect(w.find('.stage-progress').exists()).toBe(false)
-  })
-
-  it('闭环数据缺失时整个区块不渲染', async () => {
-    const w = await mountPage({ closure: null })
-    expect(w.find('.closure-section').exists()).toBe(false)
-  })
 })
 
 describe('根因分布', () => {
@@ -347,11 +241,13 @@ describe('根因分布', () => {
     expect(w.find('.rc-item').text()).not.toContain('CAPACITY')
   })
 
-  it('无根因数据时整块不渲染', async () => {
+  it('无根因数据时不渲染 chip，走空态占位', async () => {
+    // 瘦身后面板常存（标题即导航），数据为空时 body 是空态而不是一排假 chip
     const w = await mountPage({ rootCause: {} })
 
     expect(vmOf(w).rootCauseTop).toEqual([])
-    expect(w.find('.root-cause-section').exists()).toBe(false)
+    expect(w.findAll('.rc-item')).toHaveLength(0)
+    expect(w.findAllComponents({ name: 'AppEmpty' }).length).toBeGreaterThan(0)
   })
 })
 
@@ -374,11 +270,8 @@ describe('趋势区独立降级（6.51 契约）', () => {
   })
 
   it('趋势为空数组时显示空态而非空白图表', async () => {
-    // S4-4.3 起页面有两个趋势源（B2 成本/工单趋势 + B6 诊断量趋势），
-    // 「整页零图表」的断言前提是两个源都空——主语仍是 B2 的 trends 空
     const w = await mountPage({
       trends: trends({ days: [] }),
-      diagnosis: diagnosisBoard({ sessionTrend: { days: [], created: [], completed: [] } }),
     })
 
     expect(w.findAllComponents({ name: 'TrendChart' })).toHaveLength(0)
@@ -417,106 +310,5 @@ describe('模型分布', () => {
 
     expect(w.findAll('.model-item')).toHaveLength(0)
     expect(w.findAllComponents({ name: 'AppEmpty' }).length).toBeGreaterThan(0)
-  })
-})
-
-describe('诊断区看板（S4-4.2 批次 16）', () => {
-  it('渲染诊断会话 KPI 与方向表：成功率按 1 位小数显示，点名方向出现告警条', async () => {
-    const w = await mountPage()
-
-    expect(w.text()).toContain('诊断区')
-    expect(w.text()).toContain('75.0%') // metrics 30/40
-    expect(w.text()).toContain('¥0.0123') // 单次均价四位小数（S4-4.3）
-    expect(w.find('.diagnosis-attention').exists()).toBe(true)
-    expect(w.find('.diagnosis-attention').text()).toContain('指标') // 天文台说中文不说 metrics
-  })
-
-  it('attentionTypes 为空即不出现告警条——NO_DATA 不许把健康页涂红', async () => {
-    const w = await mountPage({ diagnosis: diagnosisBoard({ attentionTypes: [] }) })
-
-    expect(w.find('.diagnosis-attention').exists()).toBe(false)
-  })
-
-  it('窗口内无取证记录：方向表收起来走空态，不画一张全零的表', async () => {
-    const w = await mountPage({ diagnosis: diagnosisBoard({ evidenceDirections: [] }) })
-
-    expect(w.find('.diagnosis-table').exists()).toBe(false)
-  })
-
-  it('逐日趋势上墙：后端补零的 days 直接喂给图表，闲日 0 点照画（S4-4.3）', async () => {
-    const w = await mountPage()
-
-    expect(w.find('.diagnosis-trend-chart').exists()).toBe(true)
-  })
-
-  it('days 为空（老后端不带趋势键降级）：趋势图整块收起，不画空框', async () => {
-    const w = await mountPage({
-      diagnosis: diagnosisBoard({ sessionTrend: { days: [], created: [], completed: [] } }),
-    })
-
-    expect(w.find('.diagnosis-trend-chart').exists()).toBe(false)
-  })
-
-  it('AI 效果区：根因准确率按反馈闭环显示（51/60 → 85.0%)，4-4.1 半部先行', async () => {
-    const w = await mountPage()
-
-    expect(w.find('.ai-effect').exists()).toBe(true)
-    expect(w.text()).toContain('85.0%')
-    expect(w.text()).toContain('51/60')
-  })
-
-  it('rated=0 时准确率显示 — 而非后端给的 0.0%——「还没人评过分」不是「准确率 0%」', async () => {
-    const w = await mountPage({ aiStats: aiStats({ total: 120, rated: 0, helpful: 0, unhelpful: 0, helpfulRate: 0 }) })
-
-    expect(w.find('.ai-effect').exists()).toBe(true)
-    // 断言范围收成 ai-effect 块——「100.0%」（方向表成功率）天然含子串「0.0%」， 
-    // 全页 toContain 是同字符串陷阱的第一现场
-    const aiBlock = w.find('.ai-effect').text()
-    expect(aiBlock).not.toContain('0.0')
-    expect(aiBlock).toContain('暂无反馈')
-  })
-
-  // ==================== S4-2 校准读数（批 35） ====================
-
-  const calibration = (ece: number | null, over: Record<string, unknown> = {}) => ({
-    ratedTotal: ece == null ? 0 : 4,
-    helpful: ece == null ? 0 : 3,
-    wrong: ece == null ? 0 : 1,
-    excludedPartial: 2,
-    excludedUnknown: 0,
-    excludedInvalid: 0,
-    ece,
-    empiricalAccuracy: ece == null ? null : 0.75,
-    meanConfidence: 0.8,
-    buckets: [],
-    ...over,
-  })
-
-  it('校准区：ECE 与经验正确率按判定集显示（0.125 → 12.5%，3/4）', async () => {
-    const w = await mountPage({ diagnosis: diagnosisBoard({ calibration: calibration(0.125) }) })
-
-    expect(w.find('.diagnosis-calibration').exists()).toBe(true)
-    const block = w.find('.diagnosis-calibration').text()
-    expect(block).toContain('校准误差 ECE')
-    expect(block).toContain('12.5%')
-    expect(block).toContain('75.0%')
-    expect(block).toContain('3/4')
-  })
-
-  it('校准区：判定集空（ece=null）显示 — 与「暂无反馈」——「还没人反馈」不是「误差 0」', async () => {
-    const w = await mountPage({ diagnosis: diagnosisBoard({ calibration: calibration(null) }) })
-
-    expect(w.find('.diagnosis-calibration').exists()).toBe(true)
-    const block = w.find('.diagnosis-calibration').text()
-    expect(block).toContain('—')
-    expect(block).toContain('暂无反馈')
-    // 块级断言（0.0% 乌龙同款教训：方向表有 100.0%）
-    expect(block).not.toContain('0.0%')
-  })
-
-  it('校准区：旧后端无 calibration 键 → 整块不渲染（不发空壳）', async () => {
-    const w = await mountPage()
-
-    expect(w.find('.diagnosis-calibration').exists()).toBe(false)
   })
 })

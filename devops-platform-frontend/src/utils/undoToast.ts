@@ -35,7 +35,7 @@ export const showUndoToast = ({ message, duration = 5000, onUndo, onCommit }: Un
           style: [
             'border:none',
             'background:transparent',
-            'color:var(--color-primary)',
+            'color:var(--brand)',
             'font-weight:600',
             'font-size:13px',
             'cursor:pointer',

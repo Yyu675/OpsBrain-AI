@@ -90,7 +90,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
   justify-content: center;
   text-align: center;
   padding: 32px 16px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--text-2, #64748b);
 }
 
 .app-empty-sm { padding: 20px 12px; }
@@ -100,8 +100,8 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: var(--color-bg-sunken, var(--surface-2));
-  color: var(--color-text-tertiary, #94a3b8);
+  background: var(--surface-2, var(--surface-2));
+  color: var(--text-3, #94a3b8);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -113,20 +113,20 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
 
 .app-empty-network .app-empty-icon,
 .app-empty-error .app-empty-icon {
-  background: var(--state-error-bg, var(--danger-subtle));
-  color: var(--state-error, #ef4444);
+  background: var(--danger-subtle, var(--danger-subtle));
+  color: var(--danger, #ef4444);
 }
 
 .app-empty-permission .app-empty-icon {
-  background: var(--state-warning-bg, var(--warning-subtle));
-  color: var(--state-warning, var(--warning));
+  background: var(--warning-subtle, var(--warning-subtle));
+  color: var(--warning, var(--warning));
 }
 
 .app-empty-title {
   margin: 0 0 6px;
   font-size: var(--text-base, 15px);
   font-weight: var(--weight-semibold, 600);
-  color: var(--color-text-primary, #1e293b);
+  color: var(--text-1, #1e293b);
 }
 
 .app-empty-sm .app-empty-title { font-size: var(--text-sm, 13px); }
@@ -136,7 +136,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
   margin: 0;
   max-width: 360px;
   font-size: var(--text-sm, 13px);
-  color: var(--color-text-tertiary, #94a3b8);
+  color: var(--text-3, #94a3b8);
   line-height: 1.5;
 }
 
@@ -151,28 +151,28 @@ const iconSize = computed(() => (props.size === 'sm' ? 28 : props.size === 'lg' 
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-surface, #fff);
-  color: var(--color-text-primary, #1e293b);
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
+  background: var(--surface-1, #fff);
+  color: var(--text-1, #1e293b);
   font-size: var(--text-sm, 13px);
   font-family: var(--font-body);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary, var(--brand));
-    color: var(--color-primary, var(--brand));
+    border-color: var(--brand, var(--brand));
+    color: var(--brand, var(--brand));
   }
 
   &.app-empty-btn-primary {
-    background: var(--color-primary, var(--brand));
-    color: var(--color-text-inverse, #fff);
-    border-color: var(--color-primary, var(--brand));
+    background: var(--brand, var(--brand));
+    color: var(--text-inverse, #fff);
+    border-color: var(--brand, var(--brand));
 
     &:hover {
-      background: var(--color-primary-light, #60a5fa);
-      color: var(--color-text-inverse, #fff);
+      background: var(--brand-hover, #60a5fa);
+      color: var(--text-inverse, #fff);
     }
   }
 }

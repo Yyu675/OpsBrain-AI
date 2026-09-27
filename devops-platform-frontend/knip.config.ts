@@ -28,7 +28,7 @@ const config: KnipConfig = {
      * 误报：本组件只在模板中以 <PanelErrorBoundary> 使用，由
      * unplugin-vue-components 自动注册，无 import 语句，knip 因此判为未使用。
      * 已核实真实生效——构建产物 TrendChart-*.css 中含其 .panel-err 样式，
-     * Dashboard / AnalyticsMode / TicketInsights 三处模板均在用。
+     * Dashboard / TicketInsights 模板均在用。
      */
     'src/components/common/PanelErrorBoundary.vue',
   ],

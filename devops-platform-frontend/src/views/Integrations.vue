@@ -344,7 +344,7 @@ const formatTime = (ts: number | null) => {
 <style scoped lang="scss">
 .integrations-page {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .integrations-main {
@@ -367,7 +367,7 @@ const formatTime = (ts: number | null) => {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .page-sub {
@@ -375,10 +375,10 @@ const formatTime = (ts: number | null) => {
   max-width: 70ch;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   strong {
-    color: var(--color-text-secondary);
+    color: var(--text-2);
     font-weight: 600;
   }
 }
@@ -392,7 +392,7 @@ const formatTime = (ts: number | null) => {
 
 .last-checked {
   font-size: 11px;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
   font-variant-numeric: tabular-nums;
 }
 
@@ -404,8 +404,8 @@ const formatTime = (ts: number | null) => {
   padding: 0 12px;
   font-size: 13px;
   border-radius: 8px;
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
+  border: 1px solid var(--brand);
+  background: var(--brand);
   color: #fff;
   cursor: pointer;
 
@@ -425,20 +425,20 @@ const formatTime = (ts: number | null) => {
   margin-bottom: 14px;
   border-radius: 8px;
   font-size: 13px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
 
   strong { font-weight: 600; }
 
   &.is-ok {
-    color: var(--color-success);
-    background: rgb(from var(--color-success) r g b / 0.06);
-    border-color: rgb(from var(--color-success) r g b / 0.25);
+    color: var(--success);
+    background: rgb(from var(--success) r g b / 0.06);
+    border-color: rgb(from var(--success) r g b / 0.25);
   }
 
   &.is-bad {
-    color: var(--color-danger);
-    background: rgb(from var(--color-danger) r g b / 0.06);
-    border-color: rgb(from var(--color-danger) r g b / 0.25);
+    color: var(--danger);
+    background: rgb(from var(--danger) r g b / 0.06);
+    border-color: rgb(from var(--danger) r g b / 0.25);
   }
 }
 
@@ -452,9 +452,9 @@ const formatTime = (ts: number | null) => {
 .ds-card {
   position: relative;
   padding: 16px 18px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 12px;
-  background: var(--color-surface);
+  background: var(--surface-1);
 
   &::before {
     content: '';
@@ -466,8 +466,8 @@ const formatTime = (ts: number | null) => {
     border-radius: 0 3px 3px 0;
   }
 
-  &.is-ok::before { background: var(--color-success); }
-  &.is-bad::before { background: var(--color-danger); }
+  &.is-ok::before { background: var(--success); }
+  &.is-bad::before { background: var(--danger); }
 }
 
 .ds-head {
@@ -486,7 +486,7 @@ const formatTime = (ts: number | null) => {
 
 .ds-icon {
   margin-top: 2px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   flex-shrink: 0;
 }
 
@@ -494,13 +494,13 @@ const formatTime = (ts: number | null) => {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .ds-url {
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   word-break: break-all;
 }
 
@@ -514,18 +514,18 @@ const formatTime = (ts: number | null) => {
   font-weight: 500;
   border-radius: 6px;
   flex-shrink: 0;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
 
   &.is-ok {
-    color: var(--color-success);
-    background: rgb(from var(--color-success) r g b / 0.08);
-    border-color: rgb(from var(--color-success) r g b / 0.25);
+    color: var(--success);
+    background: rgb(from var(--success) r g b / 0.08);
+    border-color: rgb(from var(--success) r g b / 0.25);
   }
 
   &.is-bad {
-    color: var(--color-danger);
-    background: rgb(from var(--color-danger) r g b / 0.08);
-    border-color: rgb(from var(--color-danger) r g b / 0.25);
+    color: var(--danger);
+    background: rgb(from var(--danger) r g b / 0.08);
+    border-color: rgb(from var(--danger) r g b / 0.25);
   }
 }
 
@@ -541,30 +541,30 @@ const formatTime = (ts: number | null) => {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    color: var(--color-text-quaternary, var(--color-text-tertiary));
+    color: var(--text-3, var(--text-3));
   }
 
   dd {
     margin: 3px 0 0;
     font-size: 13px;
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 
 .num { font-variant-numeric: tabular-nums; font-weight: 600; }
-.lat-good { color: var(--color-success); }
-.lat-warn { color: var(--color-warning); }
-.lat-bad { color: var(--color-danger); }
-.txt-ok { color: var(--color-success); }
-.txt-muted { color: var(--color-text-tertiary); }
+.lat-good { color: var(--success); }
+.lat-warn { color: var(--warning); }
+.lat-bad { color: var(--danger); }
+.txt-ok { color: var(--success); }
+.txt-muted { color: var(--text-3); }
 
 /* ===== 排查建议 ===== */
 .trouble {
   margin: 14px 0 0 12px;
   padding: 11px 13px;
   border-radius: 8px;
-  background: rgb(from var(--color-danger) r g b / 0.05);
-  border: 1px solid rgb(from var(--color-danger) r g b / 0.18);
+  background: rgb(from var(--danger) r g b / 0.05);
+  border: 1px solid rgb(from var(--danger) r g b / 0.18);
 }
 
 .trouble-title {
@@ -574,7 +574,7 @@ const formatTime = (ts: number | null) => {
   margin: 0 0 7px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-danger);
+  color: var(--danger);
 }
 
 .trouble-list {
@@ -586,7 +586,7 @@ const formatTime = (ts: number | null) => {
   li {
     font-size: 12px;
     line-height: 1.6;
-    color: var(--color-text-secondary);
+    color: var(--text-2);
     word-break: break-all;
   }
 }
@@ -596,7 +596,7 @@ const formatTime = (ts: number | null) => {
   gap: 14px;
   margin: 14px 0 0 12px;
   padding-top: 11px;
-  border-top: 1px solid var(--color-border-lighter, var(--color-border-light));
+  border-top: 1px solid var(--border-1, var(--border-1));
 }
 
 .ext-link {
@@ -604,7 +604,7 @@ const formatTime = (ts: number | null) => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: var(--color-primary);
+  color: var(--brand);
   text-decoration: none;
 
   &:hover { text-decoration: underline; }
@@ -613,22 +613,22 @@ const formatTime = (ts: number | null) => {
 /* ===== 指标目录 ===== */
 .catalog {
   padding: 16px 18px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 12px;
-  background: var(--color-surface);
+  background: var(--surface-1);
 }
 
 .catalog-head {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 
   h2 {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 
@@ -636,15 +636,15 @@ const formatTime = (ts: number | null) => {
   font-size: 11px;
   padding: 1px 7px;
   border-radius: 10px;
-  background: var(--color-fill-light);
-  color: var(--color-text-tertiary);
+  background: var(--surface-2);
+  color: var(--text-3);
 }
 
 .catalog-hint {
   margin: 6px 0 14px;
   font-size: 11px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .metric-grid {
@@ -655,22 +655,22 @@ const formatTime = (ts: number | null) => {
 
 .metric-item {
   padding: 10px 12px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
-  background: var(--color-fill-lighter);
+  background: var(--surface-2);
 }
 
 .metric-top {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .metric-name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .metric-unit {
@@ -678,8 +678,8 @@ const formatTime = (ts: number | null) => {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
-  background: var(--color-fill-light);
-  color: var(--color-text-tertiary);
+  background: var(--surface-2);
+  color: var(--text-3);
 }
 
 .metric-id {
@@ -687,19 +687,19 @@ const formatTime = (ts: number | null) => {
   margin: 3px 0;
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .metric-desc {
   margin: 0;
   font-size: 11px;
   line-height: 1.55;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
 }
 
 .catalog-empty {
   margin: 0;
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 </style>

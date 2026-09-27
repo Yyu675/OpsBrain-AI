@@ -87,7 +87,7 @@ const pick = () => fileInput.value?.click()
 <style scoped lang="scss">
 .attach-empty {
   font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   padding: 8px 0 12px;
 }
 
@@ -106,7 +106,7 @@ const pick = () => fileInput.value?.click()
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
-  background: var(--color-bg);
+  background: var(--surface-0);
   border-radius: var(--radius-sm);
 }
 
@@ -119,7 +119,7 @@ const pick = () => fileInput.value?.click()
 
 .attach-name {
   font-size: var(--text-sm);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -127,7 +127,7 @@ const pick = () => fileInput.value?.click()
 
 .attach-size {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .attach-ops {
@@ -141,7 +141,7 @@ const pick = () => fileInput.value?.click()
   height: 28px;
   border: none;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: inline-flex;
@@ -149,14 +149,14 @@ const pick = () => fileInput.value?.click()
   justify-content: center;
 
   &:hover {
-    background: var(--color-primary-lighter);
-    color: var(--color-primary);
+    background: var(--brand-subtle);
+    color: var(--brand);
   }
 }
 
 .attach-op-danger:hover {
-  background: var(--state-error-bg);
-  color: var(--state-error);
+  background: var(--danger-subtle);
+  color: var(--danger);
 }
 
 .attach-file-input {
@@ -175,19 +175,19 @@ const pick = () => fileInput.value?.click()
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border, var(--border-2));
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-2, var(--border-2));
+  border-radius: var(--radius, 8px);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: var(--color-surface, var(--surface-1));
-  color: var(--color-text-secondary, var(--text-2));
+  background: var(--surface-1, var(--surface-1));
+  color: var(--text-2, var(--text-2));
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary, var(--brand));
-    color: var(--color-primary, var(--brand));
+    border-color: var(--brand, var(--brand));
+    color: var(--brand, var(--brand));
   }
 }
 </style>

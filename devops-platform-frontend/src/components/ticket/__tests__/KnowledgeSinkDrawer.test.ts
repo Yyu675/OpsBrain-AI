@@ -170,7 +170,7 @@ describe('发布前校验', () => {
     vm.formTitle = '   '
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
 
     expect(knowledgeApi.createKnowledgeDoc).not.toHaveBeenCalled()
     expect(notifyMock.warning).toHaveBeenCalledWith(expect.stringContaining('标题'))
@@ -182,7 +182,7 @@ describe('发布前校验', () => {
     vm.formTitle = '标题'
     vm.formContent = '   '
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
 
     expect(knowledgeApi.createKnowledgeDoc).not.toHaveBeenCalled()
     expect(notifyMock.warning).toHaveBeenCalledWith(expect.stringContaining('正文'))
@@ -193,15 +193,15 @@ describe('发布前校验', () => {
     const vm = vmOf(w)
     vm.formTitle = ''
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
 
     expect(vm.publishing).toBe(false)
   })
 })
 
 describe('发布请求的载荷', () => {
-  it('携带来源工单，形成「已沉淀为知识」的回链', async () => {
-    // sourceTicketId 是工单详情页显示徽标的依据。
+  it('默认路径存为草稿待审，携带来源工单形成「已沉淀」回链', async () => {
+    // sourceTicketId 是工单详情页显示徽标的依据（草稿同样挂回链）。
     // 漏了它，闭环只完成一半：知识存进去了，但工单上看不出来
     knowledgeApi.createKnowledgeDoc.mockResolvedValue(okResult())
     const w = await mountDrawer()
@@ -209,17 +209,50 @@ describe('发布请求的载荷', () => {
     vm.formTitle = ' 标题 '
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(knowledgeApi.createKnowledgeDoc).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceTicketId: 1024,
+        // 字符串工单号原样透传：Number('TKT-…')=NaN→null 是回链恒空的根因
+        sourceTicketId: '1024',
         sourceType: 'TICKET',
         knowledgeSource: 'ticket-sink',
-        publish: true,
+        // 默认走草稿：立即发布会绕过知识库的草稿审核（复盘自动沉淀一律草稿，
+        // 手动沉淀没理由更宽松）
+        publish: false,
       })
     )
+  })
+
+  it('「直接发布」先过后果确认，确认后才 publish: true', async () => {
+    confirmMock.mockResolvedValue(undefined)
+    knowledgeApi.createKnowledgeDoc.mockResolvedValue(okResult())
+    const w = await mountDrawer()
+    const vm = vmOf(w)
+    vm.formTitle = '标题'
+    vm.formContent = '正文'
+
+    await vm.handlePublish(true)
+    await flushPromises()
+
+    expect(confirmMock).toHaveBeenCalled()
+    expect(knowledgeApi.createKnowledgeDoc).toHaveBeenCalledWith(
+      expect.objectContaining({ publish: true })
+    )
+  })
+
+  it('「直接发布」确认框被取消时不发请求', async () => {
+    confirmMock.mockRejectedValue(new Error('cancel'))
+    const w = await mountDrawer()
+    const vm = vmOf(w)
+    vm.formTitle = '标题'
+    vm.formContent = '正文'
+
+    await vm.handlePublish(true)
+    await flushPromises()
+
+    expect(knowledgeApi.createKnowledgeDoc).not.toHaveBeenCalled()
   })
 
   it('标题去首尾空白后提交', async () => {
@@ -229,7 +262,7 @@ describe('发布请求的载荷', () => {
     vm.formTitle = '  带空格的标题  '
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(knowledgeApi.createKnowledgeDoc).toHaveBeenCalledWith(
@@ -248,7 +281,7 @@ describe('发布请求的载荷', () => {
     vm.formCategory = '   '
     vm.formSummary = ''
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     const payload = knowledgeApi.createKnowledgeDoc.mock.calls[0][0]
@@ -258,13 +291,16 @@ describe('发布请求的载荷', () => {
 })
 
 describe('向量化状态必须如实告知', () => {
+  // 这组用例测的是「直接发布」路径的提示文案——草稿不触发向量化，
+  // 提示语是另一套（见下方草稿路径用例）
   const publish = async (result: Record<string, unknown>) => {
+    confirmMock.mockResolvedValue(undefined)
     knowledgeApi.createKnowledgeDoc.mockResolvedValue(result)
     const w = await mountDrawer()
     const vm = vmOf(w)
     vm.formTitle = '标题'
     vm.formContent = '正文'
-    await vm.handlePublish()
+    await vm.handlePublish(true)
     await flushPromises()
     return String(notifyMock.success.mock.calls[0]?.[0] ?? '')
   }
@@ -286,6 +322,21 @@ describe('向量化状态必须如实告知', () => {
     expect(msg).toContain('失败')
   })
 
+  it('草稿路径：如实说明要审核发布后才会被引用', async () => {
+    knowledgeApi.createKnowledgeDoc.mockResolvedValue(okResult())
+    const w = await mountDrawer()
+    const vm = vmOf(w)
+    vm.formTitle = '标题'
+    vm.formContent = '正文'
+
+    await vm.handlePublish(false)
+    await flushPromises()
+
+    const msg = String(notifyMock.success.mock.calls[0]?.[0] ?? '')
+    expect(msg).toContain('草稿')
+    expect(msg).toContain('审核')
+  })
+
   it('近似重复：发布但同时告警，不阻断', async () => {
     // 近似不等于重复，阻断会让合理的相似文档无法沉淀；
     // 但不提示又会让知识库慢慢长出一堆雷同文档
@@ -297,7 +348,7 @@ describe('向量化状态必须如实告知', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(notifyMock.warning).toHaveBeenCalledWith(expect.stringContaining('2'))
@@ -314,7 +365,7 @@ describe('发布成功后的收尾', () => {
     vm.formTitle = '复盘文档'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(w.emitted('published')?.[0]).toEqual([999, '复盘文档'])
@@ -327,7 +378,7 @@ describe('发布成功后的收尾', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     const events = w.emitted('update:modelValue') ?? []
@@ -341,7 +392,7 @@ describe('发布成功后的收尾', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(vm.publishing).toBe(false)
@@ -358,7 +409,7 @@ describe('重复内容（40021）不得静默吞掉', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(confirmMock).toHaveBeenCalled()
@@ -375,7 +426,7 @@ describe('重复内容（40021）不得静默吞掉', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(w.emitted('goto-doc')?.[0]).toEqual([42])
@@ -392,7 +443,7 @@ describe('重复内容（40021）不得静默吞掉', () => {
     vm.formTitle = '标题'
     vm.formContent = '我编辑过的正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(w.emitted('goto-doc')).toBeUndefined()
@@ -408,7 +459,7 @@ describe('重复内容（40021）不得静默吞掉', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(handleServerErrorMock).not.toHaveBeenCalled()
@@ -425,7 +476,7 @@ describe('其它错误走统一映射', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(handleServerErrorMock).toHaveBeenCalledWith(
@@ -441,7 +492,7 @@ describe('其它错误走统一映射', () => {
     vm.formTitle = '标题'
     vm.formContent = '正文'
 
-    await vm.handlePublish()
+    await vm.handlePublish(false)
     await flushPromises()
 
     expect(w.emitted('published')).toBeUndefined()

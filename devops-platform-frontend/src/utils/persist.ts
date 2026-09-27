@@ -144,64 +144,6 @@ export const readBackupPayload = <T>(key: string): PersistPayload<T> | null => {
 
 export const clearBackup = (key: string) => safeRemove(key + BACKUP_SUFFIX)
 
-const CHANNEL_NAME = '__store_sync__'
-const TAB_ID = Math.random().toString(36).slice(2) + Date.now().toString(36)
-
-interface SyncMessage {
-  key: string
-  origin: string
-}
-
-type Listener = (key: string) => void
-const listeners = new Set<Listener>()
-
-let channel: BroadcastChannel | null = null
-let storageListenerBound = false
-
-const ensureChannel = () => {
-  if (channel !== null) return channel
-  if (typeof BroadcastChannel === 'undefined') return null
-  try {
-    channel = new BroadcastChannel(CHANNEL_NAME)
-    channel.addEventListener('message', (e: MessageEvent<SyncMessage>) => {
-      const data = e.data
-      if (!data || typeof data !== 'object') return
-      if (data.origin === TAB_ID) return
-      listeners.forEach(fn => {
-        try { fn(data.key) } catch { /* consumer bug */ }
-      })
-    })
-  } catch { channel = null }
-  return channel
-}
-
-const ensureStorageListener = () => {
-  if (storageListenerBound) return
-  if (typeof window === 'undefined') return
-  window.addEventListener('storage', (e) => {
-    if (!e.key || !e.key.startsWith(PREFIX)) return
-    const key = e.key.slice(PREFIX.length)
-    listeners.forEach(fn => {
-      try { fn(key) } catch { /* consumer bug */ }
-    })
-  })
-  storageListenerBound = true
-}
-
-export const broadcastPersistChange = (key: string) => {
-  const ch = ensureChannel()
-  if (ch) {
-    try { ch.postMessage({ key, origin: TAB_ID } satisfies SyncMessage) } catch { /* closed */ }
-  }
-}
-
-export const onPersistedChange = (fn: Listener): (() => void) => {
-  ensureChannel()
-  ensureStorageListener()
-  listeners.add(fn)
-  return () => listeners.delete(fn)
-}
-
 type Debounced<A extends unknown[]> = ((...args: A) => void) & {
   flush: () => void
   cancel: () => void

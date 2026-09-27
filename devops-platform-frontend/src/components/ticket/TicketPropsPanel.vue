@@ -87,12 +87,12 @@ defineProps<{
 
 .prop-label {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 
 .prop-value {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   font-weight: var(--weight-medium, 500);
   display: inline-flex;
   align-items: center;
@@ -103,7 +103,7 @@ defineProps<{
   }
 
   &.prop-priority-urgent {
-    color: var(--state-error, var(--danger));
+    color: var(--danger, var(--danger));
   }
 
   &.prop-priority-high {
@@ -111,7 +111,7 @@ defineProps<{
   }
 
   &.prop-status {
-    color: var(--color-primary-light, var(--brand-hover));
+    color: var(--brand-hover, var(--brand-hover));
   }
 }
 
@@ -127,7 +127,7 @@ defineProps<{
 .sla-progress {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border-light, var(--border-1));
+  border-top: 1px solid var(--border-1, var(--border-1));
 }
 
 .sla-header {
@@ -139,24 +139,24 @@ defineProps<{
 
 .sla-label {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 
 .sla-value {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--weight-medium, 500);
-  color: var(--state-warning, var(--warning));
+  color: var(--warning, var(--warning));
 }
 
 .sla-value-breached {
-  color: var(--state-error, var(--danger)) !important;
+  color: var(--danger, var(--danger)) !important;
   font-weight: var(--weight-semibold, 600);
 }
 
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: var(--color-bg-sunken, var(--surface-2));
+  background: var(--surface-2, var(--surface-2));
   border-radius: var(--radius-full, 9999px);
   overflow: hidden;
 }
@@ -166,8 +166,8 @@ defineProps<{
   border-radius: var(--radius-full, 9999px);
   transition: width 0.3s ease, background 0.2s ease;
 
-  &.progress-fill-normal { background: var(--color-primary-light, var(--brand-hover)); }
-  &.progress-fill-warning { background: var(--state-warning, var(--warning)); }
-  &.progress-fill-error { background: var(--state-error, var(--danger)); }
+  &.progress-fill-normal { background: var(--brand-hover, var(--brand-hover)); }
+  &.progress-fill-warning { background: var(--warning, var(--warning)); }
+  &.progress-fill-error { background: var(--danger, var(--danger)); }
 }
 </style>

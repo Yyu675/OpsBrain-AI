@@ -350,7 +350,7 @@ const emit = defineEmits<{
   都必须在此声明（含单元格内的徽章、头像等原子样式）。
 */
 .table-container {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
@@ -363,14 +363,14 @@ const emit = defineEmits<{
 
   /* 表头：沿用原有的小号大写灰字风格 */
   :deep(.el-table__header th.el-table__cell) {
-    background: var(--color-bg-sunken);
+    background: var(--surface-2);
     padding: 10px 0;
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
     color: var(--text-3);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--color-border-light);
+    border-bottom: 1px solid var(--border-1);
   }
 
   /* 列宽拖拉手柄：加宽命中区域并给出明确的 col-resize 光标，
@@ -400,10 +400,10 @@ const emit = defineEmits<{
 
   /* 行 hover / 选中：沿用主色浅底 */
   :deep(.el-table__body tr:hover > td.el-table__cell) {
-    background: var(--color-primary-lighter);
+    background: var(--brand-subtle);
   }
   :deep(.el-table__body tr.selected > td.el-table__cell) {
-    background: var(--color-primary-lighter);
+    background: var(--brand-subtle);
   }
 
   :deep(.el-table__row) { cursor: pointer; }
@@ -415,8 +415,8 @@ const emit = defineEmits<{
   gap: 12px;
   padding: 8px 16px;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  border-top: 1px solid var(--color-border-light);
+  color: var(--text-3);
+  border-top: 1px solid var(--border-1);
 }
 
 .link-btn {
@@ -425,7 +425,7 @@ const emit = defineEmits<{
   padding: 0;
   font-size: var(--text-xs);
   font-family: var(--font-body);
-  color: var(--color-primary);
+  color: var(--brand);
   cursor: pointer;
 
   &:hover { text-decoration: underline; }

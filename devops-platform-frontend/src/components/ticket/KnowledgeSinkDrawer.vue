@@ -190,7 +190,7 @@ const generateDraft = async () => {
           saveCurrentDraft()
         },
         onError: (data: SSEErrorEvent) => {
-          // 同 ChatMode：查表拿到 hint 与重试语义，而不是只回显 message
+          // 查表拿到 hint 与重试语义，而不是只回显 message
           const view = toStreamError(data.code, data.message, 'AI 整理失败，请稍后重试或手动编写')
           formContent.value += `\n\n❌ ${view.text}`
           loadState.value = 'error'
@@ -205,8 +205,8 @@ const generateDraft = async () => {
          * 抽屉会卡在「生成中」：停止按钮一直转、「发布并入库」永远禁用
          * （canPublish 判 !streaming），用户既发布不了也重新生成不了。
          *
-         * 与 ChatMode / useTicketAnalysis 是同一缺陷，本轮横向排查全部
-         * chatStream 调用点时发现的第三处。
+         * 与 useTicketAnalysis 是同一缺陷，本轮横向排查全部
+         * chatStream 调用点时发现的第二处。
          */
         onClose: () => {
           if (!streaming.value) return   // 已由 complete/error 正常收尾
@@ -300,7 +300,7 @@ const canPublish = computed(() => {
     && formContent.value.trim().length > 0
 })
 
-const handlePublish = async () => {
+const handlePublish = async (publishNow: boolean) => {
   if (!formTitle.value.trim()) {
     notify.warning('请填写文档标题')
     return
@@ -308,6 +308,21 @@ const handlePublish = async () => {
   if (!formContent.value.trim()) {
     notify.warning('文档正文不能为空')
     return
+  }
+
+  if (publishNow) {
+    // 直接发布会立即向量化、立即被 AI 检索引用——跳过知识库的草稿审核。
+    // 复盘自动沉淀（PostmortemDraftOrchestrator）一律落草稿走审核，
+    // 手动这条路径默认也应走草稿；这里保留直达通道，但把后果说清。
+    try {
+      await ElMessageBox.confirm(
+        '发布后文档立即向量化，AI 回答同类故障时会直接引用它。\n建议先存草稿，在知识库审核无误后再发布。确定直接发布？',
+        '直接发布确认',
+        { confirmButtonText: '直接发布', cancelButtonText: '先存草稿', type: 'warning' }
+      )
+    } catch {
+      return
+    }
   }
 
   publishing.value = true
@@ -318,10 +333,12 @@ const handlePublish = async () => {
       content: formContent.value,
       summary: formSummary.value.trim() || undefined,
       tags: formTags.value,
-      publish: true, // 立即向量化
+      publish: publishNow,
       knowledgeSource: 'ticket-sink',
-      // L1.5 来源回链：记录源工单，沉淀后在工单详情页展示「已沉淀为知识」徽标
-      sourceTicketId: Number(props.ticketId),
+      // L1.5 来源回链：记录源工单，沉淀后在工单详情页展示「已沉淀为知识」徽标。
+      // 必须原样传字符串工单号（TKT-…）：此前 Number('TKT-…') 得 NaN、
+      // JSON 序列化为 null，回链从未真正写入过（V2 迁移前 DB 列也是 BIGINT）
+      sourceTicketId: props.ticketId,
       sourceType: 'TICKET',
     }
     const result = await createKnowledgeDoc(req)
@@ -335,15 +352,20 @@ const handlePublish = async () => {
 
     const retrievable = result.retrievable
     const indexStatus = result.indexStatus
-    let msg = `知识文档已发布（ID: ${result.id}）`
-    if (retrievable) {
-      msg += '，已向量化，下次类似故障 AI 可引用'
-    } else if (indexStatus === 'PENDING') {
-      msg += '，向量化处理中，稍后可检索'
-    } else if (indexStatus === 'FAILED') {
-      msg += '，但向量化失败，可在知识库重试'
-    } else if (indexStatus === 'SKIPPED') {
-      msg += '，未建立索引'
+    let msg: string
+    if (!publishNow) {
+      msg = `草稿已保存（ID: ${result.id}），在知识库筛「草稿」审核发布后方可被 AI 引用`
+    } else {
+      msg = `知识文档已发布（ID: ${result.id}）`
+      if (retrievable) {
+        msg += '，已向量化，下次类似故障 AI 可引用'
+      } else if (indexStatus === 'PENDING') {
+        msg += '，向量化处理中，稍后可检索'
+      } else if (indexStatus === 'FAILED') {
+        msg += '，但向量化失败，可在知识库重试'
+      } else if (indexStatus === 'SKIPPED') {
+        msg += '，未建立索引'
+      }
     }
     notify.success(msg, { duration: 6000 })
 
@@ -574,6 +596,9 @@ onBeforeUnmount(() => {
           placeholder="文档标题"
           maxlength="200"
         />
+        <!-- 检索锚点指引（2026-09-25 REAL 模式实测）：告警名是语义检索命中最强的信号，
+             标题带上它的手册命中率显著更高——不写就只有服务名可用，语义上几乎无效 -->
+        <p class="field-hint">建议标题带上告警名（如 HighMemoryUsage）——诊断检索主要靠它命中这篇文档</p>
       </div>
 
       <!-- 分类 + 标签 -->
@@ -688,14 +713,23 @@ onBeforeUnmount(() => {
         <button class="btn-outline" @click="closeDrawer" :disabled="publishing">
           取消
         </button>
+        <!-- 直接发布跳过审核，是次要路径：放左边、次级样式、带后果确认 -->
+        <button
+          class="btn-outline"
+          :disabled="!canPublish"
+          title="跳过审核，立即向量化并被 AI 引用"
+          @click="handlePublish(true)"
+        >
+          直接发布
+        </button>
         <button
           class="btn-primary"
           :disabled="!canPublish"
-          @click="handlePublish"
+          @click="handlePublish(false)"
         >
           <Send v-if="!publishing" :size="14" />
           <Loader v-else :size="14" class="spin" />
-          {{ publishing ? '发布中…' : '发布并入库' }}
+          {{ publishing ? '提交中…' : '存为草稿待审' }}
         </button>
       </div>
     </template>
@@ -708,9 +742,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
 
-  .header-icon { color: var(--color-primary); }
+  .header-icon { color: var(--brand); }
   .header-title { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
-  .header-sub { font-size: var(--text-xs); color: var(--color-text-tertiary); }
+  .header-sub { font-size: var(--text-xs); color: var(--text-3); }
 }
 
 .sink-body {
@@ -730,17 +764,17 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   font-size: var(--text-xs);
-  background: var(--color-primary-lighter);
-  color: var(--color-text-secondary);
+  background: var(--brand-subtle);
+  color: var(--text-2);
 
-  &.loading { background: var(--color-primary-lighter); }
+  &.loading { background: var(--brand-subtle); }
   &.done { background: rgba(16, 185, 129, 0.08); color: #059669; }
-  &.error { background: rgba(239, 68, 68, 0.08); color: var(--state-error); }
-  &.idle { background: var(--color-bg-sunken); }
+  &.error { background: rgba(239, 68, 68, 0.08); color: var(--danger); }
+  &.idle { background: var(--surface-2); }
 
-  .cost { margin-left: 4px; color: var(--color-text-tertiary); }
+  .cost { margin-left: 4px; color: var(--text-3); }
 
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -752,7 +786,7 @@ onBeforeUnmount(() => {
     gap: 4px;
     background: none;
     border: none;
-    color: var(--color-primary);
+    color: var(--brand);
     cursor: pointer;
     font-size: var(--text-xs);
     &:hover { text-decoration: underline; }
@@ -774,8 +808,14 @@ onBeforeUnmount(() => {
 .field-label {
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  color: var(--color-text-secondary);
-  .required { color: var(--state-error); }
+  color: var(--text-2);
+  .required { color: var(--danger); }
+}
+.field-hint {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  margin: 0;
+  line-height: 1.4;
 }
 .field-label-row {
   display: flex;
@@ -785,20 +825,20 @@ onBeforeUnmount(() => {
 .field-input {
   height: 34px;
   padding: 0 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
-  background: var(--color-bg-primary);
-  &:focus { outline: none; border-color: var(--color-primary); }
+  background: var(--brand-subtle);
+  &:focus { outline: none; border-color: var(--brand); }
 }
 .field-textarea {
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
-  background: var(--color-bg-primary);
+  background: var(--brand-subtle);
   resize: vertical;
-  &:focus { outline: none; border-color: var(--color-primary); }
+  &:focus { outline: none; border-color: var(--brand); }
 }
 .field-select { width: 100%; }
 
@@ -806,7 +846,7 @@ onBeforeUnmount(() => {
 .tab-switch {
   display: flex;
   gap: 2px;
-  background: var(--color-bg-sunken);
+  background: var(--surface-2);
   border-radius: var(--radius-sm);
   padding: 2px;
 }
@@ -816,11 +856,11 @@ onBeforeUnmount(() => {
   background: none;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   cursor: pointer;
   &.active {
-    background: var(--color-bg-primary);
-    color: var(--color-primary);
+    background: var(--brand-subtle);
+    color: var(--brand);
     font-weight: var(--weight-medium);
   }
 }
@@ -829,29 +869,29 @@ onBeforeUnmount(() => {
 .content-textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
   font-size: var(--text-xs);
   font-family: var(--font-mono);
   line-height: 1.6;
-  background: var(--color-bg-primary);
+  background: var(--brand-subtle);
   resize: vertical;
   min-height: 320px;
-  &:focus { outline: none; border-color: var(--color-primary); }
+  &:focus { outline: none; border-color: var(--brand); }
 }
 .content-preview {
   min-height: 320px;
   max-height: 520px;
   overflow-y: auto;
   padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-primary);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--brand-subtle);
   font-size: var(--text-xs);
   line-height: 1.7;
 }
 .preview-empty {
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   text-align: center;
   padding: 40px 0;
 }
@@ -864,13 +904,13 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 8px;
   min-height: 320px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-primary);
-  color: var(--color-text-tertiary);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--brand-subtle);
+  color: var(--text-3);
 
   p { font-size: var(--text-xs); margin: 0; }
-  &.error-state { color: var(--state-error); }
+  &.error-state { color: var(--danger); }
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 }
@@ -881,13 +921,13 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-primary);
-  color: var(--color-text-secondary);
+  background: var(--brand-subtle);
+  color: var(--text-2);
   font-size: var(--text-xs);
   cursor: pointer;
-  &:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .btn-primary {
@@ -897,11 +937,11 @@ onBeforeUnmount(() => {
   padding: 6px 16px;
   border: none;
   border-radius: var(--radius-sm);
-  background: var(--color-primary);
+  background: var(--brand);
   color: white;
   font-size: var(--text-xs);
   cursor: pointer;
-  &:hover:not(:disabled) { background: var(--color-primary-dark, var(--color-primary)); }
+  &:hover:not(:disabled) { background: var(--brand-active, var(--brand)); }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -922,26 +962,26 @@ onBeforeUnmount(() => {
     margin: 10px 0 4px;
     font-size: var(--text-sm);
     font-weight: var(--weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--text-1);
     &:first-child { margin-top: 0; }
   }
   :deep(ul), :deep(ol) { margin: 0 0 6px; padding-left: 16px; }
   :deep(li) { margin-bottom: 2px; }
   :deep(strong) { font-weight: var(--weight-semibold); }
-  :deep(a) { color: var(--color-primary); text-decoration: underline; }
-  :deep(hr) { border: none; border-top: 1px solid var(--color-border-light); margin: 8px 0; }
+  :deep(a) { color: var(--brand); text-decoration: underline; }
+  :deep(hr) { border: none; border-top: 1px solid var(--border-1); margin: 8px 0; }
   :deep(blockquote) {
     margin: 6px 0;
     padding: 4px 10px;
-    border-left: 3px solid var(--color-primary-light);
-    background: var(--color-primary-lighter);
-    color: var(--color-text-secondary);
+    border-left: 3px solid var(--brand-hover);
+    background: var(--brand-subtle);
+    color: var(--text-2);
     font-size: 11px;
   }
   :deep(code) {
     padding: 1px 5px;
-    background: var(--color-bg-sunken);
-    color: var(--color-primary);
+    background: var(--surface-2);
+    color: var(--brand);
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 11px;
@@ -950,7 +990,7 @@ onBeforeUnmount(() => {
     margin: 6px 0;
     padding: 8px 10px;
     background: #1E293B;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius);
     overflow-x: auto;
 
     code {
@@ -970,7 +1010,7 @@ onBeforeUnmount(() => {
   }
   :deep(th), :deep(td) {
     padding: 4px 6px;
-    border: 1px solid var(--color-border-light);
+    border: 1px solid var(--border-1);
     text-align: left;
   }
 }

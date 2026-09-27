@@ -95,6 +95,12 @@ export function textParser(maxLength = 200) {
   }
 }
 
+/** 布尔开关解析器：只认 'true'/'1' 为开；其余（含 'false'）视为未设置，保持默认 */
+export function flagParser() {
+  return (raw: string): boolean | undefined =>
+    raw === 'true' || raw === '1' ? true : undefined
+}
+
 /**
  * 建立筛选状态与 URL 的双向同步。
  *

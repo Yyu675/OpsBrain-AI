@@ -30,6 +30,7 @@ import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
 import { getTrends, type TrendData } from '@/api/dashboard'
 import { mapServiceToModule } from '@/api/utils/dto-converter'
 import { notify, handleServerError } from '@/utils/notify'
+import { fetchDiagnosisReplay } from '@/api/diagnosis'
 import { useExternalResourceState } from '@/composables/useResourceState'
 import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
 import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
@@ -44,6 +45,9 @@ import TicketTagEditor from '@/components/ticket/TicketTagEditor.vue'
 import TicketAttachmentPanel from '@/components/ticket/TicketAttachmentPanel.vue'
 import TicketActivityLog from '@/components/ticket/TicketActivityLog.vue'
 import KnowledgeSinkDrawer from '@/components/ticket/KnowledgeSinkDrawer.vue'
+import SunkKnowledgeBadge from '@/components/ticket/SunkKnowledgeBadge.vue'
+import TicketActionSection from '@/components/ticket/TicketActionSection.vue'
+import TicketFormDialogs from '@/components/ticket/TicketFormDialogs.vue'
 import AppEmpty from '@/components/common/AppEmpty.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import PageLoading from '@/components/common/PageLoading.vue'
@@ -195,6 +199,42 @@ watch(() => ticket.value?.id, (id, prev) => {
 }, { immediate: true })
 
 /**
+ * 告警来源工单的诊断结论提示。
+ *
+ * 诊断在证据不足（INSUFFICIENT）时按设计不回填 AI 分析，于是分析区空白，
+ * 用户以为系统没看过这张单。这里在「没有分析」时去拉一次诊断回放：
+ * 有结论就用它的摘要填空态，并链到完整回放。回放接口接受告警去重键
+ * （工单 sourceTraceId 存的就是它），会桥接到诊断自己的 traceId。
+ */
+const diagnosisHint = ref('')
+
+const loadDiagnosisHint = async () => {
+  const requestedId = ticket.value?.id
+  diagnosisHint.value = ''
+  const trace = ticket.value?.sourceTraceId
+  // 已有分析就不必再解释「为什么没有分析」
+  if (!trace || analysisContent.value) return
+  try {
+    const replay = await fetchDiagnosisReplay(trace)
+    // 等待期间切了工单：这是上一张单的结论，不能写到新单上
+    if (ticket.value?.id !== requestedId) return
+    const summary = replay.session.summary
+    const sufficiency = replay.session.sufficiency
+    if (sufficiency === 'INSUFFICIENT') {
+      diagnosisHint.value = '自动诊断已运行，但证据不足、未形成结论，已转人工处理。'
+    } else if (summary) {
+      diagnosisHint.value = `自动诊断结论：${summary}`
+    }
+  } catch {
+    // 诊断回放拿不到不影响工单主体——空态退回「尚未生成 AI 分析」
+  }
+}
+
+watch(() => ticket.value?.sourceTraceId, (trace) => {
+  if (trace) void loadDiagnosisHint()
+})
+
+/**
  * 工单趋势（B-1 + 下钻）：供右栏 Insights 迷你折线
  *
  * 按**该工单所属服务**下钻——右栏位于某张工单内，用户预期看到的是该服务的
@@ -339,21 +379,6 @@ const actionDialogVisible = ref(false)
 const actionForm = ref({ actionType: 'INVESTIGATE', summary: '', detail: '', effective: null as boolean | null })
 const actionSubmitting = ref(false)
 
-const ACTION_TYPES = [
-  { value: 'MITIGATE', label: '止损' },
-  { value: 'INVESTIGATE', label: '排查' },
-  { value: 'FIX', label: '修复' },
-  { value: 'ROLLBACK', label: '回滚' },
-  { value: 'VERIFY', label: '验证' }
-]
-
-const STAGES = [
-  { value: 'TRIAGE', label: '排查中' },
-  { value: 'MITIGATED', label: '已止损' },
-  { value: 'FIXING', label: '修复中' },
-  { value: 'VERIFYING', label: '验证中' }
-]
-
 const loadActions = async (targetId?: string) => {
   // 审计批一 P0-2：改用显式传入的工单 ID，不再依赖 store 里的 ticket.value——
   // watch(ticketId) 切工单瞬间 B 尚未入 store（loadDetail 在途），旧实现此刻
@@ -418,7 +443,7 @@ const doUpdateStage = async (stage: string) => {
       t.updatedAt = updated.updatedAt
     }
     await store.loadActivities(cur.id)
-    notify.success(`已切换到「${STAGES.find(s => s.value === stage)?.label || stage}」`)
+    notify.success(`已切换到「${stageLabel(stage)}」`)
   } catch (e) {
     handleServerError(e, { action: '切换处置阶段' })
   }
@@ -451,17 +476,11 @@ const rootCauseDialogVisible = ref(false)
 const rootCauseForm = ref({ rootCause: '', category: 'UNKNOWN' })
 const rootCauseSubmitting = ref(false)
 
-const RC_CATEGORIES = [
-  { value: 'CONFIG', label: '配置错误' },
-  { value: 'CAPACITY', label: '容量不足' },
-  { value: 'CODE', label: '代码缺陷' },
-  { value: 'DEPENDENCY', label: '依赖故障' },
-  { value: 'NETWORK', label: '网络问题' },
-  { value: 'DATA', label: '数据异常' },
-  { value: 'HUMAN', label: '人为操作' },
-  { value: 'EXTERNAL', label: '外部服务' },
-  { value: 'UNKNOWN', label: '未定位' }
-]
+/** 处置阶段的中文名（枚举本体随阶段切换条搬到了 TicketActionSection） */
+const STAGE_LABELS: Record<string, string> = {
+  TRIAGE: '排查中', MITIGATED: '已止损', FIXING: '修复中', VERIFYING: '验证中'
+}
+const stageLabel = (stage: string) => STAGE_LABELS[stage] || stage
 
 const openRootCauseDialog = () => {
   // 预填 AI 建议的最新分析内容（一键采纳）
@@ -471,6 +490,26 @@ const openRootCauseDialog = () => {
     category: 'UNKNOWN'
   }
   rootCauseDialogVisible.value = true
+}
+
+/**
+ * 进度条上可点击的步骤。
+ * 建单、首响是既成事实或自动判定，点了没有可执行的动作；
+ * 其余四步各自对应一个已经存在的操作弹窗。
+ */
+const STAGE_ACTIONS: Record<string, () => void> = {
+  mitigated: () => doUpdateStage('MITIGATED'),
+  fixed: openRootCauseDialog,
+  verified: resolveTicket,
+  // openPmDrawer 在下方复盘段落才解构出来，这里用箭头函数推迟到点击时再读
+  archived: () => openPmDrawer(),
+}
+
+const stageActionable = (key: string) =>
+  !!ticket.value && ticket.value.status !== 'closed' && key in STAGE_ACTIONS
+
+const onStageClick = (key: string) => {
+  if (stageActionable(key)) STAGE_ACTIONS[key]()
 }
 
 const doConfirmRootCause = async () => {
@@ -701,6 +740,14 @@ const onSinkGotoDoc = (docId: number) => {
                 <span class="meta-dot">&middot;</span>
                 <span class="meta-label">负责人</span>
                 <span class="meta-value meta-assignee">{{ ticket.assignee }}</span>
+                <template v-if="ticket.sourceTraceId">
+                  <span class="meta-dot">&middot;</span>
+                  <router-link
+                    class="meta-link"
+                    :to="`/diagnosis/${ticket.sourceTraceId}`"
+                    title="这张工单由告警自动创建，查看当时的诊断取证与根因假设"
+                  >查看诊断回放</router-link>
+                </template>
               </div>
               <div class="ticket-actions">
                 <!-- B1 确认接单：仅在尚未首响时显示。已首响后按钮消失，
@@ -784,13 +831,19 @@ const onSinkGotoDoc = (docId: number) => {
               </div>
             </div>
 
-            <!-- B5 闭环进度条（6 阶段横向步骤条） -->
+            <!-- B5 闭环进度条（6 阶段横向步骤条）。
+                 止损/修复/验证/归档四步可点击，直接打开对应操作——
+                 页头那排按钮是全部动作的清单，进度条回答的是「现在该做哪一步」。 -->
             <div class="closure-progress-bar">
               <div
                 v-for="stage in closureStages"
                 :key="stage.key"
                 class="cp-step"
-                :class="stage.state"
+                :class="[stage.state, { actionable: stageActionable(stage.key) }]"
+                :role="stageActionable(stage.key) ? 'button' : undefined"
+                :tabindex="stageActionable(stage.key) ? 0 : undefined"
+                @click="onStageClick(stage.key)"
+                @keydown.enter="onStageClick(stage.key)"
               >
                 <div class="cp-dot">
                   <Check v-if="stage.state === 'done'" :size="14" />
@@ -809,28 +862,14 @@ const onSinkGotoDoc = (docId: number) => {
               </div>
             </div>
 
-            <!-- B2 处置阶段切换（仅在处理中状态显示） -->
-            <div v-if="ticket.status === 'processing'" class="stage-switcher">
-              <button
-                v-for="s in STAGES"
-                :key="s.value"
-                class="stage-btn"
-                :class="{ active: ticket.handlingStage === s.value }"
-                @click="s.value === 'MITIGATED' ? doMarkMitigated() : doUpdateStage(s.value)"
-              >{{ s.label }}</button>
-            </div>
-
-            <!-- B2 处置动作列表（时间线中展示） -->
-            <div v-if="actions.length" class="action-list-section">
-              <h3 class="description-title">处置动作</h3>
-              <div v-for="a in actions" :key="a.id" class="action-item" :class="{ 'action-ineffective': a.effective === false }">
-                <span class="action-type-badge" :class="`action-type-${(a.actionType || '').toLowerCase()}`">{{ ACTION_TYPES.find(t => t.value === a.actionType)?.label || a.actionType }}</span>
-                <span class="action-summary">{{ a.summary }}</span>
-                <span v-if="a.effective === true" class="action-eff eff-ok">有效</span>
-                <span v-else-if="a.effective === false" class="action-eff eff-no">无效</span>
-                <span class="action-meta">{{ a.operator }} · {{ a.createTime }}</span>
-              </div>
-            </div>
+            <!-- B2 处置阶段切换 + 处置动作列表（拆到 TicketActionSection） -->
+            <TicketActionSection
+              :show-stage-switcher="ticket.status === 'processing'"
+              :current-stage="ticket.handlingStage"
+              :actions="actions"
+              @update-stage="doUpdateStage"
+              @mark-mitigated="doMarkMitigated"
+            />
 
             <!-- 工单描述 -->
             <div v-if="ticket.description" class="ticket-description-card">
@@ -872,6 +911,8 @@ const onSinkGotoDoc = (docId: number) => {
                 onCopyAnalysis: copyAnalysis,
                 onRegenerate: regenerateAnalysis,
                 onStop: stopAnalysis,
+                diagnosisHint: diagnosisHint,
+                diagnosisTo: ticket.sourceTraceId ? `/diagnosis/${ticket.sourceTraceId}` : undefined,
               }"
             />
 
@@ -1000,95 +1041,28 @@ const onSinkGotoDoc = (docId: number) => {
       @goto-doc="onSinkGotoDoc"
     />
 
-    <!-- ========== B2 处置动作记录弹窗 ========== -->
-    <el-dialog v-model="actionDialogVisible" title="记录处置动作" width="560px" :close-on-click-modal="false">
-      <div class="dialog-form">
-        <div class="form-row">
-          <label>动作类型</label>
-          <select v-model="actionForm.actionType" class="form-input">
-            <option v-for="t in ACTION_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label>摘要</label>
-          <input v-model="actionForm.summary" type="text" class="form-input" placeholder="一句话：做了什么" maxlength="255" />
-        </div>
-        <div class="form-row">
-          <label>详情</label>
-          <textarea v-model="actionForm.detail" class="form-input" rows="4" placeholder="命令/配置/日志片段（可选）"></textarea>
-        </div>
-        <div class="form-row">
-          <label>是否有效</label>
-          <select v-model="actionForm.effective" class="form-input">
-            <option :value="null">未判定</option>
-            <option :value="true">有效</option>
-            <option :value="false">无效（失败尝试同样记录）</option>
-          </select>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="actionDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="actionSubmitting" @click="doAddAction">提交</el-button>
-      </template>
-    </el-dialog>
+    <!-- #7 已沉淀为知识徽标（含反馈计数）：无回链文档时组件自渲染为空 -->
+    <SunkKnowledgeBadge
+      v-if="ticket"
+      :ticket-id="ticket.id"
+      @goto-doc="onSinkGotoDoc"
+    />
 
-    <!-- ========== B3 验证弹窗 ========== -->
-    <el-dialog v-model="verifyDialogVisible" title="修复验证" width="560px" :close-on-click-modal="false">
-      <div class="dialog-form">
-        <template v-if="!verifyForm.skip">
-          <div class="form-row">
-            <label>验证方式</label>
-            <select v-model="verifyForm.method" class="form-input">
-              <option value="MONITOR">监控确认</option>
-              <option value="LOG">日志确认</option>
-              <option value="BUSINESS">业务确认</option>
-              <option value="MANUAL">人工确认</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label>验证结论</label>
-            <textarea v-model="verifyForm.conclusion" class="form-input" rows="4" placeholder="确认业务已恢复、指标回到基线等"></textarea>
-          </div>
-        </template>
-        <template v-else>
-          <div class="form-row">
-            <label>跳过理由</label>
-            <textarea v-model="verifyForm.skipReason" class="form-input" rows="3" placeholder="跳过验证的理由（必填，将记入审计）"></textarea>
-          </div>
-        </template>
-        <label class="skip-toggle">
-          <input type="checkbox" v-model="verifyForm.skip" />
-          <span>跳过验证（MTTR 统计时将排除此工单）</span>
-        </label>
-      </div>
-      <template #footer>
-        <el-button @click="verifyDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="verifySubmitting" @click="doSubmitVerification">
-          {{ verifyForm.skip ? '跳过并解决' : '验证通过' }}
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <!-- ========== B3 根因确认弹窗 ========== -->
-    <el-dialog v-model="rootCauseDialogVisible" title="确认根因" width="600px" :close-on-click-modal="false">
-      <div class="dialog-form">
-        <div class="form-row">
-          <label>根因分类</label>
-          <select v-model="rootCauseForm.category" class="form-input">
-            <option v-for="c in RC_CATEGORIES" :key="c.value" :value="c.value">{{ c.label }}</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label>根因描述</label>
-          <textarea v-model="rootCauseForm.rootCause" class="form-input" rows="8" placeholder="人工确认的根因。可一键采纳 AI 分析内容后编辑。"></textarea>
-        </div>
-        <p class="form-hint">AI 建议已自动填入，供参考后编辑。人工确认的根因 ≠ AI 建议。</p>
-      </div>
-      <template #footer>
-        <el-button @click="rootCauseDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="rootCauseSubmitting" @click="doConfirmRootCause">确认根因</el-button>
-      </template>
-    </el-dialog>
+    <!-- B2/B3 三个表单弹窗（处置动作 / 修复验证 / 确认根因），拆到 TicketFormDialogs -->
+    <TicketFormDialogs
+      v-model:action-dialog-visible="actionDialogVisible"
+      v-model:action-form="actionForm"
+      v-model:verify-dialog-visible="verifyDialogVisible"
+      v-model:verify-form="verifyForm"
+      v-model:root-cause-dialog-visible="rootCauseDialogVisible"
+      v-model:root-cause-form="rootCauseForm"
+      :action-submitting="actionSubmitting"
+      :verify-submitting="verifySubmitting"
+      :root-cause-submitting="rootCauseSubmitting"
+      @add-action="doAddAction"
+      @submit-verification="doSubmitVerification"
+      @confirm-root-cause="doConfirmRootCause"
+    />
 
     <!-- ========== B4 复盘抽屉（拆分为独立组件，逻辑见 useTicketPostmortem） ========== -->
     <PostmortemDrawer
@@ -1109,7 +1083,7 @@ const onSinkGotoDoc = (docId: number) => {
 <style scoped lang="scss">
 .ticket-detail {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 /* ========== Breadcrumb ========== */
@@ -1152,8 +1126,8 @@ const onSinkGotoDoc = (docId: number) => {
 
 /* ========== Ticket Header Card ========== */
 .ticket-header-card {
-  background: var(--color-surface, var(--surface-1));
-  border: 1px solid var(--color-border-light, var(--border-1));
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 24px;
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
@@ -1161,8 +1135,8 @@ const onSinkGotoDoc = (docId: number) => {
 
 /* ========== Ticket Description Card ========== */
 .ticket-description-card {
-  background: var(--color-surface, var(--surface-1));
-  border: 1px solid var(--color-border-light, var(--border-1));
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 20px 24px;
   margin-top: 16px;
@@ -1171,13 +1145,13 @@ const onSinkGotoDoc = (docId: number) => {
 .description-title {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
   margin: 0 0 8px 0;
 }
 .description-body {
   font-size: 0.9375rem;
   line-height: 1.7;
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1198,17 +1172,17 @@ const onSinkGotoDoc = (docId: number) => {
 }
 
 .badge-status-processing {
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  color: var(--color-primary-light, var(--brand-hover));
+  background: var(--brand-subtle, var(--brand-subtle));
+  color: var(--brand-hover, var(--brand-hover));
 }
 
 .badge-status-pending {
-  background: var(--state-warning-bg, var(--warning-subtle));
-  color: var(--state-warning, var(--warning));
+  background: var(--warning-subtle, var(--warning-subtle));
+  color: var(--warning, var(--warning));
 }
 
 .badge-status-resolved {
-  background: var(--state-success, var(--success));
+  background: var(--success, var(--success));
   color: white;
 }
 
@@ -1218,8 +1192,8 @@ const onSinkGotoDoc = (docId: number) => {
 }
 
 .badge-priority-urgent {
-  background: var(--state-error-bg, var(--danger-subtle));
-  color: var(--state-error, var(--danger));
+  background: var(--danger-subtle, var(--danger-subtle));
+  color: var(--danger, var(--danger));
 }
 
 .badge-priority-high {
@@ -1228,8 +1202,8 @@ const onSinkGotoDoc = (docId: number) => {
 }
 
 .badge-priority-medium {
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  color: var(--color-primary, var(--brand));
+  background: var(--brand-subtle, var(--brand-subtle));
+  color: var(--brand, var(--brand));
 }
 
 .badge-priority-low {
@@ -1241,7 +1215,7 @@ const onSinkGotoDoc = (docId: number) => {
   font-family: var(--font-display, 'Inter', sans-serif);
   font-size: var(--text-xl, 1.25rem);
   font-weight: var(--weight-semibold, 600);
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   margin: 0 0 12px 0;
   letter-spacing: -0.01em;
 }
@@ -1251,27 +1225,35 @@ const onSinkGotoDoc = (docId: number) => {
   align-items: center;
   gap: 4px;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
 
 .meta-label {
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
 }
 
 .meta-value {
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   font-weight: var(--weight-medium, 500);
 }
 
 .meta-assignee {
-  color: var(--color-primary-light, var(--brand-hover));
+  color: var(--brand-hover, var(--brand-hover));
+}
+
+.meta-link {
+  color: var(--brand, var(--brand));
+  font-size: var(--text-sm, 0.875rem);
+  text-decoration: none;
+
+  &:hover { text-decoration: underline; }
 }
 
 .meta-dot {
   margin: 0 4px;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 
 .ticket-actions {
@@ -1286,19 +1268,19 @@ const onSinkGotoDoc = (docId: number) => {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border, var(--border-2));
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-2, var(--border-2));
+  border-radius: var(--radius, 8px);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: var(--color-surface, var(--surface-1));
-  color: var(--color-text-secondary, var(--text-2));
+  background: var(--surface-1, var(--surface-1));
+  color: var(--text-2, var(--text-2));
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary, var(--brand));
-    color: var(--color-primary, var(--brand));
+    border-color: var(--brand, var(--brand));
+    color: var(--brand, var(--brand));
   }
 }
 
@@ -1312,17 +1294,17 @@ const onSinkGotoDoc = (docId: number) => {
   gap: 6px;
   padding: 8px 16px;
   border: none;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius, 8px);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--weight-medium, 500);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: var(--color-primary, var(--brand));
+  background: var(--brand, var(--brand));
   color: white;
   cursor: pointer;
   transition: background 0.15s ease;
 
   &:hover {
-    background: var(--color-primary-light, var(--brand-hover));
+    background: var(--brand-hover, var(--brand-hover));
   }
 
   &:disabled {
@@ -1332,13 +1314,13 @@ const onSinkGotoDoc = (docId: number) => {
 }
 
 .primary-icon {
-  color: var(--color-primary-light, var(--brand-hover));
+  color: var(--brand-hover, var(--brand-hover));
 }
 
 /* ========== Reply Box ========== */
 .reply-box {
-  background: var(--color-surface, var(--surface-1));
-  border: 1px solid var(--color-border-light, var(--border-1));
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: var(--radius-lg, 12px);
   padding: 16px;
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
@@ -1348,20 +1330,20 @@ const onSinkGotoDoc = (docId: number) => {
 .reply-textarea {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
   font-size: var(--text-sm, 0.875rem);
   line-height: var(--leading-relaxed, 1.625);
   font-family: var(--font-body, 'Inter', sans-serif);
-  background: var(--color-bg, var(--surface-0));
-  color: var(--color-text-primary, var(--text-1));
+  background: var(--surface-0, var(--surface-0));
+  color: var(--text-1, var(--text-1));
   outline: none;
   resize: none;
   box-sizing: border-box;
 
   &:focus {
-    border-color: var(--color-primary-light, var(--brand-hover));
-    box-shadow: 0 0 0 2px var(--color-primary-lighter, var(--brand-subtle));
+    border-color: var(--brand-hover, var(--brand-hover));
+    box-shadow: 0 0 0 2px var(--brand-subtle, var(--brand-subtle));
   }
 }
 
@@ -1375,7 +1357,7 @@ const onSinkGotoDoc = (docId: number) => {
 /* AI 智能分析面板：CollapsibleCard 的 scoped 根元素带本组件 data-v，
    故父作用域 .td-ai-card 规则可直接命中其根，赋予主色高亮边框以突出重点 */
 .td-ai-card {
-  border: 2px solid var(--color-primary-lighter, var(--brand-subtle));
+  border: 2px solid var(--brand-subtle, var(--brand-subtle));
 }
 
 /* ── 右侧栏样式已随模板一并搬出 ──────────────────────────────
@@ -1400,9 +1382,9 @@ const onSinkGotoDoc = (docId: number) => {
   align-items: flex-start;
   gap: 0;
   padding: 16px 20px;
-  background: var(--color-surface, #fff);
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--color-border-light, var(--border-1));
+  background: var(--surface-1, #fff);
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--border-1, var(--border-1));
   margin-bottom: 16px;
 }
 
@@ -1424,7 +1406,7 @@ const onSinkGotoDoc = (docId: number) => {
   left: 50%;
   right: -50%;
   height: 2px;
-  background: var(--color-border, var(--border-1));
+  background: var(--border-2, var(--border-1));
   z-index: 0;
 }
 
@@ -1439,8 +1421,8 @@ const onSinkGotoDoc = (docId: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--color-border, var(--border-1));
-  background: var(--color-surface, #fff);
+  border: 2px solid var(--border-2, var(--border-1));
+  background: var(--surface-1, #fff);
   color: var(--text-3);
   z-index: 1;
   flex-shrink: 0;
@@ -1454,7 +1436,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 .cp-step.current .cp-dot {
   border-color: var(--brand);
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1, var(--surface-1));
 }
 
 .cp-dot-inner {
@@ -1479,7 +1461,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 .cp-label {
   font-size: 12px;
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1488,9 +1470,15 @@ const onSinkGotoDoc = (docId: number) => {
 .cp-step.current .cp-label { color: var(--brand); font-weight: 600; }
 .cp-step.skipped .cp-label { color: var(--text-3); }
 
+/* 可点击的步骤：当前步用指针和悬停下划线提示「这里能操作」，
+   已完成的步骤保持可点（允许补记），但不抢视觉焦点 */
+.cp-step.actionable { cursor: pointer; }
+.cp-step.actionable:hover .cp-label { text-decoration: underline; }
+.cp-step.actionable:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
 .cp-meta {
   font-size: 11px;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   font-variant-numeric: tabular-nums;
 }
 
@@ -1500,114 +1488,7 @@ const onSinkGotoDoc = (docId: number) => {
   text-decoration-color: var(--text-3);
 }
 
-/* ===== B2~B4 弹窗 / 抽屉表单 ===== */
-.dialog-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.dialog-form .form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dialog-form .form-row label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary, var(--text-2));
-}
-
-.dialog-form .form-input {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border, var(--border-1));
-  border-radius: 6px;
-  font-size: 14px;
-  font-family: inherit;
-  box-sizing: border-box;
-}
-
-.form-hint {
-  font-size: 12px;
-  color: var(--color-text-tertiary, var(--text-3));
-  margin: 4px 0 0 0;
-}
-
-.skip-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text-secondary, var(--text-2));
-  cursor: pointer;
-}
-
-/* ===== B2 处置阶段切换 + 动作列表 ===== */
-.stage-switcher {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--color-surface, #fff);
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--color-border-light, var(--border-1));
-  margin-bottom: 16px;
-}
-
-.stage-btn {
-  padding: 6px 14px;
-  border: 1px solid var(--color-border, var(--border-1));
-  border-radius: 6px;
-  background: var(--color-surface, var(--surface-1));
-  font-size: 13px;
-  color: var(--color-text-secondary, var(--text-2));
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.stage-btn:hover { border-color: var(--color-primary, var(--brand)); color: var(--color-primary, var(--brand)); }
-.stage-btn.active { background: var(--color-primary, var(--brand)); color: #fff; border-color: var(--color-primary, var(--brand)); }
-
-.action-list-section {
-  margin-bottom: 16px;
-}
-
-.action-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, var(--border-1));
-  margin-bottom: 6px;
-}
-
-.action-item.action-ineffective {
-  opacity: 0.6;
-  border-style: dashed;
-}
-
-.action-type-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--info-subtle);
-  color: var(--info);
-}
-
-.action-type-badge.action-type-mitigate { background: var(--warning-subtle); color: var(--warning); }
-.action-type-badge.action-type-fix { background: var(--success-subtle); color: var(--success); }
-.action-type-badge.action-type-rollback { background: var(--danger-subtle); color: var(--danger); }
-.action-type-badge.action-type-verify { background: #E0E7FF; color: #4338CA; }
-
-.action-summary { flex: 1; color: var(--color-text-primary, var(--text-1)); }
-.action-eff { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
-.eff-ok { background: var(--success-subtle); color: var(--success); }
-.eff-no { background: var(--danger-subtle); color: var(--danger); }
-.action-meta { font-size: 11px; color: var(--color-text-tertiary, var(--text-3)); white-space: nowrap; }
+/* B2 处置阶段条/动作列表的样式随模板搬到 TicketActionSection.vue，
+   B2/B3 三个弹窗的表单样式随模板搬到 TicketFormDialogs.vue
+   （scoped 不穿透组件边界，留在这里就是死样式）。 */
 </style>

@@ -2,10 +2,10 @@
 import { notify } from '@/utils/notify'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bot } from 'lucide-vue-next'
 import AppErrorBoundary from '@/components/common/AppErrorBoundary.vue'
 import NetworkBanner from '@/components/common/NetworkBanner.vue'
-import AppNavbar from '@/components/common/AppNavbar.vue'
+import AppSidebar from '@/components/common/AppSidebar.vue'
+import AppTopBar from '@/components/common/AppTopBar.vue'
 import HotkeysDialog from '@/components/common/HotkeysDialog.vue'
 import { ElMessageBox } from 'element-plus'
 import { useIdleTimer } from '@/composables/useIdleTimer'
@@ -22,15 +22,15 @@ const app = useAppStore()
 // 全局告警通知：连接 /ws/alerts，收到 NEW 告警时推入通知 store
 useAlertNotifications()
 
-// 登出时清掉上一个用户的 AI 对话历史（含知识库引用原文）。
+// 登出时清掉上一个用户的本地敏感数据（遗留对话持久键、沉淀草稿、Query 缓存）。
 // 挂在根组件是刻意的：登出有四条路径，逐个加清理必漏一条——
 // 监听登录态这个状态事实才能全覆盖。详见该 composable 的文件头。
 useSessionCleanup()
 
 const compactBodyClass = computed(() => app.settings.compactTable ? 'compact-tables' : '')
 
-/** 是否在 AI 对话页面自身：FAB 在该页面隐藏 */
-const isOnAiChat = computed(() => route.path === '/ai-chat')
+/** 无壳页面（登录页）：全屏渲染，不带侧栏/TopBar */
+const isBare = computed(() => !!route.meta.bare)
 
 let warnCloseFn: (() => void) | null = null
 
@@ -129,52 +129,49 @@ useHotkeys([
 <template>
   <div class="app-root" :class="compactBodyClass">
     <NetworkBanner />
-    <AppNavbar />
-    <router-view v-slot="{ Component }">
-      <AppErrorBoundary scope="页面">
-        <keep-alive include="Dashboard">
+    <!-- 无壳页面（登录页等全屏场景）：不渲染侧栏与 TopBar。
+         注意结构：v-if 包在 template 上而不是 router-view 上——
+         v-if 与 v-slot 同挂在 router-view 上时作用域插槽的编译结果不可靠 -->
+    <template v-if="isBare">
+      <router-view v-slot="{ Component }">
+        <AppErrorBoundary scope="页面">
           <component :is="Component" />
-        </keep-alive>
-      </AppErrorBoundary>
-    </router-view>
-    <!-- 全局 AI 对话入口：FAB 悬浮按钮跳转独立页面 -->
-    <button
-      v-if="!isOnAiChat"
-      class="ai-fab"
-      @click="router.push({ path: '/ai-chat', query: { from: route.fullPath } })"
-      aria-label="AI 智能助手"
-    >
-      <Bot :size="24" />
-    </button>
+        </AppErrorBoundary>
+      </router-view>
+    </template>
+    <!-- 侧栏布局壳（2026-09-27）：导航在左（AppSidebar），搜索/通知在顶（AppTopBar），
+         内容区随窗口滚动；TopBar sticky 保持在视口顶 -->
+    <div v-else class="app-shell">
+      <AppSidebar />
+      <div class="app-main">
+        <AppTopBar />
+        <router-view v-slot="{ Component }">
+          <AppErrorBoundary scope="页面">
+            <!-- 首页承载值班工作台（Dashboard）：缓存 Home 子树即保住工作台状态 -->
+            <keep-alive include="Home">
+              <component :is="Component" />
+            </keep-alive>
+          </AppErrorBoundary>
+        </router-view>
+      </div>
+    </div>
     <!-- 快捷键帮助面板：内容由当前页真实注册的快捷键派生 -->
     <HotkeysDialog v-model:visible="hotkeysVisible" />
   </div>
 </template>
 
 <style>
-.ai-fab {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  background: var(--el-color-primary, var(--brand));
-  color: #fff;
-  cursor: pointer;
+/* 布局壳（全局，不 scoped：子组件不需要看到这些类名，但保持就近） */
+.app-shell {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.4);
-  transition: transform 0.2s, box-shadow 0.2s;
-  z-index: 2000;
+  align-items: flex-start;
+  min-height: 100vh;
 }
-.ai-fab:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 24px rgba(64, 158, 255, 0.5);
-}
-.ai-fab--active {
-  transform: rotate(90deg);
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 </style>

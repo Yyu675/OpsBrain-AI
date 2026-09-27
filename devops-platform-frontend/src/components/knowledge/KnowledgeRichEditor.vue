@@ -93,8 +93,8 @@ onBeforeUnmount(() => {
   min-height: calc(100vh - 230px);
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--color-border-light);
-  background: var(--color-bg-elevated);
+  border-top: 1px solid var(--border-1);
+  background: var(--surface-1);
 }
 
 .kr-toolbar {
@@ -102,8 +102,8 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 2;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border-light);
-  background: var(--color-surface-hover);
+  border-bottom: 1px solid var(--border-1);
+  background: var(--surface-hover);
 }
 
 :deep(.kr-toolbar .w-e-bar) {
@@ -126,22 +126,22 @@ onBeforeUnmount(() => {
   width: 32px;
   height: 32px;
   border-radius: 4px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 :deep(.w-e-bar-item button:hover) {
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
+  background: var(--brand-subtle);
+  color: var(--brand);
 }
 
 :deep(.w-e-text-container) {
   min-height: calc(100vh - 280px);
-  background: var(--color-bg-elevated);
+  background: var(--surface-1);
 }
 
 :deep(.w-e-text-placeholder) {
   top: 22px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-style: normal;
 }
 
@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
   padding: 18px 18px 56px;
   font-size: 15px;
   line-height: 1.8;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 :deep(.w-e-text h2) {

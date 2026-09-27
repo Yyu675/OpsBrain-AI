@@ -2,9 +2,7 @@ import { computed, type Ref } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 
 import {
-  getClosureMetrics,
   getDashboardOverview,
-  getDiagnosisBoard,
   getRootCauseStats,
   getTrends,
   type ClosureMetrics,
@@ -22,6 +20,10 @@ import { dashboardKeys } from '@/config/queryKeys'
  * 降级策略从「catch 里返回兜底值」变成「模板按各自的 error 分支渲染」——
  * 趋势加载失败只让图表区降级，不影响已加载成功的 KPI（6.51 契约），
  * 且失败区块能各自提供重试入口，而非只能整页刷新。
+ *
+ * 2026-09-26 瘦身：闭环度量（useClosureMetricsQuery）与诊断区看板
+ * （useDiagnosisBoardQuery）两个 hook 随数据概览的对应区块一起迁往效能大盘
+ * （Effectiveness.vue 用 ['eff', ...] 键直连 api/dashboard），本模块不再持有。
  */
 
 /**
@@ -40,23 +42,6 @@ export function useDashboardOverviewQuery() {
     queryFn: () => getDashboardOverview(),
     staleTime: 30_000, // 30 秒内视为新鲜数据
     gcTime: 5 * 60_000, // 5 分钟垃圾回收
-  })
-}
-
-/**
- * B5 闭环度量（MTTA / MTTM / MTTR）。
- *
- * 独立查询：闭环度量与 AI 调用概览来自不同后端端点，
- * 一方失败不该让另一方也看不到。
- *
- * **缓存策略**：同 Overview，30 秒缓存窗口。
- */
-export function useClosureMetricsQuery() {
-  return useQuery({
-    queryKey: dashboardKeys.closureMetrics(),
-    queryFn: () => getClosureMetrics(),
-    staleTime: 30_000,
-    gcTime: 5 * 60_000,
   })
 }
 
@@ -87,22 +72,6 @@ export function useTrendsQuery(days: Ref<number>, module?: Ref<string | undefine
   return useQuery({
     queryKey: computed(() => dashboardKeys.trends(days.value, module?.value)),
     queryFn: () => getTrends(days.value, module?.value),
-    staleTime: 30_000,
-    gcTime: 5 * 60_000,
-  })
-}
-
-/**
- * 诊断区看板（S4-4.2）。
- *
- * @param days 窗口天数（进 queryKey，切换即自动重拉）
- *
- * **缓存策略**：按 days 维度独立缓存，30 秒有效期。
- */
-export function useDiagnosisBoardQuery(days: Ref<number>) {
-  return useQuery({
-    queryKey: computed(() => dashboardKeys.diagnosisBoard(days.value)),
-    queryFn: () => getDiagnosisBoard(days.value),
     staleTime: 30_000,
     gcTime: 5 * 60_000,
   })

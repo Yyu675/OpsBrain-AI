@@ -996,7 +996,7 @@ const OUTCOME_LABELS: Record<string, string> = {
 <style scoped lang="scss">
 .policy-page {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .policy-main {
@@ -1019,7 +1019,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .page-sub {
@@ -1027,10 +1027,10 @@ const OUTCOME_LABELS: Record<string, string> = {
   max-width: 72ch;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   strong {
-    color: var(--color-text-secondary);
+    color: var(--text-2);
     font-weight: 600;
   }
 }
@@ -1049,13 +1049,13 @@ const OUTCOME_LABELS: Record<string, string> = {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   cursor: pointer;
 
-  &:hover:not(:disabled) { background: var(--color-fill-light); }
+  &:hover:not(:disabled) { background: var(--surface-2); }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
@@ -1075,25 +1075,25 @@ const OUTCOME_LABELS: Record<string, string> = {
 }
 
 .btn-ghost {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 
   &:hover:not(:disabled) {
-    background: var(--color-fill-light);
-    color: var(--color-text-primary);
+    background: var(--surface-2);
+    color: var(--text-1);
   }
 
   &.is-danger:hover:not(:disabled) {
-    color: var(--color-danger);
-    border-color: rgb(from var(--color-danger) r g b / 0.3);
-    background: rgb(from var(--color-danger) r g b / 0.06);
+    color: var(--danger);
+    border-color: rgb(from var(--danger) r g b / 0.3);
+    background: rgb(from var(--danger) r g b / 0.06);
   }
 }
 
 .btn-primary {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
+  border: 1px solid var(--brand);
+  background: var(--brand);
   color: #fff;
 
   &:hover:not(:disabled) { opacity: 0.9; }
@@ -1124,9 +1124,9 @@ const OUTCOME_LABELS: Record<string, string> = {
   gap: 8px;
   height: 28px;
   padding: 0 10px 0 9px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-fill-lighter);
+  background: var(--surface-2);
   overflow: hidden;
 
   &::before {
@@ -1136,19 +1136,19 @@ const OUTCOME_LABELS: Record<string, string> = {
     top: 0;
     bottom: 0;
     width: 2px;
-    background: var(--color-text-tertiary);
+    background: var(--text-3);
   }
 
-  &.is-danger::before { background: var(--color-danger); }
+  &.is-danger::before { background: var(--danger); }
 }
 
-.stat-label { font-size: 12px; color: var(--color-text-tertiary); }
+.stat-label { font-size: 12px; color: var(--text-3); }
 
 .stat-value {
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 /* ===== 筛选栏 ===== */
@@ -1168,7 +1168,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   left: 9px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
   pointer-events: none;
 }
 
@@ -1178,7 +1178,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   gap: 5px;
   margin: 0 0 10px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 /* ===== 控件 ===== */
@@ -1188,10 +1188,10 @@ const OUTCOME_LABELS: Record<string, string> = {
   padding: 0 9px;
   font-size: 13px;
   font-family: inherit;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
 
   &.has-icon { padding-left: 28px; }
 
@@ -1209,8 +1209,8 @@ const OUTCOME_LABELS: Record<string, string> = {
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgb(from var(--color-primary) r g b / 0.1);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgb(from var(--brand) r g b / 0.1);
   }
 
   &:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -1218,10 +1218,10 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 /* ===== 表格 ===== */
 .table-wrap {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 10px;
   overflow: hidden;
-  background: var(--color-surface);
+  background: var(--surface-1);
 }
 
 .policy-table {
@@ -1236,19 +1236,19 @@ const OUTCOME_LABELS: Record<string, string> = {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-tertiary);
-    background: var(--color-fill-lighter);
-    border-bottom: 1px solid var(--color-border-light);
+    color: var(--text-3);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-1);
   }
 
   tbody td {
     padding: 10px 12px;
     vertical-align: top;
-    border-bottom: 1px solid var(--color-border-lighter, var(--color-border-light));
+    border-bottom: 1px solid var(--border-1, var(--border-1));
   }
 
   tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: var(--color-fill-lighter); }
+  tbody tr:hover { background: var(--surface-2); }
   tbody tr.is-disabled-row { opacity: 0.62; }
 }
 
@@ -1263,7 +1263,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .stop-tag {
@@ -1272,14 +1272,14 @@ const OUTCOME_LABELS: Record<string, string> = {
   padding: 1px 5px;
   font-size: 10px;
   border-radius: 3px;
-  background: var(--color-fill-light);
-  color: var(--color-text-tertiary);
+  background: var(--surface-2);
+  color: var(--text-3);
 }
 
 .policy-name {
   display: block;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .cell-sub {
@@ -1287,7 +1287,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   margin-top: 2px;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .env-chip {
@@ -1299,14 +1299,14 @@ const OUTCOME_LABELS: Record<string, string> = {
   font-size: 10px;
   font-family: var(--font-mono, ui-monospace, monospace);
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-fill-lighter);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-2);
+  color: var(--text-2);
 
   &.is-prod {
-    color: var(--color-danger);
-    border-color: rgb(from var(--color-danger) r g b / 0.3);
-    background: rgb(from var(--color-danger) r g b / 0.07);
+    color: var(--danger);
+    border-color: rgb(from var(--danger) r g b / 0.3);
+    background: rgb(from var(--danger) r g b / 0.07);
   }
 }
 
@@ -1325,28 +1325,28 @@ const OUTCOME_LABELS: Record<string, string> = {
   font-size: 10px;
   font-weight: 600;
   border-radius: 3px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-fill-lighter);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-2);
+  color: var(--text-2);
 
   /* P0/P1 标红：它们必然走人机协同，视觉上要能一眼分辨 */
   &.is-critical {
-    color: var(--color-danger);
-    border-color: rgb(from var(--color-danger) r g b / 0.3);
-    background: rgb(from var(--color-danger) r g b / 0.07);
+    color: var(--danger);
+    border-color: rgb(from var(--danger) r g b / 0.3);
+    background: rgb(from var(--danger) r g b / 0.07);
   }
 }
 
 .match-text {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   word-break: break-all;
 }
 
 .action-name {
   display: block;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .action-key {
@@ -1354,7 +1354,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   margin-top: 2px;
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   word-break: break-all;
 }
 
@@ -1369,9 +1369,9 @@ const OUTCOME_LABELS: Record<string, string> = {
   border-radius: 3px;
 
   &.is-high {
-    color: var(--color-danger);
-    border: 1px solid rgb(from var(--color-danger) r g b / 0.28);
-    background: rgb(from var(--color-danger) r g b / 0.07);
+    color: var(--danger);
+    border: 1px solid rgb(from var(--danger) r g b / 0.28);
+    background: rgb(from var(--danger) r g b / 0.07);
   }
 }
 
@@ -1382,8 +1382,8 @@ const OUTCOME_LABELS: Record<string, string> = {
   font-size: 12px;
 
   .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  &.is-on { color: var(--color-success); }
-  &.is-off { color: var(--color-text-quaternary, var(--color-text-tertiary)); }
+  &.is-on { color: var(--success); }
+  &.is-off { color: var(--text-3, var(--text-3)); }
 }
 
 .mode-tag {
@@ -1394,14 +1394,14 @@ const OUTCOME_LABELS: Record<string, string> = {
   border-radius: 3px;
 
   &.is-dry {
-    color: var(--color-info, var(--color-text-secondary));
-    background: var(--color-fill-light);
+    color: var(--info, var(--text-2));
+    background: var(--surface-2);
   }
 
   /* 真实执行用警示色——这是「会动手」的状态 */
   &.is-live {
-    color: var(--color-warning);
-    background: rgb(from var(--color-warning) r g b / 0.1);
+    color: var(--warning);
+    background: rgb(from var(--warning) r g b / 0.1);
   }
 }
 
@@ -1414,7 +1414,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   border-radius: 999px;
   font-size: 11px;
   line-height: 18px;
-  color: var(--text-secondary, #8a94a6);
+  color: var(--text-2);
   background: rgba(138, 148, 166, 0.12);
   white-space: nowrap;
 }
@@ -1442,8 +1442,8 @@ const OUTCOME_LABELS: Record<string, string> = {
   padding: 1px 5px;
   font-size: 10px;
   border-radius: 3px;
-  color: var(--color-danger);
-  background: rgb(from var(--color-danger) r g b / 0.08);
+  color: var(--danger);
+  background: rgb(from var(--danger) r g b / 0.08);
   cursor: help;
 }
 
@@ -1459,9 +1459,9 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 .form-group {
   padding: 12px 14px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
-  background: var(--color-fill-lighter);
+  background: var(--surface-2);
 
   legend {
     padding: 0 6px;
@@ -1469,13 +1469,13 @@ const OUTCOME_LABELS: Record<string, string> = {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 
   /* 安全开关组用警示描边，与普通字段区分 */
   &.is-safety {
-    border-color: rgb(from var(--color-warning) r g b / 0.3);
-    background: rgb(from var(--color-warning) r g b / 0.04);
+    border-color: rgb(from var(--warning) r g b / 0.3);
+    background: rgb(from var(--warning) r g b / 0.04);
   }
 }
 
@@ -1506,10 +1506,10 @@ const OUTCOME_LABELS: Record<string, string> = {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
-.req { color: var(--color-danger); font-style: normal; }
+.req { color: var(--danger); font-style: normal; }
 
 .field-hint {
   display: flex;
@@ -1518,9 +1518,9 @@ const OUTCOME_LABELS: Record<string, string> = {
   margin: 4px 0 0;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
-  &.is-warn { color: var(--color-warning); }
+  &.is-warn { color: var(--warning); }
   &.inline { margin: 0; }
 
   strong { font-weight: 600; }
@@ -1541,20 +1541,20 @@ const OUTCOME_LABELS: Record<string, string> = {
   padding: 0 10px;
   font-size: 12px;
   font-weight: 600;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   cursor: pointer;
 
   &:has(input:checked) {
-    border-color: var(--color-primary);
-    background: rgb(from var(--color-primary) r g b / 0.06);
+    border-color: var(--brand);
+    background: rgb(from var(--brand) r g b / 0.06);
   }
 
   &.is-critical:has(input:checked) {
-    border-color: var(--color-danger);
-    background: rgb(from var(--color-danger) r g b / 0.07);
-    color: var(--color-danger);
+    border-color: var(--danger);
+    background: rgb(from var(--danger) r g b / 0.07);
+    color: var(--danger);
   }
 }
 
@@ -1565,13 +1565,13 @@ const OUTCOME_LABELS: Record<string, string> = {
   margin-bottom: 10px;
   padding: 8px 10px;
   border-radius: 6px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   strong {
-    color: var(--color-text-primary);
+    color: var(--text-1);
     font-weight: 600;
   }
 }
@@ -1582,7 +1582,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   gap: 8px;
   margin-bottom: 8px;
   font-size: 13px;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   cursor: pointer;
 
   &:last-of-type { margin-bottom: 0; }
@@ -1596,9 +1596,9 @@ const OUTCOME_LABELS: Record<string, string> = {
   padding: 8px 10px;
   font-size: 12px;
   border-radius: 6px;
-  color: var(--color-danger);
-  background: rgb(from var(--color-danger) r g b / 0.07);
-  border: 1px solid rgb(from var(--color-danger) r g b / 0.2);
+  color: var(--danger);
+  background: rgb(from var(--danger) r g b / 0.07);
+  border: 1px solid rgb(from var(--danger) r g b / 0.2);
 }
 
 /* ===== 预演 ===== */
@@ -1606,7 +1606,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   margin: 0 0 14px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .sim-result { margin-top: 16px; }
@@ -1621,15 +1621,15 @@ const OUTCOME_LABELS: Record<string, string> = {
   margin-bottom: 12px;
 
   &.is-matched {
-    color: var(--color-success);
-    background: rgb(from var(--color-success) r g b / 0.07);
-    border: 1px solid rgb(from var(--color-success) r g b / 0.25);
+    color: var(--success);
+    background: rgb(from var(--success) r g b / 0.07);
+    border: 1px solid rgb(from var(--success) r g b / 0.25);
   }
 
   &.is-none {
-    color: var(--color-text-secondary);
-    background: var(--color-fill-light);
-    border: 1px solid var(--color-border-light);
+    color: var(--text-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border-1);
   }
 }
 
@@ -1643,13 +1643,13 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 .sim-item {
   padding: 9px 11px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 7px;
-  background: var(--color-surface);
+  background: var(--surface-1);
 
   &.is-matched {
-    border-color: rgb(from var(--color-primary) r g b / 0.35);
-    background: rgb(from var(--color-primary) r g b / 0.04);
+    border-color: rgb(from var(--brand) r g b / 0.35);
+    background: rgb(from var(--brand) r g b / 0.04);
   }
 
   /* 未被求值的策略降透明度——它们不参与本次决策 */
@@ -1666,13 +1666,13 @@ const OUTCOME_LABELS: Record<string, string> = {
 .sim-pri {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .sim-name {
   font-weight: 600;
   font-size: 13px;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .outcome-tag {
@@ -1683,26 +1683,26 @@ const OUTCOME_LABELS: Record<string, string> = {
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-fill-lighter);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-2);
+  color: var(--text-2);
 
   &.is-execute {
-    color: var(--color-warning);
-    border-color: rgb(from var(--color-warning) r g b / 0.3);
-    background: rgb(from var(--color-warning) r g b / 0.09);
+    color: var(--warning);
+    border-color: rgb(from var(--warning) r g b / 0.3);
+    background: rgb(from var(--warning) r g b / 0.09);
   }
 
   &.is-pending-approval {
-    color: var(--color-primary);
-    border-color: rgb(from var(--color-primary) r g b / 0.3);
-    background: rgb(from var(--color-primary) r g b / 0.07);
+    color: var(--brand);
+    border-color: rgb(from var(--brand) r g b / 0.3);
+    background: rgb(from var(--brand) r g b / 0.07);
   }
 
   &.is-blocked {
-    color: var(--color-danger);
-    border-color: rgb(from var(--color-danger) r g b / 0.3);
-    background: rgb(from var(--color-danger) r g b / 0.07);
+    color: var(--danger);
+    border-color: rgb(from var(--danger) r g b / 0.3);
+    background: rgb(from var(--danger) r g b / 0.07);
   }
 }
 
@@ -1710,12 +1710,12 @@ const OUTCOME_LABELS: Record<string, string> = {
   margin: 5px 0 0;
   font-size: 11px;
   line-height: 1.55;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .sim-empty {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 </style>

@@ -72,11 +72,18 @@ export async function fetchTicketAiAnalysisVersions(ticketId: string): Promise<T
 }
 
 /**
- * 记录 AI 分析反馈（有用 / 没用）——AI 准确率统计数据来源
+ * 记录 AI 分析反馈（有用 / 没用）——AI 准确率统计数据来源。
+ * <p>
+ * 后端（2026-09-24）在反馈时自取本分析 citations 解析出的被引 chunk，
+ * 回流写 sys_knowledge_boost，并把回流条数放进 data.knowledgeBoosted。
+ * 返回该计数供调用方展示「这条反馈影响了多少条知识的检索权重」——
+ * 0 = 该分析无引用或回流降级，不是失败。
+ * </p>
  */
-export async function submitAiAnalysisFeedback(analysisId: number, helpful: boolean): Promise<void> {
+export async function submitAiAnalysisFeedback(analysisId: number, helpful: boolean): Promise<number> {
   const raw = await http.post<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_FEEDBACK(analysisId), { helpful })
-  unwrapBiz<unknown>(raw, '反馈提交失败')
+  const data = unwrapBiz<{ knowledgeBoosted?: number }>(raw, '反馈提交失败')
+  return data?.knowledgeBoosted ?? 0
 }
 
 /**

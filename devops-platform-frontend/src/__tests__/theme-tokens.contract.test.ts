@@ -24,8 +24,9 @@
  * 只有在暗色模式下用肉眼才发现——正因如此它才需要一道自动化防线。
  *
  * ── 唯一的例外 ────────────────────────────────────────────────
- * `SettingsDialog` 的开关滑块。它始终压在有色轨道上，需要固定对比，
- * 跟随主题反而会让暗色下的开关「消失」。例外在下方显式列出，
+ * `GeneralSettingsPanel`（原 SettingsDialog，2026-09-26 设置弹窗升级为
+ * 设置页「常规」标签时迁入）的开关滑块。它始终压在有色轨道上，需要
+ * 固定对比，跟随主题反而会让暗色下的开关「消失」。例外在下方显式列出，
  * 新增例外必须写清理由——这比放宽正则要好，
  * 因为它强迫每一次豁免都被人看见。
  */
@@ -44,8 +45,8 @@ const SRC = join(process.cwd(), 'src')
  * 不写理由的豁免下一个人无法判断能不能动。
  */
 const ALLOWED: Record<string, string> = {
-  'components/common/SettingsDialog.vue':
-    '开关滑块：始终压在有色轨道上需固定对比，跟随主题会让暗色下的开关看起来消失',
+  'components/settings/GeneralSettingsPanel.vue':
+    '开关滑块：始终压在有色轨道上需固定对比，跟随主题会让暗色下的开关看起来消失（豁免自 SettingsDialog 迁入）',
 }
 
 const collectVueFiles = (dir: string, out: string[] = []): string[] => {

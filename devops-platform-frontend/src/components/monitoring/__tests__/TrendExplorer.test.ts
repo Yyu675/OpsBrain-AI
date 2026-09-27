@@ -1,5 +1,5 @@
 /**
- * 趋势分析页组件测试。
+ * 趋势探索器组件测试（原「趋势分析」整页，2026-09-26 并入监控中心下半区）。
  *
  * ── 覆盖重点 ──────────────────────────────────────────────────
  * 1. **统计摘要必须排除 null**。把无数据点计入均值会让数字失真，
@@ -37,7 +37,7 @@ vi.mock('@/utils/notify', () => ({
   handleServerError: vi.fn(),
 }))
 
-import Trends from '../Trends.vue'
+import TrendExplorer from '../TrendExplorer.vue'
 
 const CATALOG = {
   metrics: [
@@ -53,7 +53,7 @@ const rangeResult = (series: unknown[], hours = 6) => ({
 
 let router: Router
 
-const mountPage = async (url = '/trends', catalog = CATALOG, series: unknown[] = [
+const mountPage = async (url = '/monitoring', catalog = CATALOG, series: unknown[] = [
   { labels: { instance: 'node-a' }, points: [{ t: 1000, v: 10 }, { t: 2000, v: 30 }] },
 ]) => {
   api.fetchMetricCatalog.mockResolvedValue(catalog)
@@ -63,14 +63,14 @@ const mountPage = async (url = '/trends', catalog = CATALOG, series: unknown[] =
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: defineComponent({ template: '<div/>' }) },
-      { path: '/trends', component: Trends },
+      { path: '/monitoring', component: TrendExplorer },
       { path: '/integrations', component: defineComponent({ template: '<div/>' }) },
     ],
   })
   await router.push(url)
   await router.isReady()
 
-  const wrapper = mount(Trends, {
+  const wrapper = mount(TrendExplorer, {
     global: {
       plugins: [router],
       stubs: {
@@ -117,7 +117,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('Trends — 时间范围与步长', () => {
+describe('TrendExplorer — 时间范围与步长', () => {
   it('默认 6 小时', async () => {
     const vm = vmOf(await mountPage())
     expect(vm.rangeId).toBe('6h')
@@ -155,26 +155,26 @@ describe('Trends — 时间范围与步长', () => {
   })
 
   it('URL 里的 range 被采纳', async () => {
-    const vm = vmOf(await mountPage('/trends?range=24h'))
+    const vm = vmOf(await mountPage('/monitoring?range=24h'))
     expect(vm.rangeId).toBe('24h')
     expect(api.fetchRange).toHaveBeenCalledWith('cpu.usage', 24, 300)
   })
 
   it('非法 range 回退默认值而非报错', async () => {
-    const vm = vmOf(await mountPage('/trends?range=999y'))
+    const vm = vmOf(await mountPage('/monitoring?range=999y'))
     expect(vm.rangeId).toBe('6h')
   })
 })
 
-describe('Trends — 指标选择', () => {
+describe('TrendExplorer — 指标选择', () => {
   it('URL 里的 metric 被采纳', async () => {
-    const vm = vmOf(await mountPage('/trends?metric=load.avg1'))
+    const vm = vmOf(await mountPage('/monitoring?metric=load.avg1'))
     expect(vm.metricId).toBe('load.avg1')
   })
 
   it('URL 指定了目录里没有的指标时回退到第一个', async () => {
     // 这类链接常来自旧版本或手工编辑，不回退会让页面一直报错
-    const vm = vmOf(await mountPage('/trends?metric=gone.metric'))
+    const vm = vmOf(await mountPage('/monitoring?metric=gone.metric'))
     expect(vm.metricId).toBe('cpu.usage')
   })
 
@@ -184,11 +184,11 @@ describe('Trends — 指标选择', () => {
 
     router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/trends', component: Trends }],
+      routes: [{ path: '/monitoring', component: TrendExplorer }],
     })
-    await router.push('/trends')
+    await router.push('/monitoring')
     await router.isReady()
-    const w = mount(Trends, {
+    const w = mount(TrendExplorer, {
       global: {
         plugins: [router],
         stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true },
@@ -211,9 +211,9 @@ describe('Trends — 指标选择', () => {
   })
 })
 
-describe('Trends — 统计摘要', () => {
+describe('TrendExplorer — 统计摘要', () => {
   it('计算最新 / 峰值 / 谷值 / 均值', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       {
         labels: { instance: 'node-a' },
         points: [
@@ -231,7 +231,7 @@ describe('Trends — 统计摘要', () => {
   })
 
   it('null 点被排除在统计之外——计入会让均值失真', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       {
         labels: { instance: 'node-a' },
         points: [
@@ -251,7 +251,7 @@ describe('Trends — 统计摘要', () => {
   })
 
   it('全为 null 时四项都是 null，不显示 0', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       { labels: { instance: 'node-a' }, points: [{ t: 1, v: null }] },
     ]))
 
@@ -263,7 +263,7 @@ describe('Trends — 统计摘要', () => {
   })
 
   it('0 是有效读数，参与统计', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       { labels: { instance: 'node-a' }, points: [{ t: 1, v: 0 }, { t: 2, v: 10 }] },
     ]))
 
@@ -273,9 +273,9 @@ describe('Trends — 统计摘要', () => {
   })
 })
 
-describe('Trends — 图表数据', () => {
+describe('TrendExplorer — 图表数据', () => {
   it('null 转成 NaN 让折线断开，而不是画成 0', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       { labels: { instance: 'a' }, points: [{ t: 1, v: 10 }, { t: 2, v: null }] },
     ]))
 
@@ -286,7 +286,7 @@ describe('Trends — 图表数据', () => {
   })
 
   it('每个实例一条线', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       { labels: { instance: 'a' }, points: [{ t: 1, v: 1 }] },
       { labels: { instance: 'b' }, points: [{ t: 1, v: 2 }] },
     ]))
@@ -299,7 +299,7 @@ describe('Trends — 图表数据', () => {
       labels: { instance: `node-${i}` },
       points: [{ t: 1, v: i }],
     }))
-    const vm = vmOf(await mountPage('/trends', CATALOG, many))
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, many))
 
     expect(vm.chartSeries).toHaveLength(8)
     // 悄悄少画会让用户问「我的机器怎么没在图里」——很难自查
@@ -307,14 +307,14 @@ describe('Trends — 图表数据', () => {
   })
 
   it('不超过 8 条时不标记截断', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       { labels: { instance: 'a' }, points: [{ t: 1, v: 1 }] },
     ]))
     expect(vm.truncated).toBe(false)
   })
 
   it('统计采样点总数', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, [
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, [
       { labels: { instance: 'a' }, points: [{ t: 1, v: 1 }, { t: 2, v: 2 }] },
       { labels: { instance: 'b' }, points: [{ t: 1, v: 1 }] },
     ]))
@@ -322,7 +322,7 @@ describe('Trends — 图表数据', () => {
   })
 
   it('无数据时图表与摘要都为空，不报错', async () => {
-    const vm = vmOf(await mountPage('/trends', CATALOG, []))
+    const vm = vmOf(await mountPage('/monitoring', CATALOG, []))
     expect(vm.chartSeries).toEqual([])
     expect(vm.summaries).toEqual([])
     expect(vm.axisLabels).toEqual([])
@@ -330,7 +330,7 @@ describe('Trends — 图表数据', () => {
   })
 })
 
-describe('Trends — 错误处理', () => {
+describe('TrendExplorer — 错误处理', () => {
   it('查询失败时清空系列并记录错误，不保留上一次的陈旧数据', async () => {
     const w = await mountPage()
     const vm = vmOf(w)

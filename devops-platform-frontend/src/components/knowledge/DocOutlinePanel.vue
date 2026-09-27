@@ -83,7 +83,7 @@ const emit = defineEmits<{
   min-width: 0;
   display: block;
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   text-decoration: none;
   padding: 6px 8px;
   overflow: hidden;
@@ -94,30 +94,30 @@ const emit = defineEmits<{
   transition: all 0.15s ease;
 
   &:hover {
-    color: var(--color-primary);
-    background: var(--color-bg);
+    color: var(--brand);
+    background: var(--surface-0);
   }
 }
 
 .ce-toc-item.level-three {
   padding-left: 22px;
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .ce-toc-row { display: flex; align-items: center; gap: 2px; border-radius: 4px; }
 
-.ce-toc-row > button:not(.ce-toc-item) { width: 25px; height: 25px; display: none; align-items: center; justify-content: center; color: var(--color-text-tertiary); border-radius: 4px; }
+.ce-toc-row > button:not(.ce-toc-item) { width: 25px; height: 25px; display: none; align-items: center; justify-content: center; color: var(--text-3); border-radius: 4px; }
 
-.ce-toc-row:hover { background: var(--color-bg); }
+.ce-toc-row:hover { background: var(--surface-0); }
 
 .ce-toc-row:hover > button { display: inline-flex; }
 
-.ce-toc-row > button:not(.ce-toc-item):hover { color: var(--color-primary); background: var(--color-primary-lighter); }
+.ce-toc-row > button:not(.ce-toc-item):hover { color: var(--brand); background: var(--brand-subtle); }
 
 .ce-toc-empty {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   padding: 4px 10px;
 }
 
@@ -126,12 +126,12 @@ const emit = defineEmits<{
   align-items: center;
   gap: 6px;
   padding-bottom: 14px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
-.ce-side-head-action { width: 26px; height: 26px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--color-text-tertiary); }
+.ce-side-head-action { width: 26px; height: 26px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--text-3); }
 
-.ce-side-head-action:hover { color: var(--color-primary); background: var(--color-primary-lighter); }</style>
+.ce-side-head-action:hover { color: var(--brand); background: var(--brand-subtle); }</style>

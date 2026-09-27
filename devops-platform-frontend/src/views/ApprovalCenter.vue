@@ -283,30 +283,30 @@ const forbidden = computed(() => {
 </template>
 
 <style scoped lang="scss">
-.approval-center { min-height: 100vh; background: var(--color-bg); }
+.approval-center { min-height: 100vh; background: var(--surface-0); }
 .main-container { max-width: 1280px; margin: 0 auto; padding: 24px; }
-.page-header-card { background: var(--color-surface); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
+.page-header-card { background: var(--surface-1); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
 .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.header-title { display: flex; align-items: center; gap: 12px; color: var(--color-primary); }
-.page-title { margin: 0; font-size: var(--text-2xl); font-weight: var(--weight-bold); color: var(--color-text-primary); }
-.page-subtitle { margin: 2px 0 0; font-size: var(--text-sm); color: var(--color-text-secondary); }
-.btn-refresh { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--color-border-light); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text-primary); font-family: var(--font-body); cursor: pointer; transition: all .15s; &:hover:not(:disabled){border-color: var(--color-primary); color: var(--color-primary);} &:disabled{opacity:.55; cursor:not-allowed;} .spinning{animation:spin 1s linear infinite;} }
+.header-title { display: flex; align-items: center; gap: 12px; color: var(--brand); }
+.page-title { margin: 0; font-size: var(--text-2xl); font-weight: var(--weight-bold); color: var(--text-1); }
+.page-subtitle { margin: 2px 0 0; font-size: var(--text-sm); color: var(--text-2); }
+.btn-refresh { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--border-1); border-radius: var(--radius); background: var(--surface-1); color: var(--text-1); font-family: var(--font-body); cursor: pointer; transition: all .15s; &:hover:not(:disabled){border-color: var(--brand); color: var(--brand);} &:disabled{opacity:.55; cursor:not-allowed;} .spinning{animation:spin 1s linear infinite;} }
 .tabs { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
-.tab { padding: 6px 16px; border: 1px solid var(--color-border-light); border-radius: 20px; background: var(--color-surface); font-size: var(--text-sm); font-family: var(--font-body); color: var(--color-text-secondary); cursor: pointer; transition: all .15s; &:hover{color: var(--color-primary);} &.active{background: var(--color-primary); border-color: var(--color-primary); color:#fff;} }
-.state-wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:240px; background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding:32px; h3{margin:0; color: var(--color-text-primary);} p{margin:0; font-size: var(--text-sm); color: var(--color-text-secondary);} }
-.state-icon-warn { color: var(--color-warning, var(--warning)); }
+.tab { padding: 6px 16px; border: 1px solid var(--border-1); border-radius: 20px; background: var(--surface-1); font-size: var(--text-sm); font-family: var(--font-body); color: var(--text-2); cursor: pointer; transition: all .15s; &:hover{color: var(--brand);} &.active{background: var(--brand); border-color: var(--brand); color:#fff;} }
+.state-wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:240px; background: var(--surface-1); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding:32px; h3{margin:0; color: var(--text-1);} p{margin:0; font-size: var(--text-sm); color: var(--text-2);} }
+.state-icon-warn { color: var(--warning); }
 @keyframes spin { from{transform:rotate(0);} to{transform:rotate(360deg);} }
-.table-container { background: var(--color-surface); border-radius: var(--radius-lg); padding:8px; box-shadow: var(--shadow-sm); overflow:hidden; }
+.table-container { background: var(--surface-1); border-radius: var(--radius-lg); padding:8px; box-shadow: var(--shadow-sm); overflow:hidden; }
 .summary-cell { display:flex; flex-direction:column; gap:2px; }
-.summary-text { font-weight: var(--weight-medium); color: var(--color-text-primary); }
-.summary-meta { font-size: var(--text-xs); color: var(--color-text-tertiary); font-family: var(--font-mono, monospace); }
-.result-cell { display:flex; flex-direction:column; gap:2px; font-size: var(--text-xs); color: var(--color-text-secondary); }
+.summary-text { font-weight: var(--weight-medium); color: var(--text-1); }
+.summary-meta { font-size: var(--text-xs); color: var(--text-3); font-family: var(--font-mono, monospace); }
+.result-cell { display:flex; flex-direction:column; gap:2px; font-size: var(--text-xs); color: var(--text-2); }
 .result-line { word-break: break-word; }
-.result-line.fail { color: var(--state-error, var(--danger)); }
-.result-muted { color: var(--color-text-tertiary); }
+.result-line.fail { color: var(--danger); }
+.result-muted { color: var(--text-3); }
 .actions { display:flex; gap:6px; }
-.act { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1px solid var(--color-border-light); border-radius: var(--radius-sm); font-size: var(--text-xs); font-family: var(--font-body); background: var(--color-surface); cursor:pointer; transition: all .15s; &:disabled{opacity:.5; cursor:not-allowed;} }
-.act-approve:hover:not(:disabled){ border-color: var(--state-success,var(--success)); color: var(--state-success,var(--success)); background: rgba(103,194,58,.08);}
-.act-reject:hover:not(:disabled){ border-color: var(--state-error,var(--danger)); color: var(--state-error,var(--danger)); background: rgba(245,108,108,.08);}
-.act-done { display:inline-flex; align-items:center; gap:4px; font-size: var(--text-xs); color: var(--color-text-tertiary); }
+.act { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border:1px solid var(--border-1); border-radius: var(--radius-sm); font-size: var(--text-xs); font-family: var(--font-body); background: var(--surface-1); cursor:pointer; transition: all .15s; &:disabled{opacity:.5; cursor:not-allowed;} }
+.act-approve:hover:not(:disabled){ border-color: var(--success,var(--success)); color: var(--success,var(--success)); background: rgba(103,194,58,.08);}
+.act-reject:hover:not(:disabled){ border-color: var(--danger,var(--danger)); color: var(--danger,var(--danger)); background: rgba(245,108,108,.08);}
+.act-done { display:inline-flex; align-items:center; gap:4px; font-size: var(--text-xs); color: var(--text-3); }
 </style>

@@ -296,9 +296,27 @@ export async function fetchKnowledgeDocDetail(id: number): Promise<KnowledgeDocD
  * @public 后端 GET .../by-source-ticket/{id} 路由在服务（KnowledgeDocController），
  * 徽标入口页待接——@public 详见报告 122 §三的豁免标准件约定。
  */
-export async function findDocsBySourceTicket(ticketId: number): Promise<KnowledgeDocListItem[]> {
+export async function findDocsBySourceTicket(ticketId: string): Promise<KnowledgeDocListItem[]> {
   const payload = await http.get<unknown>(`${API_ENDPOINTS.KNOWLEDGE_DOCS}/by-source-ticket/${ticketId}`)
   return unwrapDoc<KnowledgeDocListItem[]>(payload, '按源工单反查文档失败')
+}
+
+/** 单篇回链文档的反馈计数（doc → 其全部 chunk 的 boost 票数之和）。 */
+export interface KnowledgeDocFeedbackStat {
+  docId: number
+  title: string
+  helpfulCount: number
+  wrongCount: number
+}
+
+/**
+ * 按源工单聚合并反馈计数（「已沉淀为知识」徽标的数字来源）。
+ * <p>2026-09-24：doc → chunk → boost 按源工单 JOIN 求和；无 boost 记录时两计数为 0。</p>
+ */
+export async function fetchFeedbackStatsBySourceTicket(ticketId: string): Promise<KnowledgeDocFeedbackStat[]> {
+  const payload = await http.get<unknown>(`${API_ENDPOINTS.KNOWLEDGE_DOCS}/by-source-ticket/${ticketId}/feedback-stats`)
+  const data = unwrapDoc<KnowledgeDocFeedbackStat[]>(payload, '按源工单反查反馈计数失败')
+  return Array.isArray(data) ? data : []
 }
 
 /**

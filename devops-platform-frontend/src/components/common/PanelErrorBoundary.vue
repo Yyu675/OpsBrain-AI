@@ -64,10 +64,10 @@ const retry = () => {
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: var(--color-surface, #fff);
-  border: 1px dashed var(--state-error, #ef4444);
-  border-radius: var(--radius-md, 8px);
-  color: var(--color-text-primary, #1e293b);
+  background: var(--surface-1, #fff);
+  border: 1px dashed var(--danger, #ef4444);
+  border-radius: var(--radius, 8px);
+  color: var(--text-1, #1e293b);
 }
 
 .panel-err-compact {
@@ -79,8 +79,8 @@ const retry = () => {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--state-error-bg, var(--danger-subtle));
-  color: var(--state-error, #ef4444);
+  background: var(--danger-subtle, var(--danger-subtle));
+  color: var(--danger, #ef4444);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -106,7 +106,7 @@ const retry = () => {
 .panel-err-msg {
   margin: 0;
   font-size: var(--text-xs, 12px);
-  color: var(--color-text-tertiary, #94a3b8);
+  color: var(--text-3, #94a3b8);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -117,10 +117,10 @@ const retry = () => {
   align-items: center;
   gap: 4px;
   padding: 6px 12px;
-  border: 1px solid var(--color-border-light, var(--border-1));
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: var(--radius-sm, 6px);
-  background: var(--color-surface, #fff);
-  color: var(--color-text-secondary, #64748b);
+  background: var(--surface-1, #fff);
+  color: var(--text-2, #64748b);
   font-size: var(--text-xs, 12px);
   font-family: var(--font-body);
   cursor: pointer;
@@ -128,8 +128,8 @@ const retry = () => {
   white-space: nowrap;
 
   &:hover {
-    border-color: var(--color-primary, var(--brand));
-    color: var(--color-primary, var(--brand));
+    border-color: var(--brand, var(--brand));
+    color: var(--brand, var(--brand));
   }
 }
 </style>

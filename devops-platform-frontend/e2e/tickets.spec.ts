@@ -1,4 +1,4 @@
-import { test, expect, type Page, request } from '@playwright/test'
+import { test, expect, request } from '@playwright/test'
 
 /**
  * 工单列表与创建 E2E（批88 P2）
@@ -49,7 +49,9 @@ test.describe('工单列表与创建', () => {
   test('列表页渲染：KPI 卡片与表格', async ({ page }) => {
     await page.goto('/tickets')
     await expect(page.locator('.page-title', { hasText: '智能工单' })).toBeVisible()
-    await expect(page.locator('.kpi-card')).toHaveCount(4)
+    // 4 张固定 KPI + 视数据而定的「待分配」卡（有待分配工单时才出现）——
+    // 断言下限而非精确数，避免依赖 dev 库具体数据
+    await expect.poll(() => page.locator('.kpi-card').count()).toBeGreaterThanOrEqual(4)
     // 表格有数据行（dev 库常驻 ≥1 张工单）
     await expect(page.locator('.el-table__row').first()).toBeVisible({ timeout: 15_000 })
   })
@@ -58,8 +60,8 @@ test.describe('工单列表与创建', () => {
     await page.goto('/tickets')
     await page.locator('.btn-create').click()
 
-    const dialog = page.locator('.ticket-form-overlay, .form-dialog, [id="ticket-form-title"]')
-    await expect(page.locator('#ticket-form-title', { hasText: '创建工单' })).toBeVisible()
+    const dialog = page.locator('#ticket-form-title')
+    await expect(dialog.filter({ hasText: '创建工单' })).toBeVisible()
 
     // 空表单直接提交 → 前端校验拦截，不发请求
     await page.locator('.dialog-footer .btn-primary').click()

@@ -114,7 +114,7 @@ async function submitTrigger() {
       alertId: alertIdNum,
     })
     if (outcome.status === 'PENDING_APPROVAL') {
-      notify.warning(`已建审批单 #${outcome.approvalId}，去审批中心点头后执行`)
+      notify.warning(`已建审批单 #${outcome.approvalId}，去处置中心的审批队列点头后执行`)
     } else if (outcome.status === 'REJECTED') {
       notify.warning(`治理门拒绝：${outcome.message}`)
     } else if (outcome.status === 'SUCCEEDED') {

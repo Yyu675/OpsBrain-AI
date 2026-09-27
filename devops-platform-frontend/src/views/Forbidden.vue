@@ -32,7 +32,7 @@ const goBack = () => {
           </button>
         </div>
         <div class="shortcuts">
-          <RouterLink to="/dashboard" class="shortcut">数据仪表盘</RouterLink>
+          <RouterLink to="/" class="shortcut">工作台</RouterLink>
           <RouterLink to="/tickets" class="shortcut">智能工单</RouterLink>
           <RouterLink to="/knowledge" class="shortcut">知识库</RouterLink>
           <RouterLink to="/help" class="shortcut">帮助中心</RouterLink>
@@ -45,7 +45,7 @@ const goBack = () => {
 <style scoped lang="scss">
 .forbidden {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .main {
@@ -56,8 +56,8 @@ const goBack = () => {
 
 .card {
   padding: 40px 32px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   text-align: center;
@@ -67,8 +67,8 @@ const goBack = () => {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
+  background: var(--brand-subtle);
+  color: var(--brand);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -78,16 +78,16 @@ const goBack = () => {
 .title {
   font-size: var(--text-2xl);
   font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   margin: 0 0 8px 0;
 }
 
 .path {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   padding: 4px 10px;
-  background: var(--color-bg-sunken);
+  background: var(--surface-2);
   border-radius: var(--radius-sm);
   display: inline-block;
   margin: 0 0 12px 0;
@@ -97,7 +97,7 @@ const goBack = () => {
 
 .hint {
   font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   margin: 0 0 24px 0;
 }
 
@@ -113,27 +113,27 @@ const goBack = () => {
   align-items: center;
   gap: 6px;
   padding: 8px 18px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
+    border-color: var(--brand);
+    color: var(--brand);
   }
 
   &.btn-primary {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
+    background: var(--brand);
+    border-color: var(--brand);
     color: white;
 
     &:hover {
-      background: var(--color-primary-light);
+      background: var(--brand-hover);
       color: white;
     }
   }
@@ -145,16 +145,16 @@ const goBack = () => {
   gap: 16px;
   flex-wrap: wrap;
   padding-top: 20px;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-1);
 }
 
 .shortcut {
   font-size: var(--text-sm);
-  color: var(--color-primary-light);
+  color: var(--brand-hover);
   text-decoration: none;
 
   &:hover {
-    color: var(--color-primary);
+    color: var(--brand);
     text-decoration: underline;
   }
 }

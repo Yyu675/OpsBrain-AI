@@ -15,8 +15,8 @@ import { formatAbsolute } from '@/utils/time'
  * 访客调用会 401 → http 层派发 auth:unauthorized → 把停留在公开首页的访客踢去登录页。
  * 故访客态不拉取不连接，登录后由 watch 自动启动、登出时停止并清空列表。
  *
- * 与 AlertStreamMode.vue 的 WS 连接独立：
- * AlertStreamMode 是告警流视图（全量事件），本 composable 只关注 NEW → 通知。
+ * 与 Dashboard 的 AlertFeed 共用 /ws/alerts 通道但各自独立连接：
+ * AlertFeed 是告警流视图（全量事件），本 composable 只关注 NEW → 通知。
  * 两个连接各自维护生命周期，互不干扰。
  */
 interface AlertEvent {
@@ -31,6 +31,27 @@ interface AlertEvent {
     service: string
     ticketId?: string
   }
+}
+
+/**
+ * 告警事件订阅注册表（2026-09-27）。
+ *
+ * 复用本条 WS 连接向外广播事件——告警列表页的行级实时更新、
+ * 详情页的状态翻转都靠它，不为每个消费方各开一条连接。
+ * 通知逻辑（下方 onmessage）只是订阅者之一。
+ */
+export type AlertEventListener = (e: AlertEvent) => void
+const alertEventListeners = new Set<AlertEventListener>()
+
+/** 订阅告警实时事件。返回退订函数（组件卸载时必须退订，否则闭包泄漏） */
+export function subscribeAlertEvents(fn: AlertEventListener): () => void {
+  alertEventListeners.add(fn)
+  return () => { alertEventListeners.delete(fn) }
+}
+
+/** @public 测试钩子：不经 WebSocket 直接派发事件给订阅方（WS 层的行为由集成测试覆盖） */
+export function dispatchAlertEventForTest(e: AlertEvent): void {
+  alertEventListeners.forEach(fn => fn(e))
 }
 
 const INITIAL_RECONNECT_DELAY = 1000
@@ -80,6 +101,11 @@ export function useAlertNotifications() {
     ws.onmessage = (event) => {
       try {
         const data: AlertEvent = JSON.parse(event.data)
+        // 先广播给订阅方（列表页行级刷新等），再做通知语义判断——
+        // 订阅方关心全量事件（NEW/UPDATE/RESOLVED），通知只关心 NEW
+        alertEventListeners.forEach(fn => {
+          try { fn(data) } catch { /* 单个订阅方的异常不拖垮广播 */ }
+        })
         if (data.type !== 'NEW' || !data.alert) return
 
         // 稳定 id：使用告警实体 id，与后端拉取（loadFromBackend）共用同一 id 空间，

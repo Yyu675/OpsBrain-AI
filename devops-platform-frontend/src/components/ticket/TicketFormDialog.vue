@@ -718,7 +718,7 @@ const submit = async () => {
   width: 100%;
   max-width: 780px;
   max-height: 90vh;
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   display: flex;
@@ -731,12 +731,12 @@ const submit = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
 
   h3 {
     font-size: var(--text-lg);
     font-weight: var(--weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--text-1);
     margin: 0;
   }
 }
@@ -746,7 +746,7 @@ const submit = async () => {
   height: 32px;
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: inline-flex;
@@ -755,8 +755,8 @@ const submit = async () => {
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-text-primary);
+    background: var(--surface-hover);
+    color: var(--text-1);
   }
 }
 
@@ -816,11 +816,11 @@ const submit = async () => {
 .form-label {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 
   &.required::after {
     content: ' *';
-    color: var(--state-error);
+    color: var(--danger);
   }
 }
 
@@ -836,17 +836,17 @@ const submit = async () => {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--brand-subtle);
+  color: var(--brand);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-primary);
+    background: var(--brand);
     color: white;
   }
 
@@ -872,18 +872,18 @@ const submit = async () => {
 .form-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   outline: none;
   transition: border-color 0.15s ease;
   box-sizing: border-box;
 
   &:focus {
-    border-color: var(--color-primary);
+    border-color: var(--brand);
   }
 }
 
@@ -896,16 +896,16 @@ const submit = async () => {
 .char-hint {
   align-self: flex-end;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   /* 接近上限：预警但不阻断 */
   &.is-warn {
-    color: var(--state-warning, var(--warning));
+    color: var(--warning, var(--warning));
   }
 
   /* 已超出：必须显眼——这是提交会被拦下的原因 */
   &.is-over {
-    color: var(--state-error, var(--danger));
+    color: var(--danger, var(--danger));
     font-weight: var(--weight-medium, 500);
   }
 }
@@ -925,37 +925,37 @@ const submit = async () => {
   flex-direction: column;
   gap: 2px;
   padding: 10px 12px;
-  border: 2px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  border: 2px solid var(--border-1);
+  border-radius: var(--radius);
+  background: var(--surface-1);
   cursor: pointer;
   text-align: left;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary-light);
+    border-color: var(--brand-hover);
   }
 
   &.active {
-    background: var(--color-primary-lighter);
-    border-color: var(--color-primary);
+    background: var(--brand-subtle);
+    border-color: var(--brand);
   }
 
   .priority-label {
     font-size: var(--text-sm);
     font-weight: var(--weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 
   .priority-hint {
     font-size: 11px;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 
-  &.priority-urgent.active .priority-label { color: var(--state-error); }
+  &.priority-urgent.active .priority-label { color: var(--danger); }
   &.priority-high.active .priority-label { color: #EA580C; }
-  &.priority-medium.active .priority-label { color: var(--color-primary); }
-  &.priority-low.active .priority-label { color: var(--color-text-secondary); }
+  &.priority-medium.active .priority-label { color: var(--brand); }
+  &.priority-low.active .priority-label { color: var(--text-2); }
 }
 
 .tag-input-row {
@@ -968,18 +968,18 @@ const submit = async () => {
   align-items: center;
   gap: 4px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text-1);
   font-size: var(--text-sm);
   font-family: var(--font-body);
   cursor: pointer;
   white-space: nowrap;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
+    border-color: var(--brand);
+    color: var(--brand);
   }
 }
 
@@ -995,14 +995,14 @@ const submit = async () => {
   align-items: center;
   gap: 4px;
   padding: 4px 6px 4px 10px;
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
+  background: var(--brand-subtle);
+  color: var(--brand);
   font-size: var(--text-xs);
   border-radius: var(--radius-full);
 
   &.cc-chip {
-    background: var(--state-info-bg);
-    color: var(--state-info);
+    background: var(--info-subtle);
+    color: var(--info);
   }
 }
 
@@ -1015,7 +1015,7 @@ const submit = async () => {
   display: inline-flex;
 
   &:hover {
-    color: var(--state-error);
+    color: var(--danger);
   }
 }
 
@@ -1029,21 +1029,21 @@ const submit = async () => {
 
 .preset-label {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .preset-tag {
   padding: 3px 8px;
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
+  color: var(--text-2);
+  background: var(--surface-2);
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover:not(.disabled) {
-    background: var(--color-primary-lighter);
-    color: var(--color-primary);
+    background: var(--brand-subtle);
+    color: var(--brand);
   }
 
   &.disabled {
@@ -1057,10 +1057,10 @@ const submit = async () => {
   align-items: center;
   gap: 6px;
   padding: 12px 16px;
-  border: 1px dashed var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
-  color: var(--color-text-secondary);
+  border: 1px dashed var(--border-1);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-2);
   font-size: var(--text-sm);
   font-family: var(--font-body);
   cursor: pointer;
@@ -1068,9 +1068,9 @@ const submit = async () => {
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    background: var(--color-primary-lighter);
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-subtle);
   }
 }
 
@@ -1086,10 +1086,10 @@ const submit = async () => {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: var(--color-bg-sunken);
+  background: var(--surface-2);
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .attach-name {
@@ -1097,23 +1097,23 @@ const submit = async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .attach-size {
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .attach-remove {
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   cursor: pointer;
   padding: 2px;
   display: inline-flex;
 
   &:hover {
-    color: var(--state-error);
+    color: var(--danger);
   }
 }
 
@@ -1122,13 +1122,13 @@ const submit = async () => {
   justify-content: flex-end;
   gap: 8px;
   padding: 16px 24px;
-  border-top: 1px solid var(--color-border-light);
-  background: var(--color-bg-sunken);
+  border-top: 1px solid var(--border-1);
+  background: var(--surface-2);
 }
 
 .btn {
   padding: 8px 20px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   font-family: var(--font-body);
@@ -1144,24 +1144,24 @@ const submit = async () => {
   }
 
   &.btn-plain {
-    background: var(--color-surface);
-    color: var(--color-text-primary);
-    border-color: var(--color-border-light);
+    background: var(--surface-1);
+    color: var(--text-1);
+    border-color: var(--border-1);
 
     &:hover {
-      border-color: var(--color-primary);
-      color: var(--color-primary);
+      border-color: var(--brand);
+      color: var(--brand);
     }
   }
 
   &.btn-primary {
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
-    border-color: var(--color-primary);
+    background: var(--brand);
+    color: var(--text-inverse);
+    border-color: var(--brand);
 
     &:hover {
-      background: var(--color-primary-light);
-      border-color: var(--color-primary-light);
+      background: var(--brand-hover);
+      border-color: var(--brand-hover);
     }
   }
 }

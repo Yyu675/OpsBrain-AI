@@ -320,3 +320,28 @@ html.theme-transition *::after {
               fill var(--duration-normal) var(--ease-out),
               box-shadow var(--duration-normal) var(--ease-out) !important;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   9. 细滚动条（全局细节工艺）
+   ── 密集控制台里默认粗滚动条非常抢眼；细滚动条跟随令牌，
+      暗色下不会露出一条亮灰（chromium 系）。Firefox 走 scrollbar-*。
+   ══════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2) transparent;
+}
+

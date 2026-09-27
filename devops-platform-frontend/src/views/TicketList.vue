@@ -11,7 +11,6 @@ import TicketTableView from '@/components/ticket/TicketTableView.vue'
 import { showUndoToast } from '@/utils/undoToast'
 // 搜索防抖（列宽持久化已移入 useTicketColumns）
 import { debounce } from '@/utils/persist'
-import { ticketEvents } from '@/utils/ticketEvents'
 import { nowAsBackendTime } from '@/utils/time'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
@@ -25,7 +24,7 @@ import {
 import {
   Search, Sparkles, TrendingUp, Clock, AlertCircle,
   Trash2, Plus, X, Calendar,
-  RefreshCw, ChevronDown, LayoutList, LayoutGrid, Settings2
+  RefreshCw, ChevronDown, LayoutList, LayoutGrid, Settings2, UserX
 } from 'lucide-vue-next'
 import {
   useTicketsStore,
@@ -33,6 +32,7 @@ import {
   getPriorityLabel,
   SERVICE_OPTIONS,
   CATEGORY_OPTIONS,
+  UNASSIGNED,
   type Ticket,
   type TicketStatus,
   type TicketPriority
@@ -40,8 +40,10 @@ import {
 import { TICKET_STATUS_OPTIONS, TICKET_PRIORITY_OPTIONS } from '@/constants/ticket'
 import { exportTicketsCsv } from '@/api/tickets'
 // firstResponseText / firstResponseTitle / slaRemainText 已随表格模板
-// 迁入 TicketTableView.vue，此处只留页面自身仍在用的 slaSeverity
-import { slaSeverity } from '@/utils/sla'
+// 行展示映射（可排序列/日期解析/首响·SLA 配色/阶段·根因标签）抽至 utils/ticketPresentation（2026-09-24）
+import {
+  SORTABLE_PROPS, dateParser, frClass, slaClass, stageLabel, rcLabel,
+} from '@/utils/ticketPresentation'
 
 const store = useTicketsStore()
 const router = useRouter()
@@ -52,17 +54,6 @@ const router = useRouter()
 onMounted(async () => {
   // 恢复用户调整过的列宽与列可见性（含白名单/类型/范围校验，见 useTicketColumns）
   restoreColumnPrefs()
-
-  /*
-   * 事件订阅必须在拉数据**之前**、且在 try 之外注册。
-   *
-   * 原实现把 `ticketEvents.on` 放在 Promise.all 之后、try 之内：
-   * 四个并行请求里任意一个失败（如统计接口 500），整个 try 就跳到 catch，
-   * 订阅永远不会注册。此后用户新建的工单不会插进列表——
-   * 表现为「创建成功提示弹了、列表里却没有」，用户以为工单丢了，
-   * 而实际上只是列表没刷新。这类耦合失败极难排查。
-   */
-  ticketEvents.on('ticket-created', handleTicketCreated)
 
   /*
    * 四个请求用 allSettled 而非 all：它们互相独立，
@@ -98,6 +89,24 @@ const kpis = computed(() => [
   { label: '已解决', value: String(store.stats.resolved), icon: TrendingUp, color: 'success' },
   { label: '今日新增', value: String(store.stats.todayNew ?? 0), icon: AlertCircle, color: 'error' }
 ])
+
+/**
+ * 未分配积压卡（第 5 张，可点击）。
+ *
+ * 真实库 27/28 张工单停在「待分配」——这个数字混在「待处理」里，
+ * 值班人看不出「单子多」与「没人认领」的区别。点击直接筛出这批工单，
+ * 比打开高级筛选再选负责人少两步。
+ * 后端未返回该字段（旧版本）时为 null，卡片不渲染而不是显示 0。
+ */
+const showUnassignedCard = computed(() =>
+  typeof store.stats.unassignedOpen === 'number' && store.stats.unassignedOpen > 0
+)
+
+const filterToUnassigned = () => {
+  assigneeFilter.value = UNASSIGNED
+  statusFilter.value = 'all'
+  resetPageOnFilterChange()
+}
 
 const advancedOpen = ref(false)
 const viewMode = ref<'list' | 'card'>('list')
@@ -200,26 +209,10 @@ const tableSort = computed<Sort>(() => ({
 }))
 
 /**
- * 可排序字段白名单，与后端 SORTABLE_COLUMNS 对齐（另加特殊处理的 priority）。
- *
- * 前端先挡一道的原因：非法字段会被后端静默降级为默认排序，
- * 而表头的排序箭头仍显示在用户点的那一列——
- * 「箭头指着 A 列、数据按创建时间排」这种错位比直接报错更难发现。
+ * 可排序字段白名单（已抽至 utils/ticketPresentation，与后端 SORTABLE_COLUMNS 对齐；
+ * 非法字段由前端先挡一道，避免后端静默降级造成「箭头指向错列」的错位）。
+ * 日期参数解析同样在 utils/ticketPresentation.dateParser。
  */
-const SORTABLE_PROPS = [
-  'id', 'title', 'status', 'priority', 'assignee',
-  'service', 'category', 'createdAt', 'updatedAt'
-] as const
-
-/**
- * 日期参数解析：只接受 `YYYY-MM-DD`。
- *
- * 不做宽松解析是刻意的——`<input type="date">` 只认这一种格式，
- * 若放行 `2026/8/1` 之类，URL 里的值填不回输入框，
- * 用户会看到「链接说筛了日期、输入框却是空的」这种自相矛盾的状态。
- */
-const dateParser = (raw: string): string | undefined =>
-  /^\d{4}-\d{2}-\d{2}$/.test(raw.trim()) ? raw.trim() : undefined
 
 /**
  * 筛选 / 排序 / 页码与 URL 的**双向**同步。
@@ -325,45 +318,7 @@ const onRowClick = (row: Ticket, column: TableColumnCtx<Ticket> | null) => {
   router?.push(`/tickets/${row.id}`)
 }
 
-/**
- * 首响状态展示（B1）
- *
- * 状态由后端计算（`firstResponseState`）——「即将超时」的阈值属业务规则，
- * 不应散落在各前端页面各写一遍。
- *
- * 文案逻辑统一在 utils/sla（SLA 风险面板同样消费），此处只保留
- * 页面私有的 CSS class 映射。
- */
-const frClass = (row: { firstResponseState?: string }) => {
-  switch (row.firstResponseState) {
-    case 'RESPONDED': return 'fr-ok'
-    case 'BREACHED': return 'fr-breached'
-    case 'AT_RISK': return 'fr-risk'
-    default: return 'fr-waiting'
-  }
-}
-
-/** SLA 进度配色：超时红 / ≥70% 橙 / 其余正常 */
-const slaClass = (row: { slaProgress?: number; slaBreached?: boolean }) => {
-  const severity = slaSeverity(row)
-  if (severity === 'breached') return 'sla-breached'
-  if (severity === 'warning') return 'sla-warning'
-  return 'sla-normal'
-}
-
-/** B2 处置阶段中文标签 */
-const STAGE_LABELS: Record<string, string> = {
-  TRIAGE: '排查中', MITIGATED: '已止损', FIXING: '修复中', VERIFYING: '验证中'
-}
-const stageLabel = (stage: string) => STAGE_LABELS[stage] || stage
-
-/** B3 根因分类中文标签 */
-const RC_LABELS: Record<string, string> = {
-  CONFIG: '配置错误', CAPACITY: '容量不足', CODE: '代码缺陷',
-  DEPENDENCY: '依赖故障', NETWORK: '网络问题', DATA: '数据异常',
-  HUMAN: '人为操作', EXTERNAL: '外部服务', UNKNOWN: '未定位'
-}
-const rcLabel = (cat: string) => RC_LABELS[cat] || cat
+/** 首响/SLA 配色 class 与阶段/根因标签映射已抽至 utils/ticketPresentation（2026-09-24） */
 
 // SLA 剩余时间文案（slaRemainText）与首响文案已统一到 utils/sla，
 // SLA 风险面板同样消费——两处各写一遍必然在「已超时」措辞与降级口径上漂移。
@@ -485,7 +440,6 @@ const onSearchInput = () => applySearch(searchQuery.value)
 
 onBeforeUnmount(() => {
   applySearch.flush()
-  ticketEvents.off('ticket-created', handleTicketCreated)
 })
 
 const openCreateDialog = () => {
@@ -529,20 +483,6 @@ const handleTicketFormSubmitted = async () => {
   await Promise.all([fetchList(), store.loadStats(), store.loadHotTags()])
 }
 
-
-// AI 创建工单成功回调
-/**
- * AI 建单成功
- * <p>
- * 由本页按<b>当前筛选条件</b>重新拉取，而非依赖 AiChatView 页面内部的
- * {@code refreshTickets()}——后者不带参数调用，会把列表重置为
- * 无筛选第 1 页，导致筛选下拉框仍显示条件但数据已是全部工单。
- * </p>
- */
-const handleTicketCreated = async (ticketId: string) => {
-  console.log('AI 创建工单成功:', ticketId)
-  await Promise.all([fetchList(), store.loadStats(), store.loadHotTags()])
-}
 
 // 批量操作
 //
@@ -593,7 +533,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
       </div>
 
       <!-- KPI Cards -->
-      <div class="kpi-grid">
+      <div class="kpi-grid" :class="{ 'kpi-grid-5': showUnassignedCard }">
         <div v-for="kpi in kpis" :key="kpi.label" class="kpi-card">
           <div class="kpi-icon" :class="`kpi-icon-${kpi.color}`">
             <component :is="kpi.icon" :size="20" />
@@ -603,6 +543,23 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
             <div class="kpi-label">{{ kpi.label }}</div>
           </div>
         </div>
+        <!-- 未分配积压：可点击，点了筛出全部待分配工单。当前正在筛时高亮 -->
+        <button
+          v-if="showUnassignedCard"
+          type="button"
+          class="kpi-card kpi-card-action"
+          :class="{ active: assigneeFilter === UNASSIGNED }"
+          title="点击查看全部待分配工单"
+          @click="filterToUnassigned"
+        >
+          <div class="kpi-icon kpi-icon-warning">
+            <UserX :size="20" />
+          </div>
+          <div class="kpi-content">
+            <div class="kpi-value">{{ store.stats.unassignedOpen }}</div>
+            <div class="kpi-label">未分配</div>
+          </div>
+        </button>
       </div>
 
       <!-- Filter Bar（紧凑布局：搜索占满 + 筛选按钮 + 视图切换） -->
@@ -905,7 +862,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 <style scoped lang="scss">
 .ticket-list {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .main-container {
@@ -916,7 +873,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
 /* Page Header - white card */
 .page-header-card {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   padding: 24px;
   margin-bottom: 24px;
@@ -934,13 +891,13 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .page-title {
   font-size: var(--text-2xl);
   font-weight: var(--weight-bold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   margin: 0 0 4px 0;
 }
 
 .page-subtitle {
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   margin: 0;
 }
 
@@ -954,18 +911,18 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
+    border-color: var(--brand);
+    color: var(--brand);
   }
 }
 
@@ -975,16 +932,16 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 8px;
   padding: 10px 20px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   font-family: var(--font-body);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
+  background: var(--brand);
+  color: var(--text-inverse);
   cursor: pointer;
   transition: background 0.15s ease;
 
-  &:hover { background: var(--color-primary-light); }
+  &:hover { background: var(--brand-hover); }
 }
 
 /* KPI Grid - 对齐设计稿：4 卡片（待处理/处理中/已解决/今日新增） */
@@ -994,11 +951,13 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 16px;
   margin-bottom: 24px;
 
-  @media (max-width: 1024px) { grid-template-columns: repeat(2, 1fr); }
+  &.kpi-grid-5 { grid-template-columns: repeat(5, 1fr); }
+
+  @media (max-width: 1024px) { grid-template-columns: repeat(2, 1fr); &.kpi-grid-5 { grid-template-columns: repeat(2, 1fr); } }
 }
 
 .kpi-card {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   padding: 20px;
   box-shadow: var(--shadow-sm);
@@ -1006,29 +965,44 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 16px;
 }
 
+/* 可点击的 KPI 卡（未分配）：按钮重置 + 悬停/激活反馈 */
+.kpi-card-action {
+  border: 1px solid transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover { border-color: var(--brand); }
+  &.active {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 1px var(--brand);
+  }
+}
+
 .kpi-icon {
   width: 48px;
   height: 48px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 
-  &.kpi-icon-warning { background: var(--state-warning-bg); color: var(--state-warning); }
-  &.kpi-icon-info { background: var(--state-info-bg); color: var(--state-info); }
-  &.kpi-icon-success { background: var(--state-success-bg); color: var(--state-success); }
-  &.kpi-icon-error { background: var(--state-error-bg); color: var(--state-error); }
+  &.kpi-icon-warning { background: var(--warning-subtle); color: var(--warning); }
+  &.kpi-icon-info { background: var(--info-subtle); color: var(--info); }
+  &.kpi-icon-success { background: var(--success-subtle); color: var(--success); }
+  &.kpi-icon-error { background: var(--danger-subtle); color: var(--danger); }
 }
 
 .kpi-content { flex: 1; min-width: 0; }
-.kpi-label { font-size: var(--text-sm); color: var(--color-text-tertiary); margin-bottom: 4px; }
-.kpi-value { font-size: var(--text-2xl); font-weight: var(--weight-bold); color: var(--color-text-primary); line-height: 1.2; margin-bottom: 4px; }
-.kpi-change { display: flex; align-items: center; gap: 4px; font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--color-text-tertiary); }
+.kpi-label { font-size: var(--text-sm); color: var(--text-3); margin-bottom: 4px; }
+.kpi-value { font-size: var(--text-2xl); font-weight: var(--weight-bold); color: var(--text-1); line-height: 1.2; margin-bottom: 4px; }
+.kpi-change { display: flex; align-items: center; gap: 4px; font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--text-3); }
 
 /* Filter Bar */
 .filter-bar {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   padding: 16px;
   margin-bottom: 12px;
@@ -1045,60 +1019,60 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 4px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-surface, #fff);
-  color: var(--color-text-secondary, var(--text-2));
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
+  background: var(--surface-1, #fff);
+  color: var(--text-2, var(--text-2));
   font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
 }
 .filter-toggle-btn:hover {
-  border-color: var(--color-primary, var(--brand));
-  color: var(--color-primary, var(--brand));
+  border-color: var(--brand, var(--brand));
+  color: var(--brand, var(--brand));
 }
 .filter-toggle-btn.active {
-  border-color: var(--color-primary, var(--brand));
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  color: var(--color-primary, var(--brand));
+  border-color: var(--brand, var(--brand));
+  background: var(--brand-subtle, var(--brand-subtle));
+  color: var(--brand, var(--brand));
 }
 
 .filter-search { flex: 1; position: relative; min-width: 0; }
-.filter-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-tertiary); pointer-events: none; }
+.filter-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-3); pointer-events: none; }
 
 .filter-search-input {
   width: 100%;
   padding: 8px 12px 8px 38px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   outline: none;
   transition: border-color 0.15s ease;
   box-sizing: border-box;
 
-  &:focus { border-color: var(--color-primary); }
-  &::placeholder { color: var(--color-text-tertiary); }
+  &:focus { border-color: var(--brand); }
+  &::placeholder { color: var(--text-3); }
 }
 
 .filter-controls { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .filter-select {
   padding: 8px 12px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   cursor: pointer;
   outline: none;
   transition: border-color 0.15s ease;
 
-  &:focus { border-color: var(--color-primary); }
+  &:focus { border-color: var(--brand); }
 }
 
 /* 日期范围（单跨度点击）- 对齐设计稿 */
@@ -1107,21 +1081,21 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-tertiary);
+  background: var(--surface-1);
+  color: var(--text-3);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 
-  &:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover { border-color: var(--brand); color: var(--brand); }
 
   .date-range-text {
     font-size: var(--text-sm);
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 }
 
@@ -1129,8 +1103,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .view-toggle {
   display: flex;
   gap: 2px;
-  background: var(--color-bg-sunken);
-  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  border-radius: var(--radius);
   padding: 2px;
 }
 
@@ -1140,7 +1114,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1148,12 +1122,12 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-surface);
-    color: var(--color-primary);
+    background: var(--surface-1);
+    color: var(--brand);
   }
 
   &.active {
-    background: var(--color-primary);
+    background: var(--brand);
     color: white;
   }
 }
@@ -1163,18 +1137,18 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 
-  &:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover { border-color: var(--brand); color: var(--brand); }
 }
 
 
@@ -1183,9 +1157,9 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .advanced-filter-panel {
   padding: 12px 16px;
   margin-bottom: 12px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-md, 8px);
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
 }
 
 /* ===== 已选条件 chip 摘要行 ===== */
@@ -1196,13 +1170,13 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 6px;
   padding: 8px 12px;
   margin-bottom: 12px;
-  background: var(--color-bg-sunken, var(--surface-2));
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2, var(--surface-2));
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
 }
 .active-filter-label {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   margin-right: 2px;
 }
 .active-filter-chip {
@@ -1211,19 +1185,19 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 4px;
   max-width: 260px;
   padding: 3px 8px;
-  border: 1px solid var(--color-primary-light, #7EA6E0);
+  border: 1px solid var(--brand-hover, #7EA6E0);
   border-radius: 999px;
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  color: var(--color-primary, #2C5AA0);
+  background: var(--brand-subtle, var(--brand-subtle));
+  color: var(--brand, #2C5AA0);
   font-size: 0.75rem;
   font-family: var(--font-body);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-primary, #2C5AA0);
+    background: var(--brand, #2C5AA0);
     color: #fff;
-    border-color: var(--color-primary, #2C5AA0);
+    border-color: var(--brand, #2C5AA0);
   }
 }
 .chip-text {
@@ -1238,10 +1212,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 0 4px;
   font-size: 0.75rem;
   font-family: var(--font-body);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   cursor: pointer;
 
-  &:hover { color: var(--color-primary); text-decoration: underline; }
+  &:hover { color: var(--brand); text-decoration: underline; }
 }
 
 /* ===== 列设置面板 ===== */
@@ -1252,15 +1226,15 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 4px;
   height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-surface, #fff);
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
+  background: var(--surface-1, #fff);
   font-size: 0.8125rem;
   font-family: var(--font-body);
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
   cursor: pointer;
 
-  &:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover { border-color: var(--brand); color: var(--brand); }
 }
 .col-setting-menu {
   position: absolute;
@@ -1269,9 +1243,9 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   z-index: 20;
   min-width: 168px;
   padding: 8px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, var(--border-1));
-  border-radius: var(--radius-md, 8px);
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.1));
 }
 .col-setting-head {
@@ -1280,10 +1254,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   justify-content: space-between;
   gap: 8px;
   padding: 2px 6px 6px;
-  border-bottom: 1px solid var(--color-border-light, var(--border-1));
+  border-bottom: 1px solid var(--border-1, var(--border-1));
   margin-bottom: 4px;
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 .col-setting-item {
   display: flex;
@@ -1292,16 +1266,16 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 5px 6px;
   border-radius: 4px;
   font-size: 0.8125rem;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   cursor: pointer;
 
-  &:hover { background: var(--color-surface-hover, var(--surface-2)); }
+  &:hover { background: var(--surface-hover, var(--surface-2)); }
   input { cursor: pointer; }
 }
 .col-setting-hint {
   margin: 4px 6px 0;
   font-size: 0.6875rem;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 
 /* ===== 悬浮「工单速览卡」 ===== */
@@ -1315,10 +1289,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .peek-title {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   margin-bottom: 6px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--color-border-light, var(--border-1));
+  border-bottom: 1px solid var(--border-1, var(--border-1));
   white-space: normal;
   word-break: break-word;
 }
@@ -1329,11 +1303,11 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 }
 .peek-label {
   flex: 0 0 68px;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 .peek-value {
   flex: 1;
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   white-space: normal;
   word-break: break-word;
 
@@ -1343,7 +1317,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
 /* 服务/分类列的次要文本 */
 .cell-muted {
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
   font-size: 0.8125rem;
 }
 
@@ -1371,8 +1345,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
     font-weight: var(--weight-medium);
   }
   &.fr-waiting {
-    background: var(--color-bg-sunken, var(--surface-2));
-    color: var(--color-text-tertiary, var(--text-3));
+    background: var(--surface-2, var(--surface-2));
+    color: var(--text-3, var(--text-3));
   }
 }
 
@@ -1399,10 +1373,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   width: 100%;
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid var(--color-border-light, var(--border-1));
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: 6px;
   font-size: 0.8125rem;
-  background: var(--color-surface, #fff);
+  background: var(--surface-1, #fff);
 }
 
 /*
@@ -1419,11 +1393,11 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 }
 .date-range-label {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   white-space: nowrap;
 }
 .date-range-sep {
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   font-size: 0.75rem;
   flex-shrink: 0;
 }
@@ -1432,7 +1406,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   flex: 1;
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid var(--color-border-light, var(--border-1));
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: 6px;
   font-size: 0.8125rem;
 }
@@ -1447,29 +1421,29 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 6px 14px;
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   cursor: pointer;
   font-size: 0.8125rem;
   flex-shrink: 0;
 }
-.btn-clear-advanced:hover { color: var(--color-primary, var(--brand)); }
+.btn-clear-advanced:hover { color: var(--brand, var(--brand)); }
 
 .btn-clear-filters {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
+  background: var(--surface-1);
+  color: var(--text-2);
   font-size: 0.8125rem;
   cursor: pointer;
 }
 
 .btn-clear-filters:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .advanced-filter-tags {
@@ -1487,24 +1461,24 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
 .tag-filter-label {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .tag-filter-chip {
   padding: 2px 10px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
+  background: var(--surface-1);
+  color: var(--text-2);
   font-size: 0.75rem;
   cursor: pointer;
 }
 
 .tag-filter-chip.active,
 .tag-filter-chip:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: var(--color-primary-lighter);
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--brand-subtle);
 }
 
 .bulk-bar {
@@ -1512,8 +1486,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
-  background: var(--color-primary-lighter);
-  border: 1px solid var(--color-primary);
+  background: var(--brand-subtle);
+  border: 1px solid var(--brand);
   border-radius: var(--radius-lg);
   margin-bottom: 12px;
   flex-wrap: wrap;
@@ -1522,7 +1496,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .bulk-text {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-primary);
+  color: var(--brand);
 }
 
 .bulk-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1535,35 +1509,35 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   align-items: center;
   gap: 4px;
   padding: 6px 12px;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-primary);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--brand);
   font-size: var(--text-xs);
   font-family: var(--font-body);
   font-weight: var(--weight-medium);
   cursor: pointer;
   transition: all 0.15s ease;
 
-  &:hover { background: var(--color-primary); color: white; }
+  &:hover { background: var(--brand); color: white; }
 }
 
 .bulk-btn-danger {
-  border-color: var(--state-error);
-  color: var(--state-error);
+  border-color: var(--danger);
+  color: var(--danger);
 
-  &:hover { background: var(--state-error); color: white; }
+  &:hover { background: var(--danger); color: white; }
 }
 
 .bulk-btn-plain {
-  border-color: var(--color-border-light);
-  color: var(--color-text-secondary);
+  border-color: var(--border-1);
+  color: var(--text-2);
   background: transparent;
 
   &:hover {
-    background: var(--color-surface);
-    color: var(--color-text-primary);
-    border-color: var(--color-text-secondary);
+    background: var(--surface-1);
+    color: var(--text-1);
+    border-color: var(--text-2);
   }
 }
 
@@ -1572,9 +1546,9 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   top: calc(100% + 4px);
   left: 0;
   min-width: 140px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
   z-index: 10;
   padding: 4px;
@@ -1587,15 +1561,15 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
     text-align: left;
     font-size: var(--text-sm);
     font-family: var(--font-body);
-    color: var(--color-text-primary);
+    color: var(--text-1);
     border-radius: var(--radius-sm);
     cursor: pointer;
 
-    &:hover:not(:disabled) { background: var(--color-primary-lighter); color: var(--color-primary); }
+    &:hover:not(:disabled) { background: var(--brand-subtle); color: var(--brand); }
 
     /* 状态机不允许的目标状态：置灰且不可点，hover 无反馈 */
     &:disabled {
-      color: var(--color-text-tertiary);
+      color: var(--text-3);
       cursor: not-allowed;
       opacity: 0.55;
     }
@@ -1611,13 +1585,13 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .bulk-opt-count {
   flex-shrink: 0;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
 /* Table */
 .table-container {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
@@ -1636,14 +1610,14 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
   /* 表头：沿用原有的小号大写灰字风格 */
   :deep(.el-table__header th.el-table__cell) {
-    background: var(--color-bg-sunken);
+    background: var(--surface-2);
     padding: 10px 0;
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
     color: var(--text-3);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--color-border-light);
+    border-bottom: 1px solid var(--border-1);
   }
 
   /* 列宽拖拉手柄：加宽命中区域并给出明确的 col-resize 光标，
@@ -1673,10 +1647,10 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
   /* 行 hover / 选中：沿用主色浅底 */
   :deep(.el-table__body tr:hover > td.el-table__cell) {
-    background: var(--color-primary-lighter);
+    background: var(--brand-subtle);
   }
   :deep(.el-table__body tr.selected > td.el-table__cell) {
-    background: var(--color-primary-lighter);
+    background: var(--brand-subtle);
   }
 
   :deep(.el-table__row) { cursor: pointer; }
@@ -1695,7 +1669,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   height: 6px;
   min-width: 40px;
   border-radius: 3px;
-  background: var(--color-border-light);
+  background: var(--border-1);
   overflow: hidden;
 }
 
@@ -1704,7 +1678,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   border-radius: 3px;
   transition: width 0.3s ease;
 
-  &.sla-normal { background: var(--color-primary); }
+  &.sla-normal { background: var(--brand); }
   &.sla-warning { background: #F59E0B; }
   &.sla-breached { background: #EF4444; }
 }
@@ -1714,7 +1688,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 
-  &.sla-normal { color: var(--color-text-tertiary); }
+  &.sla-normal { color: var(--text-3); }
   &.sla-warning { color: var(--warning); font-weight: var(--weight-medium); }
   &.sla-breached { color: var(--danger); font-weight: var(--weight-medium); }
 }
@@ -1727,8 +1701,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   gap: 12px;
   padding: 8px 16px;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  border-top: 1px solid var(--color-border-light);
+  color: var(--text-3);
+  border-top: 1px solid var(--border-1);
 }
 
 .link-btn {
@@ -1737,7 +1711,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 0;
   font-size: var(--text-xs);
   font-family: var(--font-body);
-  color: var(--color-primary);
+  color: var(--brand);
   cursor: pointer;
 
   &:hover { text-decoration: underline; }
@@ -1746,7 +1720,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .ticket-id {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--color-primary-light);
+  color: var(--brand-hover);
   text-decoration: none;
   font-weight: var(--weight-medium);
 
@@ -1757,12 +1731,12 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
 .ticket-title {
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   text-decoration: none;
   display: block;
   margin-bottom: 4px;
 
-  &:hover { color: var(--color-primary); }
+  &:hover { color: var(--brand); }
 }
 
 /* 原 .ticket-desc / .ticket-subtitle 已删除：
@@ -1778,20 +1752,20 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 .ticket-tag {
   padding: 2px 8px;
   font-size: 11px;
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
+  color: var(--text-2);
+  background: var(--surface-2);
   border-radius: var(--radius-full);
 }
 
 .ticket-tag-more {
   padding: 2px 8px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .category-cell {
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   white-space: nowrap;
 }
 
@@ -1803,9 +1777,9 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   border-radius: var(--radius-full);
   white-space: nowrap;
 
-  &.status-pending { background: var(--state-warning-bg); color: var(--state-warning); }
-  &.status-processing { background: var(--color-primary-light); color: white; }
-  &.status-resolved { background: var(--state-success); color: white; }
+  &.status-pending { background: var(--warning-subtle); color: var(--warning); }
+  &.status-processing { background: var(--brand-hover); color: white; }
+  &.status-resolved { background: var(--success); color: white; }
   &.status-closed { background: var(--surface-2); color: var(--text-2); }
   &.status-void { background: var(--surface-2); color: var(--text-3); text-decoration: line-through; }
 }
@@ -1818,13 +1792,13 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   border-radius: var(--radius-full);
   white-space: nowrap;
 
-  &.priority-urgent { background: var(--state-error); color: white; }
+  &.priority-urgent { background: var(--danger); color: white; }
   &.priority-high { background: #EA580C; color: white; }
-  &.priority-medium { background: var(--color-primary-lighter); color: var(--color-primary); }
+  &.priority-medium { background: var(--brand-subtle); color: var(--brand); }
   &.priority-low { background: var(--surface-2); color: var(--text-2); }
 }
 
-.assignee { color: var(--color-text-primary); font-weight: var(--weight-medium); }
+.assignee { color: var(--text-1); font-weight: var(--weight-medium); }
 
 /* 负责人头像 + 名字 - 对齐设计稿 */
 .assignee-cell {
@@ -1837,8 +1811,8 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--color-primary-lighter);
-  color: var(--color-primary-light);
+  background: var(--brand-subtle);
+  color: var(--brand-hover);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1849,9 +1823,9 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
 
 .assignee-name {
   font-size: var(--text-sm);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
-.timestamp { color: var(--color-text-tertiary); font-size: var(--text-xs); }
+.timestamp { color: var(--text-3); font-size: var(--text-xs); }
 
 .actions {
   display: flex;
@@ -1868,25 +1842,25 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   cursor: pointer;
   padding: 6px;
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-primary-lighter);
-    color: var(--color-primary);
+    background: var(--brand-subtle);
+    color: var(--brand);
   }
 }
 
 .action-icon-btn-danger:hover {
   background: rgba(220, 38, 38, 0.08);
-  color: var(--state-error);
+  color: var(--danger);
 }
 
 .action-link {
   font-size: var(--text-sm);
-  color: var(--color-primary);
+  color: var(--brand);
   text-decoration: none;
   font-weight: var(--weight-medium);
 
@@ -1901,7 +1875,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
   padding: 20px;
 }
 .error-state-inline p {
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   margin: 0;
 }
 

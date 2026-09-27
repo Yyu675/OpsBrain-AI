@@ -2,10 +2,10 @@
 /**
  * AlertFeed — Dashboard 实时告警流组件（批88 P1）
  *
- * 紧凑版告警流，嵌入 Dashboard 右侧面板，复用 AlertStreamMode 的
- * WebSocket 基础设施（同一 /ws/alerts 通道、同一事件协议）。
+ * 紧凑版告警流，嵌入 Dashboard 右侧面板，直连 /ws/alerts
+ * WebSocket 通道（事件协议与后端 AlertWebSocketEvent 对齐）。
  *
- * 与 AlertStreamMode 的区别：本组件不管理连接状态横幅/空态大图，
+ * 本组件不管理连接状态横幅/空态大图，
  * 只渲染紧凑列表 + 连接状态指示灯——适合嵌入看板而非独立页。
  *
  * 数据契约：与后端 AlertWebSocketEvent 完全对齐
@@ -48,7 +48,7 @@ let reconnectAttempt = 0
 const INITIAL_DELAY = 1000
 const MAX_DELAY = 30000
 
-/** 构建 WebSocket URL（与 AlertStreamMode 一致） */
+/** 构建 WebSocket URL */
 const wsUrl = () => {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
   return `${protocol}://${location.host}/ai/ws/alerts`
@@ -152,7 +152,7 @@ const displayAlerts = computed(() => alerts.value.slice(0, MAX_DISPLAY))
 </template>
 
 <style scoped>
-.alert-feed { background: var(--color-surface, var(--surface-1)); border-radius: 12px; padding: 16px; }
+.alert-feed { background: var(--surface-1, var(--surface-1)); border-radius: 12px; padding: 16px; }
 .feed-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .feed-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
 .feed-status { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-3, #909399); }
@@ -169,7 +169,7 @@ const displayAlerts = computed(() => alerts.value.slice(0, MAX_DISPLAY))
 .feed-meta { display: flex; gap: 8px; font-size: 11px; color: var(--text-3); margin-top: 2px; }
 .feed-badge { font-weight: 600; }
 .feed-service { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.feed-ticket { font-size: 11px; color: var(--color-primary, #2563eb); margin-top: 2px; }
+.feed-ticket { font-size: 11px; color: var(--brand, #2563eb); margin-top: 2px; }
 
 .feed-empty { text-align: center; padding: 24px 0; color: var(--text-3); font-size: 13px; }
 .feed-retry { text-align: center; padding: 12px 0; }

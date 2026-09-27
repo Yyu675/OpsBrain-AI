@@ -1,6 +1,12 @@
 <script setup lang="ts">
 /**
- * 实时监控（L2）。
+ * 监控中心（L2）——实时监控 + 趋势分析的合并看板（类 Grafana 单页）。
+ *
+ * ── 页面结构 ──────────────────────────────────────────────────
+ * 上半区：实时卡片（本文件）——回答「现在怎么样」；
+ * 下半区：趋势探索器（TrendExplorer）——回答「怎么变成这样的」。
+ * 两区同源（/api/v1/metrics/**），此前拆成两页，值班时要在
+ * 两个标签间来回跳；合并后一屏看全，/trends 旧路由重定向往这。
  *
  * ── 数据从哪来 ────────────────────────────────────────────────
  * 后端 `/api/v1/metrics/overview` 一次性返回 5 张卡片的瞬时值。
@@ -30,6 +36,7 @@ import {
 } from '@/api/metrics'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import TrendChart from '@/components/common/TrendChart.vue'
+import TrendExplorer from '@/components/monitoring/TrendExplorer.vue'
 import { parseDate } from '@/utils/time'
 
 defineOptions({ name: 'Monitoring' })
@@ -93,7 +100,7 @@ const loadSparklines = async () => {
     if (res.status !== 'fulfilled') continue
     const { id, r } = res.value
     // 多实例时只取第一条：卡片是「总体态势」，多条线挤在 60px 高的图里没法看。
-    // 要看每个实例请到趋势分析页
+    // 要看每个实例用下方趋势探索器
     const series = r.series?.[0]
     if (!series) continue
     next[id] = {
@@ -182,7 +189,7 @@ const formatTime = (ts: number | null) => {
   return d ? d.toLocaleTimeString('zh-CN', { hour12: false }) : '—'
 }
 
-const goIntegrations = () => router.push('/integrations')
+const goIntegrations = () => router.push('/settings?tab=integrations')
 </script>
 
 <template>
@@ -190,9 +197,9 @@ const goIntegrations = () => router.push('/integrations')
     <main class="monitoring-main">
       <header class="page-header">
         <div>
-          <h1 class="page-title">实时监控</h1>
+          <h1 class="page-title">监控中心</h1>
           <p class="page-sub">
-            主机资源与抓取目标的实时态势。数据直接来自 Prometheus，
+            主机资源与抓取目标的实时态势 + 历史趋势，一页看全。数据直接来自 Prometheus，
             <strong>OpsBrain 不存储副本</strong>——所见即监控系统当前的真实读数。
           </p>
         </div>
@@ -297,13 +304,17 @@ const goIntegrations = () => router.push('/integrations')
                   <span class="inst-value">{{ fmt(s.value, card.unit) }}</span>
                 </li>
                 <li v-if="card.samples.length > 5" class="inst-more">
-                  还有 {{ card.samples.length - 5 }} 项，查看趋势分析页
+                  还有 {{ card.samples.length - 5 }} 项，见下方趋势分析
                 </li>
               </ul>
             </template>
           </article>
         </div>
       </DataStateBoundary>
+
+      <!-- 趋势探索器：实时区看「现在」，这里看「走势」。
+           独立组件自管数据与 URL 筛选（range/metric），不受上方 10s 轮询影响 -->
+      <TrendExplorer />
     </main>
   </div>
 </template>
@@ -311,7 +322,7 @@ const goIntegrations = () => router.push('/integrations')
 <style scoped lang="scss">
 .monitoring-page {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .monitoring-main {
@@ -334,7 +345,7 @@ const goIntegrations = () => router.push('/integrations')
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .page-sub {
@@ -342,9 +353,9 @@ const goIntegrations = () => router.push('/integrations')
   max-width: 70ch;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
-  strong { color: var(--color-text-secondary); font-weight: 600; }
+  strong { color: var(--text-2); font-weight: 600; }
 }
 
 .header-actions {
@@ -357,7 +368,7 @@ const goIntegrations = () => router.push('/integrations')
 .last-updated {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3);
 }
 
 .btn-ghost,
@@ -375,16 +386,16 @@ const goIntegrations = () => router.push('/integrations')
 }
 
 .btn-ghost {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 
-  &:hover:not(:disabled) { background: var(--color-fill-light); }
+  &:hover:not(:disabled) { background: var(--surface-2); }
 }
 
 .btn-primary {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
+  border: 1px solid var(--brand);
+  background: var(--brand);
   color: #fff;
 
   &:hover:not(:disabled) { opacity: 0.9; }
@@ -406,9 +417,9 @@ const goIntegrations = () => router.push('/integrations')
   strong { font-weight: 700; }
 
   &.is-danger {
-    color: var(--color-danger);
-    background: rgb(from var(--color-danger) r g b / 0.07);
-    border: 1px solid rgb(from var(--color-danger) r g b / 0.25);
+    color: var(--danger);
+    background: rgb(from var(--danger) r g b / 0.07);
+    border: 1px solid rgb(from var(--danger) r g b / 0.25);
   }
 }
 
@@ -423,7 +434,7 @@ const goIntegrations = () => router.push('/integrations')
   color: inherit;
   cursor: pointer;
 
-  &:hover { background: rgb(from var(--color-danger) r g b / 0.1); }
+  &:hover { background: rgb(from var(--danger) r g b / 0.1); }
 }
 
 /* ===== 卡片 ===== */
@@ -436,9 +447,9 @@ const goIntegrations = () => router.push('/integrations')
 .metric-card {
   position: relative;
   padding: 15px 17px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 12px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   overflow: hidden;
 
   /* 顶部细色条表示健康档位——比整卡染色克制，不干扰读数 */
@@ -449,12 +460,12 @@ const goIntegrations = () => router.push('/integrations')
     right: 0;
     top: 0;
     height: 3px;
-    background: var(--color-border);
+    background: var(--border-2);
   }
 
-  &.sev-warn::before { background: var(--color-warning); }
-  &.sev-danger::before { background: var(--color-danger); }
-  &.is-error::before { background: var(--color-text-quaternary, var(--color-text-tertiary)); }
+  &.sev-warn::before { background: var(--warning); }
+  &.sev-danger::before { background: var(--danger); }
+  &.is-error::before { background: var(--text-3); }
   &.is-error { opacity: 0.75; }
 }
 
@@ -464,13 +475,13 @@ const goIntegrations = () => router.push('/integrations')
   gap: 6px;
 }
 
-.card-icon { color: var(--color-text-tertiary); flex-shrink: 0; }
+.card-icon { color: var(--text-3); flex-shrink: 0; }
 
 .card-name {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .card-count {
@@ -478,8 +489,8 @@ const goIntegrations = () => router.push('/integrations')
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 9px;
-  background: var(--color-fill-light);
-  color: var(--color-text-tertiary);
+  background: var(--surface-2);
+  color: var(--text-3);
 }
 
 .card-value-row {
@@ -494,15 +505,15 @@ const goIntegrations = () => router.push('/integrations')
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 
-  .sev-warn & { color: var(--color-warning); }
-  .sev-danger & { color: var(--color-danger); }
+  .sev-warn & { color: var(--warning); }
+  .sev-danger & { color: var(--danger); }
 }
 
 .card-value-note {
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .card-describe,
@@ -512,8 +523,8 @@ const goIntegrations = () => router.push('/integrations')
   line-height: 1.5;
 }
 
-.card-describe { color: var(--color-text-quaternary, var(--color-text-tertiary)); }
-.card-alerting { color: var(--color-warning); font-weight: 500; }
+.card-describe { color: var(--text-3); }
+.card-alerting { color: var(--warning); font-weight: 500; }
 
 .card-error {
   display: flex;
@@ -524,8 +535,8 @@ const goIntegrations = () => router.push('/integrations')
   border-radius: 6px;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-text-tertiary);
-  background: var(--color-fill-lighter);
+  color: var(--text-3);
+  background: var(--surface-2);
   word-break: break-all;
 }
 
@@ -540,7 +551,7 @@ const goIntegrations = () => router.push('/integrations')
   list-style: none;
   margin: 10px 0 0;
   padding: 9px 0 0;
-  border-top: 1px solid var(--color-border-lighter, var(--color-border-light));
+  border-top: 1px solid var(--border-1);
   display: grid;
   gap: 4px;
 }
@@ -552,13 +563,13 @@ const goIntegrations = () => router.push('/integrations')
   gap: 8px;
   font-size: 11px;
 
-  &.sev-warn .inst-value { color: var(--color-warning); }
-  &.sev-danger .inst-value { color: var(--color-danger); }
+  &.sev-warn .inst-value { color: var(--warning); }
+  &.sev-danger .inst-value { color: var(--danger); }
 }
 
 .inst-name {
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -567,12 +578,12 @@ const goIntegrations = () => router.push('/integrations')
 .inst-value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
 .inst-more {
   font-size: 10px;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3);
 }
 </style>

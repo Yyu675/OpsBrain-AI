@@ -16,7 +16,7 @@ import { handleServerError } from '@/utils/notify'
  * 审批中心的 Query 封装。
  *
  * 除了消除手写刷新，这里还替掉一条**手工事件通路**：
- * 此前审批决策后要 `ticketEvents.emit('approval-decided')`，
+ * 此前审批决策后要手工 emit 'approval-decided' 事件，
  * 导航栏订阅该事件再重新拉待审数量——发布方与订阅方分离在两个文件，
  * 漏发或漏订阅都会让角标停在旧数字，且没有编译期保护。
  * 现在角标与列表共用 approvalKeys 前缀，决策后 invalidate 一次两者都更新。

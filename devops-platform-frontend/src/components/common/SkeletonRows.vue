@@ -65,7 +65,7 @@ withDefaults(defineProps<{
   gap: 12px;
 
   &--boxed {
-    background: var(--color-surface);
+    background: var(--surface-1);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
     padding: 24px;
@@ -80,9 +80,9 @@ withDefaults(defineProps<{
    */
   background: linear-gradient(
     90deg,
-    var(--color-bg-sunken, var(--surface-2)) 25%,
-    var(--color-border-light, var(--border-1)) 37%,
-    var(--color-bg-sunken, var(--surface-2)) 63%
+    var(--surface-2, var(--surface-2)) 25%,
+    var(--border-1, var(--border-1)) 37%,
+    var(--surface-2, var(--surface-2)) 63%
   );
   background-size: 400% 100%;
   animation: skeleton-rows-shimmer 1.4s ease infinite;
@@ -100,7 +100,7 @@ withDefaults(defineProps<{
  */
 @media (prefers-reduced-motion: reduce) {
   .skeleton-rows__bar {
-    background: var(--color-bg-sunken, var(--surface-2));
+    background: var(--surface-2, var(--surface-2));
   }
 }
 </style>

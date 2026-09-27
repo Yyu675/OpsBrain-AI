@@ -169,23 +169,23 @@ defineExpose({ load })
 
 <style scoped>
 .trace-drawer {
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   font-size: 13px;
 }
 
 .trace-hint {
   padding: 24px 8px;
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
   line-height: 1.7;
 }
-.trace-hint-error { color: var(--color-danger, #DC2626); }
-.trace-hint-warn { color: var(--color-warning, #D97706); }
+.trace-hint-error { color: var(--danger, #DC2626); }
+.trace-hint-warn { color: var(--warning, #D97706); }
 
 .trace-empty-title {
   font-size: 14px;
   font-weight: 600;
   margin: 0 0 6px;
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
 }
 .trace-empty-desc { margin: 0 0 4px; }
 
@@ -194,24 +194,24 @@ defineExpose({ load })
   gap: 28px;
   padding: 12px 14px;
   border-radius: 8px;
-  background: var(--color-bg-sunken, #F9FAFB);
+  background: var(--surface-2, #F9FAFB);
   margin-bottom: 10px;
 }
 .trace-summary-item { display: flex; flex-direction: column; gap: 4px; }
-.trace-label { font-size: 12px; color: var(--color-text-secondary, var(--text-2)); }
+.trace-label { font-size: 12px; color: var(--text-2, var(--text-2)); }
 .trace-value { font-weight: 600; }
 
 .trace-state { font-weight: 600; }
-.trace-state.is-success { color: var(--color-success, #16A34A); }
-.trace-state.is-danger { color: var(--color-danger, #DC2626); }
-.trace-state.is-warning { color: var(--color-warning, #D97706); }
-.trace-state.is-primary { color: var(--color-primary, var(--brand)); }
-.trace-state.is-gray { color: var(--color-text-secondary, var(--text-2)); }
+.trace-state.is-success { color: var(--success, #16A34A); }
+.trace-state.is-danger { color: var(--danger, #DC2626); }
+.trace-state.is-warning { color: var(--warning, #D97706); }
+.trace-state.is-primary { color: var(--brand, var(--brand)); }
+.trace-state.is-gray { color: var(--text-2, var(--text-2)); }
 
 .trace-slowest {
   margin: 0 0 14px;
   font-size: 12px;
-  color: var(--color-warning, #D97706);
+  color: var(--warning, #D97706);
 }
 
 .trace-timeline { list-style: none; margin: 0; padding: 0; }
@@ -219,7 +219,7 @@ defineExpose({ load })
 .trace-node {
   position: relative;
   padding: 0 0 16px 20px;
-  border-left: 1px solid var(--color-border, var(--border-1));
+  border-left: 1px solid var(--border-2, var(--border-1));
 }
 .trace-node:last-child { border-left-color: transparent; padding-bottom: 0; }
 
@@ -230,28 +230,28 @@ defineExpose({ load })
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--color-text-secondary, var(--text-2));
+  background: var(--text-2, var(--text-2));
 }
-.trace-dot.is-success { background: var(--color-success, #16A34A); }
-.trace-dot.is-danger { background: var(--color-danger, #DC2626); }
-.trace-dot.is-warning { background: var(--color-warning, #D97706); }
-.trace-dot.is-primary { background: var(--color-primary, var(--brand)); }
-.trace-dot.is-gray { background: var(--color-text-secondary, var(--text-2)); }
+.trace-dot.is-success { background: var(--success, #16A34A); }
+.trace-dot.is-danger { background: var(--danger, #DC2626); }
+.trace-dot.is-warning { background: var(--warning, #D97706); }
+.trace-dot.is-primary { background: var(--brand, var(--brand)); }
+.trace-dot.is-gray { background: var(--text-2, var(--text-2)); }
 
 .trace-body { display: flex; flex-direction: column; gap: 3px; }
 .trace-head { display: flex; align-items: baseline; gap: 10px; }
 .trace-to { font-weight: 600; }
-.trace-duration { font-size: 12px; color: var(--color-text-secondary, var(--text-2)); }
+.trace-duration { font-size: 12px; color: var(--text-2, var(--text-2)); }
 .trace-detail { word-break: break-word; }
 .trace-meta {
   display: flex;
   gap: 12px;
   font-size: 12px;
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
 }
 
 .trace-node.is-slowest .trace-duration {
-  color: var(--color-warning, #D97706);
+  color: var(--warning, #D97706);
   font-weight: 600;
 }
 
@@ -259,7 +259,7 @@ defineExpose({ load })
   background: none;
   border: none;
   padding: 0 0 0 8px;
-  color: var(--color-primary, var(--brand));
+  color: var(--brand, var(--brand));
   cursor: pointer;
   font-size: 13px;
 }

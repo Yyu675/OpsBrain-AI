@@ -1137,14 +1137,14 @@ const primaryLabel = computed(() =>
   height: calc(100vh - 56px);
   min-height: 620px;
   overflow: hidden;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 /* ==================== 页内工具栏 ==================== */
 
 .ce-toolbar {
-  background: var(--color-bg-elevated);
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-1);
   flex-shrink: 0;
 }
 
@@ -1173,8 +1173,8 @@ const primaryLabel = computed(() =>
 }
 
 .ce-btn-ghost, .ce-btn-primary, .ce-btn-more, .ce-mobile-side { border: 0; outline: 0; }
-.ce-mobile-side { display: none; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 5px; color: var(--color-text-secondary); }
-.ce-mobile-side:hover { color: var(--color-primary); background: var(--color-primary-lighter); }
+.ce-mobile-side { display: none; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 5px; color: var(--text-2); }
+.ce-mobile-side:hover { color: var(--brand); background: var(--brand-subtle); }
 .ce-side-mask { display: none; }
 
 /* 原「返回知识库」按钮及其配套（分隔线/图标/标题）的样式已删除——
@@ -1190,21 +1190,21 @@ const primaryLabel = computed(() =>
   font-size: 32px;
   font-weight: var(--weight-bold);
   line-height: 1.3;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   transition: color 0.15s ease;
 
   &::placeholder {
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
     font-weight: var(--weight-normal);
   }
 }
 
 .ce-title-count {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   white-space: nowrap;
 }
 
@@ -1214,7 +1214,7 @@ const primaryLabel = computed(() =>
   gap: 6px;
   margin: 0 4px;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   white-space: nowrap;
 }
 
@@ -1222,11 +1222,11 @@ const primaryLabel = computed(() =>
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
-  background: var(--state-success);
-  box-shadow: 0 0 0 3px var(--state-success-bg);
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-subtle);
 }
 .ce-save-dot--dirty {
-  background: var(--state-warning, var(--warning));
+  background: var(--warning, var(--warning));
   box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.15);
 }
 
@@ -1236,16 +1236,16 @@ const primaryLabel = computed(() =>
   gap: 6px;
   height: 34px;
   padding: 0 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   font-size: var(--text-sm);
   white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
 
   &:hover {
-    background: var(--color-bg-sunken);
-    color: var(--color-text-primary);
+    background: var(--surface-2);
+    color: var(--text-1);
   }
 }
 
@@ -1255,14 +1255,14 @@ const primaryLabel = computed(() =>
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .ce-btn-more:hover {
-  color: var(--color-primary);
-  background: var(--color-primary-lighter);
+  color: var(--brand);
+  background: var(--brand-subtle);
 }
 
 .ce-btn-outline {
@@ -1271,17 +1271,17 @@ const primaryLabel = computed(() =>
   gap: 6px;
   height: 34px;
   padding: 0 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text-2);
   font-size: var(--text-sm);
   white-space: nowrap;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary-light);
-    color: var(--color-primary);
+    border-color: var(--brand-hover);
+    color: var(--brand);
   }
 }
 
@@ -1291,16 +1291,16 @@ const primaryLabel = computed(() =>
   gap: 6px;
   height: 34px;
   padding: 0 16px;
-  border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
+  border-radius: var(--radius);
+  background: var(--brand);
+  color: var(--brand-fg);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   white-space: nowrap;
   transition: background 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: var(--color-primary-light);
+    background: var(--brand-hover);
   }
 
   &:disabled {
@@ -1318,15 +1318,15 @@ const primaryLabel = computed(() =>
   justify-content: center;
   gap: 12px;
   padding: 80px 0;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-size: var(--text-sm);
 }
 
 .ce-spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border: 2px solid var(--border-2);
+  border-top-color: var(--brand);
   border-radius: 50%;
   animation: ce-spin 0.8s linear infinite;
 }
@@ -1375,8 +1375,8 @@ const primaryLabel = computed(() =>
   min-height: calc(100vh - 128px);
   padding: 22px 28px 40px;
   box-sizing: border-box;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-light);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
   box-shadow: var(--shadow-sm);
 }
@@ -1387,11 +1387,11 @@ const primaryLabel = computed(() =>
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   font: 700 30px/1.35 var(--font-display);
 }
 
-.ce-doc-title::placeholder { color: var(--color-text-tertiary); font-weight: var(--weight-normal); }
+.ce-doc-title::placeholder { color: var(--text-3); font-weight: var(--weight-normal); }
 
 .ce-paper-meta {
   min-height: 34px;
@@ -1399,7 +1399,7 @@ const primaryLabel = computed(() =>
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-size: 12px;
 }
 
@@ -1411,17 +1411,17 @@ const primaryLabel = computed(() =>
   gap: 5px;
   height: 28px;
   padding: 0 9px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: 4px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
+  background: var(--surface-1);
+  color: var(--text-2);
   font-size: 12px;
   white-space: nowrap;
 }
 
 .ce-insert-menu:hover {
-  border-color: var(--color-primary-light);
-  color: var(--color-primary);
+  border-color: var(--brand-hover);
+  color: var(--brand);
 }
 
 .ce-paper-context {
@@ -1443,14 +1443,14 @@ const primaryLabel = computed(() =>
   gap: 18px;
   padding: 34px 0 48px;
   box-sizing: border-box;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-1);
 }
 
 .ce-starter-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .ce-starter-title h2 {
@@ -1473,19 +1473,19 @@ const primaryLabel = computed(() =>
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
+  background: var(--surface-1);
+  color: var(--text-2);
   font-size: 14px;
   text-align: left;
   transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .ce-starter-grid button:hover {
-  border-color: var(--color-primary-light);
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
+  border-color: var(--brand-hover);
+  background: var(--brand-subtle);
+  color: var(--brand);
 }
 
 
@@ -1502,8 +1502,8 @@ const primaryLabel = computed(() =>
   gap: 18px;
   padding: 0 16px 20px;
   overflow-y: auto;
-  background: var(--color-surface-hover);
-  border-left: 1px solid var(--color-border-light);
+  background: var(--surface-hover);
+  border-left: 1px solid var(--border-1);
   border-radius: 0;
   box-shadow: none;
 }
@@ -1511,7 +1511,7 @@ const primaryLabel = computed(() =>
 .ce-side-tabs {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
   margin: 0 -16px 2px;
   padding: 0 16px;
   flex-shrink: 0;
@@ -1530,20 +1530,20 @@ const primaryLabel = computed(() =>
   background: transparent;
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   transition: all 0.15s ease;
   border-bottom: 2px solid transparent;
   padding: 0;
 
   &.active {
-    color: var(--color-primary);
+    color: var(--brand);
     font-weight: var(--weight-semibold);
-    border-bottom-color: var(--color-primary);
+    border-bottom-color: var(--brand);
   }
 
   &:hover:not(.active) {
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 
@@ -1552,8 +1552,8 @@ const primaryLabel = computed(() =>
 
 
 
-.ce-toc-empty-action { display: flex; align-items: center; gap: 6px; border: 1px dashed var(--color-border); border-radius: 5px; padding: 9px 10px; }
-.ce-toc-empty-action:hover { border-color: var(--color-primary-light); color: var(--color-primary); }
+.ce-toc-empty-action { display: flex; align-items: center; gap: 6px; border: 1px dashed var(--border-2); border-radius: 5px; padding: 9px 10px; }
+.ce-toc-empty-action:hover { border-color: var(--brand-hover); color: var(--brand); }
 
 
 
@@ -1575,27 +1575,27 @@ const primaryLabel = computed(() =>
 
 :deep(.md-editor) {
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   min-height: calc(100vh - 245px);
   height: auto !important;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-elevated);
+  background: var(--surface-1);
 }
 
 :deep(.md-editor-toolbar) {
-  background: var(--color-surface-hover);
-  border-bottom: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--surface-hover);
+  border-bottom: 1px solid var(--border-1);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 :deep(.md-editor-toolbar-item) {
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 :deep(.md-editor-toolbar-item:hover) {
-  color: var(--color-primary);
-  background: var(--color-primary-lighter);
+  color: var(--brand);
+  background: var(--brand-subtle);
 }
 
 :deep(.md-editor-content-wrapper) {

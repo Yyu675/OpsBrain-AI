@@ -18,6 +18,7 @@
  */
 import { Trash2 } from 'lucide-vue-next'
 import RelativeTime from '@/components/common/RelativeTime.vue'
+import AvatarFallback from '@/components/common/AvatarFallback.vue'
 import type { Ticket } from '@/stores/tickets'
 
 defineProps<{
@@ -76,8 +77,8 @@ const emit = defineEmits<{
       <div class="card-foot">
         <span class="status-badge" :class="getStatusClass(ticket.status)">{{ getStatusLabel(ticket.status) }}</span>
         <div class="assignee-cell">
-          <!-- 未分配时用 ? 占位，不能取 undefined[0] -->
-          <span class="assignee-avatar">{{ (ticket.assignee || '?')[0] }}</span>
+          <!-- AvatarFallback 内部处理未分配（name 空 → '?'），按名字哈希配色 -->
+          <AvatarFallback :name="ticket.assignee || '?'" :size="22" />
           <span class="assignee-name">{{ ticket.assignee }}</span>
         </div>
       </div>
@@ -113,8 +114,8 @@ const emit = defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 16px;
@@ -123,12 +124,12 @@ const emit = defineEmits<{
 }
 .ticket-card:hover {
   box-shadow: var(--shadow-md);
-  border-color: var(--color-primary-light);
+  border-color: var(--brand-hover);
   transform: translateY(-2px);
 }
 .ticket-card.selected {
-  border-color: var(--color-primary);
-  background: var(--color-primary-lighter);
+  border-color: var(--brand);
+  background: var(--brand-subtle);
 }
 .card-top {
   display: flex;
@@ -140,7 +141,7 @@ const emit = defineEmits<{
 .card-id {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--color-primary-light);
+  color: var(--brand-hover);
   text-decoration: none;
   font-weight: var(--weight-medium);
 }
@@ -148,20 +149,20 @@ const emit = defineEmits<{
 .card-top .priority-badge { margin-left: auto; }
 .card-title {
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   text-decoration: none;
   font-size: var(--text-sm);
-  line-height: var(--leading-snug);
+  line-height: var(--leading-normal);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.card-title:hover { color: var(--color-primary); }
+.card-title:hover { color: var(--brand); }
 .card-desc {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   line-height: var(--leading-normal);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -185,7 +186,7 @@ const emit = defineEmits<{
   justify-content: space-between;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-1);
 }
 
 /*
@@ -199,31 +200,19 @@ const emit = defineEmits<{
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
-  background: var(--color-bg-sunken, #F3F4F6);
-  color: var(--color-text-secondary);
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 .assignee-cell {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-}
-.assignee-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--color-primary-lighter, #EEF2FF);
-  color: var(--color-primary);
-  font-size: 11px;
-  font-weight: var(--weight-medium);
+  color: var(--text-2);
 }
 .timestamp {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 .actions {
   display: flex;
@@ -239,12 +228,12 @@ const emit = defineEmits<{
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   cursor: pointer;
 }
 .action-icon-btn:hover {
-  background: var(--color-bg-sunken, #F3F4F6);
-  color: var(--color-text-primary);
+  background: var(--surface-2, #F3F4F6);
+  color: var(--text-1);
 }
-.action-icon-btn-danger:hover { color: var(--color-danger, #DC2626); }
+.action-icon-btn-danger:hover { color: var(--danger, #DC2626); }
 </style>

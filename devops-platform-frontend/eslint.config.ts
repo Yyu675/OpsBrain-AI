@@ -127,8 +127,8 @@ export default tseslint.config(
          * 后端超时 / 网关 502 / Nginx proxy_read_timeout 到期时状态永远不复位，
          * 界面卡死（输入框禁用、停止按钮点了没反应）。
          *
-         * 这个缺陷在项目里出现过**三次**（ChatMode、useTicketAnalysis 的两处、
-         * KnowledgeSinkDrawer），每次都是新增调用点时照着旧写法抄。
+         * 这个缺陷在项目里出现过多处（useTicketAnalysis、KnowledgeSinkDrawer
+         * 等 chatStream 调用点），每次都是新增调用点时照着旧写法抄。
          * 靠 review 记住不现实，用规则挡住。
          */
         selector: "CallExpression[callee.name='chatStream'] > ObjectExpression:not(:has(Property[key.name='onClose']))",
@@ -215,6 +215,24 @@ export default tseslint.config(
     files: ['*.config.ts', 'vite.config.ts', 'vitest.config.ts', 'knip.config.ts'],
     languageOptions: {
       globals: { ...globals.node },
+    },
+  },
+
+  {
+    /**
+     * Node 侧工具脚本（CJS）。
+     *
+     * tools/ 下是构建/审计脚本（如 check_bundle_budget.cjs），跑在 Node 而非
+     * 浏览器：require/__dirname/console/process 都是合法全局，且 CJS 的
+     * require 是它该有的模块形式——不适用前端源码的 ESM 约束。
+     */
+    files: ['tools/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
     },
   }
 )

@@ -66,6 +66,12 @@ const api = vi.hoisted(() => ({
   fetchAlertById: vi.fn(),
   acknowledgeAlert: vi.fn(),
   resolveAlert: vi.fn(),
+  // 管道心跳是挂载即拉的旁路，与分页断言无关——给「正常」桩避免噪音
+  fetchPipelineHeartbeat: vi.fn(async () => ({ lastSeenAt: '2026-09-25T06:00:00', silent: false, silenceMinutes: 3 })),
+  // 风暴模式状态同理：默认「开启但非风暴中」，横幅不出现
+  fetchStormStatus: vi.fn(async () => ({ enabled: true, active: false, ratePerMin: 3, enterRatePerMin: 100, exitRatePerMin: 20 })),
+  // 来源系统下拉数据源：默认两系统
+  fetchAlertSystems: vi.fn(async () => ['default', 'mes']),
 }))
 vi.mock('@/api/alerts', () => api)
 
@@ -132,6 +138,7 @@ const mountPage = async (url = '/alerts', total = 35) => {
         'el-button': true,
         'el-select': true,
         'el-option': true,
+        'el-checkbox': true,
         ServerPagination: {
           name: 'ServerPagination',
           props: ['currentPage', 'totalPages', 'total', 'pageStart', 'pageEnd', 'pageNumbers'],
@@ -273,5 +280,94 @@ describe('筛选与页码的联动', () => {
 
     expect(requestedPage()).toBe(1)
     expect(shownPage(w)).toBe(1)
+  })
+})
+
+describe('风暴模式横幅（FR-2.5 可视面）', () => {
+  beforeEach(() => {
+    // 恢复默认「待命」桩：mockImplementation 会跨用例残留（clearAllMocks 只清调用记录）
+    api.fetchStormStatus.mockImplementation(async () => ({
+      enabled: true, active: false, ratePerMin: 3, enterRatePerMin: 100, exitRatePerMin: 20,
+    }))
+  })
+
+  it('风暴进行中显示横幅——值班人不会把「没建单」误读成「漏单」', async () => {
+    api.fetchStormStatus.mockImplementation(async () => ({
+      enabled: true, active: true, ratePerMin: 217, enterRatePerMin: 100, exitRatePerMin: 20,
+    }))
+
+    const w = await mountPage()
+
+    const banner = w.find('.storm-banner')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('风暴')
+    expect(banner.text()).toContain('217')
+  })
+
+  it('非风暴态不出现横幅，摘要行显示待命', async () => {
+    const w = await mountPage()
+
+    expect(w.find('.storm-banner').exists()).toBe(false)
+    expect(w.text()).toContain('风暴')
+  })
+
+  it('风暴模式整体关闭时连摘要位都不占', async () => {
+    api.fetchStormStatus.mockImplementation(async () => ({
+      enabled: false, active: false, ratePerMin: 0, enterRatePerMin: 100, exitRatePerMin: 20,
+    }))
+
+    const w = await mountPage()
+
+    expect(w.find('.storm-banner').exists()).toBe(false)
+    expect(w.text()).not.toContain('风暴')
+  })
+})
+
+describe('来源系统与观察中筛选（V9 / FR-3.1）', () => {
+  it('选择来源系统后请求带 system 参数', async () => {
+    const w = await mountPage()
+    const vm = w.vm as unknown as { systemFilter: string }
+
+    vm.systemFilter = 'mes'
+    await flushPromises()
+
+    const calls = api.fetchAlerts.mock.calls
+    const last = calls[calls.length - 1]?.[0] as { system?: string }
+    expect(last.system).toBe('mes')
+  })
+
+  it('勾选只看观察中后请求带 observing=true', async () => {
+    const w = await mountPage()
+    const vm = w.vm as unknown as { observingOnly: boolean }
+
+    vm.observingOnly = true
+    await flushPromises()
+
+    const calls = api.fetchAlerts.mock.calls
+    const last = calls[calls.length - 1]?.[0] as { observing?: boolean }
+    expect(last.observing).toBe(true)
+  })
+
+  it('观察中状态随 URL 恢复（?observing=true 分享链接落点语义不变）', async () => {
+    const w = await mountPage('/alerts?observing=true')
+
+    const vm = w.vm as unknown as { observingOnly: boolean }
+    expect(vm.observingOnly).toBe(true)
+  })
+})
+
+describe('WS 行级实时更新', () => {
+  it('收到告警事件后防抖重拉列表', async () => {
+    await mountPage()
+    const before = api.fetchAlerts.mock.calls.length
+
+    const { dispatchAlertEventForTest } = await import('@/composables/useAlertNotifications')
+    dispatchAlertEventForTest({ type: 'NEW', timestamp: '2026-09-27T12:00:00Z', alert: { id: 999 } })
+
+    // 防抖 2s：事件后不应立即重拉
+    expect(api.fetchAlerts.mock.calls.length).toBe(before)
+    await new Promise(r => setTimeout(r, 2300))
+    await flushPromises()
+    expect(api.fetchAlerts.mock.calls.length).toBeGreaterThan(before)
   })
 })

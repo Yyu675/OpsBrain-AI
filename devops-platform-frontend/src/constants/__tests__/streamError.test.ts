@@ -7,7 +7,7 @@ import { toStreamError, BIZ_ERRORS } from '../bizCode'
  *
  * 要防住的缺陷：**丢弃 `data.code`，只回显 `data.message`**。
  *
- * 修复前 ChatMode.vue 与 KnowledgeSinkDrawer.vue 的 onError 都是
+ * 修复前各 chatStream 消费方（KnowledgeSinkDrawer 等）的 onError 都是
  * `${data.message || '请求失败'}` —— code 整个不用。后果是同一个错误
  * 在 REST 与 SSE 两条路上呈现完全不同：REST 侧走 getBizError() 查表，
  * 用户能看到「下一步做什么」；SSE 侧只有后端那句 message。

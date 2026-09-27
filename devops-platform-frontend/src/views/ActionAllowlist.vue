@@ -841,7 +841,7 @@ const evaluating = useAsyncAction(
 <style scoped lang="scss">
 .allowlist-page {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .allowlist-main {
@@ -864,7 +864,7 @@ const evaluating = useAsyncAction(
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .page-sub {
@@ -872,10 +872,10 @@ const evaluating = useAsyncAction(
   max-width: 68ch;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   strong {
-    color: var(--color-text-secondary);
+    color: var(--text-2);
     font-weight: 600;
   }
 }
@@ -894,15 +894,15 @@ const evaluating = useAsyncAction(
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   transition: background 0.15s;
 
   &:hover:not(:disabled) {
-    background: var(--color-fill-light);
+    background: var(--surface-2);
   }
 
   &:disabled {
@@ -930,19 +930,19 @@ const evaluating = useAsyncAction(
 }
 
 .btn-ghost {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 
   &:hover:not(:disabled) {
-    background: var(--color-fill-light);
-    color: var(--color-text-primary);
+    background: var(--surface-2);
+    color: var(--text-1);
   }
 }
 
 .btn-primary {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
+  border: 1px solid var(--brand);
+  background: var(--brand);
   color: #fff;
 
   &:hover:not(:disabled) {
@@ -980,9 +980,9 @@ const evaluating = useAsyncAction(
   gap: 8px;
   height: 28px;
   padding: 0 10px 0 9px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-fill-lighter);
+  background: var(--surface-2);
   overflow: hidden;
 
   &::before {
@@ -992,25 +992,25 @@ const evaluating = useAsyncAction(
     top: 0;
     bottom: 0;
     width: 2px;
-    background: var(--color-text-tertiary);
+    background: var(--text-3);
   }
 
   /* 风险敞口 > 0 时用 danger 竖条，让它在一排徽章里跳出来 */
   &.is-danger::before {
-    background: var(--color-danger);
+    background: var(--danger);
   }
 }
 
 .stat-label {
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .stat-value {
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 /* ===== 筛选栏 ===== */
@@ -1036,7 +1036,7 @@ const evaluating = useAsyncAction(
   left: 9px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
   pointer-events: none;
 }
 
@@ -1047,10 +1047,10 @@ const evaluating = useAsyncAction(
   padding: 0 9px;
   font-size: 13px;
   font-family: inherit;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
 
   &.has-icon {
     padding-left: 28px;
@@ -1070,8 +1070,8 @@ const evaluating = useAsyncAction(
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgb(from var(--color-primary) r g b / 0.1);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgb(from var(--brand) r g b / 0.1);
   }
 
   &:disabled {
@@ -1082,10 +1082,10 @@ const evaluating = useAsyncAction(
 
 /* ===== 表格 ===== */
 .table-wrap {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 10px;
   overflow: hidden;
-  background: var(--color-surface);
+  background: var(--surface-1);
 }
 
 .action-table {
@@ -1100,16 +1100,16 @@ const evaluating = useAsyncAction(
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
     /* 极淡的表头底色，而非常见的深灰条 */
-    background: var(--color-fill-lighter);
-    border-bottom: 1px solid var(--color-border-light);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-1);
   }
 
   tbody td {
     padding: 10px 12px;
     vertical-align: top;
-    border-bottom: 1px solid var(--color-border-lighter, var(--color-border-light));
+    border-bottom: 1px solid var(--border-1, var(--border-1));
   }
 
   tbody tr:last-child td {
@@ -1117,7 +1117,7 @@ const evaluating = useAsyncAction(
   }
 
   tbody tr:hover {
-    background: var(--color-fill-lighter);
+    background: var(--surface-2);
   }
 
   /* 停用行整体降透明度：一眼区分「开着的」与「登记了但没开的」 */
@@ -1140,10 +1140,10 @@ const evaluating = useAsyncAction(
 .action-icon {
   margin-top: 2px;
   flex-shrink: 0;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
 
   &.is-high {
-    color: var(--color-danger);
+    color: var(--danger);
   }
 }
 
@@ -1156,19 +1156,19 @@ const evaluating = useAsyncAction(
 
 .action-name {
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .action-key {
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .action-desc {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
 }
 
 .risk-badge {
@@ -1179,14 +1179,14 @@ const evaluating = useAsyncAction(
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-fill-lighter);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-2);
+  color: var(--text-2);
 
   &.is-high {
-    color: var(--color-danger);
-    border-color: rgb(from var(--color-danger) r g b / 0.28);
-    background: rgb(from var(--color-danger) r g b / 0.07);
+    color: var(--danger);
+    border-color: rgb(from var(--danger) r g b / 0.28);
+    background: rgb(from var(--danger) r g b / 0.07);
   }
 }
 
@@ -1194,11 +1194,11 @@ const evaluating = useAsyncAction(
   display: block;
   margin-top: 3px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .warn-text {
-  color: var(--color-warning);
+  color: var(--warning);
 }
 
 .env-row {
@@ -1216,14 +1216,14 @@ const evaluating = useAsyncAction(
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-fill-lighter);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-2);
+  color: var(--text-2);
 
   &.is-prod {
-    color: var(--color-danger);
-    border-color: rgb(from var(--color-danger) r g b / 0.3);
-    background: rgb(from var(--color-danger) r g b / 0.07);
+    color: var(--danger);
+    border-color: rgb(from var(--danger) r g b / 0.3);
+    background: rgb(from var(--danger) r g b / 0.07);
   }
 }
 
@@ -1231,7 +1231,7 @@ const evaluating = useAsyncAction(
   display: block;
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   word-break: break-all;
 }
 
@@ -1243,18 +1243,18 @@ const evaluating = useAsyncAction(
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
 
   &.is-open {
-    color: var(--color-warning);
-    background: rgb(from var(--color-warning) r g b / 0.08);
-    border-color: rgb(from var(--color-warning) r g b / 0.25);
+    color: var(--warning);
+    background: rgb(from var(--warning) r g b / 0.08);
+    border-color: rgb(from var(--warning) r g b / 0.25);
   }
 
   &.is-guarded {
-    color: var(--color-success);
-    background: rgb(from var(--color-success) r g b / 0.08);
-    border-color: rgb(from var(--color-success) r g b / 0.25);
+    color: var(--success);
+    background: rgb(from var(--success) r g b / 0.08);
+    border-color: rgb(from var(--success) r g b / 0.25);
   }
 }
 
@@ -1264,8 +1264,8 @@ const evaluating = useAsyncAction(
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
-  background: var(--color-fill-light);
-  color: var(--color-text-tertiary);
+  background: var(--surface-2);
+  color: var(--text-3);
 }
 
 .num {
@@ -1285,8 +1285,8 @@ const evaluating = useAsyncAction(
     background: currentColor;
   }
 
-  &.is-on { color: var(--color-success); }
-  &.is-off { color: var(--color-text-quaternary, var(--color-text-tertiary)); }
+  &.is-on { color: var(--success); }
+  &.is-off { color: var(--text-3, var(--text-3)); }
 }
 
 .ops {
@@ -1303,9 +1303,9 @@ const evaluating = useAsyncAction(
 
 .form-group {
   padding: 12px 14px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
-  background: var(--color-fill-lighter);
+  background: var(--surface-2);
 
   legend {
     padding: 0 6px;
@@ -1313,7 +1313,7 @@ const evaluating = useAsyncAction(
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 }
 
@@ -1346,16 +1346,16 @@ const evaluating = useAsyncAction(
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .field-note {
   font-size: 10px;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
 }
 
 .req {
-  color: var(--color-danger);
+  color: var(--danger);
   font-style: normal;
 }
 
@@ -1366,10 +1366,10 @@ const evaluating = useAsyncAction(
   margin: 4px 0 0;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   &.is-warn {
-    color: var(--color-warning);
+    color: var(--warning);
   }
 
   &.inline {
@@ -1391,20 +1391,20 @@ const evaluating = useAsyncAction(
   padding: 0 10px;
   font-size: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   cursor: pointer;
 
   &:has(input:checked) {
-    border-color: var(--color-primary);
-    background: rgb(from var(--color-primary) r g b / 0.06);
+    border-color: var(--brand);
+    background: rgb(from var(--brand) r g b / 0.06);
   }
 
   &.is-prod:has(input:checked) {
-    border-color: var(--color-danger);
-    background: rgb(from var(--color-danger) r g b / 0.07);
-    color: var(--color-danger);
+    border-color: var(--danger);
+    background: rgb(from var(--danger) r g b / 0.07);
+    color: var(--danger);
   }
 }
 
@@ -1413,7 +1413,7 @@ const evaluating = useAsyncAction(
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   cursor: pointer;
 }
 
@@ -1425,9 +1425,9 @@ const evaluating = useAsyncAction(
   padding: 8px 10px;
   font-size: 12px;
   border-radius: 6px;
-  color: var(--color-danger);
-  background: rgb(from var(--color-danger) r g b / 0.07);
-  border: 1px solid rgb(from var(--color-danger) r g b / 0.2);
+  color: var(--danger);
+  background: rgb(from var(--danger) r g b / 0.07);
+  border: 1px solid rgb(from var(--danger) r g b / 0.2);
 }
 
 /* ===== 模拟校验 ===== */
@@ -1435,25 +1435,25 @@ const evaluating = useAsyncAction(
   margin: 0 0 14px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .eval-result {
   margin-top: 14px;
   padding: 12px 14px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
 
   &.is-allow {
-    border-color: rgb(from var(--color-success) r g b / 0.25);
-    background: rgb(from var(--color-success) r g b / 0.06);
-    color: var(--color-success);
+    border-color: rgb(from var(--success) r g b / 0.25);
+    background: rgb(from var(--success) r g b / 0.06);
+    color: var(--success);
   }
 
   &.is-deny {
-    border-color: rgb(from var(--color-danger) r g b / 0.25);
-    background: rgb(from var(--color-danger) r g b / 0.06);
-    color: var(--color-danger);
+    border-color: rgb(from var(--danger) r g b / 0.25);
+    background: rgb(from var(--danger) r g b / 0.06);
+    color: var(--danger);
   }
 }
 
@@ -1468,7 +1468,7 @@ const evaluating = useAsyncAction(
   margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .eval-detail {
@@ -1477,20 +1477,20 @@ const evaluating = useAsyncAction(
   gap: 8px;
   margin: 10px 0 0;
   padding-top: 10px;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-1);
 
   dt {
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 
   dd {
     margin: 2px 0 0;
     font-size: 13px;
     font-weight: 600;
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 </style>

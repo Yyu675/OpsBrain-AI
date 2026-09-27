@@ -20,6 +20,7 @@ import { fetchModelChannels, updateModelChannel, resetModelChannel, testModelCha
 import type { AiChannelHistoryView, AiChannelView, AiChannelUpdatePayload, CapabilityItem, CapabilityState, ChannelProbeResult } from '@/api/types'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { notify, handleServerError } from '@/utils/notify'
+import { parseDate } from '@/utils/time'
 
 defineOptions({ name: 'ModelChannels' })
 
@@ -411,12 +412,14 @@ const PROBE_STALE_DAYS = 7
 const staleReason = (channelKey: string): string | null => {
   const r = capabilityMap.value[channelKey]
   if (!r?.probedAt) return null
-  const probedAt = new Date(r.probedAt).getTime()
-  if (Number.isNaN(probedAt)) return null
+  // parseDate：后端 LocalDateTime 无时区后缀，new Date 会按浏览器时区解析（跨时区差 12h）
+  const probedAtDate = parseDate(r.probedAt)
+  if (!probedAtDate) return null
+  const probedAt = probedAtDate.getTime()
   const ch = channels.value.find((c) => c.channelKey === channelKey)
   if (ch?.updatedAt) {
-    const updatedAt = new Date(ch.updatedAt).getTime()
-    if (!Number.isNaN(updatedAt) && updatedAt > probedAt) {
+    const updatedAtDate = parseDate(ch.updatedAt)
+    if (updatedAtDate && updatedAtDate.getTime() > probedAt) {
       return '配置在探测后已变更，结果描述的是旧配置'
     }
   }
@@ -969,7 +972,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-1);
   margin: 0;
 }
 
@@ -986,7 +989,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 
 .page-desc {
   font-size: 13px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-2);
   margin: 0;
   line-height: 1.6;
 }
@@ -1000,9 +1003,9 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 }
 
 .channel-card {
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1, var(--surface-1));
   overflow: hidden;
 }
 
@@ -1011,8 +1014,8 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
-  background: var(--bg-page, #f9fafb);
+  border-bottom: 1px solid var(--border-1);
+  background: var(--surface-0);
 }
 
 .channel-card--chat .channel-card__header { background: #eff6ff; border-left: 3px solid #3b82f6; }
@@ -1050,13 +1053,13 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 }
 
 .field-label {
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-2);
   min-width: 80px;
   flex-shrink: 0;
 }
 
 .field-value {
-  color: var(--text-primary, #111827);
+  color: var(--text-1);
   word-break: break-all;
 }
 
@@ -1086,10 +1089,10 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-surface, var(--surface-1));
-  color: var(--text-primary, #374151);
+  background: var(--surface-1, var(--surface-1));
+  color: var(--text-1);
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s;
@@ -1125,7 +1128,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   width: 100%;
   margin-top: 8px;
   padding: 5px 0;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--border-1);
   border-radius: 4px;
   background: #f9fafb;
   color: #374151;
@@ -1177,11 +1180,11 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .edit-label-hint { font-weight: 400; color: #9ca3af; }
 
 .edit-input {
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--border-1);
   border-radius: 4px;
   padding: 6px 10px;
   font-size: 13px;
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1, var(--surface-1));
 }
 
 .edit-input:disabled { background: #f3f4f6; color: #9ca3af; }
@@ -1192,7 +1195,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .fallback-section {
   margin-top: 18px;
   padding-top: 14px;
-  border-top: 1px dashed var(--border-color, #e5e7eb);
+  border-top: 1px dashed var(--border-1);
 }
 .fallback-toggle {
   display: flex;
@@ -1222,8 +1225,8 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 }
 
 .edit-btn-cancel {
-  border: 1px solid var(--border-color, #d1d5db);
-  background: var(--color-surface, var(--surface-1));
+  border: 1px solid var(--border-1);
+  background: var(--surface-1, var(--surface-1));
   color: #374151;
   margin-right: 8px;
 }
@@ -1270,7 +1273,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   padding: 2px 8px;
   border: 1px solid #d1d5db;
   border-radius: 12px;
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1, var(--surface-1));
   font-size: 11px;
   cursor: pointer;
 }
@@ -1309,9 +1312,9 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   justify-content: center;
   gap: 4px;
   padding: 5px 0;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--border-1);
   border-radius: 4px;
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1, var(--surface-1));
   color: #4b5563;
   font-size: 12px;
   cursor: pointer;
@@ -1328,7 +1331,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 
 .history-desc {
   font-size: 12px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-2);
   margin: 0;
   line-height: 1.6;
 }
@@ -1352,7 +1355,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
   padding: 10px 12px;
 }
@@ -1424,13 +1427,13 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .diff-toggle {
   margin-left: auto;
   font-size: 11px;
-  color: var(--color-primary, #2563eb);
+  color: var(--brand, #2563eb);
   user-select: none;
 }
 
 .diff-panel {
   margin-top: 8px;
-  border-top: 1px dashed var(--border-color, #e5e7eb);
+  border-top: 1px dashed var(--border-1);
   padding-top: 8px;
   cursor: default;
 }
@@ -1467,7 +1470,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   white-space: nowrap;
 }
 
-.diff-cell--label { font-family: inherit; color: var(--text-secondary, #6b7280); }
+.diff-cell--label { font-family: inherit; color: var(--text-2); }
 
 .diff-all-same {
   font-size: 12px;
@@ -1500,7 +1503,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 
 .capability-desc {
   font-size: 12px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-2);
   margin: 0;
   line-height: 1.6;
 }
@@ -1510,14 +1513,14 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   color: #9ca3af;
   font-size: 13px;
   padding: 24px 0;
-  border: 1px dashed var(--border-color, #e5e7eb);
+  border: 1px dashed var(--border-1);
   border-radius: 6px;
 }
 
 .capability-list { display: flex; flex-direction: column; gap: 8px; }
 
 .capability-item {
-  border: 1px solid var(--border-color, #e5e7eb);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
   padding: 8px 12px;
 }

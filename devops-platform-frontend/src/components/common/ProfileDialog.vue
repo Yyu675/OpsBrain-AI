@@ -149,7 +149,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 .dialog {
   width: 100%;
   max-width: 520px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   display: flex;
@@ -162,12 +162,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
 
   h3 {
     font-size: var(--text-lg);
     font-weight: var(--weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--text-1);
     margin: 0;
     display: inline-flex;
     align-items: center;
@@ -180,7 +180,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   height: 32px;
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: inline-flex;
@@ -188,7 +188,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   justify-content: center;
   transition: all 0.15s ease;
 
-  &:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+  &:hover { background: var(--surface-hover); color: var(--text-1); }
 }
 
 .dialog-body {
@@ -203,15 +203,15 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 16px;
   padding: 12px;
-  background: var(--color-primary-lighter);
-  border-radius: var(--radius-md);
+  background: var(--brand-subtle);
+  border-radius: var(--radius);
 }
 
 .profile-avatar {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--brand);
   color: white;
   font-size: var(--text-2xl);
   font-weight: var(--weight-semibold);
@@ -227,50 +227,50 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   display: inline-block;
   align-self: flex-start;
   padding: 2px 10px;
-  background: var(--color-primary);
+  background: var(--brand);
   color: white;
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
 }
 
-.profile-perm { font-size: var(--text-xs); color: var(--color-text-secondary); }
-.profile-perm span { color: var(--color-text-primary); font-weight: var(--weight-medium); }
+.profile-perm { font-size: var(--text-xs); color: var(--text-2); }
+.profile-perm span { color: var(--text-1); font-weight: var(--weight-medium); }
 
 .form-row { display: flex; flex-direction: column; gap: 6px; }
 
 .form-label {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 
-  &.required::after { content: ' *'; color: var(--state-error); }
+  &.required::after { content: ' *'; color: var(--danger); }
 }
 
 .form-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   outline: none;
   transition: border-color 0.15s ease;
   box-sizing: border-box;
 
-  &:focus { border-color: var(--color-primary); }
+  &:focus { border-color: var(--brand); }
 }
 
-.form-error { font-size: var(--text-xs); color: var(--state-error); }
+.form-error { font-size: var(--text-xs); color: var(--danger); }
 
 .tip {
   padding: 10px 12px;
-  background: var(--color-bg-sunken);
-  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  border-radius: var(--radius);
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   line-height: 1.5;
 }
 
@@ -279,12 +279,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   justify-content: flex-end;
   gap: 8px;
   padding: 16px 24px;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-1);
 }
 
 .btn {
   padding: 8px 20px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   font-family: var(--font-body);
@@ -296,18 +296,18 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 }
 
 .btn-plain {
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  border-color: var(--color-border-light);
+  background: var(--surface-1);
+  color: var(--text-1);
+  border-color: var(--border-1);
 
-  &:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 }
 
 .btn-primary {
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
+  background: var(--brand);
+  color: var(--text-inverse);
 
-  &:hover:not(:disabled) { background: var(--color-primary-light); }
+  &:hover:not(:disabled) { background: var(--brand-hover); }
 }
 
 .dialog-fade-enter-active, .dialog-fade-leave-active { transition: opacity 0.15s ease; }

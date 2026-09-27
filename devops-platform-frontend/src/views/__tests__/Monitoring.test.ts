@@ -88,7 +88,7 @@ const mountPage = async (overview = OVERVIEW) => {
       plugins: [router],
       stubs: {
         DataStateBoundary: { template: '<div><slot /></div>' },
-        TrendChart: true,
+        TrendChart: true, TrendExplorer: true,
       },
     },
   })
@@ -127,6 +127,13 @@ afterEach(() => {
 })
 
 describe('Monitoring — 加载与卡片顺序', () => {
+  it('合并看板：页面包含趋势探索器（实时+趋势同页，2026-09-26 整合）', async () => {
+    const w = await mountPage()
+    // 趋势区被桩掉（它有独立的 TrendExplorer 测试），这里只钉「它在场」——
+    // 少了它，这页就退化回半个监控中心
+    expect(w.findComponent({ name: 'TrendExplorer' }).exists()).toBe(true)
+  })
+
   it('按固定顺序展示卡片，避免每次刷新跳位', async () => {
     const vm = vmOf(await mountPage())
     expect(vm.orderedCards.map((c) => c.id)).toEqual([
@@ -299,7 +306,7 @@ describe('Monitoring — 迷你趋势', () => {
     const w = mount(Monitoring, {
       global: {
         plugins: [router],
-        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true },
+        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true, TrendExplorer: true },
       },
     })
     await vi.waitFor(() =>
@@ -325,7 +332,7 @@ describe('Monitoring — 迷你趋势', () => {
     const w = mount(Monitoring, {
       global: {
         plugins: [router],
-        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true },
+        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true, TrendExplorer: true },
       },
     })
     await vi.waitFor(() => expect(api.fetchOverview).toHaveBeenCalled())
@@ -353,7 +360,7 @@ describe('Monitoring — 自动刷新', () => {
     const w = mount(Monitoring, {
       global: {
         plugins: [router],
-        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true },
+        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true, TrendExplorer: true },
       },
     })
     await vi.advanceTimersByTimeAsync(0)
@@ -382,7 +389,7 @@ describe('Monitoring — 自动刷新', () => {
     const w = mount(Monitoring, {
       global: {
         plugins: [router],
-        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true },
+        stubs: { DataStateBoundary: { template: '<div><slot /></div>' }, TrendChart: true, TrendExplorer: true },
       },
     })
     await vi.advanceTimersByTimeAsync(0)

@@ -24,18 +24,18 @@ withDefaults(defineProps<Props>(), { tip: '页面加载中...' })
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .spinner {
-  color: var(--color-primary);
+  color: var(--brand);
   animation: spin 0.9s linear infinite;
   display: inline-flex;
 }
 
 .tip {
   font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   margin: 0;
 }
 

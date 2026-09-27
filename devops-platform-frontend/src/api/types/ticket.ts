@@ -167,6 +167,11 @@ export interface FrontendTicket {
    * <p>提交更新时回传，服务端据此拒绝覆盖他人的修改。</p>
    */
   version: number
+  /**
+   * 来源追踪号。告警自动建单时写入的是告警去重键（dedupKey），
+   * 诊断回放接口会把它桥接到该告警的诊断会话；非告警来源的工单为 null。
+   */
+  sourceTraceId?: string | null
 }
 
 /**

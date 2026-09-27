@@ -68,6 +68,10 @@ interface TimelineAnalysis {
   onCopyAnalysis: () => void
   onRegenerate: () => void
   onStop: () => void
+  /** 诊断已跑但未形成分析时的提示（证据不足场景） */
+  diagnosisHint?: string
+  /** 诊断提示里的回放链接 */
+  diagnosisTo?: string
 }
 
 defineProps<{
@@ -135,8 +139,10 @@ defineProps<{
       </template>
     </div>
 
-    <!-- AI 分析建议（时间线节点） -->
-    <div v-if="analysis.content || analysis.streaming" class="timeline-row">
+    <!-- AI 分析建议（时间线节点）。
+         告警来源的工单即使还没有分析也渲染：诊断可能已判「证据不足」而不回填，
+         卡片空态用 diagnosisHint 把这个结论说出来，而不是让整块消失。 -->
+    <div v-if="analysis.content || analysis.streaming || analysis.diagnosisHint" class="timeline-row">
       <div class="timeline-track">
         <div class="track-icon track-icon-primary">
           <Sparkles :size="16" />
@@ -160,6 +166,8 @@ defineProps<{
           :can-feedback="analysis.id != null"
           :on-feedback="analysis.onFeedback"
           :on-generate="analysis.onGenerate"
+          :diagnosis-hint="analysis.diagnosisHint"
+          :diagnosis-to="analysis.diagnosisTo"
           :versions="analysis.versions"
           :view-version="analysis.viewVersion"
           :on-switch-version="analysis.onSwitchVersion"
@@ -238,18 +246,18 @@ defineProps<{
   flex-shrink: 0;
 
   &.track-icon-primary {
-    background: var(--color-primary-lighter, var(--brand-subtle));
-    color: var(--color-primary-light, var(--brand-hover));
+    background: var(--brand-subtle, var(--brand-subtle));
+    color: var(--brand-hover, var(--brand-hover));
   }
 
   &.track-icon-warning {
-    background: var(--state-warning-bg, var(--warning-subtle));
-    color: var(--state-warning, var(--warning));
+    background: var(--warning-subtle, var(--warning-subtle));
+    color: var(--warning, var(--warning));
   }
 
   &.track-icon-error {
-    background: var(--state-error-bg, var(--danger-subtle));
-    color: var(--state-error, var(--danger));
+    background: var(--danger-subtle, var(--danger-subtle));
+    color: var(--danger, var(--danger));
   }
 }
 
@@ -266,7 +274,7 @@ defineProps<{
   flex-shrink: 0;
 
   &.track-avatar-primary {
-    background: var(--color-primary, var(--brand));
+    background: var(--brand, var(--brand));
   }
 }
 
@@ -274,7 +282,7 @@ defineProps<{
   width: 1px;
   flex: 1;
   margin-top: 8px;
-  background: var(--color-border-light, var(--border-1));
+  background: var(--border-1, var(--border-1));
 }
 
 .timeline-body {
@@ -291,19 +299,19 @@ defineProps<{
 /* Event Bubbles */
 .event-bubble {
   padding: 12px 16px;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius, 8px);
   font-size: var(--text-sm, 0.875rem);
 
   &.event-bubble-primary {
-    background: var(--color-primary-lighter, var(--brand-subtle));
+    background: var(--brand-subtle, var(--brand-subtle));
   }
 
   &.event-bubble-warning {
-    background: var(--state-warning-bg, var(--warning-subtle));
+    background: var(--warning-subtle, var(--warning-subtle));
   }
 
   &.event-bubble-error {
-    background: var(--state-error-bg, var(--danger-subtle));
+    background: var(--danger-subtle, var(--danger-subtle));
   }
 }
 
@@ -315,57 +323,57 @@ defineProps<{
 }
 
 .event-title-primary {
-  color: var(--color-primary-light, var(--brand-hover));
+  color: var(--brand-hover, var(--brand-hover));
   font-weight: var(--weight-medium, 500);
 }
 
 .event-title-warning {
-  color: var(--state-warning, var(--warning));
+  color: var(--warning, var(--warning));
   font-weight: var(--weight-medium, 500);
 }
 
 .event-title-error {
-  color: var(--state-error, var(--danger));
+  color: var(--danger, var(--danger));
   font-weight: var(--weight-semibold, 600);
 }
 
 .event-time {
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   font-size: var(--text-xs, 0.75rem);
 }
 
 .event-text {
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
   margin: 0;
 
   strong {
-    color: var(--color-primary, var(--brand));
+    color: var(--brand, var(--brand));
   }
 }
 
 .warning-strong {
-  color: var(--state-warning, var(--warning));
+  color: var(--warning, var(--warning));
 }
 
 .warning-icon {
-  color: var(--state-warning, var(--warning));
+  color: var(--warning, var(--warning));
 }
 
 .error-icon {
-  color: var(--state-error, var(--danger));
+  color: var(--danger, var(--danger));
 }
 
 /* AI 分析建议 inline card */
 .ai-suggestion-card {
   padding: 12px 16px;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius, 8px);
   font-size: var(--text-sm, 0.875rem);
-  background: var(--color-primary-lighter, var(--brand-subtle));
-  border-left: 4px solid var(--color-primary, var(--brand));
+  background: var(--brand-subtle, var(--brand-subtle));
+  border-left: 4px solid var(--brand, var(--brand));
 }
 
 .ai-suggestion-title {
-  color: var(--color-primary, var(--brand));
+  color: var(--brand, var(--brand));
   font-weight: var(--weight-semibold, 600);
   font-size: var(--text-sm, 0.875rem);
 }
@@ -379,7 +387,7 @@ defineProps<{
   padding: 12px 16px;
   border-radius: var(--radius-lg, 12px);
   border-top-right-radius: var(--radius-sm, 4px);
-  background: var(--color-primary, var(--brand));
+  background: var(--brand, var(--brand));
   color: white;
   font-size: var(--text-sm, 0.875rem);
 
@@ -399,12 +407,12 @@ defineProps<{
 .user-name {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
 }
 
 .user-time {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 
 /* Agent Bubble (left-aligned) */
@@ -416,9 +424,9 @@ defineProps<{
   padding: 12px 16px;
   border-radius: var(--radius-lg, 12px);
   border-top-left-radius: var(--radius-sm, 4px);
-  background: var(--color-surface, var(--surface-1));
-  border: 1px solid var(--color-border-light, var(--border-1));
-  color: var(--color-text-primary, var(--text-1));
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
+  color: var(--text-1, var(--text-1));
   font-size: var(--text-sm, 0.875rem);
 
   p {
@@ -436,11 +444,11 @@ defineProps<{
 .agent-name {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--weight-medium, 500);
-  color: var(--color-primary, var(--brand));
+  color: var(--brand, var(--brand));
 }
 
 .agent-time {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 </style>

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * 趋势分析（L2）。
+ * 趋势探索器（监控中心的下半区）。
  *
- * ── 与实时监控页的分工 ────────────────────────────────────────
- * 实时监控回答「现在怎么样」，本页回答「怎么变成这样的」。
+ * ── 与实时卡片区的分工 ────────────────────────────────────────
+ * 实时卡片回答「现在怎么样」，本区回答「怎么变成这样的」。
  * 所以这里的核心是**时间轴上的形状**，而不是当前读数：
  *   - 可选时间范围与指标
- *   - 每个实例一条线（监控页为了紧凑只取最大值那条）
+ *   - 每个实例一条线（实时卡为了紧凑只取最大值那条）
  *   - 给出区间内的极值与均值——肉眼从折线上读不准这些数
  *
  * ── 步长由时间范围推导，不让用户填 ────────────────────────────
@@ -14,6 +14,11 @@
  * 填太小在 7 天窗口上产出几十万个点（后端会夹紧，但仍是无谓传输），
  * 填太大则把尖峰抹平——恰恰是排障最需要看到的东西。
  * 所以由范围推导出一个合理值，用户不必理解这个参数。
+ *
+ * ── 为什么抽成组件 ────────────────────────────────────────────
+ * 原 Trends.vue 整页内容。监控中心（Monitoring.vue）= 实时卡片区 + 本组件，
+ * 一页看全「现在」与「走势」（类 Grafana 看板）；/trends 旧路由
+ * 重定向到 /monitoring 并保留 range/metric 参数，分享链接不死。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { AlertTriangle, BarChart3, RefreshCw, TrendingUp } from 'lucide-vue-next'
@@ -37,7 +42,7 @@ import {
 } from '@/composables/useUrlFilters'
 import { parseDate } from '@/utils/time'
 
-defineOptions({ name: 'Trends' })
+defineOptions({ name: 'TrendExplorer' })
 
 const router = useRouter()
 
@@ -219,161 +224,153 @@ const totalPoints = computed(() =>
   series.value.reduce((sum, s) => sum + s.points.length, 0)
 )
 
-const goIntegrations = () => router.push('/integrations')
+const goIntegrations = () => router.push('/settings?tab=integrations')
 </script>
 
 <template>
-  <div class="trends-page">
-    <main class="trends-main">
-      <header class="page-header">
-        <div>
-          <h1 class="page-title">趋势分析</h1>
-          <p class="page-sub">
-            指标在时间轴上的变化。实时监控回答「现在怎么样」，
-            这里回答<strong>「怎么变成这样的」</strong>——用于容量评估与故障回溯。
-          </p>
-        </div>
-        <button class="btn-primary" type="button" :disabled="loading" @click="load">
-          <RefreshCw :size="13" :class="{ spinning: loading }" /> 刷新
-        </button>
-      </header>
-
-      <!-- 控制栏 -->
-      <div class="controls">
-        <label class="control-field">
-          <span class="control-label">指标</span>
-          <select v-model="metricId" class="control">
-            <option v-for="m in metrics" :key="m.id" :value="m.id">{{ m.name }}</option>
-            <option v-if="!metrics.length" :value="metricId">{{ metricId }}</option>
-          </select>
-        </label>
-
-        <div class="range-group" role="group" aria-label="时间范围">
-          <button
-            v-for="r in RANGES"
-            :key="r.id"
-            type="button"
-            class="range-btn"
-            :class="{ 'is-active': rangeId === r.id }"
-            @click="rangeId = r.id"
-          >{{ r.label }}</button>
-        </div>
+  <section class="trend-explorer" aria-label="趋势分析">
+    <header class="explorer-header">
+      <div>
+        <h2 class="explorer-title">趋势分析</h2>
+        <p class="explorer-sub">
+          上方卡片回答「现在怎么样」，这里回答<strong>「怎么变成这样的」</strong>——用于容量评估与故障回溯。
+        </p>
       </div>
+      <button class="btn-primary" type="button" :disabled="loading" @click="load">
+        <RefreshCw :size="13" :class="{ spinning: loading }" /> 刷新
+      </button>
+    </header>
 
-      <p v-if="currentMeta" class="metric-hint">
-        <TrendingUp :size="12" /> {{ currentMeta.describe }}
-      </p>
+    <!-- 控制栏 -->
+    <div class="controls">
+      <label class="control-field">
+        <span class="control-label">指标</span>
+        <select v-model="metricId" class="control">
+          <option v-for="m in metrics" :key="m.id" :value="m.id">{{ m.name }}</option>
+          <option v-if="!metrics.length" :value="metricId">{{ metricId }}</option>
+        </select>
+      </label>
 
-      <DataStateBoundary
-        :loading="loading"
-        :error="loadError"
-        :count="series.length"
-        empty-title="该时间范围内无数据"
-        empty-description="可能是指标尚未被采集，或数据源刚启动不久"
-        empty-action-text="去接入管理"
-        :skeleton-rows="1"
-        skeleton-height="320px"
-        @retry="load"
-        @empty-action="goIntegrations"
-      >
-        <!-- 图表 -->
-        <section class="chart-card">
-          <header class="chart-head">
-            <BarChart3 :size="15" />
-            <h2>{{ currentMeta?.name ?? metricId }}</h2>
-            <span class="chart-meta">
-              近 {{ actualHours ?? currentRange.hours }} 小时 ·
-              {{ series.length }} 个实例 · {{ totalPoints }} 个采样点
-            </span>
-          </header>
+      <div class="range-group" role="group" aria-label="时间范围">
+        <button
+          v-for="r in RANGES"
+          :key="r.id"
+          type="button"
+          class="range-btn"
+          :class="{ 'is-active': rangeId === r.id }"
+          @click="rangeId = r.id"
+        >{{ r.label }}</button>
+      </div>
+    </div>
 
-          <div v-if="truncated" class="truncate-note">
-            <AlertTriangle :size="12" />
-            实例较多，仅展示前 {{ MAX_SERIES }} 条（共 {{ series.length }} 条）。
-            再多图例会互相遮挡且颜色重复，难以分辨
-          </div>
+    <p v-if="currentMeta" class="metric-hint">
+      <TrendingUp :size="12" /> {{ currentMeta.describe }}
+    </p>
 
-          <TrendChart
-            :labels="axisLabels"
-            :series="chartSeries"
-            height="320px"
-            :left-axis-name="unit === 'percent' ? '%' : ''"
-            :show-legend="chartSeries.length > 1"
-            :enable-zoom="totalPoints > 200"
-          />
-        </section>
+    <DataStateBoundary
+      :loading="loading"
+      :error="loadError"
+      :count="series.length"
+      empty-title="该时间范围内无数据"
+      empty-description="可能是指标尚未被采集，或数据源刚启动不久"
+      empty-action-text="去接入管理"
+      :skeleton-rows="1"
+      skeleton-height="320px"
+      @retry="load"
+      @empty-action="goIntegrations"
+    >
+      <!-- 图表 -->
+      <section class="chart-card">
+        <header class="chart-head">
+          <BarChart3 :size="15" />
+          <h3>{{ currentMeta?.name ?? metricId }}</h3>
+          <span class="chart-meta">
+            近 {{ actualHours ?? currentRange.hours }} 小时 ·
+            {{ series.length }} 个实例 · {{ totalPoints }} 个采样点
+          </span>
+        </header>
 
-        <!-- 统计摘要 -->
-        <section class="summary-card">
-          <header class="summary-head">
-            <h2>区间统计</h2>
-            <span class="summary-hint">折线能看形状，但读不准数值——扩容决策要看这里</span>
-          </header>
-          <div class="table-wrap">
-            <table class="summary-table">
-              <thead>
-                <tr>
-                  <th>实例</th>
-                  <th class="num-col">最新</th>
-                  <th class="num-col">峰值</th>
-                  <th class="num-col">谷值</th>
-                  <th class="num-col">均值</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="s in summaries" :key="s.name">
-                  <td class="inst-col">{{ s.name }}</td>
-                  <td class="num-col">{{ fmt(s.latest) }}</td>
-                  <td class="num-col strong">{{ fmt(s.max) }}</td>
-                  <td class="num-col">{{ fmt(s.min) }}</td>
-                  <td class="num-col">{{ fmt(s.avg) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </DataStateBoundary>
-    </main>
-  </div>
+        <div v-if="truncated" class="truncate-note">
+          <AlertTriangle :size="12" />
+          实例较多，仅展示前 {{ MAX_SERIES }} 条（共 {{ series.length }} 条）。
+          再多图例会互相遮挡且颜色重复，难以分辨
+        </div>
+
+        <TrendChart
+          :labels="axisLabels"
+          :series="chartSeries"
+          height="320px"
+          :left-axis-name="unit === 'percent' ? '%' : ''"
+          :show-legend="chartSeries.length > 1"
+          :enable-zoom="totalPoints > 200"
+        />
+      </section>
+
+      <!-- 统计摘要 -->
+      <section class="summary-card">
+        <header class="summary-head">
+          <h3>区间统计</h3>
+          <span class="summary-hint">折线能看形状，但读不准数值——扩容决策要看这里</span>
+        </header>
+        <div class="table-wrap">
+          <table class="summary-table">
+            <thead>
+              <tr>
+                <th>实例</th>
+                <th class="num-col">最新</th>
+                <th class="num-col">峰值</th>
+                <th class="num-col">谷值</th>
+                <th class="num-col">均值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in summaries" :key="s.name">
+                <td class="inst-col">{{ s.name }}</td>
+                <td class="num-col">{{ fmt(s.latest) }}</td>
+                <td class="num-col strong">{{ fmt(s.max) }}</td>
+                <td class="num-col">{{ fmt(s.min) }}</td>
+                <td class="num-col">{{ fmt(s.avg) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </DataStateBoundary>
+  </section>
 </template>
 
 <style scoped lang="scss">
-.trends-page {
-  min-height: 100vh;
-  background: var(--color-bg);
+.trend-explorer {
+  margin-top: 24px;
 }
 
-.trends-main {
-  max-width: 1520px;
-  margin: 0 auto;
-  padding: 20px 24px 32px;
-}
-
-/* ===== 页头 ===== */
-.page-header {
+/* ===== 区头 ===== */
+.explorer-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-1);
 }
 
-.page-title {
+.explorer-title {
   margin: 0 0 3px;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
-.page-sub {
+.explorer-sub {
   margin: 0;
   max-width: 70ch;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
-  strong { color: var(--color-text-secondary); font-weight: 600; }
+  strong { color: var(--text-2); font-weight: 600; }
 }
 
 .btn-primary {
@@ -384,10 +381,10 @@ const goIntegrations = () => router.push('/integrations')
   padding: 0 12px;
   font-size: 13px;
   border-radius: 8px;
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
-  color: #fff;
   cursor: pointer;
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: #fff;
   flex-shrink: 0;
 
   &:hover:not(:disabled) { opacity: 0.9; }
@@ -415,7 +412,7 @@ const goIntegrations = () => router.push('/integrations')
 
 .control-label {
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .control {
@@ -423,21 +420,21 @@ const goIntegrations = () => router.push('/integrations')
   padding: 0 9px;
   font-size: 13px;
   font-family: inherit;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgb(from var(--color-primary) r g b / 0.1);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgb(from var(--brand) r g b / 0.1);
   }
 }
 
 .range-group {
   display: inline-flex;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -447,17 +444,17 @@ const goIntegrations = () => router.push('/integrations')
   padding: 0 13px;
   font-size: 12px;
   border: none;
-  border-right: 1px solid var(--color-border-light);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
+  border-right: 1px solid var(--border-1);
+  background: var(--surface-1);
+  color: var(--text-2);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 
   &:last-child { border-right: none; }
-  &:hover:not(.is-active) { background: var(--color-fill-light); }
+  &:hover:not(.is-active) { background: var(--surface-2); }
 
   &.is-active {
-    background: var(--color-primary);
+    background: var(--brand);
     color: #fff;
   }
 }
@@ -468,16 +465,16 @@ const goIntegrations = () => router.push('/integrations')
   gap: 5px;
   margin: 0 0 14px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 /* ===== 图表 ===== */
 .chart-card,
 .summary-card {
   padding: 16px 18px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 12px;
-  background: var(--color-surface);
+  background: var(--surface-1);
 }
 
 .chart-card { margin-bottom: 12px; }
@@ -488,13 +485,13 @@ const goIntegrations = () => router.push('/integrations')
   align-items: center;
   gap: 7px;
   margin-bottom: 10px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
-  h2 {
+  h3 {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 
@@ -502,7 +499,7 @@ const goIntegrations = () => router.push('/integrations')
 .summary-hint {
   margin-left: auto;
   font-size: 11px;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
   font-variant-numeric: tabular-nums;
 }
 
@@ -515,14 +512,14 @@ const goIntegrations = () => router.push('/integrations')
   border-radius: 6px;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-warning);
-  background: rgb(from var(--color-warning) r g b / 0.08);
-  border: 1px solid rgb(from var(--color-warning) r g b / 0.2);
+  color: var(--warning);
+  background: rgb(from var(--warning) r g b / 0.08);
+  border: 1px solid rgb(from var(--warning) r g b / 0.2);
 }
 
 /* ===== 统计表 ===== */
 .table-wrap {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -539,25 +536,25 @@ const goIntegrations = () => router.push('/integrations')
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-tertiary);
-    background: var(--color-fill-lighter);
-    border-bottom: 1px solid var(--color-border-light);
+    color: var(--text-3);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-1);
   }
 
   tbody td {
     padding: 9px 12px;
-    border-bottom: 1px solid var(--color-border-lighter, var(--color-border-light));
-    color: var(--color-text-primary);
+    border-bottom: 1px solid var(--border-1, var(--border-1));
+    color: var(--text-1);
   }
 
   tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: var(--color-fill-lighter); }
+  tbody tr:hover { background: var(--surface-2); }
 }
 
 .inst-col {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   word-break: break-all;
 }
 

@@ -44,7 +44,7 @@ describe('useAlertListQuery — 首次加载', () => {
 
     const { result } = withQueryClient(() =>
       useAlertListQuery({
-        page: ref(1), size: ref(10), status: ref(''), level: ref(''),
+        page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false),
       })
     )
     await flushQuery()
@@ -56,7 +56,7 @@ describe('useAlertListQuery — 首次加载', () => {
   it('加载中 alerts 为空数组而非 undefined —— 模板无需到处判空', () => {
     const { result } = withQueryClient(() =>
       useAlertListQuery({
-        page: ref(1), size: ref(10), status: ref(''), level: ref(''),
+        page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false),
       })
     )
 
@@ -70,7 +70,7 @@ describe('useAlertListQuery — 首次加载', () => {
 
     const { result } = withQueryClient(() =>
       useAlertListQuery({
-        page: ref(1), size: ref(10), status: ref(''), level: ref(''),
+        page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false),
       })
     )
     await flushQuery()
@@ -84,7 +84,7 @@ describe('useAlertListQuery — 空串筛选转 undefined', () => {
   it('未选筛选时不把空串传给后端 —— 后端可能把空串当作有效值而查不到数据', async () => {
     withQueryClient(() =>
       useAlertListQuery({
-        page: ref(1), size: ref(10), status: ref(''), level: ref(''),
+        page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false),
       })
     )
     await flushQuery()
@@ -97,7 +97,7 @@ describe('useAlertListQuery — 空串筛选转 undefined', () => {
   it('已选筛选时原样传递', async () => {
     withQueryClient(() =>
       useAlertListQuery({
-        page: ref(1), size: ref(10), status: ref<AlertStatus | ''>('FIRING'), level: ref('P0'),
+        page: ref(1), size: ref(10), status: ref<AlertStatus | ''>('FIRING'), level: ref('P0'), system: ref(''), observing: ref(false),
       })
     )
     await flushQuery()
@@ -112,7 +112,7 @@ describe('useAlertListQuery — 参数变化自动重拉（核心收益）', () 
   it('页码变化触发重拉 —— 不需要在 goToPage 里手动调 fetchList', async () => {
     const page = ref(1)
     withQueryClient(() =>
-      useAlertListQuery({ page, size: ref(10), status: ref(''), level: ref('') })
+      useAlertListQuery({ page, size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false) })
     )
     await flushQuery()
     expect(mocks.fetchAlerts).toHaveBeenCalledTimes(1)
@@ -129,7 +129,7 @@ describe('useAlertListQuery — 参数变化自动重拉（核心收益）', () 
   it('筛选变化触发重拉 —— 漏掉手动刷新会出现「改了筛选但列表没变」', async () => {
     const status = ref<AlertStatus | ''>('')
     withQueryClient(() =>
-      useAlertListQuery({ page: ref(1), size: ref(10), status, level: ref('') })
+      useAlertListQuery({ page: ref(1), size: ref(10), status, level: ref(''), system: ref(''), observing: ref(false) })
     )
     await flushQuery()
 
@@ -151,7 +151,7 @@ describe('useAlertListQuery — 参数变化自动重拉（核心收益）', () 
 
     const page = ref(1)
     withQueryClient(
-      () => useAlertListQuery({ page, size: ref(10), status: ref(''), level: ref('') }),
+      () => useAlertListQuery({ page, size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false) }),
       { queryClient }
     )
     await flushQuery()
@@ -172,7 +172,7 @@ describe('useAlertListQuery — 错误处理', () => {
     mocks.fetchAlerts.mockRejectedValue(err)
 
     const { result } = withQueryClient(() =>
-      useAlertListQuery({ page: ref(1), size: ref(10), status: ref(''), level: ref('') })
+      useAlertListQuery({ page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false) })
     )
     await flushQuery(5)
 
@@ -185,7 +185,7 @@ describe('useAlertListQuery — 错误处理', () => {
 
     expect(() => {
       withQueryClient(() =>
-        useAlertListQuery({ page: ref(1), size: ref(10), status: ref(''), level: ref('') })
+        useAlertListQuery({ page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false) })
       )
     }).not.toThrow()
     await flushQuery(5)
@@ -242,7 +242,7 @@ describe('useAlertMutations — 写操作后自动失效（核心收益）', () 
     const { result } = withQueryClient(
       () => ({
         list: useAlertListQuery({
-          page: ref(1), size: ref(10), status: ref(''), level: ref(''),
+          page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false),
         }),
         mutations: useAlertMutations(),
       }),
@@ -265,7 +265,7 @@ describe('useAlertMutations — 写操作后自动失效（核心收益）', () 
     const { result } = withQueryClient(
       () => ({
         list: useAlertListQuery({
-          page: ref(1), size: ref(10), status: ref(''), level: ref(''),
+          page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false),
         }),
         mutations: useAlertMutations(),
       }),
@@ -288,7 +288,7 @@ describe('useAlertMutations — 写操作后自动失效（核心收益）', () 
     const { result } = withQueryClient(
       () => ({
         list: useAlertListQuery({
-          page: ref(1), size: ref(10), status: ref(''), level: ref(''),
+          page: ref(1), size: ref(10), status: ref(''), level: ref(''), system: ref(''), observing: ref(false),
         }),
         mutations: useAlertMutations(),
       }),

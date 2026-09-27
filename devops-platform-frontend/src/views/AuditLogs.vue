@@ -855,7 +855,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 
 .audit-page {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .audit-main {
@@ -878,13 +878,13 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .page-sub {
   margin: 0;
   font-size: 13px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .header-actions {
@@ -902,15 +902,15 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   width: 32px;
   height: 32px;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: var(--color-bg-sunken, var(--surface-2));
-    color: var(--color-text-primary);
+    background: var(--surface-2, var(--surface-2));
+    color: var(--text-1);
   }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -929,27 +929,27 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   gap: 2px;
   padding: 3px;
   margin-bottom: 14px;
-  border-radius: var(--radius-md);
-  background: var(--color-bg-sunken, var(--surface-2));
+  border-radius: var(--radius);
+  background: var(--surface-2, var(--surface-2));
 }
 
 .segmented-item {
   padding: 5px 14px;
   border: none;
-  border-radius: calc(var(--radius-md) - 2px);
+  border-radius: calc(var(--radius) - 2px);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-size: 13px;
   font-weight: 500;
   font-family: var(--font-body);
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 
-  &:hover:not(.active) { color: var(--color-text-primary); }
+  &:hover:not(.active) { color: var(--text-1); }
 
   &.active {
-    background: var(--color-surface);
-    color: var(--color-text-primary);
+    background: var(--surface-1);
+    color: var(--text-1);
     box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
   }
 }
@@ -969,9 +969,9 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   gap: 7px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--color-bg-sunken, var(--surface-2)) 45%, transparent);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--surface-2, var(--surface-2)) 45%, transparent);
   font-size: 12px;
   box-shadow: 0 1px 1px rgb(0 0 0 / 3%);
 }
@@ -995,13 +995,13 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 .accent-4 { background: oklch(0.68 0.19 325); }
 .accent-5 { background: oklch(0.68 0.16 155); }
 
-.stat-label { color: var(--color-text-tertiary); }
+.stat-label { color: var(--text-3); }
 
 .stat-value {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 /* ===== 筛选工具栏 ===== */
@@ -1028,20 +1028,20 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   width: 100%;
   min-width: 0;
   padding: 0 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text-1);
   font-size: 13px;
   font-family: var(--font-body);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
-  &::placeholder { color: var(--color-text-tertiary); }
+  &::placeholder { color: var(--text-3); }
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 14%, transparent);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 14%, transparent);
   }
 }
 
@@ -1056,7 +1056,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 .ctl-date { flex: 1 1 0; }
 
 .range-sep {
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   flex-shrink: 0;
   font-size: 12px;
 }
@@ -1075,7 +1075,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   gap: 5px;
   height: 32px;
   padding: 0 13px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   font-size: 13px;
   font-weight: 500;
   font-family: var(--font-body);
@@ -1085,16 +1085,16 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 }
 
 .btn-ghost {
-  border: 1px solid var(--color-border-light);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-1);
+  color: var(--text-2);
 
-  &:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover { border-color: var(--brand); color: var(--brand); }
 }
 
 .btn-primary-sm {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
+  border: 1px solid var(--brand);
+  background: var(--brand);
   color: #fff;
 
   &:hover { filter: brightness(1.06); }
@@ -1102,22 +1102,22 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 
 /* ===== 表格卡片 ===== */
 .table-card {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: var(--color-surface);
+  background: var(--surface-1);
   margin-bottom: 14px;
 
   /* 表头：前景色极淡混入背景（new-api 的 --table-header），
      不是常见的深灰条——整体更轻 */
   :deep(.el-table__header th.el-table__cell) {
-    background: color-mix(in oklab, var(--color-text-primary) 3%, var(--color-surface));
-    border-bottom: 1px solid var(--color-border-light);
+    background: color-mix(in oklab, var(--text-1) 3%, var(--surface-1));
+    border-bottom: 1px solid var(--border-1);
     padding: 0;
     height: 38px;
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 
   :deep(.el-table__header th.el-table__cell > .cell) {
@@ -1129,7 +1129,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   :deep(.el-table td.el-table__cell) {
     padding: 0;
     height: 52px;
-    border-bottom: 1px solid color-mix(in oklab, var(--color-border-light) 60%, transparent);
+    border-bottom: 1px solid color-mix(in oklab, var(--border-1) 60%, transparent);
   }
 
   :deep(.el-table td.el-table__cell > .cell) {
@@ -1142,7 +1142,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   &.is-dense .c-time-abs { display: none; }
 
   :deep(.el-table__row:hover > td.el-table__cell) {
-    background: color-mix(in oklab, var(--color-primary) 4%, transparent);
+    background: color-mix(in oklab, var(--brand) 4%, transparent);
   }
 
   :deep(.el-table::before) { display: none; }
@@ -1157,11 +1157,11 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   line-height: 1.35;
 }
 
-.c-time-rel { font-size: 13px; color: var(--color-text-primary); }
+.c-time-rel { font-size: 13px; color: var(--text-1); }
 
 .c-time-abs {
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1169,20 +1169,20 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   font-family: var(--font-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
-.num-cost { color: var(--color-text-secondary); }
+.num-cost { color: var(--text-2); }
 
 .mono {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
 }
 
-.muted { color: var(--color-text-tertiary); }
+.muted { color: var(--text-3); }
 
 /* 慢调用红色加粗——运维查日志的首要目的之一就是找慢请求 */
-.lat-slow { color: var(--state-error, var(--danger)); font-weight: 600; }
+.lat-slow { color: var(--danger, var(--danger)); font-weight: 600; }
 .lat-fast { color: oklch(0.60 0.145 163); }
 
 .c-preview {
@@ -1193,17 +1193,17 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   overflow: hidden;
   font-size: 12.5px;
   line-height: 1.45;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
-.c-actor { font-size: 13px; color: var(--color-text-primary); }
+.c-actor { font-size: 13px; color: var(--text-1); }
 
 .c-target { display: inline-flex; align-items: center; gap: 6px; }
 
 .c-target-id {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11.5px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 /* ===== 标签 ===== */
@@ -1228,13 +1228,13 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
 }
 
 .tag-action {
-  background: var(--color-bg-sunken, var(--surface-2));
-  color: var(--color-text-primary);
+  background: var(--surface-2, var(--surface-2));
+  color: var(--text-1);
 }
 
 .tag-soft {
-  background: var(--color-bg-sunken, var(--surface-2));
-  color: var(--color-text-tertiary);
+  background: var(--surface-2, var(--surface-2));
+  color: var(--text-3);
 }
 
 /* SYSTEM 单独配色：「是人做的还是定时任务做的」是排查第一问 */
@@ -1275,8 +1275,8 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   }
 
   &.is-miss {
-    background: var(--color-bg-sunken, var(--surface-2));
-    color: var(--color-text-tertiary);
+    background: var(--surface-2, var(--surface-2));
+    color: var(--text-3);
   }
 
   &.is-fail {
@@ -1291,19 +1291,19 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
+  background: var(--surface-1);
+  color: var(--text-2);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11.5px;
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    background: color-mix(in oklab, var(--color-primary) 7%, transparent);
+    border-color: var(--brand);
+    color: var(--brand);
+    background: color-mix(in oklab, var(--brand) 7%, transparent);
   }
 }
 
@@ -1312,7 +1312,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   padding: 22px;
   text-align: center;
   font-size: 13px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   &.is-error { color: var(--danger); }
 }
@@ -1322,13 +1322,13 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   margin-left: auto;
   padding: 3px 10px;
   font-size: 12px;
-  color: var(--color-primary);
+  color: var(--brand);
   background: transparent;
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--brand);
   border-radius: 4px;
   cursor: pointer;
 }
-.trace-head-action:hover { background: var(--color-primary); color: #fff; }
+.trace-head-action:hover { background: var(--brand); color: #fff; }
 
 .trace-head {
   display: flex;
@@ -1336,18 +1336,18 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   gap: 8px;
   padding-bottom: 12px;
   margin-bottom: 14px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
 }
 
-.trace-head-label { font-size: 12px; color: var(--color-text-tertiary); }
+.trace-head-label { font-size: 12px; color: var(--text-3); }
 
 .trace-head-id {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  background: var(--color-bg-sunken, var(--surface-2));
-  color: var(--color-text-primary);
+  background: var(--surface-2, var(--surface-2));
+  color: var(--text-1);
 }
 
 .trace-block { margin-bottom: 20px; }
@@ -1359,7 +1359,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .kv-grid {
@@ -1374,12 +1374,12 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   flex-direction: column;
   gap: 2px;
   padding: 7px 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--color-bg-sunken, var(--surface-2)) 40%, transparent);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--surface-2, var(--surface-2)) 40%, transparent);
 
-  .k { font-size: 11px; color: var(--color-text-tertiary); }
-  .v { font-size: 13px; color: var(--color-text-primary); }
+  .k { font-size: 11px; color: var(--text-3); }
+  .v { font-size: 13px; color: var(--text-1); }
 }
 
 .qa-label {
@@ -1387,7 +1387,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .qa-pre {
@@ -1395,15 +1395,15 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   padding: 10px 12px;
   max-height: 190px;
   overflow: auto;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--color-bg-sunken, var(--surface-2)) 50%, transparent);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--surface-2, var(--surface-2)) 50%, transparent);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .cite-list {
@@ -1411,7 +1411,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   padding-left: 18px;
   font-size: 12px;
   line-height: 1.7;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 /* 写操作时间线 */
@@ -1426,7 +1426,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   display: flex;
   gap: 10px;
   padding: 0 0 14px 14px;
-  border-left: 1px solid var(--color-border-light);
+  border-left: 1px solid var(--border-1);
 
   &:last-child { border-left-color: transparent; padding-bottom: 0; }
 }
@@ -1438,7 +1438,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  border: 2px solid var(--color-surface);
+  border: 2px solid var(--surface-1);
 
   &.is-ok { background: oklch(0.60 0.145 163); }
   &.is-fail { background: var(--danger); }
@@ -1460,7 +1460,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
   align-items: center;
   gap: 10px;
   font-size: 11.5px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .op-err { color: var(--danger); }

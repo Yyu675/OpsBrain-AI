@@ -295,6 +295,8 @@ export const useTicketsStore = defineStore('tickets', () => {
     processing: number
     resolved: number
     urgentPending: number
+    /** 待分配且未完结的工单数（后端 6.x 新增；旧后端不返回时为 undefined） */
+    unassignedOpen?: number
     byPriority?: Record<string, number>
   } | null>(null)
 
@@ -317,6 +319,8 @@ export const useTicketsStore = defineStore('tickets', () => {
       resolved: tickets.value.filter(t => t.status === 'resolved').length,
       todayNew: 0,
       urgentPending: null as number | null,
+      // 本地只有当前页，「待分配积压」在本页算不出来——null 表示未知，视图不渲染
+      unassignedOpen: null as number | null,
       byPriority: undefined as Record<string, number> | undefined
     }
   })

@@ -122,7 +122,7 @@ onMounted(() => {
 .login-card {
   width: 100%;
   max-width: 380px;
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1, var(--surface-1));
   border-radius: 16px;
   padding: 40px 32px 28px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -138,7 +138,7 @@ onMounted(() => {
   height: 56px;
   margin: 0 auto 12px;
   border-radius: 14px;
-  background: var(--color-primary, var(--brand));
+  background: var(--brand, var(--brand));
   color: #fff;
   display: flex;
   align-items: center;
@@ -174,7 +174,7 @@ onMounted(() => {
   transition: border-color 0.15s;
 
   &:focus-within {
-    border-color: var(--color-primary, var(--brand));
+    border-color: var(--brand, var(--brand));
   }
 }
 
@@ -202,7 +202,7 @@ onMounted(() => {
   height: 44px;
   border: none;
   border-radius: 10px;
-  background: var(--color-primary, var(--brand));
+  background: var(--brand, var(--brand));
   color: #fff;
   font-size: 15px;
   font-weight: 600;

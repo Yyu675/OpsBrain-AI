@@ -2,12 +2,9 @@
 import { parseDate } from '@/utils/time'
 import { computed, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { RefreshCw } from 'lucide-vue-next'
+import { RefreshCw, Ticket, Zap, Activity, Coins } from 'lucide-vue-next'
 import {
-  useClosureMetricsQuery,
   useDashboardOverviewQuery,
-  useAiAnalysisStatsQuery,
-  useDiagnosisBoardQuery,
   useRootCauseStatsQuery,
   useTrendsQuery,
 } from '@/api/queries/dashboard.query'
@@ -16,6 +13,7 @@ import ApiErrorState from '@/components/common/ApiErrorState.vue'
 import TrendChart, { type TrendSeries } from '@/components/common/TrendChart.vue'
 import SlaRiskPanel from '@/components/dashboard/SlaRiskPanel.vue'
 import AlertFeed from '@/components/dashboard/AlertFeed.vue'
+import WorkbenchQueues from '@/components/dashboard/WorkbenchQueues.vue'
 
 const router = useRouter()
 
@@ -27,91 +25,37 @@ const onTrendClick = (p: { seriesName: string; label: string; value: number }) =
 }
 
 /**
- * 四个区块各自独立查询（TanStack Query）。
+ * 各区块独立查询（TanStack Query）。
  *
  * 此前是 `Promise.all` + 各自 `.catch(返回兜底值)`：降级逻辑藏在 catch 里，
  * 失败的区块只能显示空白，用户无从重试。现在每个查询有独立的 loading/error，
  * 模板按各自状态渲染——趋势加载失败只让图表区降级、能单独重试，
  * 不影响已加载成功的 KPI（6.51 契约）。
+ *
+ * 2026-09-26 瘦身：本页定位「值班首屏 · 业务概览」——SLA 风险、实时告警流、
+ * AI 成本与工单存量。闭环度量（MTTA/MTTR/阶段完成率）与诊断区（会话/校准/
+ * AI 反馈）与效能大盘同源重复，已迁往效能大盘承载，此处不再双份维护。
  */
 const overviewQuery = useDashboardOverviewQuery()
-const closureQuery = useClosureMetricsQuery()
 const rootCauseQuery = useRootCauseStatsQuery()
 
 /**
  * 趋势窗口天数。
  *
- * 本页固定 7 天（窗口切换在 AI 助手中心的趋势分析里，此处不重复提供入口）。
+ * 本页固定 7 天（窗口切换在监控中心的趋势探索器里，此处不重复提供入口）。
  * 仍用 ref 而非常量：useTrendsQuery 需要 Ref 以便把天数纳入 queryKey，
  * 将来若加窗口切换只需改这个值，查询会自动重拉。
  */
 const trendDays = ref(7)
 const trendQuery = useTrendsQuery(trendDays)
-const diagnosisQuery = useDiagnosisBoardQuery(trendDays)
-const aiStatsQuery = useAiAnalysisStatsQuery()
 
 // KPI 主数据：它失败即整页错误态，其余区块都是它的补充
 const data = overviewQuery.data
 const loading = overviewQuery.isLoading
 const loadError = overviewQuery.error
 
-const closure = closureQuery.data
 const rootCauseStats = rootCauseQuery.stats
 const trend = trendQuery.data
-const diagnosis = diagnosisQuery.data
-const aiStats = aiStatsQuery.data
-
-/**
- * 根因准确率显示口径（4-4.1）：rated=0 时后端给 0.0 但那是「还没有任何人
- * 评过分」不是「准确率 0%」——Dashboard 页祖传纪律：null/无数据 ≠ 0。
- */
-const aiAccuracyText = computed(() => {
-  const s = aiStats.value
-  if (!s || s.rated === 0) return '—'
-  return `${(s.helpfulRate * 100).toFixed(1)}%`
-})
-const aiRatedText = computed(() => {
-  const s = aiStats.value
-  if (!s) return '—'
-  return s.rated === 0 ? '暂无反馈' : `${s.helpful}/${s.rated}`
-})
-
-/** 诊断区方向中文名：键与后端 evidence_type 一一对应，未知类型原样显示 */
-const DIR_LABELS: Record<string, string> = {
-  metrics: '指标', changes: '变更', logs: '日志', topology: '拓扑'
-}
-
-/** 按状态取会话数；窗口里可能没有某状态，缺省 0 */
-const sessionCount = (status: string) =>
-  diagnosis.value?.sessions.byStatus.find((s) => s.status === status)?.count ?? 0
-
-/** 点名方向中文串：metric、topology 这类原始键不出现在告警文案里 */
-const attentionText = computed(() =>
-  (diagnosis.value?.attentionTypes ?? []).map((t) => DIR_LABELS[t] ?? t).join('、')
-)
-
-/** 诊断量趋势：柱=当日发起，折=当日完成（补零语义由后端 Composer 保证，此处只管画） */
-// S4-2 校准读数（批 35）：ECE 越低越好——空判定集显示「—」，
-// 与根因准确率的 null ≠ 0 纪律同一条；PARTIAL 豁免的口径注随块展示。
-const calibration = computed(() => diagnosis.value?.calibration ?? null)
-const calibEceText = computed(() =>
-  calibration.value?.ece == null ? '—' : `${(calibration.value.ece * 100).toFixed(1)}%`)
-const calibAccText = computed(() =>
-  calibration.value?.empiricalAccuracy == null ? '—' : `${(calibration.value.empiricalAccuracy * 100).toFixed(1)}%`)
-const calibRatedText = computed(() => {
-  const c = calibration.value
-  if (!c) return '—'
-  return c.ratedTotal === 0 ? '暂无反馈' : `${c.helpful}/${c.ratedTotal}`
-})
-
-const diagnosisTrendSeries = computed<TrendSeries[]>(() => {
-  const t = diagnosis.value?.sessionTrend
-  if (!t || !t.days.length) return []
-  return [
-    { name: '发起诊断', data: t.created, type: 'bar', color: '#409eff', suffix: ' 次' },
-    { name: '完成诊断', data: t.completed, type: 'line', color: '#67c23a', suffix: ' 次' }
-  ]
-})
 
 /**
  * 数据更新时间：从 Query 的 dataUpdatedAt 派生。
@@ -128,14 +72,11 @@ const lastUpdated = computed(() => {
   return d ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : String(ts)
 })
 
-/** 刷新：六个查询一并重拉。refetch 会绕过 staleTime */
+/** 刷新：三个查询一并重拉。refetch 会绕过 staleTime */
 const loadDashboard = () => {
   void overviewQuery.refetch()
-  void closureQuery.refetch()
   void rootCauseQuery.refetch()
   void trendQuery.refetch()
-  void diagnosisQuery.refetch()
-  void aiStatsQuery.refetch()
 }
 
 /** 工单趋势：柱（新建）+ 折线（验证通过） */
@@ -170,50 +111,14 @@ const RC_LABELS: Record<string, string> = {
 //   总查询数 = 有效查询（CHAT + CACHE_HIT），不含被拒绝/失败的审计行
 //   缓存命中率 = CACHE_HIT / 有效查询
 //   平均成本 = 付费调用（cost_rmb>0）的均值，缓存命中成本 0 不计入
+// 卡片设计（2026-09-27）：彩色图标芯片 + 大数字 + 口径副标题（StatCard 风格）
 const kpis = computed(() => {
   if (!data.value) return []
   return [
-    { label: '总工单数', value: data.value.totalTickets.toString() },
-    { label: '缓存命中率', value: `${data.value.cacheHitRate.toFixed(1)}%` },
-    { label: '有效查询数', value: data.value.totalQueries.toString() },
-    { label: '平均成本(付费)', value: `¥${data.value.avgCostRmb.toFixed(4)}` }
-  ]
-})
-
-// B5 闭环 KPI：MTTA / MTTM / MTTR
-// null=尚无数据（不显示 0——0 意为"秒级响应"，与"还没有"完全不同）
-const fmtMinutes = (m: number | null | undefined): string => {
-  if (m === null || m === undefined) return '—'
-  if (m < 60) return `${Math.round(m)} 分钟`
-  const h = Math.floor(m / 60)
-  const r = Math.round(m % 60)
-  return r > 0 ? `${h} 小时 ${r} 分钟` : `${h} 小时`
-}
-
-const closureKpis = computed(() => {
-  const c = closure.value
-  if (!c) return []
-  return [
-    { label: 'MTTA 首响', value: fmtMinutes(c.mttaMinutes) },
-    { label: 'MTTM 止损', value: fmtMinutes(c.mttmMinutes) },
-    { label: 'MTTR 解决', value: fmtMinutes(c.mttrMinutes) },
-    {
-      label: '跳过验证率',
-      value: c.skipRate === null ? '—' : `${c.skipRate.toFixed(1)}%`
-    }
-  ]
-})
-
-// 各阶段完成率
-const stageProgress = computed(() => {
-  const c = closure.value
-  if (!c || c.total === 0) return []
-  const pct = (n: number) => Math.round((n / c.total) * 100)
-  return [
-    { label: '已首响', count: c.firstResponded, pct: pct(c.firstResponded) },
-    { label: '已止损', count: c.mitigated, pct: pct(c.mitigated) },
-    { label: '根因确认', count: c.rootCauseConfirmed, pct: pct(c.rootCauseConfirmed) },
-    { label: '已验证', count: c.verified, pct: pct(c.verified) }
+    { label: '总工单数', value: data.value.totalTickets.toString(), icon: Ticket, tone: 'brand', to: '/tickets', subtitle: '点击进入工单列表' },
+    { label: '缓存命中率', value: `${data.value.cacheHitRate.toFixed(1)}%`, icon: Zap, tone: 'success', subtitle: '语义缓存 · 目标 > 85%' },
+    { label: '有效查询数', value: data.value.totalQueries.toString(), icon: Activity, tone: 'info', subtitle: '对话 + 缓存命中' },
+    { label: '平均成本(付费)', value: `¥${data.value.avgCostRmb.toFixed(4)}`, icon: Coins, tone: 'warning', subtitle: '仅付费调用均值' }
   ]
 })
 
@@ -231,7 +136,7 @@ const rootCauseTop = computed(() =>
   <div class="dashboard">
     <main class="main-container">
       <div class="content-wrapper">
-        <!-- 页头：刷新 + 更新时间（面包屑已移除——导航栏已高亮「数据概览」，重复即冗余） -->
+        <!-- 页头：刷新 + 更新时间（面包屑已移除——本页即首页工作台，导航栏已高亮「首页」） -->
         <div class="dashboard-header">
           <button class="refresh-btn" :disabled="loading" @click="loadDashboard">
             <RefreshCw :size="16" :class="{ 'is-loading': loading }" />
@@ -258,21 +163,22 @@ const rootCauseTop = computed(() =>
             <p>当前暂无 AI 调用记录，KPI 与图表将在产生对话后填充真实数据。</p>
           </div>
 
-          <!-- KPI 卡片 -->
+          <!-- KPI 卡片（StatCard 风格：彩色图标芯片 + 大数字 + 口径副标题） -->
           <div class="kpi-grid">
             <div
-              v-for="(kpi, index) in kpis" :key="index"
+              v-for="kpi in kpis" :key="kpi.label"
               class="kpi-card"
-              :class="{ 'kpi-card--link': kpi.label === '总工单数' }"
+              :class="{ 'kpi-card--link': !!kpi.to }"
             >
-              <RouterLink v-if="kpi.label === '总工单数'" to="/tickets" class="kpi-link">
+              <div class="kpi-main">
                 <div class="kpi-label">{{ kpi.label }}</div>
-                <div class="kpi-value">{{ kpi.value }}</div>
-              </RouterLink>
-              <template v-else>
-                <div class="kpi-label">{{ kpi.label }}</div>
-                <div class="kpi-value">{{ kpi.value }}</div>
-              </template>
+                <div class="kpi-value" :class="`kpi-value--${kpi.tone}`">{{ kpi.value }}</div>
+                <div v-if="kpi.subtitle" class="kpi-subtitle">{{ kpi.subtitle }}</div>
+              </div>
+              <div class="kpi-icon" :class="`kpi-icon--${kpi.tone}`">
+                <component :is="kpi.icon" :size="20" />
+              </div>
+              <RouterLink v-if="kpi.to" :to="kpi.to" class="kpi-cover" :aria-label="`${kpi.label}：查看详情`" />
             </div>
           </div>
 
@@ -285,9 +191,15 @@ const rootCauseTop = computed(() =>
             <SlaRiskPanel />
           </div>
 
-          <!-- 实时告警流（复用 AlertStreamMode 的 WebSocket 通道，紧凑侧栏） -->
+          <!-- 实时告警流（/ai/ws/alerts WebSocket 通道，紧凑侧栏） -->
           <div class="data-grid data-grid--single">
             <AlertFeed />
+          </div>
+
+          <!-- 行动队列区（2026-09-27）：待处理工单队列 + 待审批动作。
+               KPI/趋势回答「系统怎么样」，队列回答「我现在该干什么」 -->
+          <div class="data-grid data-grid--single">
+            <WorkbenchQueues />
           </div>
 
           <!-- 数据详情 -->
@@ -364,145 +276,22 @@ const rootCauseTop = computed(() =>
             </div>
           </div>
 
-          <!-- B5 工单闭环度量 -->
-          <div v-if="closure" class="closure-section">
-            <h3 class="section-heading">工单闭环度量</h3>
-
-            <!-- 闭环 KPI -->
-            <div class="closure-kpi-grid">
-              <div v-for="(kpi, i) in closureKpis" :key="i" class="closure-kpi-card">
-                <div class="closure-kpi-label">{{ kpi.label }}</div>
-                <div class="closure-kpi-value">{{ kpi.value }}</div>
+          <!-- 根因分类分布（B5）：哪类根因最多——分布直接决定该补哪类知识 -->
+          <div class="data-grid data-grid--single">
+            <div class="data-panel">
+              <div class="panel-header">
+                <h3>根因分类分布</h3>
+                <span class="panel-hint">闭环度量与诊断详情已迁至「效能大盘」，此处保留业务向的根因分布</span>
               </div>
-            </div>
-
-            <!-- 各阶段完成率 -->
-            <div v-if="stageProgress.length" class="stage-progress">
-              <div v-for="s in stageProgress" :key="s.label" class="stage-progress-item" :title="`${s.label}: ${s.count}/${closure.total}`">
-                <span class="stage-label">{{ s.label }}</span>
-                <div class="stage-bar">
-                  <div class="stage-fill" :style="{ width: s.pct + '%' }"></div>
+              <div class="panel-body panel-body--auto">
+                <div v-if="rootCauseTop.length" class="rc-list">
+                  <div v-for="[cat, count] in rootCauseTop" :key="cat" class="rc-item">
+                    <span class="rc-label">{{ RC_LABELS[cat] || cat }}</span>
+                    <span class="rc-count">{{ count }}</span>
+                  </div>
                 </div>
-                <span class="stage-count">{{ s.count }} / {{ closure.total }} ({{ s.pct }}%)</span>
+                <AppEmpty v-else size="sm" description="暂无根因数据" />
               </div>
-            </div>
-
-            <!-- 根因分类分布 -->
-            <div v-if="rootCauseTop.length" class="root-cause-section">
-              <h4 class="sub-heading">根因分类分布</h4>
-              <div class="rc-list">
-                <div v-for="[cat, count] in rootCauseTop" :key="cat" class="rc-item">
-                  <span class="rc-label">{{ RC_LABELS[cat] || cat }}</span>
-                  <span class="rc-count">{{ count }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- B6 诊断区（S4-4.2 批次 16） -->
-          <div v-if="diagnosis" class="diagnosis-section">
-            <h3 class="section-heading">诊断区 · 近 {{ diagnosis.windowDays }} 日</h3>
-
-            <div class="closure-kpi-grid">
-              <div class="closure-kpi-card">
-                <div class="closure-kpi-label">诊断会话</div>
-                <div class="closure-kpi-value">{{ diagnosis.sessions.total }}</div>
-              </div>
-              <div class="closure-kpi-card">
-                <div class="closure-kpi-label">完成</div>
-                <div class="closure-kpi-value">{{ sessionCount('COMPLETED') }}</div>
-              </div>
-              <div class="closure-kpi-card">
-                <div class="closure-kpi-label">平均耗时</div>
-                <div class="closure-kpi-value">{{ diagnosis.sessions.avgDurationSeconds === null ? '—' : diagnosis.sessions.avgDurationSeconds + 's' }}</div>
-              </div>
-              <div class="closure-kpi-card">
-                <div class="closure-kpi-label">单次均价</div>
-                <div class="closure-kpi-value">{{ diagnosis.sessions.avgCostRmb === null ? '—' : '¥' + diagnosis.sessions.avgCostRmb.toFixed(4) }}</div>
-              </div>
-              <div class="closure-kpi-card">
-                <div class="closure-kpi-label">需关注方向</div>
-                <div class="closure-kpi-value">{{ diagnosis.attentionTypes.length || '—' }}</div>
-              </div>
-            </div>
-
-            <div v-if="diagnosis.attentionTypes.length" class="diagnosis-attention">
-              需关注：{{ attentionText }} 方向存在 FAILED / UNAVAILABLE 取证失败——先查上游采集，再谈充分性
-            </div>
-
-            <div v-if="diagnosis.sessions.sufficiency.length" class="diagnosis-suff">
-              充分性分布（完成会话）：
-              <span v-for="s in diagnosis.sessions.sufficiency" :key="s.sufficiency" class="suff-chip">{{ s.sufficiency }} × {{ s.count }}</span>
-            </div>
-
-            <template v-if="diagnosis.evidenceDirections.length">
-              <table class="diagnosis-table">
-                <thead>
-                  <tr><th>方向</th><th>总数</th><th>成功</th><th>无数据</th><th>失败</th><th>不可用</th><th>成功率</th></tr>
-                </thead>
-                <tbody>
-                  <tr v-for="d in diagnosis.evidenceDirections" :key="d.type">
-                    <td>{{ DIR_LABELS[d.type] ?? d.type }}</td>
-                    <td>{{ d.total }}</td>
-                    <td>{{ d.success }}</td>
-                    <td>{{ d.noData }}</td>
-                    <td>{{ d.failed }}</td>
-                    <td>{{ d.unavailable }}</td>
-                    <td>{{ (d.successRate * 100).toFixed(1) }}%</td>
-                  </tr>
-                </tbody>
-              </table>
-            </template>
-            <AppEmpty v-else size="sm" description="窗口内暂无取证记录" />
-
-            <!-- AI 效果（4-4.1 半部先行）：根因准确率来自反馈闭环；
-                 幻觉率/证据不足率待 EVAL_LLM 窗数据接入，不在此发空壳 -->
-            <div v-if="aiStats" class="ai-effect">
-              <h4 class="sub-heading">AI 根因分析反馈</h4>
-              <div class="closure-kpi-grid">
-                <div class="closure-kpi-card">
-                  <div class="closure-kpi-label">根因准确率</div>
-                  <div class="closure-kpi-value" :title="aiStats.rated === 0 ? '暂无反馈数据' : `有用 ${aiStats.helpful} / 已评分 ${aiStats.rated}`">{{ aiAccuracyText }}</div>
-                </div>
-                <div class="closure-kpi-card">
-                  <div class="closure-kpi-label">有用/已评分</div>
-                  <div class="closure-kpi-value">{{ aiRatedText }}</div>
-                </div>
-                <div class="closure-kpi-card">
-                  <div class="closure-kpi-label">累计分析</div>
-                  <div class="closure-kpi-value">{{ aiStats.total }}</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 假设置信度校准（S4-2 数据面 / 批 35）：反馈闭环第二读数；
-                 PARTIAL 不进判定集（二值口径不吞半分），豁免数随 tooltip 透明 -->
-            <div v-if="diagnosis.calibration" class="diagnosis-calibration">
-              <h4 class="sub-heading">假设置信度校准</h4>
-              <div class="closure-kpi-grid">
-                <div class="closure-kpi-card">
-                  <div class="closure-kpi-label">校准误差 ECE</div>
-                  <div class="closure-kpi-value" :title="diagnosis.calibration.ece == null ? '判定集为空：尚无 HELPFUL/WRONG 反馈' : `判定集 ${diagnosis.calibration.ratedTotal} 条（PARTIAL 豁免 ${diagnosis.calibration.excludedPartial}）`">{{ calibEceText }}</div>
-                </div>
-                <div class="closure-kpi-card">
-                  <div class="closure-kpi-label">经验正确率</div>
-                  <div class="closure-kpi-value">{{ calibAccText }}</div>
-                </div>
-                <div class="closure-kpi-card">
-                  <div class="closure-kpi-label">有用/已判定</div>
-                  <div class="closure-kpi-value">{{ calibRatedText }}</div>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="diagnosis.sessionTrend.days.length" class="diagnosis-trend">
-              <h4 class="sub-heading">诊断量趋势（发起 / 完成）</h4>
-              <TrendChart
-                class="diagnosis-trend-chart"
-                :labels="diagnosis.sessionTrend.days"
-                :series="diagnosisTrendSeries"
-                height="240px"
-              />
             </div>
           </div>
 
@@ -543,12 +332,12 @@ const rootCauseTop = computed(() =>
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--color-border-light, var(--border-1));
+  border: 1px solid var(--border-1);
   border-radius: 8px;
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1);
   cursor: pointer;
   font-size: 0.875rem;
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2);
   transition: border-color 0.15s, color 0.15s;
 }
 .refresh-btn:hover:not(:disabled) {
@@ -567,7 +356,7 @@ const rootCauseTop = computed(() =>
 }
 .last-updated {
   font-size: 0.75rem;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3);
 }
 
 .loading-state,
@@ -584,77 +373,117 @@ const rootCauseTop = computed(() =>
   text-align: center;
   padding: 16px;
   margin-bottom: 16px;
-  background: var(--color-bg-sunken, var(--surface-2));
-  border-radius: var(--radius-md, 8px);
-  color: var(--color-text-tertiary, #94a3b8);
+  background: var(--surface-2);
+  border-radius: var(--radius, 8px);
+  color: var(--text-3, #94a3b8);
   font-size: 13px;
 }
 
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
+/* StatCard 风格（2026-09-27）：彩色图标芯片 + 大数字 + 口径副标题 */
 .kpi-card {
-  background: var(--color-surface, var(--surface-1));
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--duration-normal) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .kpi-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
-/* 可点击 KPI 卡片——右缘出现 → 暗示可跳转 */
+/* 可跳转卡片：覆盖层链接整卡可点，右缘出现 → 暗示可跳转 */
 .kpi-card--link {
   cursor: pointer;
-  position: relative;
 }
 
-.kpi-card--link:hover {
-  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.15);
+.kpi-cover {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 .kpi-card--link::after {
   content: '→';
   position: absolute;
-  right: 20px;
+  right: 18px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 18px;
-  color: #bbb;
+  color: var(--text-3);
   opacity: 0;
-  transition: opacity 0.2s, color 0.2s;
+  transition: opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  /* 不被图标芯片遮住 */
+  z-index: 1;
 }
 
 .kpi-card--link:hover::after {
   opacity: 1;
-  color: var(--color-primary, #2563eb);
+  color: var(--brand);
 }
 
-/* RouterLink 去默认样式，继承卡片内文字颜色 */
-.kpi-link {
-  display: block;
-  color: inherit;
-  text-decoration: none;
+.kpi-main {
+  min-width: 0;
 }
 
 .kpi-label {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 12px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-2);
+  margin-bottom: 6px;
 }
 
 .kpi-value {
-  font-size: 32px;
-  font-weight: 600;
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
   color: var(--text-1);
-  margin-bottom: 8px;
+  line-height: 1.15;
 }
+
+.kpi-value--brand { color: var(--brand); }
+.kpi-value--success { color: var(--success); }
+.kpi-value--info { color: var(--info); }
+.kpi-value--warning { color: var(--warning); }
+
+.kpi-subtitle {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+/* 彩色图标芯片（demo StatCard 的核心识别特征） */
+.kpi-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kpi-icon--brand { background: var(--brand-subtle); color: var(--brand); }
+.kpi-icon--success { background: var(--success-subtle); color: var(--success); }
+.kpi-icon--info { background: var(--info-subtle); color: var(--info); }
+.kpi-icon--warning { background: var(--warning-subtle); color: var(--warning); }
 
 .data-grid {
   display: grid;
@@ -674,7 +503,7 @@ const rootCauseTop = computed(() =>
 }
 
 .data-panel {
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1);
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -696,6 +525,11 @@ const rootCauseTop = computed(() =>
 
 .panel-body {
   min-height: 200px;
+}
+
+/* 根因分布是 chip 流，内容多高就多高，不撑 200px 占位 */
+.panel-body--auto {
+  min-height: 0;
 }
 
 .model-list {
@@ -749,7 +583,7 @@ const rootCauseTop = computed(() =>
 }
 
 .stats-footer {
-  background: var(--color-surface, var(--surface-1));
+  background: var(--surface-1);
   border-radius: 12px;
   padding: 16px 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -762,109 +596,7 @@ const rootCauseTop = computed(() =>
   color: var(--text-2);
 }
 
-/* ===== B5 闭环度量 ===== */
-.closure-section {
-  background: var(--color-surface, var(--surface-1));
-  border-radius: 12px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  margin-top: 16px;
-}
-
-.section-heading {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-1);
-  margin: 0 0 16px 0;
-}
-
-.closure-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
-
-  @media (max-width: 768px) {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 768px) {
-  .closure-kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.closure-kpi-card {
-  background: #F9FAFB;
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-
-.closure-kpi-label {
-  font-size: 12px;
-  color: var(--text-2);
-  margin-bottom: 4px;
-}
-
-.closure-kpi-value {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-1);
-  font-variant-numeric: tabular-nums;
-}
-
-.stage-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.stage-progress-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.stage-label {
-  width: 80px;
-  font-size: 13px;
-  color: var(--text-2);
-  flex-shrink: 0;
-}
-
-.stage-bar {
-  flex: 1;
-  height: 8px;
-  background: var(--border-1);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.stage-fill {
-  height: 100%;
-  background: var(--color-primary, var(--brand));
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-
-.stage-count {
-  font-size: 12px;
-  color: var(--text-3);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.root-cause-section { margin-top: 8px; }
-
-.sub-heading {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-2);
-  margin: 0 0 8px 0;
-}
-
+/* ── 根因分类分布（chip 流） ── */
 .rc-list {
   display: flex;
   flex-wrap: wrap;
@@ -883,49 +615,5 @@ const rootCauseTop = computed(() =>
 
 .rc-label { color: var(--text-2); }
 .rc-count { font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
-/* ── B6 诊断区（S4-4.2） ── */
-.diagnosis-section {
-  margin-top: 20px;
-  padding: 16px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-}
-.diagnosis-attention {
-  margin: 12px 0;
-  padding: 10px 12px;
-  background: var(--el-color-danger-light-9);
-  border-left: 3px solid var(--el-color-danger);
-  border-radius: 4px;
-  color: var(--el-color-danger);
-  font-size: 13px;
-}
-.diagnosis-suff {
-  margin: 8px 0 12px;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-}
-.suff-chip {
-  display: inline-block;
-  margin: 0 6px 4px 0;
-  padding: 2px 8px;
-  background: var(--el-fill-color-light);
-  border-radius: 10px;
-}
-.diagnosis-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.diagnosis-table th,
-.diagnosis-table td {
-  padding: 8px 10px;
-  text-align: left;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.diagnosis-table th {
-  color: var(--el-text-color-secondary);
-  font-weight: 600;
-}
 
 </style>

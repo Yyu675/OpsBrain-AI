@@ -174,7 +174,10 @@ export function convertBackendTicketToFrontend(backend: BackendTicket): Frontend
     attachments: [],
     replies: [], // 回复需要单独接口获取
     activities: [], // 活动流需要单独接口获取
-    version: backend.version ?? 0 // P1-4 乐观锁，更新时须回传
+    version: backend.version ?? 0, // P1-4 乐观锁，更新时须回传
+    // 告警建单时写入的溯源号（dedupKey）。工单详情据此给出「查看诊断回放」入口——
+    // 此前转换层直接丢弃，页面永远不知道这张工单来自哪条告警链路。
+    sourceTraceId: backend.sourceTraceId ?? null
   }
 }
 

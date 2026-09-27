@@ -226,12 +226,12 @@ const selectableBases = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: 5px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
-.ce-category-control > button:hover { border-color: var(--color-primary-light); color: var(--color-primary); }
+.ce-category-control > button:hover { border-color: var(--brand-hover); color: var(--brand); }
 
 .ce-side-group {
   display: flex;
@@ -243,14 +243,14 @@ const selectableBases = computed(() => {
 .ce-side-label {
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .ce-kb-tip {
   margin: 0;
   font-size: var(--text-xs);
   line-height: 1.5;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .ce-hot-tags {
@@ -259,25 +259,25 @@ const selectableBases = computed(() => {
   flex-wrap: wrap;
   gap: 6px;
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .ce-hot-title {
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .ce-hot-tag {
   padding: 3px 10px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-full);
-  background: var(--color-surface-hover);
-  color: var(--color-text-secondary);
+  background: var(--surface-hover);
+  color: var(--text-2);
   font-size: var(--text-xs);
   transition: all 0.15s ease;
 
   &:hover:not(:disabled) {
-    border-color: var(--color-primary-light);
-    color: var(--color-primary);
+    border-color: var(--brand-hover);
+    color: var(--brand);
   }
 
   &:disabled {
@@ -289,10 +289,10 @@ const selectableBases = computed(() => {
 .ce-excerpt-input {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text-1);
   font-size: var(--text-sm);
   font-family: inherit;
   line-height: 1.5;
@@ -301,7 +301,7 @@ const selectableBases = computed(() => {
   transition: border-color 0.15s ease;
 
   &:focus {
-    border-color: var(--color-primary-light);
+    border-color: var(--brand-hover);
   }
 }
 
@@ -314,7 +314,7 @@ const selectableBases = computed(() => {
 
 .ce-excerpt-count {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   line-height: 1.4;
 }
 
@@ -323,17 +323,17 @@ const selectableBases = computed(() => {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: var(--radius-full);
-  background: var(--color-bg-elevated);
-  color: var(--color-primary);
+  background: var(--surface-1);
+  color: var(--brand);
   font-size: var(--text-xs);
   white-space: nowrap;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary-light);
-    background: var(--color-primary-lighter);
+    border-color: var(--brand-hover);
+    background: var(--brand-subtle);
   }
 }
 
@@ -353,14 +353,14 @@ const selectableBases = computed(() => {
 .ce-publish-title {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .ce-publish-desc {
   margin: 0;
   font-size: var(--text-xs);
   line-height: 1.5;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .ce-draft-tag {
@@ -368,8 +368,8 @@ const selectableBases = computed(() => {
   padding: 1px 8px;
   font-size: var(--text-xs);
   font-weight: var(--weight-normal);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
+  color: var(--text-2);
+  background: var(--surface-2);
   border-radius: var(--radius-full);
 }
 </style>

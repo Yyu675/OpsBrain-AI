@@ -2,23 +2,20 @@ import { watch } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
 
 import { useAppStore } from '@/stores/app'
-import { useChatStore } from '@/stores/chat'
 
 /**
  * 登出时清理「属于上一个用户」的本地数据。
  *
  * ── 要解决什么 ──────────────────────────────────────────────
- * AI 对话历史全量持久化在 localStorage 的 `chat-sessions` 里，
- * 而这个键**没有按用户隔离**。此前登出只清 token 与身份缓存，
- * 对话记录原样留在磁盘上——下一个在同一台机器登录的人打开 AI 助手，
- * 会直接看到上一个人的完整问答。
- *
- * 这不只是隐私尴尬：会话里的 `metadata.citations` 存的是 AI 从知识库
- * 检索出的**原文片段**，而知识库有可见性分级（PUBLIC / 内部）。
- * 一个只读用户借此就能读到本不该看到的内部文档内容，
- * 等于绕过后端刚落地的权限域隔离。
- *
- * 共享值守机、跨班交接同一终端在运维场景里非常普遍，不是极端假设。
+ * 1. TanStack Query 缓存：gcTime 5 分钟内工单列表、告警、审批队列、
+ *    审计日志都留在内存里。下一个用户在同一标签页登录后若命中相同
+ *    queryKey，会先看到上一个人的数据（stale-while-revalidate 默认
+ *    行为：先渲染缓存再后台刷新）。对只读用户尤其严重。
+ * 2. 遗留的 AI 对话持久键 `__store__:chat-sessions`：独立 AI 对话页
+ *    已下线（2026-09-27 方案乙，AI 能力只保留嵌入式入口），store 虽删，
+ *    老用户机器上仍可能有存量数据——会话里的 citations 是知识库原文
+ *    片段，而知识库有可见性分级，必须继续清。
+ * 3. 复盘沉淀草稿（sessionStorage `__draft__:sink-draft.*`）。
  *
  * ── 为什么挂在这里而不是各个登出入口 ────────────────────────
  * 登出路径有四条：导航栏菜单、闲置超时、闲置警告里选「立即退出」、
@@ -38,7 +35,6 @@ import { useChatStore } from '@/stores/chat'
  */
 export function useSessionCleanup(): void {
   const app = useAppStore()
-  const chat = useChatStore()
   const queryClient = useQueryClient()
 
   watch(
@@ -46,10 +42,14 @@ export function useSessionCleanup(): void {
     (authed, wasAuthed) => {
       // 只在「确实从已登录退出」时清理。
       // 不能省略 wasAuthed 判断：应用启动时该值由 undefined → false
-      // 也会触发一次 watch，那时清理没有意义（本来就没人登录过），
-      // 反而会把用户上次未读完的对话在冷启动时抹掉。
+      // 也会触发一次 watch，那时清理没有意义（本来就没人登录过）。
       if (wasAuthed === true && !authed) {
-        chat.clearAll()
+        // 遗留 AI 对话持久键（独立对话页已下线，仅存于老用户机器）
+        try {
+          localStorage.removeItem('__store__:chat-sessions')
+        } catch {
+          // 隐私模式等异常：清不掉就清不掉，不阻塞登出主流程
+        }
 
         /*
          * 清除复盘沉淀草稿（__draft__:sink-draft.*）。
@@ -73,15 +73,6 @@ export function useSessionCleanup(): void {
 
         /*
          * 清空 TanStack Query 缓存。
-         *
-         * 与对话历史是同一类问题，只是载体不同：Query 的 gcTime 是 5 分钟，
-         * 期间工单列表、告警、审批队列、审计日志都原样留在内存里。
-         * 下一个用户在同一标签页登录后，若命中相同 queryKey，
-         * **会先看到上一个人的数据**（stale-while-revalidate 的默认行为：
-         * 先渲染缓存再后台刷新）。
-         *
-         * 对只读用户尤其严重——他本无权看到的工单标题、审批摘要、
-         * 审计里的 AI 问答，会在刷新完成前的那一瞬间完整呈现。
          *
          * 用 clear() 而非 invalidateQueries()：后者只标记过期、数据仍在缓存中，
          * 挡不住「先渲染旧数据」这一步。这里要的是**移除**，不是「下次重拉」。

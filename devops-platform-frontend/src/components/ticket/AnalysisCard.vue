@@ -9,9 +9,10 @@
  * - 降级：未检测到结构时走全量 markdown 渲染
  */
 import { Sparkles, Copy, RefreshCw, Square, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-vue-next'
+import { ref, watch } from 'vue'
 import type { StructuredAnalysis } from '@/composables/useTicketAnalysis'
 
-defineProps<{
+const props = defineProps<{
   content: string
   streaming: boolean
   done: boolean
@@ -47,6 +48,14 @@ defineProps<{
   onFeedback?: (helpful: boolean) => void
   /** 生成分析回调（未生成空态的按钮，方案 2：点击式生成） */
   onGenerate?: () => void
+  /**
+   * 诊断已跑过但没有形成分析时的提示（典型是证据不足 INSUFFICIENT，
+   * 结论按设计不进分析表）。有它时，空态不再只说「尚未生成」——
+   * 那会让用户以为系统什么都没做。
+   */
+  diagnosisHint?: string
+  /** 诊断提示里的回放链接 */
+  diagnosisTo?: string
   /** 全部历史版本（方案 3：>1 版时渲染切换器） */
   versions?: Array<{ version: number; createTime: string }>
   /** 当前展示版本：null = 最新 */
@@ -56,6 +65,20 @@ defineProps<{
   /** 采纳为根因回调（方案 4：直达根因确认弹窗并预填本分析） */
   onAdopt?: () => void
 }>()
+
+/**
+ * 反馈引导（飞轮攒数据）：分析刚完成时反馈区短暂亮起一次，
+ * 把「这次分析有用吗」推到用户眼前——反馈是知识健康度与检索排序的
+ * 唯一数据来源，藏在角落就永远没人点。
+ * 只在「本次挂载内 done 由 false→true」触发：打开历史存档不闪。
+ */
+const justCompleted = ref(false)
+watch(() => props.done, (now, before) => {
+  if (now && !before) {
+    justCompleted.value = true
+    setTimeout(() => { justCompleted.value = false }, 4000)
+  }
+})
 </script>
 
 <template>
@@ -86,7 +109,11 @@ defineProps<{
     <!-- 未生成空态：不自动烧 token（方案 2）——老手自己能搞定就别花钱，
          想要 AI 分析再点按钮，一次点击 = 一次有意识的付费决策 -->
     <div v-if="!content && !streaming && !done" class="analysis-empty">
-      <span class="empty-hint">尚未生成 AI 分析</span>
+      <span v-if="diagnosisHint" class="empty-hint">
+        {{ diagnosisHint }}
+        <router-link v-if="diagnosisTo" :to="diagnosisTo" class="diagnosis-link">查看诊断回放</router-link>
+      </span>
+      <span v-else class="empty-hint">尚未生成 AI 分析</span>
       <button class="analysis-btn primary" @click="onGenerate && onGenerate()">
         <Sparkles :size="11" /> 生成 AI 分析
       </button>
@@ -176,7 +203,7 @@ defineProps<{
 
       <!-- 反馈：分析已存档才可评价（AI 准确率数据来源） -->
       <template v-if="done && !streaming && canFeedback">
-        <span class="feedback-label">这次分析有用吗？</span>
+        <span class="feedback-label" :class="{ 'feedback-nudge': justCompleted }">这次分析有用吗？</span>
         <button
           class="feedback-btn"
           :class="{ active: feedback === 'HELPFUL' }"
@@ -217,8 +244,8 @@ defineProps<{
 
 <style scoped>
 .analysis-card {
-  border-left: 3px solid var(--color-primary, var(--brand));
-  background: var(--color-primary-lighter, var(--brand-subtle));
+  border-left: 3px solid var(--brand, var(--brand));
+  background: var(--brand-subtle, var(--brand-subtle));
   border-radius: 0 8px 8px 0;
   padding: 12px 16px;
 }
@@ -229,95 +256,104 @@ defineProps<{
   margin-bottom: 8px;
   font-size: 0.8125rem;
 }
-.analysis-title { font-weight: 600; color: var(--color-primary, var(--brand)); }
-.analysis-status { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); }
-.analysis-status.done { color: var(--state-success, var(--success)); }
+.analysis-title { font-weight: 600; color: var(--brand, var(--brand)); }
+.analysis-status { font-size: 0.6875rem; color: var(--text-3, var(--text-3)); }
+.analysis-status.done { color: var(--success, var(--success)); }
 /* 存档用中性灰而非成功绿：它不是「刚完成」，只是「上次的结论」 */
-.analysis-status.archived { color: var(--color-text-tertiary, var(--text-3)); cursor: help; }
+.analysis-status.archived { color: var(--text-3, var(--text-3)); cursor: help; }
 
 .analysis-structured { display: flex; flex-direction: column; gap: 10px; }
 .structured-header {
   display: flex; align-items: center; justify-content: space-between;
-  font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary, var(--text-2));
+  font-size: 0.75rem; font-weight: 600; color: var(--text-2, var(--text-2));
   margin-bottom: 4px;
 }
-.structured-hint { font-size: 0.625rem; color: var(--color-text-tertiary, var(--text-3)); font-weight: 400; }
+.structured-hint { font-size: 0.625rem; color: var(--text-3, var(--text-3)); font-weight: 400; }
 
 .reasons-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .reason-item { display: flex; gap: 8px; font-size: 0.8125rem; line-height: 1.5; }
 .reason-num {
   flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--color-primary, var(--brand)); color: #fff;
+  background: var(--brand, var(--brand)); color: #fff;
   font-size: 0.625rem; font-weight: 600;
   display: flex; align-items: center; justify-content: center;
 }
-.reason-text { color: var(--color-text-secondary, var(--text-2)); flex: 1; }
+.reason-text { color: var(--text-2, var(--text-2)); flex: 1; }
 
 .commands-list { display: flex; flex-direction: column; gap: 4px; }
 .command-item {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: var(--color-surface, var(--surface-1)); border-radius: 4px; padding: 6px 10px;
-  border: 1px solid var(--color-border-light, var(--border-1));
+  background: var(--surface-1, var(--surface-1)); border-radius: 4px; padding: 6px 10px;
+  border: 1px solid var(--border-1, var(--border-1));
 }
-.command-code { font-family: monospace; font-size: 0.75rem; color: var(--color-primary, var(--brand)); flex: 1; overflow-x: auto; white-space: nowrap; }
+.command-code { font-family: monospace; font-size: 0.75rem; color: var(--brand, var(--brand)); flex: 1; overflow-x: auto; white-space: nowrap; }
 .command-copy {
   border: none; background: none; cursor: pointer; padding: 2px;
-  color: var(--color-text-tertiary, var(--text-3)); border-radius: 3px;
+  color: var(--text-3, var(--text-3)); border-radius: 3px;
 }
-.command-copy:hover { color: var(--color-primary, var(--brand)); background: var(--color-primary-lighter, var(--brand-subtle)); }
+.command-copy:hover { color: var(--brand, var(--brand)); background: var(--brand-subtle, var(--brand-subtle)); }
 
 .confidence-tag { font-weight: 600; }
-.confidence-high { color: var(--state-success, var(--success)); }
-.confidence-mid { color: var(--state-warning, var(--warning)); }
-.confidence-low { color: var(--state-error, var(--danger)); }
+.confidence-high { color: var(--success, var(--success)); }
+.confidence-mid { color: var(--warning, var(--warning)); }
+.confidence-low { color: var(--danger, var(--danger)); }
 
 .confidence-bar {
   width: 100%; height: 4px; border-radius: 2px; overflow: hidden;
-  background: var(--color-bg-sunken, var(--surface-2));
+  background: var(--surface-2, var(--surface-2));
 }
 .confidence-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
-.confidence-fill.confidence-high { background: var(--state-success, var(--success)); }
-.confidence-fill.confidence-mid { background: var(--state-warning, var(--warning)); }
-.confidence-fill.confidence-low { background: var(--state-error, var(--danger)); }
+.confidence-fill.confidence-high { background: var(--success, var(--success)); }
+.confidence-fill.confidence-mid { background: var(--warning, var(--warning)); }
+.confidence-fill.confidence-low { background: var(--danger, var(--danger)); }
 
-.other-content { font-size: 0.8125rem; color: var(--color-text-tertiary, var(--text-3)); }
-.analysis-content { font-size: 0.8125rem; line-height: 1.6; color: var(--color-text-secondary, var(--text-2)); }
+.other-content { font-size: 0.8125rem; color: var(--text-3, var(--text-3)); }
+.analysis-content { font-size: 0.8125rem; line-height: 1.6; color: var(--text-2, var(--text-2)); }
 
 .citations-section { margin-top: 8px; }
-.citations-header { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); margin-bottom: 4px; }
+.citations-header { font-size: 0.6875rem; color: var(--text-3, var(--text-3)); margin-bottom: 4px; }
 .citations-list { display: flex; flex-direction: column; gap: 2px; }
-.citation-item { font-size: 0.6875rem; color: var(--color-primary, var(--brand)); }
+.citation-item { font-size: 0.6875rem; color: var(--brand, var(--brand)); }
 
 .analysis-actions {
   display: flex; align-items: center; gap: 8px;
   margin-top: 8px; padding-top: 8px;
   border-top: 1px solid rgba(64, 158, 255, 0.1);
 }
-.cost-tag { font-size: 0.625rem; color: var(--color-text-tertiary, var(--text-3)); }
+.cost-tag { font-size: 0.625rem; color: var(--text-3, var(--text-3)); }
 .analysis-btn {
   display: inline-flex; align-items: center; gap: 3px;
   border: none; background: none; cursor: pointer;
-  font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3));
+  font-size: 0.6875rem; color: var(--text-3, var(--text-3));
   padding: 2px 4px; border-radius: 3px;
 }
-.analysis-btn:hover { color: var(--color-primary, var(--brand)); background: rgba(64, 158, 255, 0.08); }
+.analysis-btn:hover { color: var(--brand, var(--brand)); background: rgba(64, 158, 255, 0.08); }
 
 /* 反馈（策略 B：AI 准确率数据来源） */
-.feedback-label { font-size: 0.625rem; color: var(--color-text-tertiary, var(--text-3)); }
+.feedback-label { font-size: 0.625rem; color: var(--text-3, var(--text-3)); }
+.feedback-nudge {
+  animation: nudge-pulse 1.6s ease-in-out 2;
+  color: var(--brand, var(--brand));
+  font-weight: var(--weight-medium, 500);
+}
+@keyframes nudge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 .feedback-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--color-border-light, var(--border-1)); background: var(--color-surface, var(--surface-1)); cursor: pointer;
-  color: var(--color-text-tertiary, var(--text-3));
+  border: 1px solid var(--border-1, var(--border-1)); background: var(--surface-1, var(--surface-1)); cursor: pointer;
+  color: var(--text-3, var(--text-3));
   padding: 3px 6px; border-radius: 4px;
   transition: all 0.15s ease;
 }
-.feedback-btn:hover { color: var(--color-primary, var(--brand)); border-color: var(--color-primary-light, #79bbff); }
+.feedback-btn:hover { color: var(--brand, var(--brand)); border-color: var(--brand-hover, #79bbff); }
 /* 选中态：有用绿 / 没用红，明确反映用户已评价 */
 .feedback-btn.active { color: #fff; }
 .feedback-btn.active:first-of-type,
-.feedback-btn.active[title="有用"] { background: var(--state-success, var(--success)); border-color: var(--state-success, var(--success)); }
+.feedback-btn.active[title="有用"] { background: var(--success, var(--success)); border-color: var(--success, var(--success)); }
 .feedback-btn.active[title="没用"] { background: #EF4444; border-color: #EF4444; }
-.action-divider { width: 1px; height: 12px; background: var(--color-border-light, var(--border-1)); }
+.action-divider { width: 1px; height: 12px; background: var(--border-1, var(--border-1)); }
 
 /* 未生成空态（方案 2）：打开详情页不再自动烧 token */
 .analysis-empty {
@@ -328,24 +364,24 @@ defineProps<{
 .version-select {
   margin-left: auto;
   font-size: 0.625rem;
-  color: var(--color-text-tertiary, var(--text-3));
-  background: var(--color-surface, var(--surface-1));
-  border: 1px solid var(--color-border-light, var(--border-1));
+  color: var(--text-3, var(--text-3));
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: 4px;
   padding: 1px 4px;
   cursor: pointer;
 }
-.version-select:hover { border-color: var(--color-primary-light, #79bbff); }
-.empty-hint { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); }
+.version-select:hover { border-color: var(--brand-hover, #79bbff); }
+.empty-hint { font-size: 0.6875rem; color: var(--text-3, var(--text-3)); }
 /* 主按钮形态：与列表里的次级按钮区分开，这是卡片里唯一的推进动作 */
 .analysis-btn.primary {
-  color: var(--color-primary, var(--brand));
+  color: var(--brand, var(--brand));
   font-size: 0.75rem; padding: 4px 10px;
-  border: 1px solid var(--color-primary-light, rgba(64, 158, 255, 0.5));
+  border: 1px solid var(--brand-hover, rgba(64, 158, 255, 0.5));
   background: rgba(64, 158, 255, 0.06);
 }
 .analysis-btn.primary:hover { background: rgba(64, 158, 255, 0.14); }
 /* 采纳为根因（方案 4）：AI→人工权威动作的桥，视觉上略强调但不喧宾 */
-.analysis-btn.adopt { color: var(--state-success, var(--success)); }
+.analysis-btn.adopt { color: var(--success, var(--success)); }
 .analysis-btn.adopt:hover { background: rgba(103, 194, 58, 0.1); }
 </style>

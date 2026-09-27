@@ -757,7 +757,7 @@ const compareAction = async (version: number) => {
 .knowledge-detail {
   height: calc(100vh - 56px);
   min-height: 620px;
-  background: var(--color-bg);
+  background: var(--surface-0);
   overflow: hidden;
 }
 
@@ -785,7 +785,7 @@ const compareAction = async (version: number) => {
   display: flex;
   align-items: stretch;
   min-height: 100%;
-  background: var(--color-bg-elevated);
+  background: var(--surface-1);
 }
 
 .reader-paper {
@@ -793,7 +793,7 @@ const compareAction = async (version: number) => {
   flex: 1 1 900px;
   min-width: 0;
   margin: 0 auto;
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: 0;
   box-shadow: none;
   padding: 28px clamp(28px, 4vw, 52px) 64px;
@@ -805,8 +805,8 @@ const compareAction = async (version: number) => {
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  background: var(--color-surface-hover);
-  border-left: 1px solid var(--color-border-light);
+  background: var(--surface-hover);
+  border-left: 1px solid var(--border-1);
 }
 
 .rightbar-panel {
@@ -841,14 +841,14 @@ const compareAction = async (version: number) => {
   justify-content: center;
   border: none;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-bg-sunken);
-    color: var(--color-text-primary);
+    background: var(--surface-2);
+    color: var(--text-1);
   }
 }
 
@@ -858,9 +858,9 @@ const compareAction = async (version: number) => {
   gap: 6px;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-2);
+  background: var(--surface-1);
+  color: var(--text-2);
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-family: var(--font-body);
@@ -868,30 +868,30 @@ const compareAction = async (version: number) => {
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary-light);
-    color: var(--color-primary);
+    border-color: var(--brand-hover);
+    color: var(--brand);
   }
 
   &.tb-btn-primary {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: var(--color-text-on-primary);
+    background: var(--brand);
+    border-color: var(--brand);
+    color: var(--brand-fg);
 
     &:hover {
-      background: var(--color-primary-light);
-      border-color: var(--color-primary-light);
-      color: var(--color-text-on-primary);
+      background: var(--brand-hover);
+      border-color: var(--brand-hover);
+      color: var(--brand-fg);
     }
   }
 
   &.tb-btn-danger {
-    color: var(--state-error);
-    border-color: var(--color-border);
+    color: var(--danger);
+    border-color: var(--border-2);
 
     &:hover {
-      border-color: var(--state-error);
-      color: var(--state-error);
-      background: var(--state-error-bg);
+      border-color: var(--danger);
+      color: var(--danger);
+      background: var(--danger-subtle);
     }
   }
 }
@@ -903,7 +903,7 @@ const compareAction = async (version: number) => {
   font-weight: var(--weight-bold);
   line-height: 1.35;
   letter-spacing: -0.015em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   margin: 0 0 20px 0;
   word-break: break-word;
 }
@@ -914,7 +914,7 @@ const compareAction = async (version: number) => {
   gap: 12px;
   padding-bottom: 20px;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
 }
 
 .doc-meta-avatar {
@@ -927,13 +927,13 @@ const compareAction = async (version: number) => {
   justify-content: center;
   font-size: 12px;
   font-weight: var(--weight-semibold);
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
+  background: var(--brand-subtle);
+  color: var(--brand);
 }
 
 .doc-meta-info {
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   line-height: 1.5;
   min-width: 0;
 }
@@ -945,12 +945,12 @@ const compareAction = async (version: number) => {
   flex-wrap: wrap;
 
   .name {
-    color: var(--color-text-primary);
+    color: var(--text-1);
     font-weight: var(--weight-medium);
   }
 
   .dot {
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 }
 
@@ -964,7 +964,7 @@ const compareAction = async (version: number) => {
 
 .extra-chip {
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-family: var(--font-mono);
 }
 
@@ -975,8 +975,8 @@ const compareAction = async (version: number) => {
   border-radius: var(--radius-full);
 
   &.status-draft {
-    color: var(--color-text-secondary);
-    background: var(--color-bg-sunken);
+    color: var(--text-2);
+    background: var(--surface-2);
   }
 
   &.status-published {
@@ -986,8 +986,8 @@ const compareAction = async (version: number) => {
 
   &.status-deprecated,
   &.status-archived {
-    color: var(--color-text-tertiary);
-    background: var(--color-bg-sunken);
+    color: var(--text-3);
+    background: var(--surface-2);
     text-decoration: line-through;
   }
 }
@@ -997,8 +997,8 @@ const compareAction = async (version: number) => {
   font-size: 11px;
   font-weight: var(--weight-medium);
   border-radius: var(--radius-full);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
+  color: var(--text-2);
+  background: var(--surface-2);
 
   &.index-ok {
     color: var(--info);
@@ -1006,8 +1006,8 @@ const compareAction = async (version: number) => {
   }
 
   &.index-failed {
-    color: var(--state-error, var(--danger));
-    background: var(--state-error-bg, #fef0f0);
+    color: var(--danger, var(--danger));
+    background: var(--danger-subtle, #fef0f0);
   }
 }
 
@@ -1017,17 +1017,17 @@ const compareAction = async (version: number) => {
   gap: 6px;
   margin-top: 8px;
   padding: 8px 12px;
-  background: var(--state-error-bg, #fef0f0);
+  background: var(--danger-subtle, #fef0f0);
   border-radius: 6px;
   font-size: 0.8125rem;
 }
 .index-error-icon {
-  color: var(--state-error, var(--danger));
+  color: var(--danger, var(--danger));
   flex-shrink: 0;
   margin-top: 1px;
 }
 .index-error-text {
-  color: var(--state-error, var(--danger));
+  color: var(--danger, var(--danger));
   word-break: break-word;
 }
 
@@ -1049,8 +1049,8 @@ const compareAction = async (version: number) => {
   padding: 3px 10px;
   border-radius: var(--radius-full);
   font-size: 12px;
-  background: var(--color-bg-sunken);
-  color: var(--color-text-secondary);
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 
 /* L1.5 来源回链：由工单沉淀的知识文档反向链回源工单 */
@@ -1061,8 +1061,8 @@ const compareAction = async (version: number) => {
   padding: 4px 10px;
   font-size: 12px;
   font-weight: var(--weight-medium);
-  color: var(--color-primary);
-  background: var(--color-primary-lighter);
+  color: var(--brand);
+  background: var(--brand-subtle);
   border-radius: var(--radius-full);
   text-decoration: none;
   transition: opacity 0.2s ease;
@@ -1092,7 +1092,7 @@ const compareAction = async (version: number) => {
 
 .article-content {
   font-size: 15px;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   line-height: 1.8;
 
   :deep(h2) {
@@ -1100,7 +1100,7 @@ const compareAction = async (version: number) => {
     font-weight: var(--weight-semibold);
     line-height: var(--leading-tight);
     margin: 32px 0 12px 0;
-    color: var(--color-text-primary);
+    color: var(--text-1);
     scroll-margin-top: 88px;
   }
 
@@ -1109,14 +1109,14 @@ const compareAction = async (version: number) => {
     font-weight: var(--weight-semibold);
     line-height: var(--leading-tight);
     margin: 24px 0 10px 0;
-    color: var(--color-text-primary);
+    color: var(--text-1);
     scroll-margin-top: 88px;
   }
 
   :deep(p) {
     font-size: 15px;
     line-height: 1.8;
-    color: var(--color-text-secondary);
+    color: var(--text-2);
     margin: 0 0 14px 0;
 
     &:last-child {
@@ -1128,7 +1128,7 @@ const compareAction = async (version: number) => {
   :deep(ul) {
     padding-left: 22px;
     margin: 0 0 16px 0;
-    color: var(--color-text-secondary);
+    color: var(--text-2);
   }
 
   :deep(li) {
@@ -1138,35 +1138,35 @@ const compareAction = async (version: number) => {
   }
 
   :deep(strong) {
-    color: var(--color-text-primary);
+    color: var(--text-1);
     font-weight: var(--weight-semibold);
   }
 
   :deep(a) {
-    color: var(--color-primary-light);
+    color: var(--brand-hover);
   }
 
   :deep(code) {
     font-family: var(--font-mono);
     font-size: 13px;
-    background: var(--color-bg-sunken);
+    background: var(--surface-2);
     padding: 2px 5px;
     border-radius: 4px;
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 
   /* 代码块（对齐设计稿 code-block） */
   :deep(pre) {
     position: relative;
-    background: var(--color-bg-sunken);
-    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    border-radius: var(--radius);
     padding: 42px 16px 16px;
     margin: 16px 0;
     overflow-x: auto;
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
-    color: var(--color-text-secondary);
+    color: var(--text-2);
     white-space: pre-wrap;
     word-break: break-word;
 
@@ -1190,8 +1190,8 @@ const compareAction = async (version: number) => {
       align-items: center;
       padding: 0 14px;
       box-sizing: border-box;
-      border-bottom: 1px solid var(--color-border-light);
-      color: var(--color-text-tertiary);
+      border-bottom: 1px solid var(--border-1);
+      color: var(--text-3);
       font-family: var(--font-body);
       font-size: 11px;
       font-weight: var(--weight-semibold);
@@ -1202,9 +1202,9 @@ const compareAction = async (version: number) => {
   /* 引用块 / 提示块 → callout：primary-lighter 底 + 左侧 4px 主色竖条 */
   :deep(blockquote) {
     position: relative;
-    background: var(--color-primary-lighter);
-    border-left: 4px solid var(--color-primary);
-    border-radius: var(--radius-md);
+    background: var(--brand-subtle);
+    border-left: 4px solid var(--brand);
+    border-radius: var(--radius);
     padding: 38px 16px 14px;
     margin: 18px 0;
 
@@ -1213,7 +1213,7 @@ const compareAction = async (version: number) => {
       position: absolute;
       top: 12px;
       left: 16px;
-      color: var(--color-primary);
+      color: var(--brand);
       font-size: var(--text-xs);
       font-weight: var(--weight-semibold);
     }
@@ -1229,13 +1229,13 @@ const compareAction = async (version: number) => {
     }
 
     strong {
-      color: var(--color-text-primary);
+      color: var(--text-1);
     }
   }
 
   :deep(img) {
     max-width: 100%;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius);
   }
 
   :deep(figure) {
@@ -1244,7 +1244,7 @@ const compareAction = async (version: number) => {
 
   :deep(figcaption) {
     margin-top: 8px;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
     font-size: 12px;
     text-align: center;
   }
@@ -1261,26 +1261,26 @@ const compareAction = async (version: number) => {
   :deep(td) {
     min-width: 88px;
     padding: 9px 12px;
-    border: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
+    border: 1px solid var(--border-2);
+    color: var(--text-2);
     text-align: left;
     vertical-align: top;
   }
 
   :deep(th) {
-    color: var(--color-text-primary);
+    color: var(--text-1);
     font-weight: var(--weight-semibold);
-    background: var(--color-bg-sunken);
+    background: var(--surface-2);
   }
 
   :deep(del),
   :deep(s) {
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 
   :deep(hr) {
     border: none;
-    border-top: 1px solid var(--color-border-light);
+    border-top: 1px solid var(--border-1);
     margin: 24px 0;
   }
 }
@@ -1289,13 +1289,13 @@ const compareAction = async (version: number) => {
 .related-docs {
   margin-top: 48px;
   padding-top: 24px;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-1);
 
   h3 {
     font-size: 16px;
     font-weight: var(--weight-semibold);
     margin: 0 0 12px 0;
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 
@@ -1305,7 +1305,7 @@ const compareAction = async (version: number) => {
   gap: 8px;
   padding: 8px 0;
   font-size: 14px;
-  color: var(--color-primary-light);
+  color: var(--brand-hover);
   text-decoration: none;
 
   &:hover {
@@ -1322,7 +1322,7 @@ const compareAction = async (version: number) => {
 .toc-title {
   font-size: 12px;
   font-weight: var(--weight-medium);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   margin-bottom: 10px;
 }
 
@@ -1350,39 +1350,39 @@ const compareAction = async (version: number) => {
   text-align: left;
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   text-decoration: none;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   transition: all 0.15s ease;
 
   &:hover {
-    color: var(--color-primary);
-    background: var(--color-bg);
+    color: var(--brand);
+    background: var(--surface-0);
   }
 
   &.active {
-    color: var(--color-primary);
+    color: var(--brand);
     font-weight: var(--weight-medium);
-    background: var(--color-primary-lighter);
+    background: var(--brand-subtle);
   }
 }
 
 .toc-item.level-three {
   padding-left: 22px;
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .toc-empty {
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   padding: 4px 10px;
 }
 
 .doc-info {
   padding-top: 20px;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-1);
 }
 
 .info-row {
@@ -1391,7 +1391,7 @@ const compareAction = async (version: number) => {
   gap: 12px;
   padding: 7px 0;
   font-size: 13px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
 
   &:last-child {
     border-bottom: none;
@@ -1399,12 +1399,12 @@ const compareAction = async (version: number) => {
 }
 
 .info-label {
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   flex-shrink: 0;
 }
 
 .info-value {
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   text-align: right;
   word-break: break-all;
 }
@@ -1451,8 +1451,8 @@ const compareAction = async (version: number) => {
   max-width: 520px;
   margin: 40px auto;
   padding: 40px 32px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   text-align: center;
@@ -1462,8 +1462,8 @@ const compareAction = async (version: number) => {
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
+  background: var(--brand-subtle);
+  color: var(--brand);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1473,13 +1473,13 @@ const compareAction = async (version: number) => {
 .empty-title {
   font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   margin: 0 0 8px 0;
 }
 
 .empty-hint {
   font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   margin: 0 0 20px 0;
 }
 
@@ -1495,28 +1495,28 @@ const compareAction = async (version: number) => {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
+    border-color: var(--brand);
+    color: var(--brand);
   }
 
   &.action-btn-primary {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
+    background: var(--brand);
+    border-color: var(--brand);
     color: white;
 
     &:hover {
-      background: var(--color-primary-light);
+      background: var(--brand-hover);
       color: white;
     }
   }
@@ -1527,19 +1527,19 @@ const compareAction = async (version: number) => {
 .versions-empty {
   padding: 32px 0;
   text-align: center;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-size: var(--text-sm);
 }
 
 .version-item {
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   padding: 14px 16px;
   margin-bottom: 12px;
 
   &.version-current {
-    border-color: var(--color-primary-light);
-    background: var(--color-primary-lighter);
+    border-color: var(--brand-hover);
+    background: var(--brand-subtle);
   }
 }
 
@@ -1552,15 +1552,15 @@ const compareAction = async (version: number) => {
 
 .version-no {
   font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   font-size: var(--text-sm);
 }
 
 .version-type {
   padding: 2px 8px;
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
+  color: var(--text-2);
+  background: var(--surface-2);
   border-radius: var(--radius-full);
 }
 
@@ -1578,14 +1578,14 @@ const compareAction = async (version: number) => {
   gap: 12px;
   align-items: center;
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .version-reason {
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   margin: 8px 0 0 0;
-  background: var(--color-bg-sunken);
+  background: var(--surface-2);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
 }
@@ -1602,15 +1602,15 @@ const compareAction = async (version: number) => {
   padding: 4px 12px;
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  color: var(--color-primary);
+  color: var(--brand);
   background: transparent;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: var(--color-primary-lighter);
+    background: var(--brand-subtle);
   }
 
   &:disabled {
@@ -1624,10 +1624,10 @@ const compareAction = async (version: number) => {
   padding: 4px 12px;
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  color: var(--color-primary);
+  color: var(--brand);
   background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1635,8 +1635,8 @@ const compareAction = async (version: number) => {
   transition: all 0.15s ease;
 
   &:hover:not(:disabled) {
-    border-color: var(--color-primary);
-    background: var(--color-primary-lighter);
+    border-color: var(--brand);
+    background: var(--brand-subtle);
   }
 
   &:disabled {
@@ -1648,8 +1648,8 @@ const compareAction = async (version: number) => {
 /* ==================== 版本对比 diff 面板 ==================== */
 
 .diff-panel {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
   max-height: 60vh;
   overflow-y: auto;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
@@ -1667,7 +1667,7 @@ const compareAction = async (version: number) => {
 }
 
 .diff-line-equal {
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .diff-line-delete {
@@ -1693,7 +1693,7 @@ const compareAction = async (version: number) => {
 .diff-loading {
   text-align: center;
   padding: 40px 0;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1714,22 +1714,22 @@ const compareAction = async (version: number) => {
   align-items: center;
   gap: 8px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--border-2);
   margin-bottom: 16px;
   font-weight: 600;
 }
 
 .diff-version-from,
 .diff-version-to {
-  color: var(--color-primary);
+  color: var(--brand);
 }
 
 .diff-arrow {
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .diff-title {
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   font-weight: 400;
   font-size: var(--text-xs);
   margin-left: auto;
@@ -1741,6 +1741,6 @@ const compareAction = async (version: number) => {
 .diff-empty {
   text-align: center;
   padding: 40px 0;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 </style>

@@ -109,15 +109,15 @@ const copySummary = async () => {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .err-card {
   max-width: 520px;
   width: 100%;
   padding: 32px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-light);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   text-align: center;
@@ -127,8 +127,8 @@ const copySummary = async () => {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: var(--state-error-bg);
-  color: var(--state-error);
+  background: var(--danger-subtle);
+  color: var(--danger);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -138,20 +138,20 @@ const copySummary = async () => {
 .err-title {
   font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   margin: 0 0 8px 0;
 }
 
 .err-msg {
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   margin: 0 0 4px 0;
   word-break: break-word;
 }
 
 .err-hint {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   margin: 0 0 24px 0;
 }
 
@@ -167,27 +167,27 @@ const copySummary = async () => {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
+    border-color: var(--brand);
+    color: var(--brand);
   }
 
   &.err-btn-primary {
-    background: var(--color-primary);
+    background: var(--brand);
     color: white;
-    border-color: var(--color-primary);
+    border-color: var(--brand);
 
     &:hover {
-      background: var(--color-primary-light);
+      background: var(--brand-hover);
       color: white;
     }
   }
@@ -197,14 +197,14 @@ const copySummary = async () => {
   text-align: left;
   margin-top: 16px;
   padding: 12px;
-  background: var(--color-bg-sunken);
+  background: var(--surface-2);
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 
   summary {
     cursor: pointer;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
     user-select: none;
   }
 

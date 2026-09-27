@@ -569,7 +569,7 @@ const prodEnabledCount = computed(
 <style scoped lang="scss">
 .risk-page {
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .risk-main {
@@ -592,13 +592,13 @@ const prodEnabledCount = computed(
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .page-sub {
   margin: 0;
   font-size: 13px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .header-actions {
@@ -613,16 +613,16 @@ const prodEnabledCount = computed(
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 
   &:hover:not(:disabled) {
-    background: var(--color-fill-light);
-    color: var(--color-text-primary);
+    background: var(--surface-2);
+    color: var(--text-1);
   }
 
   &:disabled {
@@ -653,9 +653,9 @@ const prodEnabledCount = computed(
   gap: 8px;
   height: 28px;
   padding: 0 10px 0 8px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-fill-lighter);
+  background: var(--surface-2);
   position: relative;
   overflow: hidden;
 
@@ -667,24 +667,24 @@ const prodEnabledCount = computed(
     top: 0;
     bottom: 0;
     width: 2px;
-    background: var(--color-text-tertiary);
+    background: var(--text-3);
   }
 
   &.is-warn::before {
-    background: var(--color-warning);
+    background: var(--warning);
   }
 }
 
 .stat-label {
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .stat-value {
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 /* ===== 卡片 ===== */
@@ -696,9 +696,9 @@ const prodEnabledCount = computed(
 .policy-card {
   position: relative;
   padding: 16px 18px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 12px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   transition: border-color 0.15s, box-shadow 0.15s;
 
   /* 左侧风险色条：高危用 danger，其余用中性色 */
@@ -710,16 +710,16 @@ const prodEnabledCount = computed(
     bottom: 12px;
     width: 3px;
     border-radius: 0 3px 3px 0;
-    background: var(--color-border);
+    background: var(--border-2);
   }
 
   &.is-high-risk::before {
-    background: var(--color-danger);
+    background: var(--danger);
   }
 
   &.is-editing {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgb(from var(--color-primary) r g b / 0.08);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgb(from var(--brand) r g b / 0.08);
   }
 }
 
@@ -738,11 +738,11 @@ const prodEnabledCount = computed(
 
 .card-icon {
   margin-top: 2px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   flex-shrink: 0;
 
   .is-high-risk & {
-    color: var(--color-danger);
+    color: var(--danger);
   }
 }
 
@@ -750,13 +750,13 @@ const prodEnabledCount = computed(
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 .card-key {
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
 }
 
 .card-head-actions {
@@ -784,19 +784,19 @@ const prodEnabledCount = computed(
 }
 
 .btn-ghost {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 
   &:hover:not(:disabled) {
-    background: var(--color-fill-light);
-    color: var(--color-text-primary);
+    background: var(--surface-2);
+    color: var(--text-1);
   }
 }
 
 .btn-primary {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
+  border: 1px solid var(--brand);
+  background: var(--brand);
   color: #fff;
 
   &:hover:not(:disabled) {
@@ -807,7 +807,7 @@ const prodEnabledCount = computed(
 .card-desc {
   margin: 6px 0 12px 24px;
   font-size: 12px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 /* ===== 只读视图 ===== */
@@ -825,7 +825,7 @@ const prodEnabledCount = computed(
 
   dt {
     font-size: 11px;
-    color: var(--color-text-quaternary, var(--color-text-tertiary));
+    color: var(--text-3, var(--text-3));
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -837,18 +837,18 @@ const prodEnabledCount = computed(
     flex-wrap: wrap;
     gap: 5px;
     font-size: 13px;
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 
 .kv-sub {
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .kv-sep {
   font-size: 11px;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
 }
 
 .num {
@@ -864,18 +864,18 @@ const prodEnabledCount = computed(
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
 
   &.is-open {
-    color: var(--color-warning);
-    background: rgb(from var(--color-warning) r g b / 0.08);
-    border-color: rgb(from var(--color-warning) r g b / 0.25);
+    color: var(--warning);
+    background: rgb(from var(--warning) r g b / 0.08);
+    border-color: rgb(from var(--warning) r g b / 0.25);
   }
 
   &.is-guarded {
-    color: var(--color-success);
-    background: rgb(from var(--color-success) r g b / 0.08);
-    border-color: rgb(from var(--color-success) r g b / 0.25);
+    color: var(--success);
+    background: rgb(from var(--success) r g b / 0.08);
+    border-color: rgb(from var(--success) r g b / 0.25);
   }
 }
 
@@ -887,15 +887,15 @@ const prodEnabledCount = computed(
   font-size: 11px;
   font-family: var(--font-mono, ui-monospace, monospace);
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-fill-lighter);
-  color: var(--color-text-secondary);
+  border: 1px solid var(--border-1);
+  background: var(--surface-2);
+  color: var(--text-2);
 
   /* prod 单独标色：它是唯一「改错会出真事故」的环境 */
   &.is-prod {
-    color: var(--color-danger);
-    border-color: rgb(from var(--color-danger) r g b / 0.3);
-    background: rgb(from var(--color-danger) r g b / 0.07);
+    color: var(--danger);
+    border-color: rgb(from var(--danger) r g b / 0.3);
+    background: rgb(from var(--danger) r g b / 0.07);
   }
 }
 
@@ -908,9 +908,9 @@ const prodEnabledCount = computed(
 
 .form-group {
   padding: 12px 14px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
-  background: var(--color-fill-lighter);
+  background: var(--surface-2);
 
   legend {
     padding: 0 6px;
@@ -918,7 +918,7 @@ const prodEnabledCount = computed(
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-tertiary);
+    color: var(--text-3);
   }
 }
 
@@ -936,7 +936,7 @@ const prodEnabledCount = computed(
 
 .field-label {
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .control {
@@ -944,15 +944,15 @@ const prodEnabledCount = computed(
   padding: 0 8px;
   font-size: 13px;
   font-family: inherit;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  background: var(--surface-1);
+  color: var(--text-1);
 
   &:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgb(from var(--color-primary) r g b / 0.1);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgb(from var(--brand) r g b / 0.1);
   }
 
   &:disabled {
@@ -967,7 +967,7 @@ const prodEnabledCount = computed(
   gap: 8px;
   margin-bottom: 10px;
   font-size: 13px;
-  color: var(--color-text-primary);
+  color: var(--text-1);
   cursor: pointer;
 
   input {
@@ -982,7 +982,7 @@ const prodEnabledCount = computed(
   margin: 8px 0 0;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 
   &.inline {
     margin: 0;
@@ -1003,20 +1003,20 @@ const prodEnabledCount = computed(
   padding: 0 10px;
   font-size: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-1);
   border-radius: 6px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   cursor: pointer;
 
   &:has(input:checked) {
-    border-color: var(--color-primary);
-    background: rgb(from var(--color-primary) r g b / 0.06);
+    border-color: var(--brand);
+    background: rgb(from var(--brand) r g b / 0.06);
   }
 
   &.is-prod:has(input:checked) {
-    border-color: var(--color-danger);
-    background: rgb(from var(--color-danger) r g b / 0.07);
-    color: var(--color-danger);
+    border-color: var(--danger);
+    background: rgb(from var(--danger) r g b / 0.07);
+    color: var(--danger);
   }
 }
 
@@ -1027,8 +1027,8 @@ const prodEnabledCount = computed(
   gap: 4px;
   margin: 12px 0 0 24px;
   padding-top: 10px;
-  border-top: 1px solid var(--color-border-lighter, var(--color-border-light));
+  border-top: 1px solid var(--border-1, var(--border-1));
   font-size: 11px;
-  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  color: var(--text-3, var(--text-3));
 }
 </style>

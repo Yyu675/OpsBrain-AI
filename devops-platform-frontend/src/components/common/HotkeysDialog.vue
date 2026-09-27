@@ -83,7 +83,7 @@ const hotkeys = useActiveHotkeys()
 .dialog {
   width: 100%;
   max-width: 560px;
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -94,20 +94,20 @@ const hotkeys = useActiveHotkeys()
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-1);
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--color-primary);
+  color: var(--brand);
 
   h3 {
     margin: 0;
     font-size: var(--text-lg);
     font-weight: var(--weight-semibold);
-    color: var(--color-text-primary);
+    color: var(--text-1);
   }
 }
 
@@ -116,14 +116,14 @@ const hotkeys = useActiveHotkeys()
   height: 28px;
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 
-  &:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+  &:hover { background: var(--surface-hover); color: var(--text-1); }
 }
 
 .dialog-body {
@@ -132,7 +132,7 @@ const hotkeys = useActiveHotkeys()
 
 .hint {
   font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   margin-bottom: 12px;
 }
 
@@ -140,7 +140,7 @@ const hotkeys = useActiveHotkeys()
   margin: 0;
   padding: 16px 0;
   font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   text-align: center;
 }
 
@@ -161,7 +161,7 @@ const hotkeys = useActiveHotkeys()
   align-items: center;
   gap: 12px;
   padding: 6px 0;
-  border-bottom: 1px dashed var(--color-border-light);
+  border-bottom: 1px dashed var(--border-1);
 }
 
 .key-combo {
@@ -173,11 +173,11 @@ const hotkeys = useActiveHotkeys()
 kbd {
   display: inline-block;
   padding: 2px 6px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-bottom-width: 2px;
   border-radius: 4px;
-  background: var(--color-bg-sunken);
-  color: var(--color-text-primary);
+  background: var(--surface-2);
+  color: var(--text-1);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1;
@@ -185,7 +185,7 @@ kbd {
 
 .key-desc {
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
   text-align: right;
 }
 

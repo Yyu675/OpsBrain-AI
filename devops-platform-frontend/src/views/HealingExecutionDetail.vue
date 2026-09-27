@@ -115,7 +115,7 @@ onMounted(load)
 <template>
   <div class="healing-detail">
     <header class="page-header">
-      <el-button :icon="ArrowLeft" link @click="router.push('/self-healing/tasks')">返回自愈中心</el-button>
+      <el-button :icon="ArrowLeft" link @click="router.push('/disposal?tab=healing')">返回处置中心</el-button>
       <h1>执行台账 #{{ executionId }}</h1>
     </header>
 

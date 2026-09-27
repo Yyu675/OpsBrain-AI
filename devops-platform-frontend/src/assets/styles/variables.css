@@ -178,7 +178,7 @@
   color: var(--color-text-secondary);
 }
 
-/* Compact table density (toggle via SettingsDialog → compactTable)
+/* Compact table density (toggle via 设置页「常规」标签 → compactTable)
    工单列表已迁移到 el-table（方案A：支持列宽拖拉），其内部 DOM 是
    .el-table__cell 而非裸 th/td，故选择器需同时覆盖两种结构：
    前者用于 el-table，后者用于仍是手写 table 的其他页面 */

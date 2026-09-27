@@ -8,7 +8,6 @@
  * - `KnowledgeDetail`：「< 返回 | 运维知识库 > 分类 > 标题」——「返回」与层级链并列，语义重复
  * - `TicketDetail`：「< 返回工单列表 > TKT-xxx」——只有一级父节点
  * - `AlertDetail`：「< 告警事件 / ID」——分隔符用 `/` 而非 `>`
- * - `AiChatView`：仅一个箭头图标按钮，读 `?from=` 回跳
  * - `ActionItemBoard`：**完全没有返回**
  *
  * 且所有页面的链路都不从首页起——用户从书签直接打开详情页时，
@@ -93,7 +92,7 @@ const chain = computed<BreadcrumbItem[]>(() => [
   gap: 4px;
   min-width: 0;
   font-size: var(--text-sm, 13px);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   /* 窄屏时允许横向滚动，而非换行撑高页头或截断层级 */
   overflow-x: auto;
   scrollbar-width: none;
@@ -109,19 +108,19 @@ const chain = computed<BreadcrumbItem[]>(() => [
   gap: 4px;
   padding: 2px 4px;
   border-radius: var(--radius-sm, 4px);
-  color: var(--color-text-secondary, #606266);
+  color: var(--text-2, #606266);
   text-decoration: none;
   flex-shrink: 0;
   transition: color 0.15s ease, background 0.15s ease;
 }
 
 .bc-link:hover {
-  color: var(--color-primary, var(--brand));
-  background: var(--color-primary-lighter, var(--brand-subtle));
+  color: var(--brand, var(--brand));
+  background: var(--brand-subtle, var(--brand-subtle));
 }
 
 .bc-link:focus-visible {
-  outline: 2px solid var(--color-primary, var(--brand));
+  outline: 2px solid var(--brand, var(--brand));
   outline-offset: 1px;
 }
 
@@ -135,7 +134,7 @@ const chain = computed<BreadcrumbItem[]>(() => [
 
 /* 末级是当前页：加重字色以示"你在这里"，过长则省略 */
 .bc-item.current {
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
   font-weight: var(--weight-medium, 500);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -149,6 +148,6 @@ const chain = computed<BreadcrumbItem[]>(() => [
 
 .bc-sep {
   flex-shrink: 0;
-  color: var(--color-border, #d9dee7);
+  color: var(--border-2, #d9dee7);
 }
 </style>

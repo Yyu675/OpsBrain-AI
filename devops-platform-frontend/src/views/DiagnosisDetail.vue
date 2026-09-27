@@ -17,6 +17,11 @@
     </div>
 
     <template v-else>
+    <!-- MOCK 模式如实告知：语义检索是哈希假向量，知识证据恒 NO_DATA——
+         不标这句，「未启用」会被误读成「库里没有」（2026-09-25 实测踩过的坑） -->
+    <div v-if="aiMode === 'MOCK'" class="mock-banner">
+      当前为 MOCK 模式：语义检索使用假向量，知识证据不可用属预期。切 REAL 模式后重新诊断可见真实命中。
+    </div>
     <p v-if="session.summary" class="summary">{{ session.summary }}</p>
 
     <section class="evidence-section">
@@ -71,6 +76,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { notify, handleServerError } from '@/utils/notify'
 import {
+  citedChunkIds,
   fetchDiagnosisReplay,
   postHypothesisFeedback,
   type DiagnosisEvidenceView,
@@ -89,6 +95,7 @@ const session = ref<DiagnosisSessionView>({})
 const evidences = ref<DiagnosisEvidenceView[]>([])
 const hypotheses = ref<DiagnosisHypothesisView[]>([])
 const fbBusy = ref<Record<number, boolean>>({})
+const aiMode = ref<string | undefined>(undefined)
 
 const feedbackOptions: { key: HypothesisFeedback; label: string }[] = [
   { key: 'HELPFUL', label: '有帮助' },
@@ -107,7 +114,10 @@ function suffClass(suff: string): string {
 async function mark(h: DiagnosisHypothesisView, feedback: HypothesisFeedback) {
   fbBusy.value[h.id] = true
   try {
-    await postHypothesisFeedback(h.id, feedback)
+    // 始终带上本次诊断引用的知识切片 id（#6 飞轮双保险）：
+    // 证据载荷里有 chunkId 就以它为准，没有则传空数组，后端按
+    // 「字段缺失才兜底」的契约走 citation 反查，两路互不覆盖。
+    await postHypothesisFeedback(h.id, feedback, citedChunkIds(evidences.value))
     h.feedback = feedback
   } catch (e) {
     // 旧实现只有 try/finally：反馈 POST 失败成未捕获 rejection，
@@ -125,6 +135,7 @@ async function loadReplay() {
     session.value = replay.session
     evidences.value = replay.evidences
     hypotheses.value = replay.hypotheses
+    aiMode.value = replay.aiMode
     loadState.value = 'done'
   } catch (e) {
     // 旧实现 onMounted 裸 await：接口失败白屏 + 二次未捕获 rejection
@@ -146,6 +157,15 @@ void notify
 .suff-weak { background: #fff7e0; color: #ad6800; }
 .suff-bad { background: #ffe1e1; color: #a8071a; }
 .summary { background: #fafafa; padding: 12px; border-left: 3px solid #3b82f6; margin: 12px 0; }
+.mock-banner {
+  background: var(--warning-subtle, #fff7e0);
+  color: var(--warning, #ad6800);
+  border: 1px solid var(--border-1, #f5deb3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 12px 0;
+}
 .evidence-list, .hypo-list { list-style: none; padding: 0; display: grid; gap: 10px; }
 .evidence-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; }
 .ev-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
@@ -166,7 +186,7 @@ void notify
 .reasoning, .action { font-size: 13px; color: #475569; margin: 6px 0; }
 .evlink { font-family: monospace; font-size: 11px; color: #94a3b8; }
 .feedback-row { display: flex; gap: 8px; margin-top: 10px; }
-.fb-btn { border: 1px solid #dbe2ea; background: var(--color-surface, var(--surface-1)); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.fb-btn { border: 1px solid #dbe2ea; background: var(--surface-1, var(--surface-1)); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .fb-btn.active { border-color: #3b82f6; color: #1d4ed8; background: #eff6ff; }
 .fb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .empty-hint { color: #94a3b8; font-size: 13px; }

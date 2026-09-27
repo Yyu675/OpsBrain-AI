@@ -484,8 +484,12 @@ export function useTicketAnalysis(
     const prev = analysisFeedback.value
     analysisFeedback.value = helpful ? 'HELPFUL' : 'UNHELPFUL'
     try {
-      await submitAiAnalysisFeedback(aid, helpful)
-      notify.success(helpful ? '感谢反馈，已记录「有用」' : '已记录「没用」，我们会持续改进')
+      const boosted = await submitAiAnalysisFeedback(aid, helpful)
+      // 后端自取本分析 citations 回流了被引 chunk 的检索权重（飞轮闭环的可见证明）。
+      // 诊断假设反馈那条路没有知识引用可回填（诊断不消费知识库），
+      // 故知识回流只发生在「AI 分析」这条带 citations 的反馈点上。
+      const suffix = boosted > 0 ? `，已回流 ${boosted} 条知识权重` : ''
+      notify.success((helpful ? '感谢反馈，已记录「有用」' : '已记录「没用」，我们会持续改进') + suffix)
     } catch (e) {
       analysisFeedback.value = prev
       console.error('[useTicketAnalysis] 反馈提交失败', e)
@@ -545,7 +549,8 @@ export function useTicketAnalysis(
          * 它会永远停在 true：「停止生成」按钮一直显示、「重新分析」点不动，
          * 用户只能刷新整个工单详情页。
          *
-         * 与 ChatMode 是同一个缺陷，上一轮只修了那一处——这里是同类漏网。
+         * 与 KnowledgeSinkDrawer 是同一个缺陷——服务端关流不触发 onError，
+         * 缺了 onClose 兜底「生成中」状态永不复位。
          */
         onClose: () => {
           if (!analysisStreaming.value) return   // 已由 complete/error 正常收尾

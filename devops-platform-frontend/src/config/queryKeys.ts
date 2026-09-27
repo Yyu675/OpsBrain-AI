@@ -62,6 +62,8 @@ interface AlertListParams {
   size?: number
   status?: string
   level?: string
+  system?: string
+  observing?: boolean
 }
 
 export const alertKeys = {
@@ -70,6 +72,8 @@ export const alertKeys = {
   list: (params: AlertListParams) => [...alertKeys.lists(), params] as const,
   details: () => [...alertKeys.all, 'detail'] as const,
   detail: (id: string) => [...alertKeys.details(), id] as const,
+  /** 自愈观察窗统计（效能大盘 ObservationStatsPanel） */
+  observationStats: () => [...alertKeys.all, 'observation-stats'] as const,
 }
 
 interface KnowledgeListParams {

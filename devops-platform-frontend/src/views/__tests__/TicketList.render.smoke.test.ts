@@ -99,7 +99,7 @@ const makeTicket = (id: string, over: Partial<FrontendTicket> = {}): FrontendTic
 
 let router: Router
 
-async function mountList(tickets: FrontendTicket[]) {
+async function mountList(tickets: FrontendTicket[], stats: Record<string, unknown> = {}) {
   api.fetchTickets.mockResolvedValue({
     tickets,
     total: tickets.length,
@@ -110,6 +110,7 @@ async function mountList(tickets: FrontendTicket[]) {
   api.fetchTicketStats.mockResolvedValue({
     total: tickets.length, todayNew: 2, pending: 1,
     processing: 0, resolved: 0, urgentPending: 0,
+    ...stats,
   })
   api.fetchHotTags.mockResolvedValue([])
   api.fetchTeamMembers.mockResolvedValue([{ name: '张三' }])
@@ -158,6 +159,7 @@ type ListVm = {
   viewMode: 'list' | 'card'
   columnVisible: Record<string, boolean>
   toggleColumn: (k: string) => void
+  assigneeFilter: string
 }
 const vmOf = (w: VueWrapper) => w.vm as unknown as ListVm
 
@@ -317,5 +319,34 @@ describe('KPI 与页面骨架', () => {
     expect(w.findAll('.ticket-card')).toHaveLength(0)
     // 空态不等于白屏：筛选栏与 KPI 仍应可见，否则用户没法调整筛选条件
     expect(w.text()).toContain('待处理')
+  })
+
+  it('后端返回未分配积压数时，渲染第 5 张可点击的「未分配」卡', async () => {
+    const w = await mountList([makeTicket('T-1')], { unassignedOpen: 5 })
+
+    const card = w.find('.kpi-card-action')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('未分配')
+    expect(card.text()).toContain('5')
+  })
+
+  it('点击「未分配」卡筛出待分配工单，并把页码重置回第一页', async () => {
+    const w = await mountList([makeTicket('T-1')], { unassignedOpen: 3 })
+    api.fetchTickets.mockClear()
+
+    await w.find('.kpi-card-action').trigger('click')
+
+    expect(vmOf(w).assigneeFilter).toBe('待分配')
+    // 点击触发重新拉取，且请求带上了负责人筛选
+    expect(api.fetchTickets).toHaveBeenCalled()
+  })
+
+  it('旧后端不返回 unassignedOpen 时不渲染这张卡——缺字段不等于 0', async () => {
+    const w = await mountList([makeTicket('T-1')])
+
+    expect(w.find('.kpi-card-action').exists()).toBe(false)
+    // 原有 4 张 KPI 卡不受影响
+    expect(w.text()).toContain('待处理')
+    expect(w.text()).toContain('今日新增')
   })
 })

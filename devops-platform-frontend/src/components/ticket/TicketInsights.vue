@@ -138,47 +138,47 @@ const hasTrend = computed(() => !!props.trend && props.trend.days.length > 0)
 .insights-panel { display: flex; flex-direction: column; gap: 12px; }
 .insight-section { display: flex; flex-direction: column; gap: 6px; }
 .insight-header { display: flex; align-items: center; gap: 4px; font-size: 0.75rem; }
-.insight-label { font-weight: 500; color: var(--color-text-primary, var(--text-1)); }
+.insight-label { font-weight: 500; color: var(--text-1, var(--text-1)); }
 .insight-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 16px; height: 16px; padding: 0 4px;
   font-size: 0.625rem; font-weight: 600;
-  background: var(--color-primary-lighter, var(--brand-subtle)); color: var(--color-primary, var(--brand));
+  background: var(--brand-subtle, var(--brand-subtle)); color: var(--brand, var(--brand));
   border-radius: 8px;
 }
 /* 口径标注：说明趋势是全局而非本工单所属服务，避免用户误读 */
 .insight-scope {
   padding: 0 5px; height: 15px; line-height: 15px;
   font-size: 0.5625rem; font-weight: 500;
-  color: var(--color-text-tertiary, var(--text-3));
-  background: var(--color-bg-sunken, var(--surface-2));
+  color: var(--text-3, var(--text-3));
+  background: var(--surface-2, var(--surface-2));
   border-radius: 3px;
 }
-.insight-loading, .insight-empty { font-size: 0.6875rem; color: var(--color-text-tertiary, var(--text-3)); }
+.insight-loading, .insight-empty { font-size: 0.6875rem; color: var(--text-3, var(--text-3)); }
 .insight-list { display: flex; flex-direction: column; gap: 4px; }
 .insight-link {
   display: flex; align-items: center; gap: 4px;
-  font-size: 0.6875rem; color: var(--color-primary, var(--brand));
+  font-size: 0.6875rem; color: var(--brand, var(--brand));
   text-decoration: none; padding: 2px 0;
   border-radius: 3px; transition: background 0.15s;
 }
-.insight-link:hover { background: var(--color-primary-lighter, var(--brand-subtle)); }
+.insight-link:hover { background: var(--brand-subtle, var(--brand-subtle)); }
 .insight-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .insight-id { font-family: monospace; font-size: 0.625rem; opacity: 0.7; }
 
 .confidence-value { font-weight: 600; margin-left: auto; }
-.confidence-high { color: var(--state-success, var(--success)); }
-.confidence-mid { color: var(--state-warning, var(--warning)); }
-.confidence-low { color: var(--state-error, var(--danger)); }
+.confidence-high { color: var(--success, var(--success)); }
+.confidence-mid { color: var(--warning, var(--warning)); }
+.confidence-low { color: var(--danger, var(--danger)); }
 
 .confidence-bar {
   width: 100%; height: 3px; border-radius: 2px; overflow: hidden;
-  background: var(--color-bg-sunken, var(--surface-2));
+  background: var(--surface-2, var(--surface-2));
 }
 .confidence-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
-.confidence-fill.confidence-high { background: var(--state-success, var(--success)); }
-.confidence-fill.confidence-mid { background: var(--state-warning, var(--warning)); }
-.confidence-fill.confidence-low { background: var(--state-error, var(--danger)); }
+.confidence-fill.confidence-high { background: var(--success, var(--success)); }
+.confidence-fill.confidence-mid { background: var(--warning, var(--warning)); }
+.confidence-fill.confidence-low { background: var(--danger, var(--danger)); }
 
 /* 迷你趋势图例（图表本身关掉了图例，窄栏里会挤掉图形） */
 .trend-legend {
@@ -186,7 +186,7 @@ const hasTrend = computed(() => !!props.trend && props.trend.days.length > 0)
   gap: 12px;
   margin-top: 4px;
   font-size: 0.625rem;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
 }
 .legend-item { display: inline-flex; align-items: center; gap: 4px; }
 .legend-dot {

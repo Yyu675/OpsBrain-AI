@@ -7,7 +7,9 @@ import { test as setup, expect } from '@playwright/test'
 const AUTH_FILE = 'e2e/.auth/admin.json'
 
 setup('authenticate as admin', async ({ page }) => {
-  await page.goto('/login')
+  // 本应用挂载即建 SSE/WebSocket 长连接，'load' 事件可能一直不触发；
+  // 用 domcontentloaded——登录表单可交互即可，不等长连接
+  await page.goto('/login', { waitUntil: 'domcontentloaded' })
   await page.locator('input[placeholder="用户名"]').fill('admin')
   await page.locator('input[placeholder="密码"]').fill('admin123')
   await page.locator('button[type="submit"].login-btn').click()

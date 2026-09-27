@@ -1,597 +1,152 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { BookOpen, Zap, BarChart3, ArrowRight, Plus, Monitor, Lock } from 'lucide-vue-next'
-import heroImage from '@/assets/image_0_yi19x4.jpg'
-import SafeImage from '@/components/common/SafeImage.vue'
-import ApiErrorState from '@/components/common/ApiErrorState.vue'
-import { getDashboardOverview } from '@/api/dashboard'
+/**
+ * 首页（公开路由）——值班工作台的门面。
+ *
+ * ── 为什么是分发器而不是独立页面 ─────────────────────────────
+ * 2026-09-27 去营销化：原首页是营销落地页（hero 图、「免费试用」、
+ * 「加入数百家企业的选择」），与对内运维平台的定位不符。
+ * 现改为：
+ * - 登录用户：直接渲染值班工作台（Dashboard 组件：KPI / SLA 风险 /
+ *   实时告警流 / 趋势）。同一组件单一事实源，不复制、不另起看板；
+ * - 访客：只给一句话说明 + 登录入口 + 能力清单。不发任何受保护请求
+ *   （/dashboard/overview 受 SaInterceptor 保护，访客调用必 401 →
+ *   派发 auth:unauthorized → 访客被踢去登录页，公开首页形同虚设）。
+ */
+import { computed } from 'vue'
+import { LogIn } from 'lucide-vue-next'
+import Dashboard from '@/views/Dashboard.vue'
 import { useAppStore } from '@/stores/app'
 
-interface StatItem {
-  label: string
-  value: string
-}
+// keep-alive 按组件名匹配（App.vue include="Home"）——工作台状态随首页缓存
+defineOptions({ name: 'Home' })
 
 const app = useAppStore()
-
-/**
- * 访客态（未登录）不拉取统计。
- *
- * 首页是公开路由，但 /dashboard/overview 在 `/api/**` 受 SaInterceptor 保护。
- * 访客调用必然 401 → http 层派发 auth:unauthorized → 被踢回登录页，
- * 「访客默认看首页」的需求即失效。故此处显式跳过，改为提示登录后查看。
- */
 const isGuest = computed(() => !app.isAuthenticated)
 
-const loading = ref(false)
-const stats = ref<StatItem[]>([])
-const loadError = ref<unknown>(null)
-
-const reload = async () => {
-  if (isGuest.value) {
-    // 访客态：不发请求，也不算加载失败——它不是错误，是未登录
-    loading.value = false
-    loadError.value = null
-    stats.value = []
-    return
-  }
-  loading.value = true
-  loadError.value = null
-  try {
-    const data = await getDashboardOverview()
-    stats.value = [
-      { label: '智能问答', value: (data.totalQueries ?? 0).toLocaleString('en-US') },
-      { label: '工单总数', value: (data.totalTickets ?? 0).toLocaleString('en-US') },
-      { label: '缓存命中率', value: (data.cacheHitRate ?? 0).toFixed(1) + '%' },
-      { label: '平均成本', value: (data.avgCostRmb ?? 0).toFixed(4) + ' 元' },
-    ]
-  } catch (e) {
-    loadError.value = e
-    stats.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(reload)
-
-const features = [
-  {
-    icon: BookOpen,
-    title: '智能知识库',
-    description: '自动归类运维文档，AI 驱动语义检索，秒级定位排障方案'
-  },
-  {
-    icon: Zap,
-    title: '工单自动化',
-    description: '智能工单路由与分级，自动匹配处理人，SLA 实时监控预警'
-  },
-  {
-    icon: BarChart3,
-    title: '数据洞察',
-    description: '多维度运维数据分析，趋势预测与异常检测，驱动持续优化'
-  }
+/**
+ * 访客态能力清单。点进去会触发登录引导弹窗（路由守卫的既定流程）——
+ * 链接是诚实预告，不是死按钮。
+ */
+const capabilities = [
+  { name: '智能工单', desc: '告警自动建单、SLA 跟踪、闭环处置与复盘沉淀', path: '/tickets' },
+  { name: '告警事件', desc: 'Prometheus 告警接入、指纹去重、聚合降噪、自愈观察', path: '/alerts' },
+  { name: '知识库', desc: '结构化复盘沉淀、语义检索、处置方案复用', path: '/knowledge' },
+  { name: '监控中心', desc: '主机资源与抓取目标的实时态势与历史趋势', path: '/monitoring' },
 ]
 </script>
 
 <template>
-  <div class="home">
-    <!-- Hero Section -->
-    <section class="hero-section">
-      <div class="hero-container">
-        <div class="hero-content">
-          <h1 class="hero-title">企业级智能运维平台</h1>
-          <p class="hero-subtitle">
-            基于 LangChain4j 大模型，整合知识库管理与工单自动化，让运维排障效率提升 10 倍
-          </p>
-          <div class="hero-actions">
-            <RouterLink to="/knowledge" class="btn-primary">
-              开始使用
-              <ArrowRight :size="16" />
-            </RouterLink>
-            <RouterLink to="/tickets" class="btn-secondary">
-              创建工单
-              <Plus :size="16" />
-            </RouterLink>
-          </div>
-        </div>
+  <!-- 登录用户：值班工作台（原数据概览内容，2026-09-27 升格为首页） -->
+  <Dashboard v-if="!isGuest" />
 
-        <div class="hero-image">
-          <SafeImage
-            :src="heroImage"
-            alt="运维仪表盘预览"
-            class="hero-image-img"
-            eager
-            fallback-text="运维仪表盘预览"
-          />
-        </div>
-      </div>
+  <!-- 访客：一句话说明 + 登录入口 + 能力预告，不做营销话术 -->
+  <div v-else class="guest-home">
+    <section class="guest-hero">
+      <h1 class="guest-title">OpsBrain 智能运维平台</h1>
+      <p class="guest-sub">告警 → 工单 → 知识沉淀的一体化处置闭环</p>
+      <RouterLink to="/login" class="guest-login">
+        <LogIn :size="16" />
+        登录进入工作台
+      </RouterLink>
     </section>
 
-    <!-- Stats Bar -->
-    <!-- 访客态：不发请求，如实提示需登录，不冒充「暂无数据」（口径契约 6.38） -->
-    <section v-if="isGuest" class="stats-section">
-      <div class="stats-container">
-        <RouterLink to="/login" class="stats-guest">
-          <Lock :size="15" />
-          <span>登录后查看平台运行数据</span>
-          <ArrowRight :size="14" />
-        </RouterLink>
-      </div>
+    <section class="guest-caps" aria-label="平台能力">
+      <RouterLink
+        v-for="c in capabilities"
+        :key="c.name"
+        :to="c.path"
+        class="guest-cap"
+      >
+        <h2 class="guest-cap-name">{{ c.name }}</h2>
+        <p class="guest-cap-desc">{{ c.desc }}</p>
+      </RouterLink>
     </section>
-    <section v-else-if="loading" class="stats-section">
-      <div class="stats-container">
-        <div v-for="n in 4" :key="n" class="stat-item">
-          <div class="stat-loading" />
-        </div>
-      </div>
-    </section>
-    <section v-else-if="loadError" class="stats-section">
-      <div class="stats-container">
-        <ApiErrorState :error="loadError" compact retry-label="重新加载" @retry="reload" />
-      </div>
-    </section>
-    <section v-else-if="stats.length > 0" class="stats-section">
-      <div class="stats-container">
-        <div v-for="stat in stats" :key="stat.label" class="stat-item">
-          <div class="stat-value">{{ stat.value }}</div>
-          <div class="stat-label">{{ stat.label }}</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Features Grid -->
-    <section class="features-section">
-      <div class="features-container">
-        <div class="section-header">
-          <h2 class="section-title">核心能力</h2>
-          <p class="section-desc">端到端覆盖运维全链路，让每一次故障处理更智能、更高效</p>
-        </div>
-
-        <div class="features-grid">
-          <div v-for="feature in features" :key="feature.title" class="feature-card">
-            <div class="feature-icon">
-              <component :is="feature.icon" :size="22" />
-            </div>
-            <h3 class="feature-title">{{ feature.title }}</h3>
-            <p class="feature-desc">{{ feature.description }}</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- CTA Section -->
-    <section class="cta-section">
-      <div class="cta-container">
-        <h2 class="cta-title">准备好提升运维效率了吗？</h2>
-        <p class="cta-desc">加入数百家企业的选择，从智能知识库到工单自动化，一站式解决运维难题</p>
-        <RouterLink to="/dashboard" class="cta-btn">
-          免费试用
-          <ArrowRight :size="16" />
-        </RouterLink>
-      </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <div class="footer-container">
-        <div class="footer-logo">
-          <div class="footer-logo-icon">
-            <Monitor :size="16" />
-          </div>
-          <span class="footer-logo-text">DevOps智能运维</span>
-        </div>
-
-        <div class="footer-links">
-          <RouterLink to="/knowledge" class="footer-link">知识库</RouterLink>
-          <RouterLink to="/tickets" class="footer-link">智能工单</RouterLink>
-          <RouterLink to="/dashboard" class="footer-link">数据概览</RouterLink>
-          <RouterLink to="/help" class="footer-link">帮助中心</RouterLink>
-        </div>
-
-        <div class="footer-copyright">
-          © 2026 DevOps智能运维. All rights reserved.
-        </div>
-      </div>
-    </footer>
   </div>
 </template>
 
 <style scoped lang="scss">
-.home {
-  min-height: 100vh;
-  background: var(--color-surface);
-}
-
-/* Hero Section */
-.hero-section {
-  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
-  position: relative;
-  overflow: hidden;
-}
-
-.hero-container {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 80px 24px;
+.guest-home {
+  min-height: calc(100vh - 56px);
+  background: var(--surface-0);
   display: flex;
-  align-items: center;
-  gap: 64px;
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    padding: 60px 24px;
-    gap: 48px;
-    text-align: center;
-  }
-}
-
-.hero-content {
-  flex: 1;
-}
-
-.hero-title {
-  font-family: var(--font-display);
-  font-size: 3rem;
-  font-weight: var(--weight-bold);
-  color: var(--color-text-inverse);
-  margin: 0 0 24px 0;
-  line-height: var(--leading-tight);
-  letter-spacing: -0.025em;
-}
-
-.hero-subtitle {
-  font-size: var(--text-lg);
-  line-height: var(--leading-relaxed);
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 40px 0;
-  max-width: 560px;
-
-  @media (max-width: 1024px) {
-    margin-left: auto;
-    margin-right: auto;
-  }
-}
-
-.hero-actions {
-  display: flex;
-  gap: 16px;
-
-  @media (max-width: 1024px) {
-    justify-content: center;
-  }
-
-  @media (max-width: 640px) {
-    flex-direction: column;
-    align-items: center;
-  }
-}
-
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 32px;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  font-family: var(--font-body);
-  background: var(--color-surface, var(--surface-1));
-  color: var(--color-primary-dark);
-  cursor: pointer;
-  text-decoration: none;
-  transition: all 0.15s ease;
-
-  &:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  }
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 32px;
-  border: 2px solid white;
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  font-family: var(--font-body);
-  background: transparent;
-  color: white;
-  cursor: pointer;
-  text-decoration: none;
-  transition: all 0.15s ease;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-}
-
-.hero-image {
-  flex: 1;
-  max-width: 480px;
-  width: 100%;
-}
-
-.hero-image-img {
-  width: 100%;
-  height: auto;
-  display: block;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
-}
-
-/* Stats Section - No cards, plain layout */
-.stats-section {
-  background: var(--color-surface, var(--surface-1));
-  border-top: 1px solid var(--color-border-light);
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.stats-container {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 40px 24px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 32px;
-
-  @media (max-width: 768px) {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.stat-item {
-  text-align: center;
-}
-
-/* 访客态提示：横跨整行（容器是 4 列 grid），中性色不做成错误态 */
-.stats-guest {
-  grid-column: 1 / -1;
-  display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 18px;
-  margin: 0 auto;
-  border: 1px dashed var(--color-border, #d9dee7);
-  border-radius: var(--radius-md, 8px);
-  color: var(--color-text-tertiary, var(--text-3));
-  font-size: var(--text-sm);
-  text-decoration: none;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-
-  &:hover {
-    color: var(--color-primary);
-    border-color: var(--color-primary);
-    background: var(--color-primary-lighter, var(--brand-subtle));
-  }
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-6);
 }
 
-.stat-value {
-  font-family: var(--font-display);
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-bold);
-  color: var(--color-primary);
-  margin-bottom: 4px;
-  line-height: 1.2;
-}
-
-.stat-label {
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-}
-
-.stat-loading {
-  width: 80px;
-  height: 36px;
-  margin: 0 auto 4px;
-  background: linear-gradient(90deg, var(--color-bg-sunken, var(--surface-2)) 25%, var(--color-border-light, var(--border-1)) 50%, var(--color-bg-sunken, var(--surface-2)) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
-  border-radius: 6px;
-}
-
-@keyframes shimmer {
-  0% { background-position: 200% 0 }
-  100% { background-position: -200% 0 }
-}
-
-/* Features Section */
-.features-section {
-  padding: 80px 24px;
-  background: var(--color-bg);
-}
-
-.features-container {
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
-.section-header {
+.guest-hero {
   text-align: center;
-  margin-bottom: 56px;
 }
 
-.section-title {
-  font-family: var(--font-display);
+.guest-title {
+  margin: 0 0 var(--space-3);
   font-size: var(--text-3xl);
-  font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
-  margin: 0 0 16px 0;
+  font-weight: 700;
+  color: var(--text-1);
   letter-spacing: -0.02em;
 }
 
-.section-desc {
-  font-size: var(--text-base);
-  color: var(--color-text-secondary);
-  margin: 0;
+.guest-sub {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-lg);
+  color: var(--text-2);
 }
 
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 32px;
+.guest-login {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius);
+  background: var(--brand);
+  color: var(--brand-fg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--ease-out);
 
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
+  &:hover {
+    background: var(--brand-hover);
   }
 }
 
-.feature-card {
-  background: var(--color-surface, var(--surface-1));
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  padding: 24px;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.2s ease;
+.guest-caps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 960px;
+}
+
+.guest-cap {
+  padding: var(--space-5);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 
   &:hover {
-    box-shadow: var(--shadow-lg);
+    border-color: var(--brand);
     transform: translateY(-2px);
   }
 }
 
-.feature-icon {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 20px;
-  border-radius: 50%;
-  background: var(--color-primary-lighter);
-  color: var(--color-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.feature-title {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
-  margin: 0 0 12px 0;
-}
-
-.feature-desc {
-  font-size: var(--text-sm);
-  line-height: var(--leading-relaxed);
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-/* CTA Section */
-.cta-section {
-  padding: 80px 24px;
-  background: var(--color-surface, var(--surface-1));
-  text-align: center;
-}
-
-.cta-container {
-  max-width: 768px;
-  margin: 0 auto;
-}
-
-.cta-title {
-  font-family: var(--font-display);
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
-  margin: 0 0 16px 0;
-  letter-spacing: -0.02em;
-}
-
-.cta-desc {
+.guest-cap-name {
+  margin: 0 0 var(--space-2);
   font-size: var(--text-base);
-  color: var(--color-text-secondary);
-  margin: 0 0 40px 0;
-  max-width: 560px;
-  margin-left: auto;
-  margin-right: auto;
+  font-weight: 600;
+  color: var(--text-1);
 }
 
-.cta-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 32px;
-  border-radius: var(--radius-md);
+.guest-cap-desc {
+  margin: 0;
   font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  background: var(--color-primary);
-  color: white;
-  text-decoration: none;
-  transition: background 0.15s ease;
-
-  &:hover {
-    background: var(--color-primary-light);
-  }
-}
-
-/* Footer - Dark Theme */
-.footer {
-  padding: 48px 24px;
-  background: var(--color-primary-dark);
-}
-
-.footer-container {
-  max-width: 1280px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-
-  @media (max-width: 768px) {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-.footer-logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.footer-logo-icon {
-  width: 24px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.footer-logo-text {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: white;
-}
-
-.footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-}
-
-.footer-link {
-  font-size: var(--text-sm);
-  color: rgba(255, 255, 255, 0.6);
-  text-decoration: none;
-  transition: color 0.15s ease;
-
-  &:hover {
-    color: white;
-  }
-}
-
-.footer-copyright {
-  font-size: var(--text-xs);
-  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.6;
+  color: var(--text-2);
 }
 </style>

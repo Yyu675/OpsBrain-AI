@@ -64,7 +64,7 @@ defineProps<{
 }
 .activity-empty {
   text-align: center;
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   padding: 20px;
   font-size: 0.8125rem;
 }
@@ -82,10 +82,10 @@ defineProps<{
   margin-top: 6px;
   flex-shrink: 0;
 
-  &.activity-dot-success { background: var(--state-success, var(--success)); }
-  &.activity-dot-primary { background: var(--color-primary-light, var(--brand-hover)); }
-  &.activity-dot-gray { background: var(--color-text-tertiary, var(--text-3)); }
-  &.activity-dot-warning { background: var(--state-warning, var(--warning)); }
+  &.activity-dot-success { background: var(--success, var(--success)); }
+  &.activity-dot-primary { background: var(--brand-hover, var(--brand-hover)); }
+  &.activity-dot-gray { background: var(--text-3, var(--text-3)); }
+  &.activity-dot-warning { background: var(--warning, var(--warning)); }
 }
 
 .activity-body {
@@ -95,22 +95,22 @@ defineProps<{
 
 .activity-text {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-secondary, var(--text-2));
+  color: var(--text-2, var(--text-2));
   margin: 0;
 }
 
 .activity-detail {
   font-weight: var(--weight-medium, 500);
-  color: var(--color-text-primary, var(--text-1));
+  color: var(--text-1, var(--text-1));
 
   &.activity-detail-highlight {
-    color: var(--color-primary, var(--brand));
+    color: var(--brand, var(--brand));
   }
 }
 
 .activity-meta {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, var(--text-3));
+  color: var(--text-3, var(--text-3));
   margin: 2px 0 0 0;
 }
 </style>

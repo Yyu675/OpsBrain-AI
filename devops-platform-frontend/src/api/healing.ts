@@ -99,3 +99,30 @@ export async function listHealingExecutors(): Promise<string[]> {
   const payload = await http.get(`${API_ENDPOINTS.HEALING}/executors`)
   return unwrapBiz<string[]>(payload, '查询执行器清单失败')
 }
+
+/** 自愈执行台账聚合统计（/healing/stats） */
+export interface HealingStats {
+  total: number
+  succeeded: number
+  failed: number
+  rejected: number
+  pendingApproval: number
+  undone: number
+  undoFailed: number
+  autoTotal: number
+  autoClosedLoop: number
+  verifyPass: number
+  verifyFail: number
+  verifyUnknown: number
+  verifySkipped: number
+  verifyPending: number
+  /** 0~1 比率，展示时乘 100 */
+  autoClosedLoopRate?: number
+  verifyFailRate?: number
+  undoSuccessRate?: number
+}
+
+export async function getHealingStats(): Promise<HealingStats> {
+  const payload = await http.get(`${API_ENDPOINTS.HEALING}/stats`)
+  return unwrapBiz<HealingStats>(payload, '查询自愈统计失败')
+}

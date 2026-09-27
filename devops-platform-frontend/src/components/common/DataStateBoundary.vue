@@ -153,7 +153,7 @@ const emptyDesc = computed(() =>
 }
 
 .data-state__slot {
-  background: var(--color-surface);
+  background: var(--surface-1);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 8px 16px;
@@ -168,7 +168,7 @@ const emptyDesc = computed(() =>
   height: 2px;
   overflow: hidden;
   border-radius: 2px;
-  background: var(--color-bg-sunken, var(--surface-2));
+  background: var(--surface-2, var(--surface-2));
   z-index: 2;
 }
 
@@ -176,7 +176,7 @@ const emptyDesc = computed(() =>
   width: 40%;
   height: 100%;
   border-radius: 2px;
-  background: var(--color-primary, var(--brand));
+  background: var(--brand, var(--brand));
   animation: data-state-indeterminate 1.1s ease-in-out infinite;
 }
 
@@ -204,9 +204,9 @@ const emptyDesc = computed(() =>
   gap: 12px;
   margin-bottom: 12px;
   padding: 8px 14px;
-  border-radius: var(--radius-md, 8px);
-  background: var(--state-warning-bg, var(--warning-subtle));
-  color: var(--state-warning, var(--warning));
+  border-radius: var(--radius, 8px);
+  background: var(--warning-subtle, var(--warning-subtle));
+  color: var(--warning, var(--warning));
   font-size: var(--text-sm, 13px);
 }
 

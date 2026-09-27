@@ -77,8 +77,8 @@ const displayTitle = computed(() => props.title || friendly.value.title)
   gap: 8px;
   padding: 48px 24px;
   text-align: center;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, var(--border-1));
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: var(--radius-lg, 12px);
 }
 
@@ -109,13 +109,13 @@ const displayTitle = computed(() => props.title || friendly.value.title)
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--weight-semibold, 600);
-  color: var(--color-text-primary, #1e293b);
+  color: var(--text-1, #1e293b);
 }
 
 .api-error-detail {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-secondary, #64748b);
+  color: var(--text-2, #64748b);
   max-width: 480px;
   line-height: var(--leading-normal, 1.6);
   word-break: break-word;
@@ -124,17 +124,17 @@ const displayTitle = computed(() => props.title || friendly.value.title)
 .api-error-hint {
   margin: 0;
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-tertiary, #94a3b8);
+  color: var(--text-3, #94a3b8);
   max-width: 480px;
   line-height: var(--leading-normal, 1.6);
   padding: 6px 12px;
-  background: var(--color-bg-sunken, #f8fafc);
+  background: var(--surface-2, #f8fafc);
   border-radius: var(--radius-sm, 6px);
 }
 
 .hint-label {
   font-weight: var(--weight-medium, 500);
-  color: var(--color-text-secondary, #64748b);
+  color: var(--text-2, #64748b);
 }
 
 .api-error-actions {
@@ -148,17 +148,17 @@ const displayTitle = computed(() => props.title || friendly.value.title)
   align-items: center;
   gap: 6px;
   padding: 6px 16px;
-  border: 1px solid var(--color-primary, var(--brand));
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-surface, #fff);
-  color: var(--color-primary, var(--brand));
+  border: 1px solid var(--brand, var(--brand));
+  border-radius: var(--radius, 8px);
+  background: var(--surface-1, #fff);
+  color: var(--brand, var(--brand));
   font-size: var(--text-sm, 0.875rem);
   font-family: var(--font-body, inherit);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    background: var(--color-primary, var(--brand));
+    background: var(--brand, var(--brand));
     color: white;
   }
 }

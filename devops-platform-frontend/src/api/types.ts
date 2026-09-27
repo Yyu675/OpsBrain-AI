@@ -133,8 +133,8 @@ export interface KnowledgeDocListItem {
   createTime: string
   updateTime: string
   tags: string[]
-  /** L1.5 来源回链：源工单 ID，非工单沉淀为 null */
-  sourceTicketId: number | null
+  /** L1.5 来源回链：源工单字符串流水号（TKT-…），非工单沉淀为 null */
+  sourceTicketId: string | null
   /** 来源类型：TICKET / MANUAL / IMPORT / UPLOAD 等 */
   sourceType: string | null
   /** 所属知识库 ID（V2） */
@@ -164,8 +164,8 @@ export interface KnowledgeDocDetail {
   createTime: string
   updateTime: string
   tags: string[]
-  /** L1.5 来源回链：源工单 ID，非工单沉淀时为 null */
-  sourceTicketId: number | null
+  /** L1.5 来源回链：源工单字符串流水号，非工单沉淀时为 null */
+  sourceTicketId: string | null
   /** 来源类型：TICKET / MANUAL / IMPORT 等 */
   sourceType: string | null
   /** 是否可检索：status=PUBLISHED 且 index=INDEXED */
@@ -194,8 +194,8 @@ export interface KnowledgeDocCreateRequest {
   knowledgeSource?: string
   effectiveAt?: string
   expiredAt?: string
-  /** L1.5 来源回链：由工单沉淀时传源工单 ID */
-  sourceTicketId?: number
+  /** L1.5 来源回链：由工单沉淀时传源工单字符串流水号（TKT-…） */
+  sourceTicketId?: string
   /** 来源类型：TICKET / MANUAL / IMPORT 等 */
   sourceType?: string
   /** 所属知识库（V2）；不传落默认库 */
@@ -469,6 +469,8 @@ export type AlertStatus = 'FIRING' | 'ACKNOWLEDGED' | 'RESOLVED'
 export interface Alert {
   id: number
   source: string | null
+  /** 来源系统标识（V9：/webhook/{system} 路径注入，不可伪造；旧数据为 default） */
+  system?: string | null
   alertName: string | null
   level: string | null
   title: string | null
@@ -483,6 +485,8 @@ export interface Alert {
   acknowledgedAt: string | null
   resolvedAt: string | null
   ticketId: string | null
+  /** 读路径派生（FR-3.1）：处于自愈观察窗内——活跃+未建单+观察级+未超窗 */
+  observing?: boolean
   createTime: string | null
   updateTime: string | null
 }

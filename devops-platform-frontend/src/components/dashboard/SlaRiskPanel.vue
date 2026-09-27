@@ -215,13 +215,13 @@ onMounted(() => void load())
 }
 
 .header-icon {
-  color: var(--state-warning);
+  color: var(--warning);
 }
 
 .breached-badge {
   padding: 1px 7px;
   border-radius: 9px;
-  background: var(--state-error);
+  background: var(--danger);
   color: #fff;
   font-size: 11px;
   font-weight: var(--weight-semibold);
@@ -238,7 +238,7 @@ onMounted(() => void load())
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-sm);
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .window-tab {
@@ -246,16 +246,16 @@ onMounted(() => void load())
   border: none;
   border-radius: calc(var(--radius-sm) - 2px);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
 
-  &:hover { color: var(--color-text-secondary); }
+  &:hover { color: var(--text-2); }
 
   &.active {
-    background: var(--color-surface);
-    color: var(--color-primary);
+    background: var(--surface-1);
+    color: var(--brand);
     font-weight: var(--weight-medium);
   }
 }
@@ -264,14 +264,14 @@ onMounted(() => void load())
   display: inline-flex;
   align-items: center;
   padding: 4px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-tertiary);
+  background: var(--surface-1);
+  color: var(--text-3);
   cursor: pointer;
 
   &:disabled { cursor: not-allowed; opacity: 0.6; }
-  &:hover:not(:disabled) { color: var(--color-primary); border-color: var(--color-primary); }
+  &:hover:not(:disabled) { color: var(--brand); border-color: var(--brand); }
 }
 
 .spinning { animation: spin 1s linear infinite; }
@@ -284,7 +284,7 @@ onMounted(() => void load())
   gap: 8px;
   margin-bottom: 12px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--color-border-light, var(--color-border));
+  border-bottom: 1px solid var(--border-1, var(--border-2));
 }
 
 .fr-stat {
@@ -292,11 +292,11 @@ onMounted(() => void load())
   min-width: 84px;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
 .fr-stat--alert {
-  background: var(--color-danger-lighter, rgba(239, 68, 68, 0.08));
+  background: var(--danger-subtle);
 }
 
 .fr-stat-label {
@@ -304,7 +304,7 @@ onMounted(() => void load())
   align-items: center;
   gap: 3px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .fr-stat-value {
@@ -312,7 +312,7 @@ onMounted(() => void load())
   margin-top: 2px;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
+  color: var(--text-1);
 }
 
 /* ---------- 风险清单 ---------- */
@@ -333,12 +333,12 @@ onMounted(() => void load())
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   border-left: 3px solid transparent;
-  background: var(--color-bg);
+  background: var(--surface-0);
 }
 
-.risk-item--breached { border-left-color: var(--state-error); }
-.risk-item--warning { border-left-color: var(--state-warning); }
-.risk-item--normal { border-left-color: var(--color-border); }
+.risk-item--breached { border-left-color: var(--danger); }
+.risk-item--warning { border-left-color: var(--warning); }
+.risk-item--normal { border-left-color: var(--border-2); }
 
 .risk-main {
   min-width: 0;
@@ -352,16 +352,16 @@ onMounted(() => void load())
   white-space: nowrap;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-primary);
+  color: var(--text-1);
   text-decoration: none;
 
-  &:hover { color: var(--color-primary); }
+  &:hover { color: var(--brand); }
 }
 
 .risk-meta {
   margin-top: 2px;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 .risk-id { font-family: var(--font-mono, monospace); }
@@ -380,17 +380,17 @@ onMounted(() => void load())
   white-space: nowrap;
 }
 
-.risk-sla--breached { color: var(--state-error); }
-.risk-sla--warning { color: var(--state-warning); }
-.risk-sla--normal { color: var(--color-text-secondary); }
+.risk-sla--breached { color: var(--danger); }
+.risk-sla--warning { color: var(--warning); }
+.risk-sla--normal { color: var(--text-2); }
 
 .risk-truncated {
   margin: 10px 0 0;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
   text-align: center;
 
-  a { color: var(--color-primary); }
+  a { color: var(--brand); }
 }
 
 /* ---------- 骨架屏 ---------- */
@@ -403,7 +403,7 @@ onMounted(() => void load())
 .skeleton-row {
   height: 46px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--color-bg) 25%, var(--color-border) 50%, var(--color-bg) 75%);
+  background: linear-gradient(90deg, var(--surface-0) 25%, var(--border-2) 50%, var(--surface-0) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }

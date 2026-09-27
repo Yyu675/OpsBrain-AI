@@ -7,7 +7,7 @@
  * 安全措施：
  * - 白名单标签/属性
  * - 强制给 target="_blank" 的 a 标签补 rel="noopener noreferrer"（防 tabnabbing）
- * - 缓存渲染结果，避免每个 token 全量 parse（ChatMode/AIContextPanel 性能优化）
+ * - 缓存渲染结果，避免每个 token 全量 parse（SSE 流式渲染性能优化）
  */
 
 import { marked } from 'marked'

@@ -94,7 +94,7 @@ const go = (page: number) => emit('page-change', page)
 
 .pagination-info {
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-2);
 }
 
 .pagination-controls {
@@ -109,14 +109,14 @@ const go = (page: number) => emit('page-change', page)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text-1);
   cursor: pointer;
   transition: all 0.15s ease;
 
-  &:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
+  &:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
@@ -130,26 +130,26 @@ const go = (page: number) => emit('page-change', page)
   min-width: 32px;
   height: 32px;
   padding: 0 6px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   font-family: var(--font-body);
-  background: var(--color-surface);
-  color: var(--color-text-tertiary);
+  background: var(--surface-1);
+  color: var(--text-3);
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    background: var(--color-primary-lighter);
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-subtle);
   }
 
   &.active {
-    border-color: var(--color-primary);
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
+    border-color: var(--brand);
+    background: var(--brand);
+    color: var(--text-inverse);
   }
 }
 
@@ -157,7 +157,7 @@ const go = (page: number) => emit('page-change', page)
   display: flex;
   align-items: center;
   padding: 0 2px;
-  color: var(--color-text-tertiary);
+  color: var(--text-3);
 }
 
 @media (max-width: 640px) {

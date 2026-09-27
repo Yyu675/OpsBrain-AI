@@ -76,9 +76,9 @@ const props = withDefaults(defineProps<Props>(), {
 .sk-chart {
   background: linear-gradient(
     90deg,
-    var(--color-bg-sunken, var(--surface-2)) 25%,
-    var(--color-border-light, var(--border-1)) 50%,
-    var(--color-bg-sunken, var(--surface-2)) 75%
+    var(--surface-2, var(--surface-2)) 25%,
+    var(--border-1, var(--border-1)) 50%,
+    var(--surface-2, var(--surface-2)) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
@@ -111,8 +111,8 @@ const props = withDefaults(defineProps<Props>(), {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border-light, var(--border-1));
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--border-1, var(--border-1));
   border-radius: 10px;
 }
 
@@ -133,7 +133,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 .sk-detail-header {
   padding: 24px 0 16px;
-  border-bottom: 1px solid var(--color-border-light, var(--border-1));
+  border-bottom: 1px solid var(--border-1, var(--border-1));
   margin-bottom: 20px;
 }
 
