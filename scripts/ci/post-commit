@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Git post-commit 钩子：提交落到后端源码时自动上报变更事件
+#
+# 用途：本机没有真实 CI，提交就是最频繁的「变更」来源。挂上后每次
+#   涉及 src/main 的提交都会写一条 sys_change_event，诊断引擎据此能把
+#   「刚改过代码」列为证据（实测：一条变更让诊断从 INSUFFICIENT 升 WEAK）。
+#
+# 安装（仓库根目录）：
+#   cp scripts/ci/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit
+#
+# 卸载：删掉 .git/hooks/post-commit 即可。
+#
+# 失败静默：后端不在线/未登录失败都不会让 commit 失败（post-commit 本就
+#   无法阻断提交，脚本显式吞掉非零退出，避免污染 git 输出）。
+#
+# 配置（环境变量，缺省走本机联调默认值）：
+#   OPSBRAIN_BASE / OPSBRAIN_USER / OPSBRAIN_PASS —— 见 report-change.sh
+# =============================================================================
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$REPO_ROOT" || exit 0
+
+# 只关心后端源码/脚本/配置的提交；文档与前端改动不算「运维变更」
+CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || true)
+echo "$CHANGED" | grep -qE '^(src/main/|scripts/|monitoring/|docker-compose)' || exit 0
+
+SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+MSG=$(git log -1 --pretty=%s 2>/dev/null | cut -c1-120)
+
+SERVICE_NAME=opsbrain-ai \
+CHANGE_TYPE=commit \
+SUMMARY="commit $SHA $MSG" \
+SOURCE=git \
+EXTERNAL_ID="git-$SHA" \
+bash scripts/ci/report-change.sh >/dev/null 2>&1 || true

@@ -268,6 +268,12 @@ jobs:
       - name: 代码规范
         run: npm run lint
 
+      - name: CSS 令牌对账（门禁）
+        # 2026-09-27：「引用了但从未定义」的幽灵令牌曾真实存在（--color-danger 等
+        # 6 个）——var() 未定义时浏览器静默回退，样式坏了而无人知晓。
+        # 本步对账 var() 引用 vs 定义集合，幽灵令牌即红。
+        run: npm run audit:tokens
+
       - name: 单元测试
         run: npm run test
 
@@ -303,3 +309,109 @@ jobs:
         # 双维超 budget 即红，防体积静默回弹。口径=未压缩字节（与构建产物同源）。
         # 预算源 tools/audit/bundle_budget.json；抬预算用 --update + commit 写理由。
         run: node ../tools/audit/check_bundle_budget.js
+
+  e2e:
+    name: 端到端 · 关键链路冒烟（真实浏览器 + 真实后端）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # 2026-09-27：e2e（Playwright 42 例）从「本机手跑」转正为 CI 门禁。
+    # 用例自带 setup/teardown（E2E_PW_ 前缀标记清理），不污染共享库。
+    # 服务端口/口令与 backend 腿、application-dev.yml 同口径。
+    services:
+      postgres:
+        image: ankane/pgvector:v0.5.1
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops_password
+          POSTGRES_DB: devops_knowledge_db
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d devops_knowledge_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.0-alpine
+        ports:
+          - 26379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 初始化数据库 Schema
+        # 与 backend 腿同口径：V1 保底建账，后续 V{n} 由应用启动时 Flyway 自迁移
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f src/main/resources/db/migration/V1__baseline.sql
+
+      - name: Redis 密码配置
+        run: |
+          sudo apt-get install -y --no-install-recommends redis-tools >/dev/null 2>&1 || true
+          redis-cli -h localhost -p 26379 CONFIG SET requirepass devops_redis_pwd
+
+      - name: 后端打包（跳过测试——测试在 backend 腿已跑）
+        run: ./mvnw -B -ntp -DskipTests package
+
+      - name: 启动后端（dev + MOCK AI，不烧额度不依赖外网）
+        env:
+          AI_MODE: MOCK
+          SPRING_PROFILES_ACTIVE: dev
+        run: |
+          nohup java -jar target/*.jar > /tmp/e2e-backend.log 2>&1 &
+          for i in $(seq 1 40); do
+            sleep 3
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8088/ai/api/v1/auth/login" -X POST || true)
+            if [ "$code" != "000" ]; then echo "backend up after ~$((i*3))s (http=$code)"; exit 0; fi
+          done
+          echo "::error::后端 120s 未起来"; tail -80 /tmp/e2e-backend.log; exit 1
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: devops-platform-frontend/package-lock.json
+
+      - name: 前端依赖
+        working-directory: devops-platform-frontend
+        run: npm ci
+
+      - name: 安装 Playwright Chromium
+        working-directory: devops-platform-frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: 启动前端 dev server（/ai 代理到后端 8088）
+        working-directory: devops-platform-frontend
+        run: |
+          nohup npx vite --port 5173 > /tmp/e2e-vite.log 2>&1 &
+          for i in $(seq 1 20); do
+            sleep 2
+            if curl -sf -o /dev/null http://localhost:5173/; then echo "vite up after ~$((i*2))s"; exit 0; fi
+          done
+          echo "::error::vite 40s 未起来"; tail -40 /tmp/e2e-vite.log; exit 1
+
+      - name: 跑 e2e（登录 + 导航 + 重定向 + 搜索 + 工单流）
+        working-directory: devops-platform-frontend
+        run: npx playwright test
+
+      - name: 失败时上传 Playwright 报告取证
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: devops-platform-frontend/playwright-report/
+          retention-days: 7

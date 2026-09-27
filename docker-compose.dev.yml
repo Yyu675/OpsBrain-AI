@@ -181,6 +181,9 @@ services:
     depends_on:
       - node-exporter
       - alertmanager
+    # opsbrain job 抓宿主机的后端（host.docker.internal），Linux Docker 需要显式解析
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # ------------------- L2 监控栈：Alertmanager（告警路由 → OpsBrain Webhook）-------------------
   # 把 Prometheus 触发的告警按 alertmanager.yml 路由，webhook_config 指向 OpsBrain 后端。
@@ -201,6 +204,38 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # ------------------- S1-3 日志栈（可选，profile=logs）：Loki + Promtail -------------------
+  # 默认不启动：诊断的日志证据在缺位时如实上报 UNAVAILABLE（307 条证据行的现状），
+  # 而不是伪装成「查了但没有」。要启用：
+  #   1) docker compose -f docker-compose.dev.yml --profile logs up -d loki promtail
+  #   2) .env 加 LOKI_ENABLED=true，重启后端
+  # Promtail 经 docker socket 抓取本机全部容器 stdout/stderr，容器名作 app 标签——
+  # 与 LokiLogQueryClient 的流选择器 {app=~"<service>.*"} 对齐。
+  loki:
+    image: grafana/loki:2.9.11
+    container_name: devops-loki
+    restart: unless-stopped
+    profiles: ["logs"]
+    ports:
+      - "23100:3100"
+    # 单节点文件系统存储，仅开发用；生产请换对象存储 + 分布式部署
+    command: ["-config.file=/etc/loki/local-config.yaml", "-auth.enabled=false"]
+    volumes:
+      - devops_loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:2.9.11
+    container_name: devops-promtail
+    restart: unless-stopped
+    profiles: ["logs"]
+    volumes:
+      # Docker Desktop（WSL2）同样提供该 socket——Linux 容器内挂载即可
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/promtail.yml:/etc/promtail/config.yml:ro
+    command: ["-config.file=/etc/promtail/config.yml"]
+    depends_on:
+      - loki
+
 # 具名数据卷：容器删除后数据仍保留，除非显式 down -v
 volumes:
   devops_pg_data:
@@ -211,3 +246,5 @@ volumes:
     name: devops_minio_data
   devops_prometheus_data:
     name: devops_prometheus_data
+  devops_loki_data:
+    name: devops_loki_data
