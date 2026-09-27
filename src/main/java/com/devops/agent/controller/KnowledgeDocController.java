@@ -6,6 +6,7 @@ import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.controller.dto.KnowledgeDocDto;
 import com.devops.agent.domain.rag.KnowledgeDoc;
 import com.devops.agent.domain.rag.KnowledgeDocService;
+import com.devops.agent.domain.biz.repository.KnowledgeBoostRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,13 +35,17 @@ public class KnowledgeDocController {
     private final com.devops.agent.domain.rag.KnowledgeUploadService uploadService;
     /** 知识库写权限守卫（F-5）：可逆操作 ADMIN+OPS，不可逆操作仅 ADMIN */
     private final KnowledgeWriteGuard writeGuard;
+    /** 引用反馈回流（P0）：citation → chunk 反查 + boost 落账 */
+    private final KnowledgeBoostRepository boostRepository;
 
     public KnowledgeDocController(KnowledgeDocService docService,
                                   com.devops.agent.domain.rag.KnowledgeUploadService uploadService,
-                                  KnowledgeWriteGuard writeGuard) {
+                                  KnowledgeWriteGuard writeGuard,
+                                  KnowledgeBoostRepository boostRepository) {
         this.docService = docService;
         this.uploadService = uploadService;
         this.writeGuard = writeGuard;
+        this.boostRepository = boostRepository;
     }
 
     // ==================== 创建 / 更新 ====================
@@ -452,14 +457,73 @@ public class KnowledgeDocController {
 
     /**
      * 按源工单反查已沉淀的文档（L1.5 来源回链）
-     * <p>供工单详情页展示「已沉淀为知识」徽标与跳转入口。</p>
+     * <p>供工单详情页展示「已沉淀为知识」徽标与跳转入口。
+     * 工单号是字符串流水号（TKT-…），路径变量不能按 Long 解析。</p>
      */
     @GetMapping("/by-source-ticket/{ticketId}")
-    public ApiResponse<Object> bySourceTicket(@PathVariable Long ticketId) {
+    public ApiResponse<Object> bySourceTicket(@PathVariable String ticketId) {
         List<KnowledgeDoc> docs = docService.findBySourceTicketId(ticketId);
         List<KnowledgeDocDto.ListItem> items = docs.stream()
                 .map(KnowledgeDocDto.ListItem::from).toList();
         return ApiResponse.success(items);
+    }
+
+    /**
+     * 聊天答案引用反馈（P0 2026-09-24）：用户给带引用的答案点「有用/没用」时，
+     * 后端把引用 citation 反查成被引 chunk 并回流检索权重（boost）。
+     * <p>这是反馈回流「后端自取引用」的第二个落点（第一个在工单 AI 分析反馈）——
+     * 前端只传用户在界面上看到的 citation 字符串，不传 chunk id（它也不知道）。</p>
+     * <p>不套知识库写权限（writeGuard）：评价答案是任何登录用户的阅读反馈，
+     * 不是内容编辑；boost 是检索权重遥测，不是知识内容。</p>
+     */
+    @PostMapping("/feedback/citations")
+    public ApiResponse<Map<String, Object>> citationsFeedback(@RequestBody CitationsFeedbackRequest req) {
+        String verdict = normalizeCitationVerdict(req.verdict());
+        if (verdict == null) {
+            return ApiResponse.error(ApiCode.BAD_REQUEST, "verdict 必须是 HELPFUL / WRONG / UNHELPFUL 之一");
+        }
+        List<String> citations = req.citations() == null ? List.of() : req.citations();
+        int boosted = 0;
+        for (Long chunkId : boostRepository.resolveChunkIds(citations)) {
+            boostRepository.recordFeedback(chunkId, verdict);
+            boosted++;
+        }
+        return ApiResponse.success(Map.of("boosted", boosted));
+    }
+
+    /** 请求体（record 字段即 JSON 键名，零转换）。 */
+    public record CitationsFeedbackRequest(List<String> citations, String verdict) {}
+
+    private static String normalizeCitationVerdict(String v) {
+        if (v == null) return null;
+        String upper = v.trim().toUpperCase();
+        return switch (upper) {
+            case "HELPFUL", "WRONG", "UNHELPFUL" -> upper;
+            default -> null;
+        };
+    }
+
+    /**
+     * 按源工单聚合反馈计数（「已沉淀为知识」徽标旁展示命中/反馈数）。
+     * <p>返回该工单沉淀的每篇文档：{docId, title, helpfulCount, wrongCount}——
+     * doc → 其全部 chunk 的 boost 票数之和；无 boost 记录时两计数为 0。</p>
+     */
+    @GetMapping("/by-source-ticket/{ticketId}/feedback-stats")
+    public ApiResponse<List<KnowledgeDocService.FeedbackStat>> feedbackStatsBySourceTicket(
+            @PathVariable String ticketId) {
+        return ApiResponse.success(docService.feedbackStatsBySourceTicket(ticketId));
+    }
+
+    /**
+     * 文档级反馈健康度（效能大盘的知识治理出口）。
+     * <p>按净反馈（点踩 - 点赞）降序，最该复核的文档排最前；
+     * 前端据此把「负资产文档」浮出来。</p>
+     *
+     * @return [{docId, title, helpful, wrong, net}]，仅含有过反馈的文档
+     */
+    @GetMapping("/health")
+    public ApiResponse<List<Map<String, Object>>> docHealth() {
+        return ApiResponse.success(boostRepository.docHealthReport());
     }
 
     /**

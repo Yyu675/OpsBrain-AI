@@ -67,6 +67,29 @@ class DiagnosisControllerTest {
     }
 
     @Test
+    @DisplayName("传入告警去重键（工单 source_trace_id）时桥接到该告警的诊断会话")
+    void dedupKeyResolvesToDiagnosisTrace() {
+        String dedupKey = "3600dfab9a6c";
+        when(sessionRepository.findByTraceId(dedupKey)).thenReturn(Map.of());
+        when(sessionRepository.findTraceIdByAlertDedupKey(dedupKey)).thenReturn("diag-trace-1");
+        when(sessionRepository.findByTraceId("diag-trace-1")).thenReturn(Map.of(
+                "trace_id", "diag-trace-1", "sufficiency", "WEAK"));
+        when(evidenceRepository.findByTraceId("diag-trace-1")).thenReturn(List.of(
+                Map.of("id", 3L, "evidence_type", "knowledge")));
+        when(hypothesisRepository.findBySessionTraceId("diag-trace-1")).thenReturn(List.of(
+                Map.of("rank", 1, "statement", "连接池耗尽")));
+
+        ApiResponse<Map<String, Object>> resp = controller.detail(dedupKey);
+        Map<String, Object> body = resp.getData();
+
+        // 回放用的是诊断自己的 traceId，而不是工单带来的去重键
+        assertThat(body.get("traceId")).isEqualTo("diag-trace-1");
+        assertThat(((Map<?, ?>) body.get("session")).get("sufficiency")).isEqualTo("WEAK");
+        assertThat(((List<?>) body.get("evidences"))).hasSize(1);
+        assertThat(((List<?>) body.get("hypotheses"))).hasSize(1);
+    }
+
+    @Test
     @DisplayName("2-3.5 反馈入口：合法判定回落假设 + 按 chunkIds 入库知识 boost")
     void feedbackEntryMarksAndBoosts() {
         when(hypothesisRepository.updateFeedback(42L, "HELPFUL")).thenReturn(1);
@@ -90,6 +113,29 @@ class DiagnosisControllerTest {
         ApiResponse<Map<String, Object>> bad = controller.feedback(
                 new DiagnosisController.FeedbackRequest(1L, "helpful-ish", null));
         assertThat(bad.getCode()).isEqualTo(400);
+    }
+
+    @Test
+    @DisplayName("2-3.5 反馈回流：chunkIds 缺失才走证据反查兜底，空数组是「本次无引用」不再兜底")
+    void missingChunkIdsFallsBackButEmptyListDoesNot() {
+        when(hypothesisRepository.updateFeedback(42L, "WRONG")).thenReturn(1);
+        when(hypothesisRepository.findEvidenceIdsById(42L)).thenReturn(List.of(5L));
+        when(evidenceRepository.findKnowledgeSourceRefs(List.of(5L)))
+                .thenReturn(List.of("【来源：手册.md - 章节】"));
+        when(knowledgeBoostRepository.resolveChunkIds(any())).thenReturn(java.util.Set.of(11L));
+
+        // 字段缺失（旧客户端/未升级前端）：反查兜底，回流照做
+        ApiResponse<Map<String, Object>> fallback = controller.feedback(
+                new DiagnosisController.FeedbackRequest(42L, "wrong", null));
+        assertThat(fallback.getCode()).isZero();
+        assertThat(fallback.getData().get("knowledgeBoosted")).isEqualTo(1);
+        verify(knowledgeBoostRepository).recordFeedback(11L, "WRONG");
+
+        // 空数组（前端明确说本次没有可引用切片）：不反查、不回流
+        ApiResponse<Map<String, Object>> explicit = controller.feedback(
+                new DiagnosisController.FeedbackRequest(42L, "wrong", List.of()));
+        assertThat(explicit.getData().get("knowledgeBoosted")).isEqualTo(0);
+        verify(knowledgeBoostRepository, times(1)).recordFeedback(anyLong(), anyString());
     }
 
 }

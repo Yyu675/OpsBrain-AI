@@ -138,6 +138,28 @@ public class DiagnosisSessionRepository {
         return rows.isEmpty() ? Map.of() : rows.get(0);
     }
 
+    /**
+     * 用告警去重键反查诊断会话的真实 traceId。
+     * <p>
+     * 告警自动建单把 {@code dedup_key} 写进了工单的 {@code source_trace_id}，
+     * 而诊断会话用的是自己生成的 traceId，两者不是同一个值——按工单上的号
+     * 直接回放永远是空的。这里经告警表桥接：去重键 → 告警 → 最新一次诊断。
+     * 同一去重键可能对应多次发生（恢复后再发），取最新的一次。
+     * </p>
+     *
+     * @return 诊断 traceId；该告警没有诊断会话时返回 null
+     */
+    public String findTraceIdByAlertDedupKey(String dedupKey) {
+        String sql = """
+                SELECT s.trace_id FROM sys_diagnosis_session s
+                JOIN sys_alert a ON a.id = s.alert_id
+                WHERE a.dedup_key = ?
+                ORDER BY s.id DESC LIMIT 1
+                """;
+        List<String> rows = jdbcTemplate.queryForList(sql, String.class, dedupKey);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
     /** 供诊断详情 API 汇报：按 alert_id 取活动会话。 */
     public Map<String, Object> findByAlertId(Long alertId) {
         String sql = "SELECT id, trace_id, alert_id, ticket_id, service, status, sufficiency, summary, created_at, updated_at FROM sys_diagnosis_session WHERE alert_id = ?";

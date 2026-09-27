@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -46,6 +47,7 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
     private final TicketService ticketService;
+    private final com.devops.agent.application.runtime.EffectivenessSnapshotScheduler snapshotScheduler;
 
     /** 趋势窗口天数上下界：<1 会让 SQL 区间为空，过大会一次拉爆并让折线密不可读 */
     private static final int MIN_TREND_DAYS = 1;
@@ -106,6 +108,19 @@ public class DashboardController {
         log.info("📊 [Dashboard] 请求诊断区看板 | days={}", days);
         // 夹紧下沉在实现层（单点口径，不外散到端点）
         return ApiResponse.success(dashboardService.getDiagnosisBoard(days));
+    }
+
+    /**
+     * 效能指标趋势（快照表读数，效能大盘趋势图用）。
+     *
+     * <p>快照按天落一行（EffectivenessSnapshotScheduler，启动即补当天），
+     * 本端点只读快照不回算——趋势页要的是「当时的水位」，不是每次重算的近似。</p>
+     */
+    @GetMapping("/effectiveness/trend")
+    public ApiResponse<List<Map<String, Object>>> effectivenessTrend(
+            @RequestParam(defaultValue = "30") int days) {
+        int safeDays = Math.min(Math.max(1, days), 90);
+        return ApiResponse.success(snapshotScheduler.trend(safeDays));
     }
 
     @GetMapping("/trends")

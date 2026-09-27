@@ -13,6 +13,12 @@
 # severity 分级参照蓝图 §二：
 #   P0/P1 高危 → 人机协同（HITL），自动建单 + 强提醒
 #   P2/P3 中低危 → 自动建单 + 观察
+#
+# 【规则写作约定】（2026-09-25 治理约定）
+# 新增告警规则时，同步在知识库沉淀对应手册，且手册标题带上本规则的
+# alertname（如「内存使用率持续升高（HighMemoryUsage）处置手册」）。
+# 原因：诊断的知识检索以「告警名+描述」为查询锚点，手册标题带告警名时
+# 实测命中率显著更高；规则没有手册=这条告警的诊断永远接不到知识。
 # =====================================================================
 
 groups:
@@ -221,3 +227,21 @@ groups:
         annotations:
           summary: "HTTP 5xx 错误率 >2%(5 分钟窗口,持续 10 分钟)"
           description: "按 uri/status 标签拆;若集中在单一端点查该链路依赖(渠道健康 /ai-model 可指认 chat vs embedding),若均匀抬头查 GC/连接池。"
+
+  - name: opsbrain-pipeline-watchdog
+    rules:
+      # ---- 管道心跳（FR-1.6）：恒真告警，Prometheus 每次评估都触发 ----
+      # 它活着只证明一件事：Prometheus 规则评估 → Alertmanager 路由 → OpsBrain webhook
+      # 这条管道在动。后端 PipelineHeartbeatScheduler 盯它的 last_occurred_at，
+      # 超时未到即上报「管道静默」元告警（critical→P0 建单强提醒）。
+      # severity=info → P4：走分级建单门槛，不产生工单，只在告警表上持续跳动。
+      - alert: OpsBrainPipelineWatchdog
+        expr: vector(1)
+        for: 0s
+        labels:
+          severity: info           # → P4，只统计不建单
+          service: monitoring-pipeline
+          module: OTHER
+        annotations:
+          summary: "监控管道心跳"
+          description: "恒真告警：存在即证明 Prometheus→Alertmanager→OpsBrain 管道存活。它消失才是故障信号。"

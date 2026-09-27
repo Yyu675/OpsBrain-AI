@@ -179,4 +179,53 @@ public class LokiLogQueryClient implements LogQueryClient {
     private static String escapeLogQL(String kw) {
         return kw.replace("\\", "\\\\").replace("\"", "\\\"");
     }
+
+    /**
+     * 最新一条日志的时间戳（日志管道心跳探针）。
+     * <p>
+     * 与告警管道的 OpsBrainPipelineWatchdog 同思路：查全流最新一行的时间，
+     * 停滞超阈值就是「Promtail → Loki」采集管道断了。Promtail 抓的容器 stdout
+     * 是持续在写的（PG checkpoint、Prometheus 自监控等），无新行 = 采集失效。
+     * </p>
+     *
+     * @return 最新日志行时间；未启用/查询失败/无数据时返回 empty（由调用方按「未知」处理）
+     */
+    public java.util.Optional<Instant> freshestLogAt() {
+        if (!enabled) {
+            return java.util.Optional.empty();
+        }
+        String url = baseUrl + "/loki/api/v1/query_range"
+                + "?query=" + URLEncoder.encode("{app=~\".+\"}", StandardCharsets.UTF_8)
+                + "&limit=1&direction=backward"
+                + "&end=" + Instant.now().toEpochMilli() * 1_000_000L;
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(timeout)
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() / 100 != 2) {
+                log.warn("[Loki] 心跳探测响应 {} | 按「未知」处理", resp.statusCode());
+                return java.util.Optional.empty();
+            }
+            JsonNode result = mapper.readTree(resp.body()).path("data").path("result");
+            Instant latest = null;
+            for (JsonNode stream : result) {
+                JsonNode values = stream.path("values");
+                if (values.isArray() && !values.isEmpty()) {
+                    JsonNode last = values.get(values.size() - 1);
+                    long tsNanos = Long.parseLong(last.get(0).asText());
+                    Instant t = Instant.ofEpochMilli(tsNanos / 1_000_000);
+                    if (latest == null || t.isAfter(latest)) {
+                        latest = t;
+                    }
+                }
+            }
+            return java.util.Optional.ofNullable(latest);
+        } catch (Exception e) {
+            log.warn("[Loki] 心跳探测失败（按「未知」处理，不反噬告警链） | {}", e.getMessage());
+            return java.util.Optional.empty();
+        }
+    }
 }

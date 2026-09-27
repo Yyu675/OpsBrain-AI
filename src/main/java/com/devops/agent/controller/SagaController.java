@@ -62,7 +62,7 @@ public class SagaController {
      * 包含三类：PARTIAL_SUCCESS（半残）、COMPENSATION_FAILED（补偿失败）、
      * MANUAL_INTERVENTION_REQUIRED（已标记需介入）。
      * </p>
-     */
+
     @GetMapping("/attention")
     public ApiResponse<Map<String, Object>> listNeedingAttention(
             @RequestParam(defaultValue = "50") int limit) {

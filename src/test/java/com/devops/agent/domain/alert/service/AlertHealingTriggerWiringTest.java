@@ -68,6 +68,7 @@ class AlertHealingTriggerWiringTest {
         healingAutoTrigger = mock(HealingAutoTrigger.class);
         when(diagnosisOrchestrator.submit(anyLong(), any(), anyString())).thenReturn("trace-diag-1");
         service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
+                new com.devops.agent.domain.alert.AlertmanagerSourceAdapter(),
                 diagnosisOrchestrator);
 
         // @Value 字段在非 Spring 环境不会注入，显式设成与生产默认值一致

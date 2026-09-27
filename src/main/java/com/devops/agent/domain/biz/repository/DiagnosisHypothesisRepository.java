@@ -77,6 +77,37 @@ public class DiagnosisHypothesisRepository {
         return jdbcTemplate.update(sql, feedback, id);
     }
 
+    /** 按 id 取假设的证据引用（feedback 回流时反查被引知识证据用）。 */
+    public List<Long> findEvidenceIdsById(long hypothesisId) {
+        String sql = "SELECT evidence_ids FROM sys_diagnosis_hypothesis WHERE id = ?";
+        List<String> rows = jdbcTemplate.queryForList(sql, String.class, hypothesisId);
+        if (rows.isEmpty() || rows.get(0) == null || rows.get(0).isBlank()) {
+            return List.of();
+        }
+        return parseIds(rows.get(0));
+    }
+
+    /** JSON 数组原文（"[1,2,3]"）→ Long 列表；解析失败返回空列表（不抛——回流兜底方向）。 */
+    private static List<Long> parseIds(String json) {
+        try {
+            String s = json.trim();
+            if (!s.startsWith("[") || !s.endsWith("]")) {
+                return List.of();
+            }
+            String body = s.substring(1, s.length() - 1).trim();
+            if (body.isEmpty()) {
+                return List.of();
+            }
+            List<Long> out = new java.util.ArrayList<>();
+            for (String part : body.split(",")) {
+                out.add(Long.parseLong(part.trim()));
+            }
+            return out;
+        } catch (NumberFormatException e) {
+            return List.of();
+        }
+    }
+
     /** 观测性的计数读面（监控健康度用，不做渲染别名层）。 */
     public long countBySession(String sessionTraceId) {
         return jdbcTemplate.queryForObject(

@@ -128,6 +128,10 @@ class KnowledgeDocControllerWebTest {
     @MockitoBean
     private com.devops.agent.domain.rag.KnowledgeUploadService uploadService;
 
+    /** P0：引用反馈回流端点的依赖，切片内不加载必须 mock。 */
+    @MockitoBean
+    private com.devops.agent.domain.biz.repository.KnowledgeBoostRepository boostRepository;
+
     @BeforeEach
     void setUpMockMvc() {
         mockMvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -581,13 +585,43 @@ class KnowledgeDocControllerWebTest {
         @Test
         @DisplayName("按源工单反查：无沉淀时返回空数组而非 null")
         void bySourceTicketReturnsEmptyArray() throws Exception {
-            when(docService.findBySourceTicketId(123L)).thenReturn(List.of());
+            when(docService.findBySourceTicketId("123")).thenReturn(List.of());
 
             mockMvc.perform(get("/api/v1/knowledge/docs/by-source-ticket/123"))
                     .andExpect(status().isOk())
                     // 工单详情页据此渲染「已沉淀为知识」徽标，null 会让前端判空逻辑各写各的
                     .andExpect(jsonPath("$.data").isArray())
                     .andExpect(jsonPath("$.data").isEmpty());
+        }
+
+        @Test
+        @DisplayName("引用反馈：citation 反查 chunk 后回流 boost（前端只传界面看到的引用串）")
+        void citationsFeedbackResolvesAndBoosts() throws Exception {
+            when(boostRepository.resolveChunkIds(any())).thenReturn(java.util.Set.of(11L, 12L));
+
+            mockMvc.perform(post("/api/v1/knowledge/docs/feedback/citations")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"citations\":[\"【来源：手册A - 章节1】\"],\"verdict\":\"HELPFUL\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0))
+                    .andExpect(jsonPath("$.data.boosted").value(2));
+
+            // 每个被引 chunk 都要落一条反馈票——漏记会让「有用」证据白丢
+            verify(boostRepository).resolveChunkIds(any());
+            verify(boostRepository).recordFeedback(11L, "HELPFUL");
+            verify(boostRepository).recordFeedback(12L, "HELPFUL");
+        }
+
+        @Test
+        @DisplayName("引用反馈：非法 verdict → 40001 且不写任何 boost")
+        void citationsFeedbackRejectsBadVerdict() throws Exception {
+            mockMvc.perform(post("/api/v1/knowledge/docs/feedback/citations")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"citations\":[],\"verdict\":\"MAYBE\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(40001));
+
+            verify(boostRepository, never()).recordFeedback(anyLong(), anyString());
         }
     }
 

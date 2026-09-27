@@ -75,6 +75,7 @@ class AlertReplayEvaluationTest {
         AlertWebSocketNotifier notifier = mock(AlertWebSocketNotifier.class);
         Notifier dingTalk = mock(Notifier.class);
         service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
+                new com.devops.agent.domain.alert.AlertmanagerSourceAdapter(),
                 // S2-1：诊断编排器挂 mock——触发路径本身不属于本测试的关注面
                 mock(com.devops.agent.application.diagnosis.DiagnosisOrchestrator.class));
 

@@ -369,7 +369,13 @@ devops:
 
     # 幻觉防护 L4 相似度熔断
     hallucination:
-      min-similarity-score: 0.73
+      # 0.73 → 0.60（2026-09-25，真实向量标定）：当前渠道嵌入模型
+      # （qwen3.7-text-embedding@1536）下，实测相关查询得分 0.67~0.81、
+      # 无关查询最高 0.53——0.73 会把「磁盘不足」「慢查询」这类有手册
+      # 对应的告警也熔断掉。0.60 落在两类分布的中间间隔里（无关上限
+      # 0.53 + 0.07 余量）。注意：此值与嵌入模型强绑定，换模型必须重测；
+      # 语料库规模显著增长后（切片数从几十涨到几千）也要重测。
+      min-similarity-score: 0.60
 
     # ==================== SSE 流式推送（A2 修复）====================
     # 超时层级铁律（不得倒挂）：
@@ -420,6 +426,15 @@ devops:
 
     # 知识库生命周期治理（P1-9）
     knowledge:
+      # 复盘自动沉淀知识草稿（2026-09-24，飞轮最后一圈）。
+      # 首次保存复盘归档后异步生成一篇 DRAFT 状态知识文档——不发布、
+      # 不向量化、不进检索，由人工在知识库审核后再发布（AI 不替人决策）。
+      # 该工单已有回链文档（抽屉发过/草稿已建）时跳过，每工单至多一篇。
+      # 为什么默认开：生成成本是每工单至多一次 LLM 调用（失败回落结构化
+      # 模板，零成本），换来复盘数据不再依赖人工记得去点「沉淀」；
+      # REAL 模式在意这笔成本可关，沉淀抽屉的手动路径不受此开关影响。
+      postmortem-auto-draft-enabled: true
+
       # 孤儿切片定时清理开关。孤儿切片由已停用的 /ingest 端点产生（doc_id IS NULL），
       # 逃脱 deprecate/purge 治理却仍被检索命中。每日 03:17 清理。
       # 数据迁移期间可临时关闭，避免误删由外部脚本补录但暂未归档的切片。
@@ -542,6 +557,30 @@ devops:
     # 聚合时间窗口（分钟）
     aggregate-window-minutes: 5
 
+    # ==================== 自愈观察窗（PRD FR-3.1） ====================
+    # 观察级告警不立即建单：窗口内 resolved 自愈的只留统计不留单，
+    # 到期未自愈由 AlertObservationScheduler 补建工单并补触发诊断。
+    # 目标：消掉「三分钟自己好」的瞬时抖动工单（经验值可去 40~60%）。
+    observation-enabled: true
+    # 观察级集合（逗号分隔）。P0/P1 高危永远立即建单——高危等不起一个窗口。
+    # 注意与 auto-ticket-min-level 的交集才有意义：低于门槛的级别本就不建单。
+    observation-levels: ${ALERT_OBSERVATION_LEVELS:P2,P3}
+    # 观察窗口（分钟）：告警首次发生后等这么久，未自愈才补建单
+    observation-window-minutes: ${ALERT_OBSERVATION_WINDOW_MINUTES:10}
+    # 观察窗扫描间隔（毫秒）。1 分钟一轮：补建延迟最坏 = 窗口 + 一个扫描周期
+    observation-scan-interval-ms: 60000
+
+    # ==================== 全局风暴模式（PRD FR-2.5） ====================
+    # 全局告警速率超阈值后进入风暴模式：P0/P1 高危照常建单，
+    # 其余告警入库但聚合成一条「风暴摘要事件」（整场风暴一张单）。
+    storm:
+      enabled: true
+      # 进入阈值：近 60 秒 firing 告警数。日常流量的 10 倍级，只在真实故障风暴触发
+      enter-rate-per-min: ${ALERT_STORM_ENTER_RATE:100}
+      # 退出阈值（迟滞带）：速率回落到此值以下才退出。两阈值之间的差值
+      # 防止速率在边界抖动时风暴摘要事件反复建单/恢复
+      exit-rate-per-min: ${ALERT_STORM_EXIT_RATE:20}
+
   # ==================== L2 通知渠道（钉钉自定义机器人） ====================
   notify:
     dingtalk:
@@ -627,6 +666,14 @@ devops:
         memory: 'sum(container_memory_working_set_bytes{pod=~"{service}.*"})'
         error-rate: 'sum(rate(http_server_requests_seconds_count{application="{service}",status=~"5.."}[5m]))'
         latency-p99: 'histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application="{service}"}[5m])) by (le))'
+        # —— 2026-09-25 本机实测对齐（dev compose 环境真实 label 约定）——
+        # 上面四条按 k8s/Spring 约定写（生产面）；本机栈是 node-exporter + actuator，
+        # 两条抓取链都打了 service 静态标签（prometheus.yml），故按 service= 等值过滤。
+        # 服务名对不上时自动落空（NO_DATA 而非错数据）——这正是口径隔离。
+        host-cpu-usage-pct: '100 - (avg(rate(node_cpu_seconds_total{mode="idle",service="{service}"}[5m])) * 100)'
+        host-mem-usage-pct: '(1 - (node_memory_MemAvailable_bytes{service="{service}"} / node_memory_MemTotal_bytes{service="{service}"})) * 100'
+        app-jvm-heap-used-bytes: 'sum(jvm_memory_used_bytes{service="{service}",area="heap"})'
+        app-uptime-seconds: 'process_uptime_seconds{service="{service}"}'
 
   # ================= S1-3 日志数据源（Loki）=================
   # 默认未启用：compose/CI 均没有 Loki——部署形态如实上报 UNAVAILABLE，

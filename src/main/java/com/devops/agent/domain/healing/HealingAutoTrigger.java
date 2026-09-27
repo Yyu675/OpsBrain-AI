@@ -105,8 +105,13 @@ public class HealingAutoTrigger {
             log.warn("⚠️ [PolicyEngine] 策略读取失败 | alertId={} | {}", alert.getId(), ex.getMessage());
             return;
         }
+        // 零命中留一行痕迹：排查「策略没生效」时，最大的成本是分不清
+        // 「引擎没跑」与「跑了但全部不匹配」（2026-09-25 金丝雀实测踩中）。
+        // DEBUG 级：正常期不刷屏，排查时调开即可见。
+        int evaluated = 0;
         for (AutomationPolicy p : policies) {
             try {
+                evaluated++;
                 if (!p.matches(alert.getLevel(), alert.getModule(),
                         alert.getService(), alert.getAlertName())) {
                     continue;
@@ -121,6 +126,11 @@ public class HealingAutoTrigger {
                 log.warn("⚠️ [PolicyEngine] 单条策略求值失败（不连坐其余） | policyId={} | alertId={} | {}",
                         p.getId(), alert.getId(), ex.getMessage());
             }
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("🔍 [PolicyEngine] 本轮零命中 | alertId={} | alert={} | level={} | module={} | service={} | 已评估启用策略 {} 条",
+                    alert.getId(), alert.getAlertName(), alert.getLevel(), alert.getModule(),
+                    alert.getService(), evaluated);
         }
     }
 

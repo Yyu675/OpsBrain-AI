@@ -1,6 +1,7 @@
 package com.devops.agent.domain.biz.service;
 
 import com.devops.agent.domain.biz.entity.TicketAiAnalysis;
+import com.devops.agent.domain.biz.repository.KnowledgeBoostRepository;
 import com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 工单 AI 分析服务（策略 B）
@@ -33,9 +35,12 @@ public class TicketAiAnalysisService {
     private static final int MAX_CONTENT_LEN = 20000;
 
     private final TicketAiAnalysisRepository repository;
+    private final KnowledgeBoostRepository knowledgeBoostRepository;
 
-    public TicketAiAnalysisService(TicketAiAnalysisRepository repository) {
+    public TicketAiAnalysisService(TicketAiAnalysisRepository repository,
+                                  KnowledgeBoostRepository knowledgeBoostRepository) {
         this.repository = repository;
+        this.knowledgeBoostRepository = knowledgeBoostRepository;
     }
 
     /**
@@ -108,22 +113,61 @@ public class TicketAiAnalysisService {
     }
 
     /**
-     * 记录反馈
+     * 记录反馈，并由后端自取被引 chunk 完成知识回流（2026-09-24）。
+     * <p>
+     * 引用在全链路只以字符串形态流转，chunk id 从未随行——回流不能等
+     * 前端传 id（诊断入口的 chunkIds 实测永远是 null）。分析行落着
+     * citations，反馈时在这里解析回 chunk 再记 boost：引用侧真相源
+     * 是分析行，不依赖任何前端自觉。
+     * </p>
+     * <p>
+     * 回流失败不吞反馈主链（同 HybridRetrieverService 的「回流是增值
+     * 冒险，不是检索环路的筋骨」）：解析/写入异常只降级为 boosted=0。
+     * </p>
      *
      * @param analysisId 分析 id
      * @param helpful    true=有用 / false=没用
-     * @return true=记录成功，false=分析不存在
+     * @return recorded=false 表示分析不存在；knowledgeBoosted=本次回流的 chunk 数
      */
-    public boolean recordFeedback(Long analysisId, boolean helpful) {
+    public FeedbackResult recordFeedback(Long analysisId, boolean helpful) {
         String fb = helpful ? TicketAiAnalysis.FEEDBACK_HELPFUL : TicketAiAnalysis.FEEDBACK_UNHELPFUL;
         int rows = repository.updateFeedback(analysisId, fb);
         if (rows == 0) {
             log.warn("⚠️ [AiAnalysisService] 反馈记录失败，分析不存在 | analysisId={}", analysisId);
-            return false;
+            return new FeedbackResult(false, 0);
         }
         log.info("👍 [AiAnalysisService] 反馈已记录 | analysisId={} | feedback={}", analysisId, fb);
-        return true;
+
+        int boosted = 0;
+        try {
+            TicketAiAnalysis a = repository.findById(analysisId);
+            if (a != null && a.getCitations() != null && !a.getCitations().isEmpty()) {
+                Set<Long> chunkIds = knowledgeBoostRepository.resolveChunkIds(a.getCitations());
+                if (chunkIds != null) {
+                    for (Long chunkId : chunkIds) {
+                        knowledgeBoostRepository.recordFeedback(chunkId, fb);
+                        boosted++;
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("⚠️ [AiAnalysisService] 知识回流失败（反馈已落库，回流下条分析再补）"
+                    + " | analysisId={} | 已回流={} | {}", analysisId, boosted, ex.getMessage());
+        }
+        if (boosted > 0) {
+            log.info("🔁 [AiAnalysisService] 知识回流完成 | analysisId={} | verdict={} | chunks={}",
+                    analysisId, fb, boosted);
+        }
+        return new FeedbackResult(true, boosted);
     }
+
+    /**
+     * 反馈结果：记录成败 + 本次知识回流命中数（API 响应的 data 契约）。
+     *
+     * @param recorded        反馈是否落库（false=分析不存在）
+     * @param knowledgeBoosted 本次回流的被引 chunk 数（回流失败按 0 计，不影响 recorded）
+     */
+    public record FeedbackResult(boolean recorded, int knowledgeBoosted) {}
 
     /**
      * 准确率统计

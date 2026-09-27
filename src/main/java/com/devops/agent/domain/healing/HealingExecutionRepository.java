@@ -10,6 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -311,5 +312,60 @@ public class HealingExecutionRepository {
         return jdbcTemplate.query(
                 "SELECT * FROM sys_healing_execution WHERE alert_id = ? ORDER BY id DESC",
                 ROW_MAPPER, alertId);
+    }
+
+    /**
+     * 台账统计聚合（单次往返，供 Dashboard/PRD 成功指标读面）。
+     * <p>
+     * 口径（对齐 PRD §2.2 指标字典 #1 北极星与 #5 安全）：
+     * <ul>
+     *   <li><b>auto_total</b>：告警驱动（{@code requested_by='auto'}）的执行数；</li>
+     *   <li><b>auto_closed_loop</b>：真正「无需人工介入闭环」的执行——
+     *       auto + SUCCEEDED + 验证 PASS（跑了、成了、还真生效了）；</li>
+     *   <li><b>verify_fail / verify_pending</b>：验证未通过（已自动回滚/升级）
+     *       与尚未验证——二者是「自动处置误操作率」的分子与分母视线。</li>
+     * </ul>
+     * 比率由调用方算（本方法只给原始计数，避免在 SQL 里埋除法口径）。
+     */
+    public Map<String, Long> stats() {
+        return jdbcTemplate.queryForObject("""
+                SELECT
+                  COUNT(*)                                                   AS total,
+                  COUNT(*) FILTER (WHERE status = 'SUCCEEDED')               AS succeeded,
+                  COUNT(*) FILTER (WHERE status = 'FAILED')                  AS failed,
+                  COUNT(*) FILTER (WHERE status = 'REJECTED')                AS rejected,
+                  COUNT(*) FILTER (WHERE status = 'PENDING_APPROVAL')        AS pending_approval,
+                  COUNT(*) FILTER (WHERE status = 'UNDONE')                  AS undone,
+                  COUNT(*) FILTER (WHERE status = 'UNDO_FAILED')             AS undo_failed,
+                  COUNT(*) FILTER (WHERE requested_by = 'auto')              AS auto_total,
+                  COUNT(*) FILTER (WHERE requested_by = 'auto'
+                                     AND status = 'SUCCEEDED'
+                                     AND verify_status = 'PASS')             AS auto_closed_loop,
+                  COUNT(*) FILTER (WHERE verify_status = 'PASS')             AS verify_pass,
+                  COUNT(*) FILTER (WHERE verify_status = 'FAIL')             AS verify_fail,
+                  COUNT(*) FILTER (WHERE verify_status = 'UNKNOWN')          AS verify_unknown,
+                  COUNT(*) FILTER (WHERE verify_status = 'SKIPPED')          AS verify_skipped,
+                  COUNT(*) FILTER (WHERE status = 'SUCCEEDED'
+                                     AND verify_status IS NULL)              AS verify_pending
+                  FROM sys_healing_execution
+                """,
+                (rs, n) -> {
+                    Map<String, Long> m = new java.util.LinkedHashMap<>();
+                    m.put("total", rs.getLong("total"));
+                    m.put("succeeded", rs.getLong("succeeded"));
+                    m.put("failed", rs.getLong("failed"));
+                    m.put("rejected", rs.getLong("rejected"));
+                    m.put("pendingApproval", rs.getLong("pending_approval"));
+                    m.put("undone", rs.getLong("undone"));
+                    m.put("undoFailed", rs.getLong("undo_failed"));
+                    m.put("autoTotal", rs.getLong("auto_total"));
+                    m.put("autoClosedLoop", rs.getLong("auto_closed_loop"));
+                    m.put("verifyPass", rs.getLong("verify_pass"));
+                    m.put("verifyFail", rs.getLong("verify_fail"));
+                    m.put("verifyUnknown", rs.getLong("verify_unknown"));
+                    m.put("verifySkipped", rs.getLong("verify_skipped"));
+                    m.put("verifyPending", rs.getLong("verify_pending"));
+                    return m;
+                });
     }
 }

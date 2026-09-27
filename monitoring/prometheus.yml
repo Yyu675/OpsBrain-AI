@@ -40,9 +40,14 @@ scrape_configs:
 
   # OpsBrain 应用自身(S5-2 步骤 5-2.5 / 批 37):actuator prometheus 端点
   # 注意 context-path /ai(server.servlet.context-path),路径别照抄官方文档
+  #
+  # 目标修正（2026-09-25）：后端跑在宿主机（IDEA/本地进程），compose 网络里
+  # 没有名为 app 的容器——targets 写 app:8088 时该 job 恒 down，
+  # OpsBrainDown 告警因此反复误报（sys_alert 里 7 条全是它）。
+  # 与 alertmanager webhook 同一模式：host.docker.internal + 容器侧 extra_hosts。
   - job_name: opsbrain
     metrics_path: /ai/actuator/prometheus
     static_configs:
-      - targets: ['app:8088']
+      - targets: ['host.docker.internal:8088']
         labels:
           service: 'opsbrain-ai'

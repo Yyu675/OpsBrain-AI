@@ -103,7 +103,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/v1/auth/**",         // 登录/取当前用户/登出
                         "/api/v1/health/**",       // K8s 探针
-                        "/api/v1/alerts/webhook"   // Prometheus/Alertmanager 推送
+                        "/api/v1/alerts/webhook",  // Prometheus/Alertmanager 推送
+                        "/api/v1/alerts/webhook/**"  // FR-1.2：/{system} 按路径注入来源系统
                 );
 
         // ==================== P2 自身可观测性：/actuator/** 必须显式鉴权 ====================

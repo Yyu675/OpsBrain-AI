@@ -23,6 +23,8 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -145,7 +147,7 @@ class AlertWebhookControllerWebTest {
                     .andExpect(jsonPath("$.code").value(0))
                     .andExpect(jsonPath("$.data").value("ok"));
 
-            verify(alertService).processWebhook(any(AlertmanagerWebhook.class));
+            verify(alertService).processWebhook(any(AlertmanagerWebhook.class), isNull());
         }
 
         @Test
@@ -160,7 +162,7 @@ class AlertWebhookControllerWebTest {
                     .andExpect(jsonPath("$.code").value(0));
 
             // 返回非 200 会让 Alertmanager 把这次空推送当失败并反复重推
-            verify(alertService, never()).processWebhook(any());
+            verify(alertService, never()).processWebhook(any(), any());
         }
 
         @Test
@@ -168,7 +170,7 @@ class AlertWebhookControllerWebTest {
         void serviceFailureStillReturns200() throws Exception {
             doNothing().when(webhookGuard).verify(any());
             doThrow(new RuntimeException("db down"))
-                    .when(alertService).processWebhook(any());
+                    .when(alertService).processWebhook(any(), any());
 
             // 这条是当前真实行为的记录：Service 抛出的运行时异常会落到
             // GlobalExceptionHandler 返回 500。而契约要求本端点始终 200，
@@ -180,6 +182,52 @@ class AlertWebhookControllerWebTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(PAYLOAD))
                     .andExpect(status().is5xxServerError());
+        }
+    }
+
+    @Nested
+    @DisplayName("来源系统路径注入（FR-1.2：/webhook/{system}）")
+    class SystemPathInjection {
+
+        @Test
+        @DisplayName("路径段透传给 AlertService —— 路径是部署侧保证的权威来源")
+        void systemPathIsForwarded() throws Exception {
+            doNothing().when(webhookGuard).verify(any());
+
+            mockMvc.perform(post("/api/v1/alerts/webhook/wms")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(PAYLOAD))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value(0));
+
+            verify(alertService).processWebhook(any(AlertmanagerWebhook.class), eq("wms"));
+        }
+
+        @Test
+        @DisplayName("system 路径段非法 → 400，且绝不触达业务（配错的部署要被立刻发现）")
+        void invalidSystemRejected() throws Exception {
+            doNothing().when(webhookGuard).verify(any());
+
+            mockMvc.perform(post("/api/v1/alerts/webhook/Bad_System!")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(PAYLOAD))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(40001));
+
+            verify(alertService, never()).processWebhook(any(), any());
+        }
+
+        @Test
+        @DisplayName("路径端点同样过 WebhookGuard —— 换路径不会绕过鉴权")
+        void systemPathStillGuarded() throws Exception {
+            doThrow(WebhookRejectedException.unauthorized()).when(webhookGuard).verify(any());
+
+            mockMvc.perform(post("/api/v1/alerts/webhook/mes")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(PAYLOAD))
+                    .andExpect(status().isUnauthorized());
+
+            verify(alertService, never()).processWebhook(any(), any());
         }
     }
 
@@ -202,7 +250,7 @@ class AlertWebhookControllerWebTest {
 
             // 鉴权失败的请求一条告警都不能写进库——
             // 否则任何人都能灌入伪造告警并触发自动建单
-            verify(alertService, never()).processWebhook(any());
+            verify(alertService, never()).processWebhook(any(), any());
         }
 
         @Test
@@ -236,7 +284,7 @@ class AlertWebhookControllerWebTest {
                     // 对运维平台而言，悄悄丢掉告警比慢一点收到告警危险得多
                     .andExpect(header().string(HttpHeaders.RETRY_AFTER, "60"));
 
-            verify(alertService, never()).processWebhook(any());
+            verify(alertService, never()).processWebhook(any(), any());
         }
 
         @Test
@@ -290,6 +338,6 @@ class AlertWebhookControllerWebTest {
         mockMvc.perform(get("/api/v1/alerts/webhook"))
                 .andExpect(status().isMethodNotAllowed());
 
-        verify(alertService, never()).processWebhook(any());
+        verify(alertService, never()).processWebhook(any(), any());
     }
 }

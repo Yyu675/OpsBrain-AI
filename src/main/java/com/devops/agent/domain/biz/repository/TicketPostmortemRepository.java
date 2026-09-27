@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 复盘归档 + 改进项数据访问层（B4）
@@ -59,6 +60,28 @@ public class TicketPostmortemRepository {
         String sql = "SELECT * FROM sys_ticket_postmortem WHERE ticket_id = ?";
         List<TicketPostmortem> list = jdbcTemplate.query(sql, PM_MAPPER, ticketId);
         return list.isEmpty() ? null : list.get(0);
+    }
+
+    /** 复盘总数（效能大盘的「复盘完成率」分子）。 */
+    public long countAll() {
+        Long n = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys_ticket_postmortem", Long.class);
+        return n != null ? n : 0L;
+    }
+
+    /**
+     * 已完结但没有复盘的工单清单（效能大盘「复盘完成率」的行动出口）。
+     * <p>指标只告诉主管「复盘率 0%」，这张清单告诉他「哪几张单欠着」。</p>
+     */
+    public List<Map<String, Object>> findFinishedWithoutPostmortem(int limit) {
+        String sql = """
+            SELECT t.id, t.title, t.status, t.create_time
+              FROM sys_devops_ticket t
+              LEFT JOIN sys_ticket_postmortem p ON p.ticket_id = t.id
+             WHERE t.status IN ('RESOLVED', 'CLOSED') AND p.id IS NULL
+             ORDER BY t.create_time DESC
+             LIMIT ?
+            """;
+        return jdbcTemplate.queryForList(sql, limit);
     }
 
     /** 新建复盘 */

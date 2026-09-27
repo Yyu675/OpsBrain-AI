@@ -483,7 +483,7 @@ public class KnowledgeDocService {
      * <p>工单详情页据此判断「此工单已沉淀为哪些知识」并展示徽标与跳转入口。
      * 批量装填标签以便前端展示。</p>
      */
-    public List<KnowledgeDoc> findBySourceTicketId(Long sourceTicketId) {
+    public List<KnowledgeDoc> findBySourceTicketId(String sourceTicketId) {
         List<KnowledgeDoc> docs = docRepo.findBySourceTicketId(sourceTicketId);
         if (!docs.isEmpty()) {
             List<Long> ids = docs.stream().map(KnowledgeDoc::getId).toList();
@@ -494,6 +494,23 @@ public class KnowledgeDocService {
         }
         return docs;
     }
+
+    /**
+     * 按源工单聚合反馈计数（供「已沉淀为知识」徽标旁展示命中/反馈数）。
+     *
+     * @return 每篇回链文档一行（无 boost 记录也行：计数为 0）
+     */
+    public List<FeedbackStat> feedbackStatsBySourceTicket(String sourceTicketId) {
+        List<FeedbackStat> stats = docRepo.feedbackStatsBySourceTicket(sourceTicketId);
+        return stats == null ? List.of() : stats;
+    }
+
+    /**
+     * 文档反馈统计（doc → 其全部 chunk 的 boost 票数之和）。
+     * <p>record 落在 domain 层：仓储层返回它、controller 直接序列化——
+     * 字段名即 JSON 键（台账铁律）。</p>
+     */
+    public record FeedbackStat(Long docId, String title, long helpfulCount, long wrongCount) {}
 
     /**
      * 扁平分类聚合（侧栏导航），全库跨页统计

@@ -90,7 +90,7 @@ public class KnowledgeDocRepository {
             ps.setString(15, doc.getKnowledgeSource() != null ? doc.getKnowledgeSource() : "SOP");
             // L1.5 来源回链
             if (doc.getSourceTicketId() != null) {
-                ps.setLong(16, doc.getSourceTicketId());
+                ps.setString(16, doc.getSourceTicketId());
             } else {
                 ps.setNull(16, java.sql.Types.BIGINT);
             }
@@ -245,13 +245,43 @@ public class KnowledgeDocRepository {
      * <p>只返回未物理删除的活跃文档（含草稿/已发布/已废弃/已归档），
      * 供工单详情页展示「已沉淀为知识」徽标与跳转入口。</p>
      */
-    public List<KnowledgeDoc> findBySourceTicketId(Long sourceTicketId) {
+    public List<KnowledgeDoc> findBySourceTicketId(String sourceTicketId) {
         if (sourceTicketId == null) {
             return List.of();
         }
         return jdbcTemplate.query(
                 "SELECT * FROM sys_knowledge_doc WHERE source_ticket_id = ? ORDER BY create_time DESC",
                 new DocRowMapper(), sourceTicketId);
+    }
+
+    /**
+     * 按源工单聚合反馈计数（2026-09-24，飞轮可见性）：
+     * 该工单沉淀的每篇文档 → 其全部切片在 sys_knowledge_boost 里的
+     * 有帮助/错误票数之和。JOIN 链：doc → chunk → boost（boost 按 chunk 计，
+     * 需跨 doc 求和才是「这篇文档的反馈」）。
+     * <p>无 boost 记录的文档也返回（计数 0）——「沉淀了但还没收到反馈」是正常态。</p>
+     */
+    public List<com.devops.agent.domain.rag.KnowledgeDocService.FeedbackStat> feedbackStatsBySourceTicket(String sourceTicketId) {
+        if (sourceTicketId == null) {
+            return List.of();
+        }
+        return jdbcTemplate.query("""
+                SELECT d.id AS doc_id, d.title AS title,
+                       COALESCE(SUM(b.helpful_count), 0) AS helpful_count,
+                       COALESCE(SUM(b.wrong_count), 0)   AS wrong_count
+                  FROM sys_knowledge_doc d
+                  JOIN sys_knowledge_chunk c ON c.doc_id = d.id
+                  LEFT JOIN sys_knowledge_boost b ON b.chunk_id = c.id
+                 WHERE d.source_ticket_id = ?
+                 GROUP BY d.id, d.title
+                 ORDER BY d.create_time DESC
+                """,
+                (rs, n) -> new com.devops.agent.domain.rag.KnowledgeDocService.FeedbackStat(
+                        rs.getLong("doc_id"),
+                        rs.getString("title"),
+                        rs.getLong("helpful_count"),
+                        rs.getLong("wrong_count")),
+                sourceTicketId);
     }
 
     public List<KnowledgeDoc> findByCategory(Long categoryId, String categoryName) {
@@ -523,8 +553,8 @@ public class KnowledgeDocRepository {
             d.setEffectiveAt(rs.getObject("effective_at", LocalDateTime.class));
             d.setExpiredAt(rs.getObject("expired_at", LocalDateTime.class));
             d.setKnowledgeSource(rs.getString("knowledge_source"));
-            long stid = rs.getLong("source_ticket_id");
-            d.setSourceTicketId(rs.wasNull() ? null : stid);
+            // 字符串工单号（V2 迁移前是 BIGINT；TKT 号在旧类型下根本存不进去）
+            d.setSourceTicketId(rs.getString("source_ticket_id"));
             d.setSourceType(rs.getString("source_type"));
             // C1 可见性。列由 v24 迁移新增，存量行由 DEFAULT 填为 PUBLIC。
             // 这里仍对 null 兜底：mapper 也被历史快照/视图复用时列可能缺省。

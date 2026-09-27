@@ -191,6 +191,42 @@ class TicketControllerWebTest {
                 .andExpect(jsonPath("$.data.status").value("PROCESSING"));
     }
 
+    // ==================== AI 分析反馈：回流计数契约（2026-09-24） ====================
+
+    @Test
+    @DisplayName("AI 分析反馈：成功时 data 携带 knowledgeBoosted（回流计数是响应契约的一部分）")
+    void aiAnalysisFeedback_returnsKnowledgeBoosted() throws Exception {
+        when(aiAnalysisService.recordFeedback(42L, true))
+                .thenReturn(new TicketAiAnalysisService.FeedbackResult(true, 2));
+
+        mockMvc.perform(post("/api/v1/tickets/ai-analysis/42/feedback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"helpful\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.analysisId").value(42))
+                .andExpect(jsonPath("$.data.helpful").value(true))
+                // 该字段缺失时前端无法区分「无引用」与「回流降级」，
+                // 契约断言锁住它不被后续改动静默删掉
+                .andExpect(jsonPath("$.data.knowledgeBoosted").value(2))
+                .andExpect(jsonPath("$.traceId").exists());
+    }
+
+    @Test
+    @DisplayName("AI 分析反馈：分析不存在 → code=40400，不出现 knowledgeBoosted 字段")
+    void aiAnalysisFeedback_notFoundMapsTo40400() throws Exception {
+        when(aiAnalysisService.recordFeedback(404L, false))
+                .thenReturn(new TicketAiAnalysisService.FeedbackResult(false, 0));
+
+        mockMvc.perform(post("/api/v1/tickets/ai-analysis/404/feedback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"helpful\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40400))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("分析不存在")))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
     // ==================== 异常映射：F2 重构的核心回归点 ====================
 
     @Test

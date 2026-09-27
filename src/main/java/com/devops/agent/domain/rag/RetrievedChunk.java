@@ -23,6 +23,10 @@ package com.devops.agent.domain.rag;
  * @param sectionHeader 章节标题（如「## Pod CrashLoopBackOff 问题排查」），可为空
  * @param text          片段正文，优先为父段落（上下文更完整）
  * @param score         相似度得分，用于调试与可观测
+ * @param chunkId       命中切片的主键（sys_knowledge_chunk.id）。
+ *                      可空：诊断反馈回流需要把「本次引用了哪些切片」原样带回，
+ *                      而 citation 字符串反查会因标题含分隔符、章节改版而漂移；
+ *                      id 是无歧义的引用。旧调用点不关心它，传 null 即可。
  *
  * @author OpsBrain AI
  * @since 2026-08-09
@@ -31,8 +35,15 @@ public record RetrievedChunk(
         String docTitle,
         String sectionHeader,
         String text,
-        double score
+        double score,
+        Long chunkId
 ) {
+
+    /** 兼容四参构造：不携带切片 id 的调用点（评测、单测）沿用旧签名。 */
+    public RetrievedChunk(String docTitle, String sectionHeader, String text, double score) {
+        this(docTitle, sectionHeader, text, score, null);
+    }
+
 
     /**
      * 渲染为供模型消费的引用标签

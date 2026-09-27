@@ -41,6 +41,14 @@ public class WebhookRejectedException extends RuntimeException {
     }
 
     /**
+     * 请求形态非法（如 {system} 路径段不合规）→ 400。
+     * <p>不建议重试：路径配错重试多少次都一样，属于部署侧配置问题。</p>
+     */
+    public static WebhookRejectedException badRequest(String message) {
+        return new WebhookRejectedException(ApiCode.BAD_REQUEST, 400, 0, message);
+    }
+
+    /**
      * 触发限流 → 429 + Retry-After。
      * <p>选择 429 而非「返回 200 静默丢弃」：对运维平台而言，
      * <b>悄悄丢掉告警比慢一点收到告警危险得多</b>。429 + Retry-After

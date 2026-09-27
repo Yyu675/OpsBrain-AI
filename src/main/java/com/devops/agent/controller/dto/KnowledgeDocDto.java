@@ -38,8 +38,8 @@ public class KnowledgeDocDto {
             String knowledgeSource,
             LocalDateTime effectiveAt,
             LocalDateTime expiredAt,
-            /** L1.5 来源回链：由工单沉淀时传源工单 ID */
-            Long sourceTicketId,
+            /** L1.5 来源回链：源工单字符串流水号（TKT-…），非工单沉淀时为 null */
+            String sourceTicketId,
             /** 来源类型：TICKET / MANUAL / IMPORT 等 */
             String sourceType,
             /** 所属知识库；不传则落默认库（code=default） */
@@ -87,8 +87,8 @@ public class KnowledgeDocDto {
             LocalDateTime createTime,
             LocalDateTime updateTime,
             List<String> tags,
-            /** L1.5 来源回链：源工单 ID，非工单沉淀为 null */
-            Long sourceTicketId,
+            /** L1.5 来源回链：源工单字符串流水号，非工单沉淀为 null */
+            String sourceTicketId,
             String sourceType,
             /** 所属知识库 ID */
             Long kbId
@@ -134,8 +134,8 @@ public class KnowledgeDocDto {
             LocalDateTime effectiveAt,
             LocalDateTime expiredAt,
             String knowledgeSource,
-            /** L1.5 来源回链：源工单 ID，非工单沉淀时为 null */
-            Long sourceTicketId,
+            /** L1.5 来源回链：源工单字符串流水号（TKT-…），非工单沉淀时为 null */
+            String sourceTicketId,
             /** 来源类型：TICKET / MANUAL / IMPORT 等 */
             String sourceType,
             LocalDateTime createTime,

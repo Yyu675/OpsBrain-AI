@@ -9,6 +9,7 @@ import com.devops.agent.domain.biz.repository.DiagnosisSessionRepository;
 import com.devops.agent.domain.evidence.ChangesEvidenceCollector;
 import com.devops.agent.domain.evidence.Evidence;
 import com.devops.agent.domain.evidence.EvidenceAggregator;
+import com.devops.agent.domain.evidence.KnowledgeEvidenceCollector;
 import com.devops.agent.domain.evidence.LogsEvidenceCollector;
 import com.devops.agent.domain.evidence.MetricsEvidenceCollector;
 import com.devops.agent.domain.evidence.MetricsQueryCatalog;
@@ -64,6 +65,8 @@ public class DiagnosisOrchestrator {
     private final MetricsEvidenceCollector metricsCollector;
     private final ChangesEvidenceCollector changesCollector;
     private final LogsEvidenceCollector logsCollector;
+    /** P0 2026-09-24：诊断接入知识库——检索命中作为 KNOWLEDGE 证据进入推理与回流 */
+    private final KnowledgeEvidenceCollector knowledgeCollector;
     private final MetricsQueryCatalog catalog;
     private final DiagnosisEvidenceRepository evidenceRepository;
     private final DiagnosisSessionRepository sessionRepository;
@@ -78,10 +81,13 @@ public class DiagnosisOrchestrator {
     private final com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier;
     /** 2-1.6：钉钉通知（INSUFFICIENT 时 urgent——人工介入是必须被看到的事）。 */
     private final com.devops.agent.domain.notify.Notifier notifier;
+    /** 知识检索的查询锚点：按 alertId 回查告警名，让知识检索带上症状信号而不只是服务名 */
+    private final com.devops.agent.domain.alert.repository.AlertRepository alertRepository;
 
     public DiagnosisOrchestrator(MetricsEvidenceCollector metricsCollector,
                                  ChangesEvidenceCollector changesCollector,
                                  LogsEvidenceCollector logsCollector,
+                                 KnowledgeEvidenceCollector knowledgeCollector,
                                  MetricsQueryCatalog catalog,
                                  DiagnosisEvidenceRepository evidenceRepository,
                                  DiagnosisSessionRepository sessionRepository,
@@ -90,10 +96,12 @@ public class DiagnosisOrchestrator {
                                  com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator,
                                  com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository,
                                  com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier,
-                                 com.devops.agent.domain.notify.Notifier notifier) {
+                                 com.devops.agent.domain.notify.Notifier notifier,
+                                 com.devops.agent.domain.alert.repository.AlertRepository alertRepository) {
         this.metricsCollector = metricsCollector;
         this.changesCollector = changesCollector;
         this.logsCollector = logsCollector;
+        this.knowledgeCollector = knowledgeCollector;
         this.catalog = catalog;
         this.evidenceRepository = evidenceRepository;
         this.sessionRepository = sessionRepository;
@@ -103,6 +111,7 @@ public class DiagnosisOrchestrator {
         this.hypothesisRepository = hypothesisRepository;
         this.wsNotifier = wsNotifier;
         this.notifier = notifier;
+        this.alertRepository = alertRepository;
         this.pool = new ThreadPoolExecutor(
                 CORE, MAX, 30, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(QUEUE),
@@ -184,7 +193,7 @@ public class DiagnosisOrchestrator {
                     "诊断编排开始（异步线程接管）");
 
             // ── ① 取证（确定性三方向，不依赖模型规划）
-            List<Evidence> evidences = collect(service);
+            List<Evidence> evidences = collect(service, resolveAlertAnchor(alertId));
             EvidenceAggregator.AggregateResult aggregated = EvidenceAggregator.aggregate(evidences);
 
             // ── ② 证据落库（traceId 与本会话同一，供回放；同时拿到持久化 id 桥）
@@ -212,14 +221,50 @@ public class DiagnosisOrchestrator {
         }
     }
 
+    /** 告警锚点：名称（检索锚点）+ 描述（检索语义）+ 级别（日志取证窗口/级别的调节依据）。 */
+    private record AlertAnchor(String name, String description, String level) {}
+
+    /**
+     * 按 alertId 回查告警锚点：知识检索的查询锚点 + 日志取证的级别依据。拿不到不阻塞。
+     * 服务名单独撑起的查询（「xxx 故障排查」）语义太弱，实测 0.73 阈值下恒被熔断；
+     * 告警名（如 OpsBrainMemoryHigh）携带症状信号，检索才有机会命中手册。
+     */
+    private AlertAnchor resolveAlertAnchor(Long alertId) {
+        if (alertId == null) return new AlertAnchor(null, null, null);
+        try {
+            return alertRepository.findById(alertId)
+                    .map(a -> new AlertAnchor(a.getAlertName(), a.getDescription(), a.getLevel()))
+                    .orElse(new AlertAnchor(null, null, null));
+        } catch (Exception e) {
+            log.warn("⚠️ [Diagnosis] 回查告警锚点失败（取证继续，知识检索退化为仅服务名） | alertId={} | {}",
+                    alertId, e.getMessage());
+            return new AlertAnchor(null, null, null);
+        }
+    }
+
     // ───────────── helpers ─────────────
 
-    private List<Evidence> collect(String service) {
-        List<Evidence> evidences = new ArrayList<>(3);
+    private List<Evidence> collect(String service, AlertAnchor anchor) {
+        List<Evidence> evidences = new ArrayList<>(4);
         String metricCsv = String.join(",", catalog.availableMetrics());
         evidences.add(metricsCollector.collect(service, COLLECT_RANGE, metricCsv));
         evidences.add(changesCollector.collect(service, COLLECT_RANGE));
-        evidences.add(logsCollector.collect(service, COLLECT_RANGE, "ERROR", null));
+
+        // 日志取证按告警级别调窗口与级别：越紧急越往宽往深看
+        //   P0/P1 → 60 分钟 + WARN 级（把故障前的警告信号也捞出来）
+        //   P2    → 30 分钟 + ERROR（默认，日常故障面）
+        //   P3/P4 → 15 分钟 + ERROR（信息级只看紧邻窗口，省取数）
+        String logRange = switch (anchor.level() == null ? "" : anchor.level()) {
+            case "P0", "P1" -> "60m";
+            case "P3", "P4" -> "15m";
+            default -> COLLECT_RANGE;
+        };
+        String logLevel = "P0".equals(anchor.level()) || "P1".equals(anchor.level()) ? "WARN" : "ERROR";
+        evidences.add(logsCollector.collect(service, logRange, logLevel, null));
+
+        // P0 2026-09-24：诊断接入知识库——检索命中作为 KNOWLEDGE 证据进推理与回流。
+        // 查询锚点=告警名+描述（2026-09-25 实测：服务名是语义噪声，会稀释相似度）
+        evidences.add(knowledgeCollector.collect(service, COLLECT_RANGE, anchor.name(), anchor.description()));
         return evidences;
     }
 

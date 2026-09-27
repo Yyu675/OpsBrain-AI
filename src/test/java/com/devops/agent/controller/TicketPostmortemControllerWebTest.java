@@ -110,6 +110,10 @@ class TicketPostmortemControllerWebTest {
     @MockitoBean
     private TicketPostmortemService pmService;
 
+    /** 自动沉淀编排器：保存接口只触发它，编排逻辑由 PostmortemDraftOrchestratorTest 覆盖 */
+    @MockitoBean
+    private com.devops.agent.application.runtime.PostmortemDraftOrchestrator draftOrchestrator;
+
     @BeforeEach
     void setUpMockMvc() {
         mockMvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -257,6 +261,20 @@ class TicketPostmortemControllerWebTest {
             // 「没填影响时长」和「影响时长 0 分钟」是两回事：
             // 后者意味着故障瞬间自愈，会让 MTTR 统计凭空变好看
             assertThat(cap.getValue().getImpactDuration()).isNull();
+        }
+
+        @Test
+        @DisplayName("保存成功后触发自动沉淀编排——但保存接口不因此变慢或失败")
+        void saveTriggersAutoDraft() throws Exception {
+            when(pmService.savePostmortem(any(), any())).thenReturn(postmortem("TK-2026-0001"));
+
+            mockMvc.perform(put("/api/v1/tickets/TK-2026-0001/postmortem")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(body("timeline", "时间线", "author", "张明"))))
+                    .andExpect(status().isOk());
+
+            // 触发点是「保存成功」这条链上的固定一环：漏掉它，飞轮最后一圈永不自动转
+            verify(draftOrchestrator).submitDraftAsync("TK-2026-0001");
         }
 
         @Test

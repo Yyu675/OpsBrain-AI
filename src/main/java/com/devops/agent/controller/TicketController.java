@@ -357,11 +357,23 @@ public class TicketController {
     }
 
     /**
-     * 闭环度量：MTTA / MTTM / MTTR + 各阶段完成率 + 跳过验证率
+     * 闭环度量：MTTA / MTTM / MTTR + 各阶段完成率 + 跳过验证率 + 复盘完成率。
+     * 传 days 时附带同窗口的告警压缩比分子分母（效能大盘用）。
      */
     @GetMapping("/metrics/closure")
-    public ApiResponse<Map<String, Object>> closureMetrics() {
-        return ApiResponse.success(ticketService.getClosureMetrics());
+    public ApiResponse<Map<String, Object>> closureMetrics(@RequestParam(required = false) Integer days) {
+        return ApiResponse.success(ticketService.getClosureMetrics(days));
+    }
+
+    /**
+     * 已完结但没有复盘的工单清单（复盘完成率的行动出口）。
+     * 指标只告诉主管「复盘率 0%」，这张清单告诉他「哪几张单欠着」。
+     */
+    @GetMapping("/metrics/closure/missing-postmortem")
+    public ApiResponse<List<Map<String, Object>>> missingPostmortem(
+            @RequestParam(defaultValue = "20") int limit) {
+        return ApiResponse.success(
+                ticketService.findFinishedWithoutPostmortem(Math.min(Math.max(1, limit), 100)));
     }
 
     /**
@@ -644,16 +656,21 @@ public class TicketController {
     }
 
     /**
-     * 记录 AI 分析反馈（有用 / 没用）——AI 准确率统计数据来源
+     * 记录 AI 分析反馈（有用 / 没用）——AI 准确率统计数据来源。
+     * <p>data 附带 knowledgeBoosted：本次反馈由后端解析 citations 回流的
+     * 被引 chunk 数（0=该分析无引用或回流降级，不视为失败）。</p>
      */
     @PostMapping("/ai-analysis/{analysisId}/feedback")
     public ApiResponse<Map<String, Object>> aiAnalysisFeedback(@PathVariable Long analysisId,
                                                                @RequestBody FeedbackRequest req) {
-        boolean ok = aiAnalysisService.recordFeedback(analysisId, req.helpful());
-        if (!ok) {
+        var result = aiAnalysisService.recordFeedback(analysisId, req.helpful());
+        if (!result.recorded()) {
             return ApiResponse.error(ApiCode.NOT_FOUND, "分析不存在: " + analysisId);
         }
-        return ApiResponse.success(Map.of("analysisId", analysisId, "helpful", req.helpful()));
+        return ApiResponse.success(Map.of(
+                "analysisId", analysisId,
+                "helpful", req.helpful(),
+                "knowledgeBoosted", result.knowledgeBoosted()));
     }
 
     /**

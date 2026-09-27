@@ -137,7 +137,8 @@ class AlertWebhookChainIntegrationTest {
     }
 
     private Optional<Alert> findByName(String alertName) {
-        List<Alert> all = alertRepository.findPage(null, null, 1, 200);
+        // 6 参签名：status/level/system 三筛选 + 观察窗参数（本测试不过滤，全传空）
+        List<Alert> all = alertRepository.findPage(null, null, null, null, 0, 1, 200);
         return all.stream().filter(a -> alertName.equals(a.getAlertName())).findFirst();
     }
 

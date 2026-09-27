@@ -1,0 +1,33 @@
+# Promtail 配置（开发环境，profile=logs）
+#
+# 采集面：本机 Docker 全部容器的 stdout/stderr（docker_sd + socket）。
+# 标签约定（与后端 LokiLogQueryClient 的流选择器 {app=~"<service>.*"} 对齐）：
+#   app            = 容器名（去斜杠前缀），如 devops-prometheus
+#   compose_service = compose 服务名（来自 compose 自动打的容器标签），如 prometheus
+# 诊断按告警的 service 字段拼 {app=~"<service>.*"}——容器名以 service 开头即可命中。
+server:
+  http_listen_port: 9080
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # 容器名 → app（去开头的 /）。这是与后端查询约定的关键标签
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/?(.*)'
+        target_label: app
+      # compose 服务名另存一份，便于排查标签对不上时对照
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: compose_service
+      # 容器内日志流（stdout/stderr）保留为 stream 标签
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: stream

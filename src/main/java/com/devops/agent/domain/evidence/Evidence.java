@@ -43,6 +43,7 @@ public record Evidence(
         public static final String CHANGES = "changes";
         public static final String LOGS    = "logs";
         public static final String TOPOLOGY= "topology";
+        public static final String KNOWLEDGE = "knowledge";
     }
 
     public enum EvidenceStatus { SUCCESS, NO_DATA, FAILED, UNAVAILABLE }

@@ -24,9 +24,12 @@ public class TicketPostmortemController {
     private static final Logger log = LoggerFactory.getLogger(TicketPostmortemController.class);
 
     private final TicketPostmortemService pmService;
+    private final com.devops.agent.application.runtime.PostmortemDraftOrchestrator draftOrchestrator;
 
-    public TicketPostmortemController(TicketPostmortemService pmService) {
+    public TicketPostmortemController(TicketPostmortemService pmService,
+                                      com.devops.agent.application.runtime.PostmortemDraftOrchestrator draftOrchestrator) {
         this.pmService = pmService;
+        this.draftOrchestrator = draftOrchestrator;
     }
 
     /**
@@ -40,6 +43,11 @@ public class TicketPostmortemController {
 
     /**
      * 保存复盘（新建或更新）
+     * <p>
+     * 保存成功后触发「自动沉淀知识草稿」（异步，2026-09-24）：守卫与
+     * 生成全在编排器内，本方法不等 LLM——复盘保存的手感不因自动沉淀变差；
+     * 编排器任何失败也不影响本接口的成功响应（草稿是增值，不是契约）。
+     * </p>
      */
     @PutMapping("/{id}/postmortem")
     public ApiResponse<TicketPostmortem> savePostmortem(@PathVariable String id,
@@ -52,7 +60,9 @@ public class TicketPostmortemController {
         pm.setImpactDuration(req.impactDuration());
         pm.setLessons(req.lessons());
         pm.setDocId(req.docId());
-        return ApiResponse.success(pmService.savePostmortem(pm, req.author()));
+        TicketPostmortem saved = pmService.savePostmortem(pm, req.author());
+        draftOrchestrator.submitDraftAsync(id);
+        return ApiResponse.success(saved);
     }
 
     /**

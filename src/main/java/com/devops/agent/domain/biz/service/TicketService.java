@@ -1171,11 +1171,52 @@ public class TicketService {
     }
 
     /**
-     * 闭环度量：MTTA / MTTM / MTTR + 各阶段完成率 + 跳过验证率
+     * 闭环度量：MTTA / MTTM / MTTR + 各阶段完成率 + 跳过验证率 + 复盘完成率 + 告警建单数。
+     * <p>alertSourced 供效能大盘算告警压缩比（告警总数 / 告警建单数）。</p>
+     * <p>传 days 时附带时间窗口径的压缩比分子分母（告警与建单同窗对齐，否则
+     * 全时段的告警数对上窗口建单数是错的）。</p>
      */
     public java.util.Map<String, Object> getClosureMetrics() {
-        return ticketRepository.countClosureMetrics();
+        return getClosureMetrics(null);
     }
+
+    public java.util.Map<String, Object> getClosureMetrics(Integer days) {
+        java.util.Map<String, Object> metrics = ticketRepository.countClosureMetrics();
+        metrics.put("alertSourced", ticketRepository.countByCreator("alert-bot"));
+        // 复盘完成率：复盘数 / 已完结工单数。分母为 0 时给 null——
+        // 「还没有完结单」与「复盘率 0%」是两回事
+        long postmortems = postmortemRepository.countAll();
+        long finished = ticketRepository.countFinished();
+        metrics.put("postmortemTotal", postmortems);
+        metrics.put("finishedTotal", finished);
+        metrics.put("postmortemRate", finished > 0 ? Math.round(postmortems * 10000.0 / finished) / 100.0 : null);
+        // 时间窗口径：压缩比的告警分子与建单分母必须落在同一窗口
+        if (days != null && days > 0 && alertRepository != null) {
+            java.time.LocalDateTime since = java.time.LocalDateTime.now().minusDays(days);
+            metrics.put("windowDays", days);
+            metrics.put("alertsInWindow", alertRepository.countSince(since));
+            metrics.put("alertSourcedInWindow",
+                    ticketRepository.countByCreatorSince("alert-bot", since));
+            // Incident 方案 C：同窗派生事件数（同 system+service+10分钟窗归并）
+            metrics.put("incidentsInWindow", alertRepository.countDerivedIncidents(since));
+        } else if (alertRepository != null) {
+            // 全时段口径的派生事件数（从纪元起全量归并）
+            metrics.put("incidentsTotal",
+                    alertRepository.countDerivedIncidents(java.time.LocalDateTime.of(2000, 1, 1, 0, 0)));
+        }
+        return metrics;
+    }
+
+    /**
+     * 已完结但没有复盘的工单清单（复盘完成率的行动出口）。
+     */
+    public java.util.List<java.util.Map<String, Object>> findFinishedWithoutPostmortem(int limit) {
+        return postmortemRepository.findFinishedWithoutPostmortem(limit);
+    }
+
+    /** 告警仓储（可选装配）：时间窗口径的压缩比分子用它；缺席时窗口字段不出现 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.domain.alert.repository.AlertRepository alertRepository;
 
     private String verifyMethodLabel(String method) {
         return switch (method) {
@@ -1635,6 +1676,8 @@ public class TicketService {
         data.put("byPriority", byPriority);
 
         data.put("urgentPending", ticketRepository.countUrgentPending());
+        // 待分配积压：真实库里 27/28 张工单无人认领，这个数字不进 KPI 就没人看得见
+        data.put("unassignedOpen", ticketRepository.countUnassignedOpen());
 
         return data;
     }

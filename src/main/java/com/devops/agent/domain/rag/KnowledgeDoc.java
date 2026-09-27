@@ -72,13 +72,18 @@ public class KnowledgeDoc {
     private String knowledgeSource;
 
     /**
-     * 源工单 ID（L1.5 来源回链）
+     * 源工单流水号（L1.5 来源回链）
      * <p>
      * 由工单复盘沉淀的文档记录源工单，便于反查「此工单已沉淀为哪些知识」。
      * 非工单沉淀时为 null。
      * </p>
+     * <p>
+     * <b>字符串工单号（TKT-yyyyMMdd-序号），不是数字</b>：原 Long 类型在
+     * V2 迁移前存不进 TKT 号——前端 Number('TKT-…') 得 NaN 序列化为 null，
+     * 回链恒空。工单主键的真相源是 {@code DevOpsTicket.id}（VARCHAR）。
+     * </p>
      */
-    private Long sourceTicketId;
+    private String sourceTicketId;
 
     /**
      * 来源类型：TICKET / MANUAL / IMPORT 等
@@ -195,8 +200,8 @@ public class KnowledgeDoc {
     public String getKnowledgeSource() { return knowledgeSource; }
     public void setKnowledgeSource(String knowledgeSource) { this.knowledgeSource = knowledgeSource; }
 
-    public Long getSourceTicketId() { return sourceTicketId; }
-    public void setSourceTicketId(Long sourceTicketId) { this.sourceTicketId = sourceTicketId; }
+    public String getSourceTicketId() { return sourceTicketId; }
+    public void setSourceTicketId(String sourceTicketId) { this.sourceTicketId = sourceTicketId; }
 
     public String getSourceType() { return sourceType; }
     public void setSourceType(String sourceType) { this.sourceType = sourceType; }

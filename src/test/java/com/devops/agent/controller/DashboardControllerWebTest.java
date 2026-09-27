@@ -94,6 +94,9 @@ class DashboardControllerWebTest {
     @MockitoBean
     private TicketService ticketService;
 
+    @MockitoBean
+    private com.devops.agent.application.runtime.EffectivenessSnapshotScheduler snapshotScheduler;
+
     @BeforeEach
     void setUpMockMvc() {
         mockMvc = org.springframework.test.web.servlet.setup.MockMvcBuilders

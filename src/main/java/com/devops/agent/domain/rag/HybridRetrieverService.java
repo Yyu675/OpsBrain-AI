@@ -212,7 +212,10 @@ public class HybridRetrieverService implements Retriever {
                             docTitle,
                             (String) row.get("section_header"),
                             text,
-                            toDouble(row.get("score"))
+                            toDouble(row.get("score")),
+                            // 切片主键随行：诊断反馈回流要带「本次引用了哪些 chunk」，
+                            // id 比 citation 字符串反查无歧义（标题含分隔符/章节改版会漂移）
+                            toLongOrNull(row.get("id"))
                     ));
                 }
             }
@@ -243,6 +246,11 @@ public class HybridRetrieverService implements Retriever {
      */
     private double toDouble(Object v) {
         return (v instanceof Number n) ? n.doubleValue() : 0.0;
+    }
+
+    /** 主键列的类型转换：驱动可能返回 Integer/Long/BigDecimal，非数字返回 null（宁缺不编）。 */
+    private static Long toLongOrNull(Object v) {
+        return (v instanceof Number n) ? n.longValue() : null;
     }
 
     /**

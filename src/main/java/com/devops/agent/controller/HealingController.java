@@ -153,6 +153,42 @@ public class HealingController {
         return ApiResponse.success(registry.registeredExecutorKeys());
     }
 
+    /**
+     * 台账统计聚合（PRD §2.2 指标字典 #1「无需人工闭环」与 #5「误操作率」读面）。
+     * <p>响应 = 仓储原始计数 + 三个服务端算好的比率：
+     * <ul>
+     *   <li>{@code autoClosedLoopRate}：auto 执行里「SUCCEEDED 且验证 PASS」的占比
+     *       ——L4 北极星的账本；</li>
+     *   <li>{@code verifyFailRate}：auto 执行里「验证未通过（已自动回滚/升级）」占比
+     *       ——自动处置误操作率（目标恒 0 的那条）；</li>
+     *   <li>{@code undoSuccessRate}：撤销台账里「成功回滚」占比。</li>
+     * </ul>
+     * 比率是 0~1 小数，由前端乘 100 展示，与 TicketAiAnalysis.accuracyStats 同契约。</p>
+     */
+    @GetMapping("/stats")
+    public ApiResponse<Map<String, Object>> stats() {
+        Map<String, Long> raw = repository.stats();
+        long autoTotal = raw.getOrDefault("autoTotal", 0L);
+        long closedLoop = raw.getOrDefault("autoClosedLoop", 0L);
+        long verifyFail = raw.getOrDefault("verifyFail", 0L);
+        long undone = raw.getOrDefault("undone", 0L);
+        long undoFailed = raw.getOrDefault("undoFailed", 0L);
+
+        Map<String, Object> out = new LinkedHashMap<>(raw);
+        out.put("autoClosedLoopRate", rate(closedLoop, autoTotal));
+        out.put("verifyFailRate", rate(verifyFail, autoTotal));
+        out.put("undoSuccessRate", rate(undone, undone + undoFailed));
+        return ApiResponse.success(out);
+    }
+
+    /** 比率（0~1，3 位小数）；分母为 0 时给 0 而非 NaN（与 accuracyStats 同径）。 */
+    private static double rate(long numerator, long denominator) {
+        if (denominator <= 0) {
+            return 0.0;
+        }
+        return Math.round((double) numerator / denominator * 1000) / 1000.0;
+    }
+
     /** 发起人身份：Sa-Token 登录态，不接受前端传入。 */
     private String currentOperator() {
         try {

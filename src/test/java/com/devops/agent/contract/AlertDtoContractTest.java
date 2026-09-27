@@ -117,4 +117,56 @@ class AlertDtoContractTest {
                     .containsExactly(1L, 2L);
         }
     }
+
+    @Nested
+    @DisplayName("Alert 实体直序列化：列表/详情的 JSON 键（含 V9 system 与 FR-3.1 observing）")
+    class AlertEntityKeys {
+
+        /**
+         * 前端逐字段读取的键（devops-platform-frontend/src/api/types.ts
+         * 的 Alert 接口）。列表与详情端点直接序列化 {@link Alert} 实体——
+         * getter 改名不会有编译错误，只是前端悄悄拿到 undefined：
+         * 「观察中」徽标永远不亮、来源系统列永远空白。
+         */
+        private static final List<String> FRONTEND_KEYS = List.of(
+                "id", "source", "system", "alertName", "level", "title", "description",
+                "status", "dedupKey", "service", "module", "occurrenceCount",
+                "firstOccurredAt", "lastOccurredAt", "acknowledgedAt", "resolvedAt",
+                "ticketId", "observing", "createTime", "updateTime");
+
+        /** Jackson 序列化实体时产出的全部 JSON 键（getX/isX → x，首字母小写） */
+        private static List<String> serializedKeys() {
+            return Arrays.stream(Alert.class.getMethods())
+                    .map(java.lang.reflect.Method::getName)
+                    .filter(n -> n.startsWith("get") || n.startsWith("is"))
+                    .filter(n -> !"getClass".equals(n))
+                    .map(n -> {
+                        String stripped = n.startsWith("get") ? n.substring(3) : n.substring(2);
+                        return Character.toLowerCase(stripped.charAt(0)) + stripped.substring(1);
+                    })
+                    .distinct()
+                    .toList();
+        }
+
+        @Test
+        @DisplayName("前端逐字段读取的键全部存在（含 system / observing）")
+        void frontendKeysAllPresent() {
+            assertThat(serializedKeys())
+                    .as("Alert 实体的 getter 名就是响应 JSON 的键，前端 types.ts 逐字段读取。"
+                            + "改名/删除不会有编译错误，只是前端悄悄拿到 undefined")
+                    .containsAll(FRONTEND_KEYS);
+        }
+
+        @Test
+        @DisplayName("system 与 observing 这两个 9-27 新增键必须可达 —— 防重构时顺手删掉")
+        void newKeysPresent() {
+            Alert a = new Alert();
+            a.setSystem("wms");
+            a.setObserving(true);
+
+            assertThat(a.getSystem()).isEqualTo("wms");
+            assertThat(a.isObserving()).isTrue();
+            assertThat(serializedKeys()).contains("system", "observing");
+        }
+    }
 }

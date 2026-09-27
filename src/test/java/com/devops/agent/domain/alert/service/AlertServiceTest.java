@@ -22,6 +22,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -77,6 +78,7 @@ class AlertServiceTest {
         diagnosisOrchestrator = mock(com.devops.agent.application.diagnosis.DiagnosisOrchestrator.class);
         when(diagnosisOrchestrator.submit(anyLong(), any(), anyString())).thenReturn("trace-diag-1");
         service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
+                new com.devops.agent.domain.alert.AlertmanagerSourceAdapter(),
                 diagnosisOrchestrator);
 
         // @Value 字段在非 Spring 环境不会注入，必须显式设成与生产默认值一致
@@ -86,6 +88,7 @@ class AlertServiceTest {
         ReflectionTestUtils.setField(service, "aggregateEnabled", true);
         ReflectionTestUtils.setField(service, "aggregateWindowMinutes", 5);
         ReflectionTestUtils.setField(service, "autoDiagnoseEnabled", true);
+        ReflectionTestUtils.setField(service, "autoTicketMinLevel", "P3");
 
         // 默认：无活跃告警、无可聚合的组工单、保存后回填 ID
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
@@ -138,6 +141,13 @@ class AlertServiceTest {
         ArgumentCaptor<Alert> cap = ArgumentCaptor.forClass(Alert.class);
         verify(alertRepository).insertOrIncrement(cap.capture());
         return cap.getValue();
+    }
+
+    /** 取所有 upsert 调用（一个用例多次 processWebhook 时用，按调用顺序） */
+    private List<Alert> savedAlerts() {
+        ArgumentCaptor<Alert> cap = ArgumentCaptor.forClass(Alert.class);
+        verify(alertRepository, org.mockito.Mockito.atLeastOnce()).insertOrIncrement(cap.capture());
+        return cap.getAllValues();
     }
 
     // ==================================================================
@@ -375,6 +385,41 @@ class AlertServiceTest {
         }
 
         @Test
+        @DisplayName("服务路由命中：工单直接派给值班负责人，不再停在「待分配」")
+        void routedServiceAssignsOwner() {
+            // 2026-09-25 真实库：27/28 张工单停在待分配——建单恒传 null assignee。
+            // 路由命中后，单子在建出来那一刻就有负责人
+            var routeRepo = mock(com.devops.agent.domain.biz.repository.ServiceOwnerRepository.class);
+            when(routeRepo.findOwnerByService("order")).thenReturn(Optional.of("张明"));
+            ReflectionTestUtils.setField(service, "serviceOwnerRepository", routeRepo);
+
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "PodCrash", "service", "order", "module", "pod",
+                            "severity", "critical"))));
+
+            ArgumentCaptor<String> assignee = ArgumentCaptor.forClass(String.class);
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    assignee.capture(), anyString(), anyString(), anyString(), anyString());
+            assertEquals("张明", assignee.getValue());
+        }
+
+        @Test
+        @DisplayName("服务未配置路由：保持「待分配」原行为，路由缺席不报错")
+        void unroutedServiceKeepsUnassigned() {
+            var routeRepo = mock(com.devops.agent.domain.biz.repository.ServiceOwnerRepository.class);
+            when(routeRepo.findOwnerByService(anyString())).thenReturn(Optional.empty());
+            ReflectionTestUtils.setField(service, "serviceOwnerRepository", routeRepo);
+
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "PodCrash", "service", "unknown-svc"))));
+
+            ArgumentCaptor<String> assignee = ArgumentCaptor.forClass(String.class);
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    assignee.capture(), anyString(), anyString(), anyString(), anyString());
+            assertNull(assignee.getValue());
+        }
+
+        @Test
         @DisplayName("module 标签大写归一；缺失时为 OTHER")
         void moduleIsNormalized() {
             service.processWebhook(webhook(incoming("firing",
@@ -400,6 +445,53 @@ class AlertServiceTest {
             // 这是告警可见性铁律：建单挂了，告警仍必须能在列表里看到，
             // 否则运维连「有这么回事」都不知道
             verify(alertRepository).insertOrIncrement(any(Alert.class));
+        }
+
+        @Test
+        @DisplayName("分级建单：P4 信息类告警只入库统计，不建工单（默认门槛 P3）")
+        void infoLevelAlertSkipsTicketCreation() {
+            // 真实库 27/28 张工单无人认领——info 级噪声建单是主因之一。
+            // 告警照常入库（列表可见），只是不产生工单
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "DiskSpaceLow", "service", "svc", "severity", "info"))));
+
+            assertEquals("P4", savedAlert().getLevel());
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("分级建单：P3 告警照常建单——门槛不能误伤要响应的级别")
+        void p3AlertStillCreatesTicket() {
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "HighLatency", "service", "svc", "severity", "P3"))));
+
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("门槛可配置：调为 P4 后 info 级告警也建单")
+        void thresholdIsConfigurable() {
+            ReflectionTestUtils.setField(service, "autoTicketMinLevel", "P4");
+
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "DiskSpaceLow", "service", "svc", "severity", "info"))));
+
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("门槛配置非法时回退 P3——配错不能变成「从此不建单」")
+        void invalidThresholdFallsBackToP3() {
+            ReflectionTestUtils.setField(service, "autoTicketMinLevel", "P9");
+
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "X", "service", "svc", "severity", "P3"))));
+
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
         }
 
         @Test
@@ -552,6 +644,384 @@ class AlertServiceTest {
         // 建单仍发生（开关只关诊断）
         verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
                 any(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    // ==================== FR-3.1：自愈观察窗 ====================
+
+    @Nested
+    @DisplayName("自愈观察窗（FR-3.1：观察级告警延迟建单）")
+    class ObservationWindow {
+
+        private void enableObservation() {
+            ReflectionTestUtils.setField(service, "observationEnabled", true);
+            ReflectionTestUtils.setField(service, "observationLevels", "P2,P3");
+            ReflectionTestUtils.setField(service, "observationWindowMinutes", 10);
+        }
+
+        @Test
+        @DisplayName("观察级（warning→P2）新告警只入库不建单、不诊断 —— 等待自愈，省 LLM 成本")
+        void warningAlertEntersObservation() {
+            enableObservation();
+
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "ConnectionPoolHigh",
+                    "service", "wms-api",
+                    "severity", "warning"))));
+
+            // 告警本体仍入库（可见性铁律），但建单与诊断都被推迟到观察窗到期
+            verify(alertRepository).insertOrIncrement(any(Alert.class));
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+            verify(diagnosisOrchestrator, never()).submit(anyLong(), any(), anyString());
+        }
+
+        @Test
+        @DisplayName("高危（critical→P0）不走观察窗 —— 高危等不起一个窗口")
+        void criticalAlertSkipsObservation() {
+            enableObservation();
+
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "OrderApiDown",
+                    "service", "order-api",
+                    "severity", "critical"))));
+
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("观察窗关闭时 warning 立即建单 —— 回退旧行为")
+        void observationDisabledCreatesImmediately() {
+            // 不开 enableObservation：observationEnabled 未注入（false）= 旧行为
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "ConnectionPoolHigh",
+                    "service", "wms-api",
+                    "severity", "warning"))));
+
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("低于建单门槛的级别不进观察窗语义 —— 走原「只入库统计」分支")
+        void belowThresholdNeverObserved() {
+            enableObservation();
+            // 门槛收到 P1 时，P2 本就只统计不建单；观察窗语义不能把它变成「到期补建」
+            ReflectionTestUtils.setField(service, "autoTicketMinLevel", "P1");
+
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "ConnectionPoolHigh",
+                    "service", "wms-api",
+                    "severity", "warning"))));
+
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("观察窗到期补建：未自愈的观察级告警建单 + 回填 + 补诊断")
+        void dueAlertGetsTicketAndDiagnosis() {
+            enableObservation();
+            Alert pending = new Alert();
+            pending.setId(55L);
+            pending.setAlertName("ConnectionPoolHigh");
+            pending.setLevel("P2");
+            pending.setService("wms-api");
+            pending.setModule("DB");
+            pending.setDedupKey("dk-55");
+            when(alertRepository.findObservationDue(any(), anyInt(), anyInt(), anyInt()))
+                    .thenReturn(List.of(pending));
+
+            service.createDelayedTickets();
+
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+            verify(alertRepository).updateTicketId(eq(55L), eq("TK-2026-0001"));
+            verify(diagnosisOrchestrator).submit(eq(55L), eq("TK-2026-0001"), eq("wms-api"));
+            // 补建留痕：复盘时工单活动流能看到这单是「观察窗到期补建」而非立即建单
+            verify(ticketService).recordActivity(eq("TK-2026-0001"), eq("primary"),
+                    eq("观察窗到期补建"), anyString(), eq("alert-bot"), eq(false));
+        }
+
+        @Test
+        @DisplayName("补建时窗口内已有组工单 → 关联进组而非新建（聚合降噪语义一致）")
+        void dueAlertJoinsGroupTicket() {
+            enableObservation();
+            Alert pending = new Alert();
+            pending.setId(56L);
+            pending.setAlertName("ConnectionPoolHigh");
+            pending.setLevel("P2");
+            pending.setService("wms-api");
+            pending.setModule("DB");
+            pending.setDedupKey("dk-56");
+            Alert group = new Alert();
+            group.setId(9L);
+            group.setTicketId("TK-GROUP");
+            when(alertRepository.findObservationDue(any(), anyInt(), anyInt(), anyInt()))
+                    .thenReturn(List.of(pending));
+            when(alertRepository.findActiveGroupTicket(any(), any(), anyInt()))
+                    .thenReturn(Optional.of(group));
+
+            service.createDelayedTickets();
+
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+            verify(alertRepository).updateTicketId(eq(56L), eq("TK-GROUP"));
+            verify(diagnosisOrchestrator, never()).submit(anyLong(), any(), anyString());
+        }
+
+        @Test
+        @DisplayName("无到期告警时扫描空转 —— 不碰建单链")
+        void noDueAlertsIsNoop() {
+            enableObservation();
+            when(alertRepository.findObservationDue(any(), anyInt(), anyInt(), anyInt()))
+                    .thenReturn(List.of());
+
+            service.createDelayedTickets();
+
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("补建单条失败不拖垮整批 —— 下轮扫描还会捞到失败者")
+        void oneFailureDoesNotAbortBatch() {
+            enableObservation();
+            Alert bad = new Alert();
+            bad.setId(57L);
+            bad.setAlertName("Bad");
+            bad.setLevel("P2");
+            bad.setService("svc-a");
+            bad.setModule("DB");
+            bad.setDedupKey("dk-57");
+            Alert good = new Alert();
+            good.setId(58L);
+            good.setAlertName("Good");
+            good.setLevel("P3");
+            good.setService("svc-b");
+            good.setModule("HOST");
+            good.setDedupKey("dk-58");
+            when(alertRepository.findObservationDue(any(), anyInt(), anyInt(), anyInt()))
+                    .thenReturn(List.of(bad, good));
+            when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString()))
+                    .thenThrow(new RuntimeException("db down"))
+                    .thenAnswer(inv -> {
+                        DevOpsTicket t = new DevOpsTicket();
+                        t.setId("TK-2026-0002");
+                        return t;
+                    });
+
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.createDelayedTickets());
+
+            // 两条都尝试过（bad 失败、good 成功）
+            verify(ticketService, times(2)).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+            verify(alertRepository).updateTicketId(eq(58L), eq("TK-2026-0002"));
+        }
+    }
+
+    // ==================== FR-1.2：来源系统路径注入 ====================
+
+    @Nested
+    @DisplayName("来源系统注入（/webhook/{system} 路径优先，payload 不可伪造）")
+    class SystemInjection {
+
+        @Test
+        @DisplayName("路径注入覆盖 payload 的 system label —— 路径是部署侧保证")
+        void pathSystemOverridesPayload() {
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "HighCpu", "service", "api", "system", "payload-lie"))), "wms");
+
+            assertEquals("wms", savedAlert().getSystem());
+        }
+
+        @Test
+        @DisplayName("路径注入的 system 参与去重 —— 不同系统的同名告警不互相计次")
+        void systemParticipatesInDedupKey() {
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "HighCpu", "service", "api"))), "mes");
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "HighCpu", "service", "api"))), "wms");
+
+            List<Alert> saved = savedAlerts();
+            assertNotEquals(saved.get(0).getDedupKey(), saved.get(1).getDedupKey());
+        }
+
+        @Test
+        @DisplayName("旧端点（无路径段）回落 payload label，再回落 default")
+        void legacyEndpointFallsBack() {
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "HighCpu", "service", "api", "system", "erp"))));
+            service.processWebhook(webhook(incoming("firing", Map.of(
+                    "alertname", "HighCpu", "service", "api"))));
+
+            List<Alert> saved = savedAlerts();
+            assertEquals("erp", saved.get(0).getSystem());
+            assertEquals("default", saved.get(1).getSystem());
+        }
+    }
+
+    // ==================== FR-2.5：全局风暴模式 ====================
+
+    @Nested
+    @DisplayName("全局风暴模式（FR-2.5：速率熔断 + 摘要事件）")
+    class StormMode {
+
+        private void enableStorm(int enter, int exit) {
+            ReflectionTestUtils.setField(service, "stormEnabled", true);
+            ReflectionTestUtils.setField(service, "stormEnterRatePerMin", enter);
+            ReflectionTestUtils.setField(service, "stormExitRatePerMin", exit);
+            // 让 insertOrIncrement 表现出去重语义：同键第二次起返回 false
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            when(alertRepository.insertOrIncrement(any(Alert.class))).thenAnswer(inv -> {
+                Alert a = inv.getArgument(0);
+                a.setId(1L);
+                return seen.add(a.getDedupKey());
+            });
+        }
+
+        private AlertmanagerWebhook firingBatch(String... names) {
+            AlertmanagerWebhook.Alert[] arr = new AlertmanagerWebhook.Alert[names.length];
+            for (int i = 0; i < names.length; i++) {
+                arr[i] = incoming("firing", Map.of(
+                        "alertname", names[i], "service", "svc-" + i, "severity", "warning"));
+            }
+            return webhook(arr);
+        }
+
+        @Test
+        @DisplayName("速率未达阈值不进入风暴 —— 低开销快路径不能误伤日常流量")
+        void belowThresholdNoStorm() {
+            enableStorm(100, 20);
+            service.processWebhook(firingBatch("A", "B"));
+            // 两条 warning（P2）都正常走观察窗分支外的原路径…观察窗未开启，直接建单
+            verify(ticketService, times(2)).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("速率超阈值进入风暴：低级别抑制进摘要，整场风暴只建一张摘要单")
+        void stormSuppressesLowLevels() {
+            enableStorm(3, 1);
+
+            service.processWebhook(firingBatch("A", "B", "C"));
+
+            // 三条 warning 本体全部入库（可见性铁律）；每条抑制都 upsert 一次摘要（3+3）
+            verify(alertRepository, times(6)).insertOrIncrement(any(Alert.class));
+            // 只为摘要事件建一张单（P1 高危放行），三条 warning 各不建单
+            // （createAutoTicket 自建标题：「【告警】OpsBrainAlertStormSummary - …」）
+            ArgumentCaptor<String> titleCap = ArgumentCaptor.forClass(String.class);
+            verify(ticketService, times(1)).createTicket(titleCap.capture(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+            org.junit.jupiter.api.Assertions.assertTrue(titleCap.getValue().contains("OpsBrainAlertStormSummary"));
+        }
+
+        @Test
+        @DisplayName("风暴中高危（critical→P0）照常建单 —— 风暴模式不是一刀切")
+        void stormBypassesHighRisk() {
+            enableStorm(2, 1);
+
+            service.processWebhook(webhook(
+                    incoming("firing", Map.of("alertname", "LowA", "service", "svc", "severity", "warning")),
+                    incoming("firing", Map.of("alertname", "OrderApiDown", "service", "order-api", "severity", "critical"))));
+
+            // P0 建单 + 摘要单 = 2 张
+            verify(ticketService, times(2)).createTicket(anyString(), anyString(), anyString(),
+                    anyString(), any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("速率回落自动退出风暴并恢复摘要事件")
+        void stormExitsAndResolvesSummary() {
+            enableStorm(3, 1);
+            Alert summary = new Alert();
+            summary.setId(99L);
+            summary.setAlertName(com.devops.agent.domain.alert.ReservedAlertNames.STORM_SUMMARY);
+            summary.setStatus("FIRING");
+            when(alertRepository.findActiveByDedupKey("storm-summary")).thenReturn(Optional.of(summary));
+
+            service.processWebhook(firingBatch("A", "B", "C"));   // 进入风暴
+
+            // 模拟 60 秒窗口过去：清空到达记录，再推一条（速率 1 ≤ 退出阈值 1）
+            @SuppressWarnings("unchecked")
+            java.util.Deque<Long> arrivals =
+                    (java.util.Deque<Long>) ReflectionTestUtils.getField(service, "stormArrivals");
+            arrivals.clear();
+
+            service.processWebhook(firingBatch("D"));
+
+            // 摘要事件被自动恢复，新告警 D 走正常链路（观察窗未开 → 直接建单）
+            verify(alertRepository).resolve(eq(99L));
+        }
+        @Test
+        @DisplayName("风暴状态快照：反映当前速率与状态（告警列表横幅的数据源）")
+        void stormStatusSnapshot() {
+            enableStorm(3, 1);
+
+            var idle = service.stormStatus();
+            org.junit.jupiter.api.Assertions.assertFalse(idle.active());
+            org.junit.jupiter.api.Assertions.assertEquals(0, idle.ratePerMin());
+
+            service.processWebhook(firingBatch("A", "B", "C"));
+
+            var active = service.stormStatus();
+            org.junit.jupiter.api.Assertions.assertTrue(active.active());
+            org.junit.jupiter.api.Assertions.assertEquals(3, active.ratePerMin());
+        }
+    }
+
+    // ==================== 观察中派生判定（列表「观察中」标识的数据源） ====================
+
+    @Nested
+    @DisplayName("isObserving 观察中判定")
+    class ObservingFlag {
+
+        private void enableObservation() {
+            ReflectionTestUtils.setField(service, "observationEnabled", true);
+            ReflectionTestUtils.setField(service, "observationLevels", "P2,P3");
+            ReflectionTestUtils.setField(service, "observationWindowMinutes", 10);
+        }
+
+        private Alert alertWith(String level, String status, String ticketId, java.time.LocalDateTime first) {
+            Alert a = new Alert();
+            a.setLevel(level);
+            a.setStatus(status);
+            a.setTicketId(ticketId);
+            a.setFirstOccurredAt(first);
+            return a;
+        }
+
+        @Test
+        @DisplayName("观察级 + 活跃 + 未建单 + 未超窗 = 观察中")
+        void observingWhenPending() {
+            enableObservation();
+            Alert a = alertWith("P2", "FIRING", null, java.time.LocalDateTime.now().minusMinutes(3));
+            org.junit.jupiter.api.Assertions.assertTrue(service.isObserving(a));
+        }
+
+        @Test
+        @DisplayName("已建单 / 超窗 / 高危 / 已恢复 都不是观察中")
+        void notObservingCases() {
+            enableObservation();
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    service.isObserving(alertWith("P2", "FIRING", "TK-1", now.minusMinutes(3)))); // 已建单
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    service.isObserving(alertWith("P2", "FIRING", null, now.minusMinutes(30)))); // 超窗
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    service.isObserving(alertWith("P0", "FIRING", null, now.minusMinutes(3)))); // 非观察级
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    service.isObserving(alertWith("P2", "RESOLVED", null, now.minusMinutes(3)))); // 已恢复
+        }
+
+        @Test
+        @DisplayName("观察窗开关关闭时一律不是观察中")
+        void disabledNeverObserving() {
+            // 不设 observationEnabled（false）
+            Alert a = alertWith("P2", "FIRING", null, java.time.LocalDateTime.now().minusMinutes(1));
+            org.junit.jupiter.api.Assertions.assertFalse(service.isObserving(a));
+        }
     }
 
 }

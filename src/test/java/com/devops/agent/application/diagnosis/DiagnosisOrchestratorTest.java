@@ -8,6 +8,7 @@ import com.devops.agent.domain.biz.repository.DiagnosisEvidenceRepository;
 import com.devops.agent.domain.biz.repository.DiagnosisSessionRepository;
 import com.devops.agent.domain.evidence.ChangesEvidenceCollector;
 import com.devops.agent.domain.evidence.Evidence;
+import com.devops.agent.domain.evidence.KnowledgeEvidenceCollector;
 import com.devops.agent.domain.evidence.LogsEvidenceCollector;
 import com.devops.agent.domain.evidence.MetricsEvidenceCollector;
 import com.devops.agent.domain.evidence.MetricsQueryCatalog;
@@ -50,6 +51,8 @@ class DiagnosisOrchestratorTest {
     private ChangesEvidenceCollector changesCollector;
     @Mock
     private LogsEvidenceCollector logsCollector;
+    @Mock
+    private KnowledgeEvidenceCollector knowledgeCollector;
     @Mock
     private MetricsQueryCatalog catalog;
     @Mock
@@ -94,11 +97,18 @@ class DiagnosisOrchestratorTest {
         // lenient：WEAK/异常路径不走到假设生成，短路径用例里本桩闲置
         lenient().when(hypothesisGenerator.generate(any(), any()))
                 .thenReturn(java.util.List.of());
+        // lenient：知识证据是第四方向，短路径用例里多数不消费——但必须有桩，
+        // 否则 NPE（采集器现在恒被调用）
+        lenient().when(knowledgeCollector.collect(anyString(), anyString(), any(), any()))
+                .thenReturn(new Evidence(
+                        Evidence.EvidenceStatus.NO_DATA, Evidence.Type.KNOWLEDGE, "知识库相似文档",
+                        Map.of("reason", "无相关文档"), "", null, Instant.now()));
         orchestrator = new DiagnosisOrchestrator(
-                metricsCollector, changesCollector, logsCollector,
+                metricsCollector, changesCollector, logsCollector, knowledgeCollector,
                 catalog, evidenceRepository, sessionRepository, stateManager,
                 aiAnalysisService, hypothesisGenerator, hypothesisRepository,
-                wsNotifier, notifier);
+                wsNotifier, notifier,
+                mock(com.devops.agent.domain.alert.repository.AlertRepository.class));
     }
 
     @AfterEach
@@ -126,8 +136,8 @@ class DiagnosisOrchestratorTest {
         // sleep 在这里是容忍的风险，低风险（只有实测出问题时才返回调优）
         Thread.sleep(200);
 
-        // 证据队入落库全体——三条方向都不丢。
-        verify(evidenceRepository, times(3)).save(anyString(), anyString(),
+        // 证据队列落库全体——四条方向都不丢（metrics/changes/logs + P0 新增的知识库）。
+        verify(evidenceRepository, times(4)).save(anyString(), anyString(),
                 anyString(), anyString(), anyString(), any(), any(), any(), any());
         // 会话收尾——sufficiency 落盘。
         verify(sessionRepository).complete(anyLong(), anyString(),

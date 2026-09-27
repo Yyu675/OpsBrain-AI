@@ -540,6 +540,26 @@ public class DevOpsTicketRepository {
     }
 
     /**
+     * 统计「待分配且未完结」的工单数（供列表页「未分配」提示卡）。
+     * <p>
+     * 待分配是库里的哨兵值「待分配」（建单时未指定负责人的落库值）。
+     * 未完结口径与 countUrgentPending 一致：已解决/已关闭/作废的不算积压。
+     * </p>
+     */
+    public long countUnassignedOpen() {
+        String sql = """
+            SELECT COUNT(*) FROM sys_devops_ticket
+             WHERE assignee = '待分配'
+               AND status NOT IN (?, ?, ?)
+            """;
+        Long n = jdbcTemplate.queryForObject(sql, Long.class,
+                TicketEnums.Status.RESOLVED,
+                TicketEnums.Status.CLOSED,
+                TicketEnums.Status.VOID);
+        return n != null ? n : 0L;
+    }
+
+    /**
      * 统计今日新建工单数（供看板 KPI「今日新增」）
      */
     public long countCreatedToday() {
@@ -868,6 +888,32 @@ public class DevOpsTicketRepository {
             log.warn("⚠️ [Repository] 根因统计失败: {}", e.getMessage());
         }
         return result;
+    }
+
+    /**
+     * 按创建人计数（效能大盘的「告警自动建单数」用：creator='alert-bot'）。
+     * 告警压缩比 = 告警总数 / 告警建单数——这个分母只能从工单侧数。
+     */
+    public long countByCreator(String creator) {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sys_devops_ticket WHERE creator = ?", Long.class, creator);
+        return n != null ? n : 0L;
+    }
+
+    /** 按创建人 + 时间窗计数（压缩比的时间窗口径：建单时间 >= since）。 */
+    public long countByCreatorSince(String creator, java.time.LocalDateTime since) {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sys_devops_ticket WHERE creator = ? AND create_time >= ?",
+                Long.class, creator, java.sql.Timestamp.valueOf(since));
+        return n != null ? n : 0L;
+    }
+
+    /** 已完结（已解决/已关闭）工单数——复盘完成率的分母。 */
+    public long countFinished() {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sys_devops_ticket WHERE status IN (?, ?)",
+                Long.class, TicketEnums.Status.RESOLVED, TicketEnums.Status.CLOSED);
+        return n != null ? n : 0L;
     }
 
     /**

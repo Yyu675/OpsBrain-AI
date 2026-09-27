@@ -1,6 +1,7 @@
 package com.devops.agent.domain.biz.service;
 
 import com.devops.agent.domain.biz.entity.TicketAiAnalysis;
+import com.devops.agent.domain.biz.repository.KnowledgeBoostRepository;
 import com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,16 +10,21 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,14 +59,26 @@ import static org.mockito.Mockito.when;
 class TicketAiAnalysisServiceTest {
 
     private TicketAiAnalysisRepository repository;
+    private KnowledgeBoostRepository knowledgeBoostRepository;
     private TicketAiAnalysisService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(TicketAiAnalysisRepository.class);
+        knowledgeBoostRepository = mock(KnowledgeBoostRepository.class);
         // insert 原样回传，便于断言"交给仓储的那个实体"长什么样
         when(repository.insert(any())).thenAnswer(i -> i.getArgument(0));
-        service = new TicketAiAnalysisService(repository);
+        // 默认「引用无命中」：回流相关用例再显式覆盖为有命中
+        when(knowledgeBoostRepository.resolveChunkIds(anyCollection())).thenReturn(Set.of());
+        service = new TicketAiAnalysisService(repository, knowledgeBoostRepository);
+    }
+
+    /** 构造一条带 citations 的分析行（回流用例的 findById 返回值） */
+    private void analysisWithCitations(long id, List<String> citations) {
+        TicketAiAnalysis a = new TicketAiAnalysis();
+        a.setId(id);
+        a.setCitations(citations);
+        when(repository.findById(id)).thenReturn(a);
     }
 
     /** 取出真正交给仓储的实体——断言纠偏结果只能看它，不能看入参 */
@@ -193,20 +211,154 @@ class TicketAiAnalysisServiceTest {
         }
 
         @Test
-        @DisplayName("更新成功返回 true")
+        @DisplayName("更新成功 recorded=true")
         void successReturnsTrue() {
             when(repository.updateFeedback(anyLong(), anyString())).thenReturn(1);
-            assertThat(service.recordFeedback(1L, true)).isTrue();
+            assertThat(service.recordFeedback(1L, true).recorded()).isTrue();
         }
 
         @Test
-        @DisplayName("影响 0 行返回 false——分析不存在必须与成功可区分")
+        @DisplayName("影响 0 行 recorded=false——分析不存在必须与成功可区分")
         void zeroRowsReturnsFalse() {
             // 若这里返回 true，用户点了「有用」看到成功提示，
             // 而这条反馈从未进入统计。反馈量本就稀少，
             // 静默丢失会让准确率长期偏离真实值
             when(repository.updateFeedback(anyLong(), anyString())).thenReturn(0);
-            assertThat(service.recordFeedback(999L, true)).isFalse();
+            assertThat(service.recordFeedback(999L, true).recorded()).isFalse();
+        }
+    }
+
+    // ==================================================================
+    // recordFeedback → 知识回流（后端自取被引 chunk）
+    // ==================================================================
+
+    @Nested
+    @DisplayName("recordFeedback 知识回流（2026-09-24：后端按分析行 citations 解析 chunk）")
+    class FeedbackKnowledgeBoost {
+
+        @Test
+        @DisplayName("helpful=true：解析该分析的 citations，对每个命中 chunk 记 HELPFUL")
+        void helpfulFeedbackBoostsCitedChunks() {
+            List<String> citations = List.of("【来源：手册A - 章节1】", "手册B - 章节2");
+            analysisWithCitations(7L, citations);
+            when(repository.updateFeedback(7L, TicketAiAnalysis.FEEDBACK_HELPFUL)).thenReturn(1);
+            Set<Long> hits = new LinkedHashSet<>(List.of(11L, 12L));
+            when(knowledgeBoostRepository.resolveChunkIds(citations)).thenReturn(hits);
+
+            var result = service.recordFeedback(7L, true);
+
+            assertThat(result.recorded()).isTrue();
+            assertThat(result.knowledgeBoosted()).isEqualTo(2);
+            // 解析入参必须原样来自分析行——不是前端传的（前端根本没有这个数据）
+            verify(knowledgeBoostRepository).resolveChunkIds(citations);
+            verify(knowledgeBoostRepository).recordFeedback(11L, TicketAiAnalysis.FEEDBACK_HELPFUL);
+            verify(knowledgeBoostRepository).recordFeedback(12L, TicketAiAnalysis.FEEDBACK_HELPFUL);
+        }
+
+        @Test
+        @DisplayName("helpful=false：verdict 落 UNHELPFUL（仓储映射为 wrong+1），boosted 照计")
+        void unhelpfulMapsToWrongVerdict() {
+            // 断言落在实际写入的判定值上：若把 UNHELPFUL 误传成 HELPFUL，
+            // 错评会让被引文档升权——方向完全反了，且统计上看不出异常
+            analysisWithCitations(3L, List.of("【来源：手册A - 章节1】"));
+            when(repository.updateFeedback(3L, TicketAiAnalysis.FEEDBACK_UNHELPFUL)).thenReturn(1);
+            when(knowledgeBoostRepository.resolveChunkIds(anyCollection())).thenReturn(Set.of(21L));
+
+            var result = service.recordFeedback(3L, false);
+
+            assertThat(result.recorded()).isTrue();
+            verify(knowledgeBoostRepository).recordFeedback(21L, TicketAiAnalysis.FEEDBACK_UNHELPFUL);
+            verify(knowledgeBoostRepository, never())
+                    .recordFeedback(eq(21L), eq(TicketAiAnalysis.FEEDBACK_HELPFUL));
+        }
+
+        @Test
+        @DisplayName("分析行 citations 为空/NULL：不解析不回流，recorded 仍为 true")
+        void noCitationsSkipsResolve() {
+            analysisWithCitations(4L, null);
+            when(repository.updateFeedback(4L, TicketAiAnalysis.FEEDBACK_HELPFUL)).thenReturn(1);
+
+            var result = service.recordFeedback(4L, true);
+
+            assertThat(result.recorded()).isTrue();
+            assertThat(result.knowledgeBoosted()).isZero();
+            verify(knowledgeBoostRepository, never()).resolveChunkIds(anyCollection());
+            verify(knowledgeBoostRepository, never()).recordFeedback(anyLong(), anyString());
+        }
+
+        @Test
+        @DisplayName("解析抛异常：反馈仍落库（回流是增值冒险），boosted=0，不向上抛")
+        void resolveFailureDoesNotFailFeedback() {
+            analysisWithCitations(5L, List.of("【来源：手册A - 章节1】"));
+            when(repository.updateFeedback(5L, TicketAiAnalysis.FEEDBACK_HELPFUL)).thenReturn(1);
+            when(knowledgeBoostRepository.resolveChunkIds(anyCollection()))
+                    .thenThrow(new IllegalStateException("db down"));
+
+            var result = service.recordFeedback(5L, true);
+
+            assertThat(result.recorded())
+                    .as("回流故障绝不能把已落库的反馈翻成失败——那会让前端提示误导用户重评")
+                    .isTrue();
+            assertThat(result.knowledgeBoosted()).isZero();
+        }
+
+        @Test
+        @DisplayName("第 N 个 chunk 回流失败：已回流的计数保留，不抛出")
+        void partialBoostFailureKeepsCountAndDoesNotThrow() {
+            analysisWithCitations(6L, List.of("【来源：手册A - 章节1】"));
+            when(repository.updateFeedback(6L, TicketAiAnalysis.FEEDBACK_HELPFUL)).thenReturn(1);
+            when(knowledgeBoostRepository.resolveChunkIds(anyCollection()))
+                    .thenReturn(new LinkedHashSet<>(List.of(31L, 32L)));
+            org.mockito.Mockito.doThrow(new IllegalStateException("dup"))
+                    .when(knowledgeBoostRepository).recordFeedback(32L, TicketAiAnalysis.FEEDBACK_HELPFUL);
+
+            var result = service.recordFeedback(6L, true);
+
+            assertThat(result.recorded()).isTrue();
+            assertThat(result.knowledgeBoosted())
+                    .as("计数应停在失败前已成功的条数，而不是回 0（0 会掩盖已发生的回流）")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("分析不存在：不读 citations 不回流——不存在的行上无引用可取")
+        void missingAnalysisSkipsBoost() {
+            when(repository.updateFeedback(anyLong(), anyString())).thenReturn(0);
+
+            var result = service.recordFeedback(404L, true);
+
+            assertThat(result.recorded()).isFalse();
+            assertThat(result.knowledgeBoosted()).isZero();
+            verify(repository, never()).findById(anyLong());
+            verify(knowledgeBoostRepository, never()).resolveChunkIds(anyCollection());
+        }
+
+        @Test
+        @DisplayName("resolveChunkIds 返回 null 防御：boosted=0 不 NPE")
+        void nullResolveResultSafe() {
+            analysisWithCitations(8L, List.of("【来源：手册A - 章节1】"));
+            when(repository.updateFeedback(8L, TicketAiAnalysis.FEEDBACK_HELPFUL)).thenReturn(1);
+            when(knowledgeBoostRepository.resolveChunkIds(anyCollection())).thenReturn(null);
+
+            var result = service.recordFeedback(8L, true);
+
+            assertThat(result.recorded()).isTrue();
+            assertThat(result.knowledgeBoosted()).isZero();
+        }
+
+        @Test
+        @DisplayName("回流恰好一次：每 chunk 只记一条反馈，不重复计数")
+        void boostCalledOncePerChunk() {
+            analysisWithCitations(9L, List.of("【来源：手册A - 章节1】"));
+            when(repository.updateFeedback(9L, TicketAiAnalysis.FEEDBACK_HELPFUL)).thenReturn(1);
+            when(knowledgeBoostRepository.resolveChunkIds(anyCollection())).thenReturn(Set.of(41L));
+
+            var result = service.recordFeedback(9L, true);
+
+            assertThat(result.knowledgeBoosted()).isEqualTo(1);
+            verify(knowledgeBoostRepository, times(1)).recordFeedback(41L, TicketAiAnalysis.FEEDBACK_HELPFUL);
+            // 单次反馈重复落反馈会让 wrong/helpful 计数虚增，boost 被人为放大
+            verify(repository, times(1)).updateFeedback(9L, TicketAiAnalysis.FEEDBACK_HELPFUL);
         }
     }
 

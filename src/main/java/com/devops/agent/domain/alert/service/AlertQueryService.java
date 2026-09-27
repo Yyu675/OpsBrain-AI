@@ -36,10 +36,37 @@ public class AlertQueryService {
 
     private final AlertRepository alertRepository;
     private final AlertWebSocketNotifier alertNotifier;
+    /** 观察窗判定（FR-3.1 读路径派生）——配置单一事实源在 AlertService */
+    private final AlertService alertService;
 
-    public AlertQueryService(AlertRepository alertRepository, AlertWebSocketNotifier alertNotifier) {
+    public AlertQueryService(AlertRepository alertRepository, AlertWebSocketNotifier alertNotifier,
+                             AlertService alertService) {
         this.alertRepository = alertRepository;
         this.alertNotifier = alertNotifier;
+        this.alertService = alertService;
+    }
+
+    /**
+     * 管道心跳状态（FR-1.6 看门狗的可视面，供告警页顶部展示）。
+     *
+     * <p>看门狗告警每次重复推送都刷新 {@code last_occurred_at}——它停跳就是
+     * 「Prometheus → Alertmanager → webhook」管道断了。没有这条，告警列表
+     * 长期空白会被误读成「天下太平」。</p>
+     *
+     * @param silenceMinutes 静默阈值，与 PipelineHeartbeatScheduler 同配置键
+     * @return {lastSeenAt, silent, silenceMinutes}；从未收到看门狗时 lastSeenAt 为 null
+     */
+    public java.util.Map<String, Object> pipelineHeartbeat(int silenceMinutes) {
+        java.util.Optional<java.time.LocalDateTime> lastSeen =
+                alertRepository.findLatestOccurredAtByName(
+                        com.devops.agent.domain.alert.ReservedAlertNames.PIPELINE_WATCHDOG);
+        boolean silent = lastSeen.isEmpty()
+                || lastSeen.get().isBefore(java.time.LocalDateTime.now().minusMinutes(silenceMinutes));
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("lastSeenAt", lastSeen.map(java.time.LocalDateTime::toString).orElse(null));
+        body.put("silent", silent);
+        body.put("silenceMinutes", silenceMinutes);
+        return body;
     }
 
     /**
@@ -55,8 +82,25 @@ public class AlertQueryService {
      * @param page   页码（从 1 开始，越界由 Controller 兜底）
      * @param size   每页大小（越界由 Controller 兜底）
      */
-    public List<Alert> findAlerts(String status, String level, int page, int size) {
-        return alertRepository.findPage(status, level, page, size);
+    /**
+     * 分页查询告警列表（按状态 + 级别 + 来源系统筛选，可选「只看观察中」）
+     *
+     * <p>P0-2b 起与 {@link #countAlerts} 拆成两个调用，由控制器组装
+     * {@code AlertDto.AlertPage}——与 {@code TicketService.findTickets/countTickets}
+     * 同款分工：service 只管数据，分页包装在控制器层完成，
+     * 这样 record 才能放在 controller.dto（domain 不得 import controller）。</p>
+     *
+     * @param observing true 时按观察窗配置过滤为「观察中」（活跃+未建单+观察级+未超窗）；
+     *                  观察窗关闭或观察级为空时该条件不生效（空集语义=不过滤，不是查空）
+     */
+    public List<Alert> findAlerts(String status, String level, String system, boolean observing,
+                                  int page, int size) {
+        ObservationFilter obs = observationFilter(observing);
+        List<Alert> alerts = alertRepository.findPage(status, level, system,
+                obs.levels(), obs.windowMinutes(), page, size);
+        // 读路径派生「观察中」标识：观察级别/窗口是可调配置，落库会随配置变更腐烂
+        alerts.forEach(a -> a.setObserving(alertService.isObserving(a)));
+        return alerts;
     }
 
     /**
@@ -65,8 +109,28 @@ public class AlertQueryService {
      * <p>必须<b>按同一筛选条件</b>统计，否则页码与实际数据矛盾
      * （用户看到「共 3 页」翻到第 2 页却是空的）。</p>
      */
-    public long countAlerts(String status, String level) {
-        return alertRepository.countByQuery(status, level);
+    public long countAlerts(String status, String level, String system, boolean observing) {
+        ObservationFilter obs = observationFilter(observing);
+        return alertRepository.countByQuery(status, level, system, obs.levels(), obs.windowMinutes());
+    }
+
+    /** 全部来源系统去重列表（告警列表的 system 筛选下拉数据源） */
+    public List<String> listSystems() {
+        return alertRepository.findDistinctSystems();
+    }
+
+    /** 观察中筛选条件解析：未勾选或观察窗关闭 → 空条件（不过滤） */
+    private record ObservationFilter(List<String> levels, int windowMinutes) {}
+
+    private ObservationFilter observationFilter(boolean observing) {
+        if (!observing) {
+            return new ObservationFilter(null, 0);
+        }
+        AlertService.ObservationPolicy policy = alertService.observationPolicy();
+        if (!policy.enabled() || policy.levels().isEmpty()) {
+            return new ObservationFilter(null, 0);
+        }
+        return new ObservationFilter(policy.levels().stream().sorted().toList(), policy.windowMinutes());
     }
 
     /**
@@ -133,6 +197,41 @@ public class AlertQueryService {
      * @return 完整告警实体（含处置时间线字段 acknowledgedAt/resolvedAt/ticketId）
      */
     public Alert getAlert(Long id) {
-        return requireExisting(id);
+        Alert alert = requireExisting(id);
+        alert.setObserving(alertService.isObserving(alert));
+        return alert;
+    }
+
+    /**
+     * 全局风暴模式状态快照（FR-2.5 可视面，告警列表横幅读它）。
+     * <p>透传 AlertService 的风暴守卫状态——控制器只认本服务（六层分工）。</p>
+     */
+    public com.devops.agent.domain.alert.DTO.StormStatus stormStatus() {
+        return alertService.stormStatus();
+    }
+
+    /**
+     * 自愈观察窗统计（FR-3.1 的可视面，效能大盘读它）。
+     *
+     * <p>三个读数回答三个问题：现在有多少在观察（observingNow）、
+     * 观察窗救了多少单（selfHealed30d）、有多少最终还是要人处理（escalated30d）。
+     * 观察窗关闭时返回 enabled=false，前端据此隐藏区块而非显示一排 0
+     * （null/0 与「未启用」的区分纪律，同 6.38 口径契约）。</p>
+     */
+    public com.devops.agent.domain.alert.DTO.ObservationStats observationStats() {
+        AlertService.ObservationPolicy policy = alertService.observationPolicy();
+        if (!policy.enabled() || policy.levels().isEmpty()) {
+            return new com.devops.agent.domain.alert.DTO.ObservationStats(
+                    false, policy.windowMinutes(), List.of(), 0, 0, 0);
+        }
+        List<String> levels = policy.levels().stream().sorted().toList();
+        java.time.LocalDateTime since30d = java.time.LocalDateTime.now().minusDays(30);
+        return new com.devops.agent.domain.alert.DTO.ObservationStats(
+                true,
+                policy.windowMinutes(),
+                levels,
+                alertRepository.countObservingNow(levels, policy.windowMinutes()),
+                alertRepository.countSelfHealedSince(levels, since30d),
+                alertRepository.countObservationEscalatedSince(levels, since30d));
     }
 }

@@ -35,3 +35,12 @@ receivers:
         # send_resolved=true：告警恢复时也推一条（status=resolved），
         # OpsBrain 据此把对应告警标记 RESOLVED（AlertService 已支持）
         send_resolved: true
+        # 后端 WebhookGuard 要求共享密钥。Alertmanager v0.27 的 webhook
+        # http_config 不支持自定义头（http_headers 在其版本线不存在），
+        # 只支持 authorization——故走 Bearer 形态，后端 WebhookGuard 双通道都收。
+        # 密钥与后端 .env 的 ALERT_WEBHOOK_SECRET 保持一致。
+        # 缺它的后果实测过：每条推送 40104、retry 一次后丢弃，告警无声消失。
+        http_config:
+          authorization:
+            type: Bearer
+            credentials: 'dev-only-do-not-use-in-production'

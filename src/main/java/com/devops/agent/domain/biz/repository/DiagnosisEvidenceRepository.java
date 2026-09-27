@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -54,5 +55,16 @@ public class DiagnosisEvidenceRepository {
                 ORDER BY id
                 """;
         return jdbcTemplate.queryForList(sql, traceId);
+    }
+
+    /** 诊断反馈回流兜底：从若干证据行里取「知识类型」的 citation 串（source_ref）。 */
+    public List<String> findKnowledgeSourceRefs(List<Long> evidenceIds) {
+        if (evidenceIds == null || evidenceIds.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(evidenceIds.size(), "?"));
+        String sql = "SELECT source_ref FROM sys_diagnosis_evidence "
+                + "WHERE evidence_type = 'knowledge' AND id IN (" + placeholders + ")";
+        return jdbcTemplate.queryForList(sql, String.class, evidenceIds.toArray());
     }
 }

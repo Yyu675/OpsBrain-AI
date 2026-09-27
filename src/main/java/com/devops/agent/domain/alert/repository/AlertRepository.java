@@ -41,6 +41,7 @@ public class AlertRepository {
         Alert alert = new Alert();
         alert.setId(rs.getLong("id"));
         alert.setSource(rs.getString("source"));
+        alert.setSystem(rs.getString("system"));
         alert.setAlertName(rs.getString("alert_name"));
         alert.setLevel(rs.getString("level"));
         alert.setTitle(rs.getString("title"));
@@ -69,6 +70,54 @@ public class AlertRepository {
         String sql = "SELECT * FROM sys_alert WHERE dedup_key = ? AND status IN ('FIRING', 'ACKNOWLEDGED') LIMIT 1";
         List<Alert> results = jdbcTemplate.query(sql, ALERT_ROW_MAPPER, dedupKey);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+    }
+
+    /**
+     * 某告警名最近一次出现的时间（管道心跳用）。
+     * <p>看门狗告警每次重复推送都会刷新 last_occurred_at——它停跳就是管道断了。</p>
+     *
+     * @return 从未收到过该告警返回 empty
+     */
+    public Optional<java.time.LocalDateTime> findLatestOccurredAtByName(String alertName) {
+        String sql = "SELECT MAX(last_occurred_at) FROM sys_alert WHERE alert_name = ?";
+        return Optional.ofNullable(
+                jdbcTemplate.queryForObject(sql, java.time.LocalDateTime.class, alertName));
+    }
+
+    /** 时间窗内的告警总数（效能大盘压缩比的时间窗分子：last_occurred_at >= since）。 */
+    public long countSince(java.time.LocalDateTime since) {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sys_alert WHERE last_occurred_at >= ?",
+                Long.class, java.sql.Timestamp.valueOf(since));
+        return n != null ? n : 0L;
+    }
+
+    /**
+     * 派生事件数（Incident 方案 C，2026-09-27）。
+     * <p>同 system + service + 10 分钟窗口桶的告警归并为同一「事件」——
+     * 不建 Incident 表、不动写入路径，只修正报表口径：
+     * 让「一次故障反复响」（多条告警同桶）与「多个不同故障」在数字上分开。</p>
+     */
+    public long countDerivedIncidents(java.time.LocalDateTime since) {
+        Long n = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) FROM (
+                  SELECT system, service,
+                         floor(extract(epoch from first_occurred_at) / 600) AS bucket
+                  FROM sys_alert
+                  WHERE first_occurred_at >= ?
+                  GROUP BY system, service, bucket
+                ) t
+                """,
+                Long.class, java.sql.Timestamp.valueOf(since));
+        return n != null ? n : 0L;
+    }
+
+    /** 按告警名查活跃告警（心跳元告警的「恢复」判定用）。 */
+    public Optional<Alert> findActiveByName(String alertName) {
+        String sql = "SELECT * FROM sys_alert WHERE alert_name = ? AND status IN ('FIRING', 'ACKNOWLEDGED') LIMIT 1";
+        List<Alert> rows = jdbcTemplate.query(sql, ALERT_ROW_MAPPER, alertName);
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
     /**
@@ -106,6 +155,107 @@ public class AlertRepository {
     }
 
     /**
+     * 查找「自愈观察窗」已到期的告警（FR-3.1：warning 级 10 分钟未自愈才建单）。
+     * <p>
+     * 条件：活跃（FIRING/ACKNOWLEDGED）+ 未建单（ticket_id 为空）+
+     * 级别在观察级集合内 + 首次发生时间已超出观察窗口。
+     * 窗口内 resolved 回流的告警状态已变 RESOLVED，天然不会被查出来——
+     * 这就是「自愈留统计不留单」的统计口径来源。
+     * </p>
+     * <p>
+     * {@code lookbackHours} 回看上限：防止配置错配（如观察级与建单门槛不相交）
+     * 导致永远建不出单的告警被每次扫描反复捞出。超出回看的遗留行靠人工/离线治理。
+     * </p>
+     *
+     * @param levels         观察级集合（如 P2/P3），空集合直接返回空
+     * @param windowMinutes  观察窗口（分钟）：first_occurred_at 早于「现在-窗口」才到期
+     * @param lookbackHours  回看上限（小时）：更老的未建单活跃告警不再补建
+     * @param limit          单批上限：风暴期分批补建，避免一轮扫描打爆工单链
+     */
+    public List<Alert> findObservationDue(List<String> levels, int windowMinutes, int lookbackHours, int limit) {
+        if (levels == null || levels.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(", ", java.util.Collections.nCopies(levels.size(), "?"));
+        String sql = """
+            SELECT * FROM sys_alert
+             WHERE status IN ('FIRING', 'ACKNOWLEDGED')
+               AND ticket_id IS NULL
+               AND first_occurred_at <= CURRENT_TIMESTAMP - CAST(? AS INTEGER) * INTERVAL '1 minute'
+               AND first_occurred_at >= CURRENT_TIMESTAMP - CAST(? AS INTEGER) * INTERVAL '1 hour'
+               AND level IN (%s)
+             ORDER BY first_occurred_at ASC
+             LIMIT ?
+            """.formatted(placeholders);
+        List<Object> params = new java.util.ArrayList<>();
+        params.add(windowMinutes);
+        params.add(lookbackHours);
+        params.addAll(levels);
+        params.add(limit);
+        return jdbcTemplate.query(sql, ALERT_ROW_MAPPER, params.toArray());
+    }
+
+    /**
+     * 观察窗统计：仍在观察中（活跃 + 未建单 + 观察级 + 未超窗）的告警数。
+     */
+    public long countObservingNow(List<String> levels, int windowMinutes) {
+        if (levels == null || levels.isEmpty()) return 0L;
+        String placeholders = String.join(", ", java.util.Collections.nCopies(levels.size(), "?"));
+        String sql = """
+            SELECT COUNT(*) FROM sys_alert
+             WHERE status IN ('FIRING', 'ACKNOWLEDGED')
+               AND ticket_id IS NULL
+               AND first_occurred_at > CURRENT_TIMESTAMP - CAST(? AS INTEGER) * INTERVAL '1 minute'
+               AND level IN (%s)
+            """.formatted(placeholders);
+        List<Object> params = new java.util.ArrayList<>();
+        params.add(windowMinutes);
+        params.addAll(levels);
+        Long n = jdbcTemplate.queryForObject(sql, Long.class, params.toArray());
+        return n != null ? n : 0L;
+    }
+
+    /**
+     * 观察窗自愈数（FR-3.1 核心成效指标）：观察级、窗口内 resolved 回流、从未建单。
+     * 「RESOLVED + ticket_id 为空」即「它自己好了，没惊动任何人」。
+     */
+    public long countSelfHealedSince(List<String> levels, java.time.LocalDateTime since) {
+        if (levels == null || levels.isEmpty()) return 0L;
+        String placeholders = String.join(", ", java.util.Collections.nCopies(levels.size(), "?"));
+        String sql = """
+            SELECT COUNT(*) FROM sys_alert
+             WHERE status = 'RESOLVED'
+               AND ticket_id IS NULL
+               AND resolved_at >= ?
+               AND level IN (%s)
+            """.formatted(placeholders);
+        List<Object> params = new java.util.ArrayList<>();
+        params.add(java.sql.Timestamp.valueOf(since));
+        params.addAll(levels);
+        Long n = jdbcTemplate.queryForObject(sql, Long.class, params.toArray());
+        return n != null ? n : 0L;
+    }
+
+    /**
+     * 观察级告警到期转单/进组数（含聚合进组的——ticket_id 非空即「最终需要人看」）。
+     */
+    public long countObservationEscalatedSince(List<String> levels, java.time.LocalDateTime since) {
+        if (levels == null || levels.isEmpty()) return 0L;
+        String placeholders = String.join(", ", java.util.Collections.nCopies(levels.size(), "?"));
+        String sql = """
+            SELECT COUNT(*) FROM sys_alert
+             WHERE ticket_id IS NOT NULL
+               AND first_occurred_at >= ?
+               AND level IN (%s)
+            """.formatted(placeholders);
+        List<Object> params = new java.util.ArrayList<>();
+        params.add(java.sql.Timestamp.valueOf(since));
+        params.addAll(levels);
+        Long n = jdbcTemplate.queryForObject(sql, Long.class, params.toArray());
+        return n != null ? n : 0L;
+    }
+
+    /**
      * 按 ID 查询
      */
     public Optional<Alert> findById(Long id) {
@@ -130,10 +280,16 @@ public class AlertRepository {
      * 会静默隐藏页外数据。WHERE 与 count 查询共用 {@link #buildWhere}，
      * 保证 {@code total} 与实际行数一致。
      * </p>
+     *
+     * @param system              来源系统筛选（V9 起，空=全部）
+     * @param observingLevels     非空时启用「只看观察中」：活跃 + 未建单 + 观察级 + 未超窗
+     *                            （FR-3.1 派生状态，参数由 AlertQueryService 从观察窗配置取）
+     * @param observingWindowMin  观察窗口（分钟），observingLevels 非空时生效
      */
-    public List<Alert> findPage(String status, String level, int page, int size) {
+    public List<Alert> findPage(String status, String level, String system,
+                                List<String> observingLevels, int observingWindowMin, int page, int size) {
         int offset = (page - 1) * size;
-        WhereClause where = buildWhere(status, level);
+        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin);
         String sql = "SELECT * FROM sys_alert " + where.sql()
                 + " ORDER BY last_occurred_at DESC LIMIT ? OFFSET ?";
         List<Object> params = new java.util.ArrayList<>(where.params());
@@ -145,18 +301,27 @@ public class AlertRepository {
     /**
      * 按状态 + 级别组合条件计数（与 {@link #findPage} 共用 WHERE）
      */
-    public int countByQuery(String status, String level) {
-        WhereClause where = buildWhere(status, level);
+    public int countByQuery(String status, String level, String system,
+                            List<String> observingLevels, int observingWindowMin) {
+        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin);
         String sql = "SELECT COUNT(*) FROM sys_alert " + where.sql();
         Integer count = jdbcTemplate.queryForObject(sql, Integer.class, where.params().toArray());
         return count != null ? count : 0;
     }
 
+    /** 全部来源系统去重列表（告警列表的 system 筛选下拉数据源） */
+    public List<String> findDistinctSystems() {
+        return jdbcTemplate.query("SELECT DISTINCT system FROM sys_alert ORDER BY system",
+                (rs, i) -> rs.getString(1));
+    }
+
     /**
-     * 构建动态 WHERE（status / level 两个可选条件）
-     * <p>字段值用参数化占位符，禁止拼接用户输入（SQL 注入防护）。</p>
+     * 构建动态 WHERE（status / level / system / 观察中 四个可选条件）
+     * <p>字段值用参数化占位符，禁止拼接用户输入（SQL 注入防护）；
+     * level 与观察级集合是服务端受控枚举，才可进 IN 占位符。</p>
      */
-    private WhereClause buildWhere(String status, String level) {
+    private WhereClause buildWhere(String status, String level, String system,
+                                   List<String> observingLevels, int observingWindowMin) {
         StringBuilder sql = new StringBuilder("WHERE 1=1");
         List<Object> params = new java.util.ArrayList<>();
         if (status != null && !status.isBlank()) {
@@ -166,6 +331,20 @@ public class AlertRepository {
         if (level != null && !level.isBlank()) {
             sql.append(" AND level = ?");
             params.add(level.trim().toUpperCase());
+        }
+        if (system != null && !system.isBlank()) {
+            sql.append(" AND system = ?");
+            params.add(system.trim());
+        }
+        if (observingLevels != null && !observingLevels.isEmpty()) {
+            // 「观察中」= 活跃 + 未建单 + 观察级 + 未超窗（与 AlertService.isObserving 同口径）
+            sql.append(" AND status IN ('FIRING','ACKNOWLEDGED') AND ticket_id IS NULL");
+            sql.append(" AND first_occurred_at > CURRENT_TIMESTAMP - CAST(? AS INTEGER) * INTERVAL '1 minute'");
+            params.add(observingWindowMin);
+            sql.append(" AND level IN (")
+                    .append(String.join(", ", java.util.Collections.nCopies(observingLevels.size(), "?")))
+                    .append(")");
+            params.addAll(observingLevels);
         }
         return new WhereClause(sql.toString(), params);
     }
@@ -209,10 +388,10 @@ public class AlertRepository {
      * </p>
      */
     public Alert save(Alert alert) {
-        String sql = "INSERT INTO sys_alert (source, alert_name, level, title, description, status, " +
+        String sql = "INSERT INTO sys_alert (source, system, alert_name, level, title, description, status, " +
                 "dedup_key, service, module, occurrence_count, first_occurred_at, last_occurred_at, " +
                 "acknowledged_at, resolved_at, ticket_id, create_time, update_time) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         LocalDateTime now = LocalDateTime.now();
         if (alert.getCreateTime() == null) alert.setCreateTime(now);
@@ -224,22 +403,23 @@ public class AlertRepository {
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(sql, new String[]{"id"});
             ps.setString(1, alert.getSource());
-            ps.setString(2, alert.getAlertName());
-            ps.setString(3, alert.getLevel());
-            ps.setString(4, alert.getTitle());
-            ps.setString(5, alert.getDescription());
-            ps.setString(6, alert.getStatus());
-            ps.setString(7, alert.getDedupKey());
-            ps.setString(8, alert.getService());
-            ps.setString(9, alert.getModule());
-            ps.setInt(10, alert.getOccurrenceCount());
-            ps.setObject(11, alert.getFirstOccurredAt());
-            ps.setObject(12, alert.getLastOccurredAt());
-            ps.setObject(13, alert.getAcknowledgedAt());
-            ps.setObject(14, alert.getResolvedAt());
-            ps.setString(15, alert.getTicketId());
-            ps.setObject(16, alert.getCreateTime());
-            ps.setObject(17, alert.getUpdateTime());
+            ps.setString(2, alert.getSystem());
+            ps.setString(3, alert.getAlertName());
+            ps.setString(4, alert.getLevel());
+            ps.setString(5, alert.getTitle());
+            ps.setString(6, alert.getDescription());
+            ps.setString(7, alert.getStatus());
+            ps.setString(8, alert.getDedupKey());
+            ps.setString(9, alert.getService());
+            ps.setString(10, alert.getModule());
+            ps.setInt(11, alert.getOccurrenceCount());
+            ps.setObject(12, alert.getFirstOccurredAt());
+            ps.setObject(13, alert.getLastOccurredAt());
+            ps.setObject(14, alert.getAcknowledgedAt());
+            ps.setObject(15, alert.getResolvedAt());
+            ps.setObject(16, alert.getTicketId());
+            ps.setObject(17, alert.getCreateTime());
+            ps.setObject(18, alert.getUpdateTime());
             return ps;
         }, keyHolder);
 
@@ -285,10 +465,10 @@ public class AlertRepository {
      * @return true = 插入了新行（调用方走建单路径）；false = 计次了既有活跃行
      */
     public boolean insertOrIncrement(Alert alert) {
-        String sql = "INSERT INTO sys_alert (source, alert_name, level, title, description, status, " +
+        String sql = "INSERT INTO sys_alert (source, system, alert_name, level, title, description, status, " +
                 "dedup_key, service, module, occurrence_count, first_occurred_at, last_occurred_at, " +
                 "acknowledged_at, resolved_at, ticket_id, create_time, update_time) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT (dedup_key) WHERE status IN ('FIRING','ACKNOWLEDGED') " +
                 "DO UPDATE SET occurrence_count = sys_alert.occurrence_count + 1, " +
                 "last_occurred_at = EXCLUDED.last_occurred_at, update_time = EXCLUDED.update_time " +
@@ -301,7 +481,7 @@ public class AlertRepository {
 
         // xmax=0 表示本事务新插入的行；DO UPDATE 走的行 xmax 非 0
         Boolean inserted = jdbcTemplate.query(sql, rs -> rs.next() && rs.getBoolean(1),
-                alert.getSource(), alert.getAlertName(), alert.getLevel(), alert.getTitle(),
+                alert.getSource(), alert.getSystem(), alert.getAlertName(), alert.getLevel(), alert.getTitle(),
                 alert.getDescription(), alert.getStatus(), alert.getDedupKey(),
                 alert.getService(), alert.getModule(), alert.getOccurrenceCount(),
                 alert.getFirstOccurredAt(), alert.getLastOccurredAt(),

@@ -119,6 +119,16 @@ public class WebhookGuard {
         }
 
         String provided = request.getHeader(TOKEN_HEADER);
+        // Authorization: Bearer <secret> 兜底通道（2026-09-25）：Alertmanager v0.27 的
+        // webhook http_config 不支持自定义头（http_headers 在其版本线不存在），
+        // 只支持 authorization——监控栈对接时这是唯一可达的鉴权形态。
+        // 两条通道同强度：都是常量时间比较、都是同一密钥值。
+        if (provided == null) {
+            String auth = request.getHeader("Authorization");
+            if (auth != null && auth.startsWith("Bearer ")) {
+                provided = auth.substring("Bearer ".length()).trim();
+            }
+        }
         if (provided == null || !constantTimeEquals(provided, secret)) {
             log.warn("🚫 [WebhookGuard] 密钥校验失败 | ip={} | hasHeader={}", clientIp, provided != null);
             throw WebhookRejectedException.unauthorized();

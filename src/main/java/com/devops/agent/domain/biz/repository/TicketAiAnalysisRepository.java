@@ -96,6 +96,16 @@ public class TicketAiAnalysisRepository {
         return list.isEmpty() ? null : list.get(0);
     }
 
+    /** 按主键取一条（反馈回流需要读 citations——反馈时后端自取被引 chunk 的唯一入口）。 */
+    public TicketAiAnalysis findById(Long id) {
+        if (id == null) {
+            return null;
+        }
+        List<TicketAiAnalysis> list = jdbcTemplate.query(
+                "SELECT * FROM sys_ticket_ai_analysis WHERE id = ?", new AnalysisRowMapper(), id);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
     /** 取工单全部分析版本（version 倒序，供历史对比） */
     public List<TicketAiAnalysis> findByTicketId(String ticketId) {
         String sql = "SELECT * FROM sys_ticket_ai_analysis WHERE ticket_id = ? ORDER BY version DESC, id DESC";

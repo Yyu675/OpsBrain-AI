@@ -134,6 +134,28 @@ class WebhookGuardTest {
     }
 
     @Test
+    @DisplayName("Authorization Bearer 兜底通道：Alertmanager 等监控栈发不了自定义头时仍可对接")
+    void allowsBearerTokenFallback() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn(null);
+        when(request.getHeader("Authorization")).thenReturn("Bearer s3cr3t");
+
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("Bearer 通道携带错误密钥同样拒绝——兜底不是开口")
+    void rejectsWrongBearerToken() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn(null);
+        when(request.getHeader("Authorization")).thenReturn("Bearer wrong");
+
+        var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
+
+        assertEquals(401, ex.getHttpStatus());
+    }
+
+    @Test
     @DisplayName("token 不匹配抛 401")
     void rejectsWrongToken() {
         ReflectionTestUtils.setField(guard, "secret", "s3cr3t");

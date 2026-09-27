@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -118,9 +119,9 @@ class AlertControllerWebTest {
      * any() 匹配含 null 的任意筛选值，入参透传由调用处的 verify 钉住。
      */
     private void stubAlerts(List<Alert> alerts, long total) {
-        when(alertQueryService.findAlerts(any(), any(), anyInt(), anyInt()))
+        when(alertQueryService.findAlerts(any(), any(), any(), anyBoolean(), anyInt(), anyInt()))
                 .thenReturn(alerts);
-        when(alertQueryService.countAlerts(any(), any()))
+        when(alertQueryService.countAlerts(any(), any(), any(), anyBoolean()))
                 .thenReturn(total);
     }
 
@@ -145,9 +146,9 @@ class AlertControllerWebTest {
                     .andExpect(jsonPath("$.data.alerts[0].alertName").value("HighCpuUsage"))
                     .andExpect(jsonPath("$.traceId").exists());
 
-            verify(alertQueryService).findAlerts(isNull(), isNull(), eq(1), eq(10));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(10));
             // 总数必须与列表同条件统计，否则页码与实际数据矛盾
-            verify(alertQueryService).countAlerts(isNull(), isNull());
+            verify(alertQueryService).countAlerts(isNull(), isNull(), isNull(), eq(false));
         }
 
         @Test
@@ -161,8 +162,8 @@ class AlertControllerWebTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.alerts").isEmpty());
 
-            verify(alertQueryService).findAlerts(eq("FIRING"), eq("P0"), eq(1), eq(10));
-            verify(alertQueryService).countAlerts(eq("FIRING"), eq("P0"));
+            verify(alertQueryService).findAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false), eq(1), eq(10));
+            verify(alertQueryService).countAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false));
         }
 
         @Test
@@ -176,7 +177,7 @@ class AlertControllerWebTest {
                     .andExpect(status().isOk());
 
             verify(alertQueryService, org.mockito.Mockito.times(2))
-                    .findAlerts(isNull(), isNull(), eq(1), eq(10));
+                    .findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(10));
         }
 
         @Test
@@ -186,11 +187,11 @@ class AlertControllerWebTest {
 
             mockMvc.perform(get("/api/v1/alerts").param("size", "100000"))
                     .andExpect(status().isOk());
-            verify(alertQueryService).findAlerts(isNull(), isNull(), eq(1), eq(200));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(200));
 
             mockMvc.perform(get("/api/v1/alerts").param("size", "0"))
                     .andExpect(status().isOk());
-            verify(alertQueryService).findAlerts(isNull(), isNull(), eq(1), eq(1));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(1));
         }
 
         @Test

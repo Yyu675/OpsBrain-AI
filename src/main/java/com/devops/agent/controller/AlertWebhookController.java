@@ -61,6 +61,33 @@ public class AlertWebhookController {
     @PostMapping
     public ApiResponse<String> receiveWebhook(@RequestBody AlertmanagerWebhook webhook,
                                               HttpServletRequest request) {
+        return doReceive(webhook, request, null);
+    }
+
+    /**
+     * 带来源系统的接入端点（PRD FR-1.2）：{@code /api/v1/alerts/webhook/{system}}。
+     * <p>
+     * 各系统的 Alertmanager 各自只配自己的 URL（如 mes 系统配
+     * {@code .../webhook/mes}），路径段即权威来源标识——payload 里的
+     * {@code system} label 可伪造，路径不能（改路径等于改部署配置）。
+     * </p>
+     * <p>system 合法性：小写字母/数字/中划线，1~32 位——不合规直接 400
+     * （部署侧配错路径应当立刻被发现，而不是落库成一个奇怪的 system）。</p>
+     */
+    @PostMapping("/{system}")
+    public ApiResponse<String> receiveSystemWebhook(@org.springframework.web.bind.annotation.PathVariable String system,
+                                                    @RequestBody AlertmanagerWebhook webhook,
+                                                    HttpServletRequest request) {
+        if (system == null || !system.matches("[a-z0-9][a-z0-9-]{0,31}")) {
+            throw WebhookRejectedException.badRequest(
+                    "system 路径段非法：" + system + "（要求小写字母/数字/中划线，1~32 位）");
+        }
+        return doReceive(webhook, request, system);
+    }
+
+    /** 两个接入端点的共享处理链（pathSystem 为空表示旧端点，回落 payload 的 system label） */
+    private ApiResponse<String> doReceive(AlertmanagerWebhook webhook, HttpServletRequest request,
+                                          String pathSystem) {
         // A6：本端点在鉴权白名单内（Alertmanager 无法带 Sa-Token）且直接写库、可触发建单，
         // 因此必须自行做共享密钥校验 + 来源限流。校验失败抛 WebhookRejectedException，
         // 由本类的 @ExceptionHandler 映射为 401/429（而非统一 403）——
@@ -79,11 +106,12 @@ public class AlertWebhookController {
             return ApiResponse.success("ok");
         }
 
-        log.info("🛜 [AlertWebhookController] 收到告警推送 | receiver={} | status={} | alerts={}",
-                webhook.getReceiver(), webhook.getStatus(), webhook.getAlerts().size());
+        log.info("🛜 [AlertWebhookController] 收到告警推送 | receiver={} | status={} | alerts={} | system={}",
+                webhook.getReceiver(), webhook.getStatus(), webhook.getAlerts().size(),
+                pathSystem != null ? pathSystem : "(payload)");
 
-        // 失败隔离在 AlertService.processWebhook 内部完成，单条失败不影响其余
-        alertService.processWebhook(webhook);
+        // 失败隔离在 AlertService 内部完成，单条失败不影响其余
+        alertService.processWebhook(webhook, pathSystem);
 
         return ApiResponse.success("ok");
     }

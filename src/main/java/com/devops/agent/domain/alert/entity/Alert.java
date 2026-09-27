@@ -25,6 +25,13 @@ public class Alert implements Serializable {
     /** 告警来源（prometheus / 预留） */
     private String source;
 
+    /**
+     * 来源系统标识（mes/erp/wms/qms…，V9 新增）。
+     * 由 /webhook/{system} 路径注入（部署侧保证，payload 不可伪造）；
+     * 旧端点回落 payload 的 system label，均无则 'default'。
+     */
+    private String system;
+
     /** 告警规则名（如 PodCrashLoopBackOff） */
     private String alertName;
 
@@ -73,6 +80,13 @@ public class Alert implements Serializable {
     /** 记录更新时间 */
     private LocalDateTime updateTime;
 
+    /**
+     * 展示态派生字段：是否处于自愈观察窗内（FR-3.1）。
+     * <p><b>非持久化</b>——由 AlertQueryService 在读路径上按当前配置即时计算
+     * （观察级别/窗口是可调配置，落库会随配置变更腐烂）。RowMapper 不设它。</p>
+     */
+    private boolean observing;
+
     // ==================== 便利方法 ====================
 
     /**
@@ -96,6 +110,9 @@ public class Alert implements Serializable {
 
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
+
+    public String getSystem() { return system; }
+    public void setSystem(String system) { this.system = system; }
 
     public String getAlertName() { return alertName; }
     public void setAlertName(String alertName) { this.alertName = alertName; }
@@ -144,4 +161,7 @@ public class Alert implements Serializable {
 
     public LocalDateTime getUpdateTime() { return updateTime; }
     public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
+
+    public boolean isObserving() { return observing; }
+    public void setObserving(boolean observing) { this.observing = observing; }
 }
