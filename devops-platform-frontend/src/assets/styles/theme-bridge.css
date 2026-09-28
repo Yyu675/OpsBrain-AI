@@ -123,8 +123,11 @@ html.dark {
 
 /* ── 全局基线 ─────────────────────────────────────────────────
    让 body 跟随主题。不加这条的话，页面四周会残留旧的静态底色，
-   暗色下表现为「卡片是暗的、页面底仍是白的」 */
+   暗色下表现为「卡片是暗的、页面底仍是白的」。
+   margin:0 压掉浏览器默认 8px——此前唯一写 reset 的 style.css 未被 main.ts
+   引入（孤儿文件），整个应用带着默认 body margin 跑，宽屏下右侧永远多一条白边 */
 body {
+  margin: 0;
   background-color: var(--surface-0);
   color: var(--text-1);
   font-family: var(--font-sans);

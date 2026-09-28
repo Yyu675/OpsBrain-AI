@@ -315,7 +315,7 @@ onMounted(reload)
 <style scoped>
 .healing-center {
   padding: 24px;
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 

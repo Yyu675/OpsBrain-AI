@@ -1088,7 +1088,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 /* ========== Breadcrumb ========== */
 .breadcrumb-container {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 16px 24px 8px;
 }
@@ -1097,7 +1097,7 @@ const onSinkGotoDoc = (docId: number) => {
 
 /* ========== Main Container ========== */
 .main-container {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 16px 24px 32px;
 }

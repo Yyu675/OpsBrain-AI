@@ -303,7 +303,7 @@ const clearFilters = () => {
 
 /* ===== Main ===== */
 .main-wrap {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 0 24px 24px;
 }
@@ -592,7 +592,7 @@ const clearFilters = () => {
 }
 
 .footer-container {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
   display: flex;
   align-items: center;

@@ -284,7 +284,7 @@ const forbidden = computed(() => {
 
 <style scoped lang="scss">
 .approval-center { min-height: 100vh; background: var(--surface-0); }
-.main-container { max-width: 1280px; margin: 0 auto; padding: 24px; }
+.main-container { max-width: 1400px; margin: 0 auto; padding: 24px; }
 .page-header-card { background: var(--surface-1); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
 .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .header-title { display: flex; align-items: center; gap: 12px; color: var(--brand); }

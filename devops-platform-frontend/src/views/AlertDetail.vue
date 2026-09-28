@@ -437,7 +437,7 @@ const goList = () => router.push('/alerts')
 }
 
 .main-container {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 20px 24px 32px;
 }
