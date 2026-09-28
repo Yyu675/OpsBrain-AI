@@ -236,7 +236,7 @@ onMounted(() => {
 }
 
 .main-container {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 24px;
 }

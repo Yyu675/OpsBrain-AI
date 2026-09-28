@@ -52,6 +52,9 @@ export const navigationItems: NavigationItem[] = [
   { key: 'effectiveness', label: '效能大盘', path: '/effectiveness', stage: 'L3', visible: true },
   // 处置中心 = 审批队列 + 自愈台账（标签页承载），限 admin；待审角标在 AppSidebar
   { key: 'disposal', label: '处置中心', path: '/disposal', stage: 'L3', visible: true, roles: ['admin'] },
+  // 系统设置 = 个人偏好 + 平台治理配置的入口（路由 /settings 对全员开放，
+  // 内部标签按角色过滤）。值班动线之外的「配置面」，沉在导航最底部。
+  { key: 'settings', label: '系统设置', path: '/settings', stage: 'L1', visible: true },
 ]
 
 export const primaryNavigationItems = navigationItems.filter(item => item.visible)

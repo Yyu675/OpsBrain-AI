@@ -13,7 +13,7 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   LayoutDashboard, BookOpen, Ticket, Bell, Activity, ListChecks, Gauge,
-  ClipboardCheck, Monitor, ChevronRight, ChevronsLeft, ChevronsRight, X,
+  ClipboardCheck, Monitor, Settings, ChevronRight, ChevronsLeft, ChevronsRight, X,
 } from 'lucide-vue-next'
 import { useAppStore, type Role } from '@/stores/app'
 import { primaryNavigationItems } from '@/config/navigation'
@@ -51,6 +51,7 @@ const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
   'action-items': ListChecks,
   effectiveness: Gauge,
   disposal: ClipboardCheck,
+  settings: Settings,
 }
 
 const activeKey = computed(() => {
@@ -64,7 +65,9 @@ const activeKey = computed(() => {
   if (path.startsWith('/action-items')) return 'action-items'
   // 处置中心：审批/自愈旧路径（重定向前夕）与自愈详情深链都归属它
   if (path.startsWith('/disposal') || path.startsWith('/approvals') || path.startsWith('/self-healing')) return 'disposal'
-  // 设置/帮助等不在侧栏的页面：不高亮任何项——高亮「首页」会误导用户
+  // 设置页（含治理旧路由重定向落入）高亮「系统设置」
+  if (path.startsWith('/settings')) return 'settings'
+  // 未覆盖路径（帮助等）：不高亮任何项——高亮「首页」会误导用户
   return ''
 })
 
@@ -124,15 +127,28 @@ onBeforeUnmount(() => {
 <template>
   <!-- 桌面侧栏：窄屏整体隐藏，由 AppTopBar 的汉堡 + 底部抽屉接管 -->
   <aside class="sidebar" :class="{ collapsed }">
-    <RouterLink to="/" class="sidebar-logo">
-      <div class="logo-icon">
-        <Monitor :size="18" />
-      </div>
-      <div class="logo-text">
-        <span class="logo-name">OpsBrain AI</span>
-        <span class="logo-sub">智维大脑 · SRE 平台</span>
-      </div>
-    </RouterLink>
+    <!-- 顶部：logo + 折叠开关（折叠钮放顶部是 IDE/控制台惯例，拇指不用够到底部） -->
+    <div class="sidebar-head">
+      <RouterLink to="/" class="sidebar-logo">
+        <div class="logo-icon">
+          <Monitor :size="18" />
+        </div>
+        <div class="logo-text">
+          <span class="logo-name">OpsBrain AI</span>
+          <span class="logo-sub">智维大脑 · SRE 平台</span>
+        </div>
+      </RouterLink>
+      <button
+        class="collapse-btn"
+        type="button"
+        :title="collapsed ? '展开导航' : '收起为图标轨'"
+        :aria-label="collapsed ? '展开导航' : '收起为图标轨'"
+        @click="toggleCollapse"
+      >
+        <ChevronsRight v-if="collapsed" :size="16" />
+        <ChevronsLeft v-else :size="16" />
+      </button>
+    </div>
 
     <nav class="sidebar-nav" aria-label="主导航">
       <RouterLink
@@ -158,21 +174,6 @@ onBeforeUnmount(() => {
         <ChevronRight v-else-if="!collapsed && activeKey === item.key" :size="14" class="nav-chevron" />
       </RouterLink>
     </nav>
-
-    <!-- 底部：折叠开关（用户菜单已迁到 TopBar 右上角） -->
-    <div class="sidebar-foot">
-      <button
-        class="collapse-btn"
-        type="button"
-        :title="collapsed ? '展开导航' : '收起为图标轨'"
-        :aria-label="collapsed ? '展开导航' : '收起为图标轨'"
-        @click="toggleCollapse"
-      >
-        <ChevronsRight v-if="collapsed" :size="16" />
-        <ChevronsLeft v-else :size="16" />
-        <span v-if="!collapsed">收起导航</span>
-      </button>
-    </div>
   </aside>
 
   <!-- 移动端抽屉（≤768px，由 AppTopBar 的汉堡触发） -->
@@ -219,7 +220,7 @@ onBeforeUnmount(() => {
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: 232px;
+  width: 200px;
   flex-shrink: 0;
   height: 100vh;
   position: sticky;
@@ -228,18 +229,27 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--border-1);
 }
 
+/* 顶部行：logo（左，可点首页）+ 折叠开关（右） */
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border-1);
+}
+
 .sidebar-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--border-1);
+  flex: 1;
+  min-width: 0;
   text-decoration: none;
 }
 
 .logo-icon {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, var(--brand) 0%, var(--brand-active) 100%);
   display: flex;
@@ -336,24 +346,19 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-/* ===== 底部：折叠开关 ===== */
-.sidebar-foot {
-  border-top: 1px solid var(--border-1);
-  padding: 10px 12px;
-}
-
+/* ===== 顶部折叠开关（图标钮） ===== */
 .collapse-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 10px;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  padding: 0;
   border: none;
   border-radius: var(--radius);
   background: transparent;
   color: var(--text-3);
-  font-size: var(--text-xs);
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out);
@@ -364,13 +369,20 @@ onBeforeUnmount(() => {
   }
 }
 
-/* ===== 折叠态（纯图标轨，60px） ===== */
+/* ===== 折叠态（纯图标轨，56px） ===== */
 .sidebar.collapsed {
-  width: 60px;
+  width: 56px;
+
+  /* 顶部行转竖排：logo 图标在上，折叠钮在下，都居中 */
+  .sidebar-head {
+    flex-direction: column;
+    padding: 14px 0 12px;
+    gap: 8px;
+  }
 
   .sidebar-logo {
+    flex: none;
     justify-content: center;
-    padding: 16px 0;
   }
 
   .logo-text { display: none; }

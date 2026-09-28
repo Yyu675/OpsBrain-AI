@@ -561,7 +561,7 @@ const trendSeries = computed<TrendSeries[]>(() => {
 
 <style scoped lang="scss">
 .effectiveness { min-height: 100vh; background: var(--surface-0); }
-.main-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.main-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
 .page-header {
   display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;

@@ -210,13 +210,22 @@ describe('当前页高亮', () => {
     expect(vmOf(w).activeKey).toBe('disposal')
   })
 
-  it('未覆盖路径（设置页等）不高亮任何菜单', async () => {
-    // 高亮「首页」会误导用户以为自己回到了首页——宁可哪个都不亮
+  it('未覆盖路径（帮助页等）不高亮任何菜单', async () => {
+    // 高亮「首页」会误导用户以为自己回到了首页——宁可哪个都不亮。
+    // 帮助中心已从导航降级到用户菜单（不在侧栏），用它验证「未覆盖即不亮」。
+    const w = await mountSidebar()
+    await router.push('/help')
+    await w.vm.$nextTick()
+
+    expect(vmOf(w).activeKey).toBe('')
+  })
+
+  it('系统设置页高亮「系统设置」菜单（2026-09-28 起导航含设置项）', async () => {
     const w = await mountSidebar()
     await router.push('/settings')
     await w.vm.$nextTick()
 
-    expect(vmOf(w).activeKey).toBe('')
+    expect(vmOf(w).activeKey).toBe('settings')
   })
 })
 
