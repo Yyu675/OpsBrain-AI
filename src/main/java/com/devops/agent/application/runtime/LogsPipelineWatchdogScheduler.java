@@ -105,6 +105,7 @@ public class LogsPipelineWatchdogScheduler {
                 SILENT_NAME, "logs-pipeline", "warning", "OTHER",
                 "logs-pipeline-silent", "opsbrain-internal",
                 Map.of("alertname", SILENT_NAME, "service", "logs-pipeline", "severity", "warning"),
+                Map.of(),
                 "日志采集管道已恢复", OffsetDateTime.now(), true)));
         log.info("✅ [LogsWatchdog] 日志恢复，静默元告警已关闭");
     }
@@ -134,6 +135,7 @@ public class LogsPipelineWatchdogScheduler {
                 SILENT_NAME, "logs-pipeline", "warning", "OTHER",
                 "logs-pipeline-silent", "opsbrain-internal",
                 Map.of("alertname", SILENT_NAME, "service", "logs-pipeline", "severity", "warning"),
+                Map.of(),
                 "日志采集管道超过 " + silenceMinutes + " 分钟无新日志（最新一行："
                         + lastSeen + "）。诊断的日志证据正在变空。排查顺序：Promtail 目标健康度"
                         + "（docker_sd 是否抓着失效容器）→ Loki 容器 → Docker Desktop 是否刚重启。",

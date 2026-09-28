@@ -53,6 +53,10 @@ public class AlertObservationScheduler {
             return;
         }
         try {
+            // 先重评估风暴退出：退出判定若只靠「新告警到达」触发，风暴平息流量归零时
+            // 会永久卡在风暴态、摘要事件永不恢复（2026-09-28 演练实证）。放在补建之前，
+            // 同轮退出后补建立即恢复，不白等一轮。
+            alertService.recheckStormExit();
             alertService.createDelayedTickets();
         } catch (Exception e) {
             // 扫描失败只留日志——下轮（1 分钟后）会重试，观察窗告警不因一次失败丢单

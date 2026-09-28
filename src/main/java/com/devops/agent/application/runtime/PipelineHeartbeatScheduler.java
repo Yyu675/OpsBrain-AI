@@ -108,6 +108,7 @@ public class PipelineHeartbeatScheduler {
                 "pipeline-silent", "opsbrain-internal",
                 Map.of("alertname", SILENT_NAME, "service", "monitoring-pipeline",
                         "severity", "critical"),
+                Map.of(),
                 "监控管道已恢复", OffsetDateTime.now(), true)));
         log.info("✅ [Heartbeat] 心跳恢复，静默元告警已关闭");
     }
@@ -122,6 +123,7 @@ public class PipelineHeartbeatScheduler {
                 "pipeline-silent", "opsbrain-internal",
                 Map.of("alertname", SILENT_NAME, "service", "monitoring-pipeline",
                         "severity", "critical"),
+                Map.of(),
                 "看门狗告警超过 " + silenceMinutes + " 分钟未送达（最后一次："
                         + lastSeenText + "）。Prometheus→Alertmanager→webhook 链路疑似中断，"
                         + "此刻的告警正在丢失。排查顺序：Alertmanager 容器与日志 → webhook 鉴权（X-Webhook-Token）→ 后端接收端点。",
