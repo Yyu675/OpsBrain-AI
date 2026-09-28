@@ -95,6 +95,25 @@ public class AlertService {
     private com.devops.agent.domain.healing.HealingAutoTrigger healingAutoTrigger;
 
     /**
+     * V11：labels/annotations → JSON 串。字段注入保持 5 参构造兼容；
+     * 缺装或序列化失败降级为 "{}"——原始标签是诊断增强而非主链，
+     * 不能让它反噬告警入库。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    private String toJson(Map<String, String> map) {
+        if (map == null || map.isEmpty()) return "{}";
+        if (objectMapper == null) return "{}";
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (Exception e) {
+            log.warn("⚠️ [AlertService] 原始标签序列化失败（降级为空对象）| {}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    /**
      * 服务 → 值班负责人路由（2026-09-25，待分配积压治理）。
      * <p>
      * 真实库 27/28 张工单停在「待分配」：自动建单恒传 assignee=null，
@@ -381,7 +400,8 @@ public class AlertService {
                             ? new LinkedHashMap<>(s.labels()) : new LinkedHashMap<>();
                     labels.put("system", pathSystem);
                     return new AlertSignal(s.alertName(), s.service(), s.severity(), s.module(),
-                            s.fingerprint(), s.source(), labels, s.description(), s.startsAt(), s.resolved());
+                            s.fingerprint(), s.source(), labels, s.annotations(),
+                            s.description(), s.startsAt(), s.resolved());
                 })
                 .toList();
     }
@@ -434,24 +454,54 @@ public class AlertService {
             for (long i = 0; i < arrivals; i++) {
                 stormArrivals.addLast(now);
             }
-            long cutoff = now - 60_000;
-            while (!stormArrivals.isEmpty() && stormArrivals.peekFirst() < cutoff) {
-                stormArrivals.pollFirst();
-            }
-            int rate = stormArrivals.size();
-            if (!stormActive && rate >= stormEnterRatePerMin) {
-                stormActive = true;
-                log.error("🌪️ [AlertService] 进入告警风暴模式 | 速率={}/min ≥ 进入阈值={} | "
-                        + "高危照常建单，其余聚合成风暴摘要事件", rate, stormEnterRatePerMin);
-            } else if (stormActive && rate <= stormExitRatePerMin) {
-                stormActive = false;
-                exitedNow = true;
-                log.info("🌤️ [AlertService] 告警风暴模式退出 | 速率={}/min ≤ 退出阈值={}", rate, stormExitRatePerMin);
-            }
+            exitedNow = evictAndTransition(now);
         }
         if (exitedNow) {
             resolveStormSummary();
         }
+    }
+
+    /**
+     * 无新信号到达时的退出重评估（由 {@code AlertObservationScheduler} 周期兜底调用）。
+     * <p>
+     * 风暴平息的典型形态是流量归零——退出判定若只挂在「新告警到达」上，
+     * 窗口排空后状态机会永久卡在风暴态、摘要事件永不恢复
+     * （2026-09-28 演练实证：rate 已归 1 仍 active，靠下一条看门狗推送才退出）。
+     * 这里不追加任何记账，只清理过期窗口并做状态迁移。
+     * </p>
+     */
+    public void recheckStormExit() {
+        if (!stormEnabled || !stormActive) {
+            return;
+        }
+        boolean exitedNow;
+        synchronized (stormArrivals) {
+            exitedNow = evictAndTransition(System.currentTimeMillis());
+        }
+        if (exitedNow) {
+            resolveStormSummary();
+        }
+    }
+
+    /** 滑窗过期清理 + 迟滞状态迁移。调用方必须持有 {@code stormArrivals} 监视器，返回是否在本次调用中退出。 */
+    private boolean evictAndTransition(long now) {
+        long cutoff = now - 60_000;
+        while (!stormArrivals.isEmpty() && stormArrivals.peekFirst() < cutoff) {
+            stormArrivals.pollFirst();
+        }
+        int rate = stormArrivals.size();
+        if (!stormActive && rate >= stormEnterRatePerMin) {
+            stormActive = true;
+            log.error("🌪️ [AlertService] 进入告警风暴模式 | 速率={}/min ≥ 进入阈值={} | "
+                    + "高危照常建单，其余聚合成风暴摘要事件", rate, stormEnterRatePerMin);
+            return false;
+        }
+        if (stormActive && rate <= stormExitRatePerMin) {
+            stormActive = false;
+            log.info("🌤️ [AlertService] 告警风暴模式退出 | 速率={}/min ≤ 退出阈值={}", rate, stormExitRatePerMin);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -526,21 +576,28 @@ public class AlertService {
 
     /**
      * 风暴模式状态快照（告警列表横幅的数据源）。
-     * <p>读取即修剪过期时间戳，保证 ratePerMin 是当前窗口的真实值。</p>
+     * <p>读取即修剪过期时间戳，保证 ratePerMin 是当前窗口的真实值。
+     * 顺带做退出迁移——读路径已看到窗口排空却不迁移状态，横幅会显示
+     * 「速率=0 但仍在风暴」的自相矛盾（2026-09-28 演练实证）。这也是风暴平息、
+     * 流量归零时最可靠的兜底：告警页横幅每 10s 轮询一次本接口。</p>
      */
     public com.devops.agent.domain.alert.DTO.StormStatus stormStatus() {
         if (!stormEnabled) {
             return new com.devops.agent.domain.alert.DTO.StormStatus(
                     false, false, 0, stormEnterRatePerMin, stormExitRatePerMin);
         }
-        long cutoff = System.currentTimeMillis() - 60_000;
+        boolean exitedNow;
+        com.devops.agent.domain.alert.DTO.StormStatus snapshot;
+        long now = System.currentTimeMillis();
         synchronized (stormArrivals) {
-            while (!stormArrivals.isEmpty() && stormArrivals.peekFirst() < cutoff) {
-                stormArrivals.pollFirst();
-            }
-            return new com.devops.agent.domain.alert.DTO.StormStatus(
+            exitedNow = evictAndTransition(now);
+            snapshot = new com.devops.agent.domain.alert.DTO.StormStatus(
                     true, stormActive, stormArrivals.size(), stormEnterRatePerMin, stormExitRatePerMin);
         }
+        if (exitedNow) {
+            resolveStormSummary();
+        }
+        return snapshot;
     }
 
     // ==================== 单条处理 ====================
@@ -649,6 +706,10 @@ public class AlertService {
         alert.setLastOccurredAt(LocalDateTime.now());
         alert.setCreateTime(LocalDateTime.now());
         alert.setUpdateTime(LocalDateTime.now());
+        // V11：原始标签/注解全量落库——instance/pod/阈值/runbook 是诊断下钻与
+        // 日志取证 keyword 的数据源，此前蒸馏后即丢
+        alert.setLabelsJson(toJson(signal.labels()));
+        alert.setAnnotationsJson(toJson(signal.annotations()));
         return alert;
     }
 

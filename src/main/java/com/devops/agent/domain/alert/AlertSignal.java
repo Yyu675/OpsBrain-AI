@@ -31,6 +31,7 @@ public record AlertSignal(
         String fingerprint,
         String source,
         Map<String, String> labels,
+        Map<String, String> annotations,
         String description,
         OffsetDateTime startsAt,
         boolean resolved) {

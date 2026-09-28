@@ -84,6 +84,10 @@ public class DiagnosisOrchestrator {
     /** 知识检索的查询锚点：按 alertId 回查告警名，让知识检索带上症状信号而不只是服务名 */
     private final com.devops.agent.domain.alert.repository.AlertRepository alertRepository;
 
+    /** labels_json 解析（V11 锚点增强）。字段注入：缺装时锚点标签退化为空 Map。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
     public DiagnosisOrchestrator(MetricsEvidenceCollector metricsCollector,
                                  ChangesEvidenceCollector changesCollector,
                                  LogsEvidenceCollector logsCollector,
@@ -221,8 +225,31 @@ public class DiagnosisOrchestrator {
         }
     }
 
-    /** 告警锚点：名称（检索锚点）+ 描述（检索语义）+ 级别（日志取证窗口/级别的调节依据）。 */
-    private record AlertAnchor(String name, String description, String level) {}
+    /**
+     * 告警锚点：名称（检索锚点）+ 描述（检索语义）+ 级别（日志取证窗口/级别的调节依据）
+     * + 原始标签（V11：instance/pod 等下钻维度，日志取证的 keyword 来源）。
+     */
+    private record AlertAnchor(String name, String description, String level,
+                               java.util.Map<String, String> labels) {
+
+        static AlertAnchor empty() {
+            return new AlertAnchor(null, null, null, java.util.Map.of());
+        }
+
+        /**
+         * 日志取证的 keyword 候选：instance > pod > container > namespace。
+         * 告警规则里这些标签指明「哪个具体实体出的事」，比服务名精确得多——
+         * Loki 里同服务多实例的日志混在一个流里，不滤就直接把别的实例的
+         * 堆栈当成证据。
+         */
+        String logKeyword() {
+            for (String key : new String[]{"instance", "pod", "container", "namespace"}) {
+                String v = labels.get(key);
+                if (v != null && !v.isBlank()) return v;
+            }
+            return null;
+        }
+    }
 
     /**
      * 按 alertId 回查告警锚点：知识检索的查询锚点 + 日志取证的级别依据。拿不到不阻塞。
@@ -230,15 +257,31 @@ public class DiagnosisOrchestrator {
      * 告警名（如 OpsBrainMemoryHigh）携带症状信号，检索才有机会命中手册。
      */
     private AlertAnchor resolveAlertAnchor(Long alertId) {
-        if (alertId == null) return new AlertAnchor(null, null, null);
+        if (alertId == null) return AlertAnchor.empty();
         try {
             return alertRepository.findById(alertId)
-                    .map(a -> new AlertAnchor(a.getAlertName(), a.getDescription(), a.getLevel()))
-                    .orElse(new AlertAnchor(null, null, null));
+                    .map(a -> new AlertAnchor(a.getAlertName(), a.getDescription(), a.getLevel(),
+                            parseLabels(a.getLabelsJson())))
+                    .orElseGet(AlertAnchor::empty);
         } catch (Exception e) {
             log.warn("⚠️ [Diagnosis] 回查告警锚点失败（取证继续，知识检索退化为仅服务名） | alertId={} | {}",
                     alertId, e.getMessage());
-            return new AlertAnchor(null, null, null);
+            return AlertAnchor.empty();
+        }
+    }
+
+    /** labels_json（V11）→ Map；空/坏值降级为空 Map——标签是增强不是依赖。 */
+    private java.util.Map<String, String> parseLabels(String labelsJson) {
+        if (labelsJson == null || labelsJson.isBlank() || "{}".equals(labelsJson)) {
+            return java.util.Map.of();
+        }
+        try {
+            return objectMapper.readValue(labelsJson,
+                    objectMapper.getTypeFactory().constructMapType(
+                            java.util.LinkedHashMap.class, String.class, String.class));
+        } catch (Exception e) {
+            log.debug("[Diagnosis] labels_json 解析失败（忽略原始标签）| {}", e.getMessage());
+            return java.util.Map.of();
         }
     }
 
@@ -260,7 +303,9 @@ public class DiagnosisOrchestrator {
             default -> COLLECT_RANGE;
         };
         String logLevel = "P0".equals(anchor.level()) || "P1".equals(anchor.level()) ? "WARN" : "ERROR";
-        evidences.add(logsCollector.collect(service, logRange, logLevel, null));
+        // V11：keyword 用告警原始标签的 instance/pod——同服务多实例时精确到实体，
+        // 不滤会把别的实例的堆栈当证据。无标签（老数据）维持 null 全量捞。
+        evidences.add(logsCollector.collect(service, logRange, logLevel, anchor.logKeyword()));
 
         // P0 2026-09-24：诊断接入知识库——检索命中作为 KNOWLEDGE 证据进推理与回流。
         // 查询锚点=告警名+描述（2026-09-25 实测：服务名是语义噪声，会稀释相似度）

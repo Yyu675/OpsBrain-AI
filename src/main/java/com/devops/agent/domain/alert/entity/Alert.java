@@ -74,6 +74,16 @@ public class Alert implements Serializable {
     /** 关联工单号（自动建单后回填） */
     private String ticketId;
 
+    /**
+     * webhook 原始 labels 的 JSON 串（V11）。instance/pod/namespace/job 等——
+     * 诊断下钻与日志取证 keyword 的数据源。此前只存蒸馏字段，
+     * 最有诊断价值的维度在落库时被丢弃。
+     */
+    private String labelsJson;
+
+    /** webhook 原始 annotations 的 JSON 串（V11）：runbook_url/当前值/阈值等 */
+    private String annotationsJson;
+
     /** 记录创建时间 */
     private LocalDateTime createTime;
 
@@ -155,6 +165,12 @@ public class Alert implements Serializable {
 
     public String getTicketId() { return ticketId; }
     public void setTicketId(String ticketId) { this.ticketId = ticketId; }
+
+    public String getLabelsJson() { return labelsJson; }
+    public void setLabelsJson(String labelsJson) { this.labelsJson = labelsJson; }
+
+    public String getAnnotationsJson() { return annotationsJson; }
+    public void setAnnotationsJson(String annotationsJson) { this.annotationsJson = annotationsJson; }
 
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }

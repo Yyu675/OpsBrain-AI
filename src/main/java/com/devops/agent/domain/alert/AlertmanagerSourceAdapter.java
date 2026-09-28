@@ -50,9 +50,11 @@ public class AlertmanagerSourceAdapter implements AlertSourceAdapter {
     }
 
     private AlertSignal toSignal(AlertmanagerWebhook.Alert a) {
-        // 防御性拷贝：labels 会作为去重键输入被下游消费，不能持有上游可变的引用
+        // 防御性拷贝：labels/annotations 会作为去重键输入被下游消费，不能持有上游可变的引用
         Map<String, String> labels = a.getLabels() == null
                 ? Map.of() : new LinkedHashMap<>(a.getLabels());
+        Map<String, String> annotations = a.getAnnotations() == null
+                ? Map.of() : new LinkedHashMap<>(a.getAnnotations());
         return new AlertSignal(
                 a.getLabel("alertname"),
                 a.getLabel("service"),
@@ -61,6 +63,7 @@ public class AlertmanagerSourceAdapter implements AlertSourceAdapter {
                 a.getFingerprint(),
                 SOURCE,
                 labels,
+                annotations,
                 a.descriptionText(),
                 a.getStartsAt(),
                 a.isResolved());

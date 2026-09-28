@@ -180,8 +180,10 @@ class AlertWebhookChainIntegrationTest {
     @DisplayName("重复推送同一告警：次数递增，绝不重复建单")
     void duplicateAlertIncrementsInsteadOfCreatingSecondTicket() throws Exception {
         String alertName = "HighMemory-" + runId;
+        // critical→P0：立即建单。用 warning（P2）的话告警进 10 分钟自愈观察窗
+        // （FR-3.1）不立即建单，本用例的「工单已建且不重复」断言会扑空。
         Map<String, Object> payload = alertPayload(
-                "firing", alertName, "pay-svc", "warning", Map.of("instance", "node-7"));
+                "firing", alertName, "pay-svc", "critical", Map.of("instance", "node-7"));
 
         postWebhook(payload);
         String firstTicket = findByName(alertName).orElseThrow().getTicketId();

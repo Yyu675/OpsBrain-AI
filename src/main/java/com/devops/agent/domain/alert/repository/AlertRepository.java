@@ -56,6 +56,9 @@ public class AlertRepository {
         alert.setAcknowledgedAt(rs.getObject("acknowledged_at", LocalDateTime.class));
         alert.setResolvedAt(rs.getObject("resolved_at", LocalDateTime.class));
         alert.setTicketId(rs.getString("ticket_id"));
+        // V11 原始标签/注解：PG 的 jsonb 列经 getString 得到 JSON 文本
+        alert.setLabelsJson(rs.getString("labels_json"));
+        alert.setAnnotationsJson(rs.getString("annotations_json"));
         alert.setCreateTime(rs.getObject("create_time", LocalDateTime.class));
         alert.setUpdateTime(rs.getObject("update_time", LocalDateTime.class));
         return alert;
@@ -429,8 +432,8 @@ public class AlertRepository {
     public Alert save(Alert alert) {
         String sql = "INSERT INTO sys_alert (source, system, alert_name, level, title, description, status, " +
                 "dedup_key, service, module, occurrence_count, first_occurred_at, last_occurred_at, " +
-                "acknowledged_at, resolved_at, ticket_id, create_time, update_time) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "acknowledged_at, resolved_at, ticket_id, labels_json, annotations_json, create_time, update_time) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)";
 
         LocalDateTime now = LocalDateTime.now();
         if (alert.getCreateTime() == null) alert.setCreateTime(now);
@@ -457,8 +460,10 @@ public class AlertRepository {
             ps.setObject(14, alert.getAcknowledgedAt());
             ps.setObject(15, alert.getResolvedAt());
             ps.setObject(16, alert.getTicketId());
-            ps.setObject(17, alert.getCreateTime());
-            ps.setObject(18, alert.getUpdateTime());
+            ps.setString(17, alert.getLabelsJson() == null ? "{}" : alert.getLabelsJson());
+            ps.setString(18, alert.getAnnotationsJson() == null ? "{}" : alert.getAnnotationsJson());
+            ps.setObject(19, alert.getCreateTime());
+            ps.setObject(20, alert.getUpdateTime());
             return ps;
         }, keyHolder);
 
@@ -506,8 +511,8 @@ public class AlertRepository {
     public boolean insertOrIncrement(Alert alert) {
         String sql = "INSERT INTO sys_alert (source, system, alert_name, level, title, description, status, " +
                 "dedup_key, service, module, occurrence_count, first_occurred_at, last_occurred_at, " +
-                "acknowledged_at, resolved_at, ticket_id, create_time, update_time) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "acknowledged_at, resolved_at, ticket_id, labels_json, annotations_json, create_time, update_time) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?) " +
                 "ON CONFLICT (dedup_key) WHERE status IN ('FIRING','ACKNOWLEDGED') " +
                 "DO UPDATE SET occurrence_count = sys_alert.occurrence_count + 1, " +
                 "last_occurred_at = EXCLUDED.last_occurred_at, update_time = EXCLUDED.update_time " +
@@ -525,6 +530,8 @@ public class AlertRepository {
                 alert.getService(), alert.getModule(), alert.getOccurrenceCount(),
                 alert.getFirstOccurredAt(), alert.getLastOccurredAt(),
                 alert.getAcknowledgedAt(), alert.getResolvedAt(), alert.getTicketId(),
+                alert.getLabelsJson() == null ? "{}" : alert.getLabelsJson(),
+                alert.getAnnotationsJson() == null ? "{}" : alert.getAnnotationsJson(),
                 alert.getCreateTime(), alert.getUpdateTime());
         boolean isNew = Boolean.TRUE.equals(inserted);
         if (isNew) {
