@@ -31,3 +31,20 @@ scrape_configs:
       # 容器内日志流（stdout/stderr）保留为 stream 标签
       - source_labels: ['__meta_docker_container_log_stream']
         target_label: stream
+
+  # 宿主机后端日志（mvn spring-boot:run 不在容器里，docker_sd 天生抓不到）。
+  # app 标签对齐查询约定：告警 service=devops-platform / backend 时，
+  # {app=~"devops-platform.*"} 能命中。诊断对后端自身故障的日志取证从此非空。
+  - job_name: host-backend
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: host-backend
+          app: devops-platform-backend
+          __path__: /host-logs/*.log
+    pipeline_stages:
+      # 多行堆栈合并：TRACE/DEBUG 行后跟 "\tat ..." 缩进行时并入前一行，
+      # 否则一条异常堆栈被拆成几十条独立日志，模式挖掘全废
+      - multiline:
+          firstline: '^\d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s

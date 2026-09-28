@@ -232,6 +232,10 @@ services:
       # Docker Desktop（WSL2）同样提供该 socket——Linux 容器内挂载即可
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./monitoring/promtail.yml:/etc/promtail/config.yml:ro
+      # 宿主机后端日志（mvn spring-boot:run 落 logs/dev-run-canary.log）：
+      # 后端不在容器里，docker_sd 抓不到它——不挂这里，诊断对 backend/
+      # devops-platform 类服务的日志取证恒为空
+      - ./logs:/host-logs:ro
     command: ["-config.file=/etc/promtail/config.yml"]
     depends_on:
       - loki
