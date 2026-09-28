@@ -96,6 +96,20 @@ public class AlertController {
     }
 
     /**
+     * 同事件告警联动（建议3：告警详情页「同事件告警」列表）。
+     * <p>口径 = 同 system + service ±window 分钟窗（默认 10 分钟），
+     * 与 Incident 方案 C 的「事件」归并一致。窗口夹紧到 [1, 60]——过小查不到兄弟，
+     * 过大则把无关告警卷进来。</p>
+     */
+    @GetMapping("/{id}/related")
+    public ApiResponse<List<Alert>> related(@PathVariable Long id,
+                                            @RequestParam(defaultValue = "10") int window) {
+        int safeWindow = Math.min(Math.max(1, window), 60);
+        log.info("[AlertController] 查询同事件告警: id={} window={}min", id, safeWindow);
+        return ApiResponse.success(alertQueryService.findRelated(id, safeWindow));
+    }
+
+    /**
      * 管道心跳状态（FR-1.6 看门狗的可视面）。
      * <p>
      * 返回看门狗最近一次送达时间与是否超阈值静默——告警页顶部据此展示

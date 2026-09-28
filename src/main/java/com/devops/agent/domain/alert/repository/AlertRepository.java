@@ -113,6 +113,45 @@ public class AlertRepository {
         return n != null ? n : 0L;
     }
 
+    /**
+     * 同事件告警（建议3：告警详情页「同事件告警」联动）。
+     * <p>口径与 {@link #countDerivedIncidents} 的事件归并一致：
+     * 同 system + 同 service、且首次发生时间落在锚点告警 ±window 分钟窗内。
+     * 一个「事件」= 一次故障反复响——把散落的兄弟告警拉到同一屏，
+     * 值班人一眼看清这条故障波及了多少条告警规则。
+     * </p>
+     *
+     * @param excludeId  锚点告警 id（结果中排除它自身）
+     * @param system     锚点的来源系统（空/blank 则不做该维过滤）
+     * @param service    锚点的服务名（空/blank 则不做该维过滤）
+     * @param anchor     锚点的首次发生时间（first_occurred_at，可为 create_time 兜底）
+     * @param windowMinutes 窗口半径（分钟），前后扩张
+     */
+    public List<Alert> findRelated(Long excludeId, String system, String service,
+                                   LocalDateTime anchor, int windowMinutes) {
+        boolean hasSystem = system != null && !system.isBlank();
+        boolean hasService = service != null && !service.isBlank();
+        if (!hasSystem && !hasService) {
+            return List.of();   // 两个维度都缺，无法判定「同事件」，不硬凑
+        }
+        StringBuilder sql = new StringBuilder(
+                "SELECT * FROM sys_alert WHERE id <> ? AND first_occurred_at >= ? AND first_occurred_at <= ?");
+        List<Object> params = new java.util.ArrayList<>();
+        params.add(excludeId);
+        params.add(java.sql.Timestamp.valueOf(anchor.minusMinutes(windowMinutes)));
+        params.add(java.sql.Timestamp.valueOf(anchor.plusMinutes(windowMinutes)));
+        if (hasSystem) {
+            sql.append(" AND system = ?");
+            params.add(system.trim());
+        }
+        if (hasService) {
+            sql.append(" AND service = ?");
+            params.add(service.trim());
+        }
+        sql.append(" ORDER BY first_occurred_at ASC, id ASC");
+        return jdbcTemplate.query(sql.toString(), ALERT_ROW_MAPPER, params.toArray());
+    }
+
     /** 按告警名查活跃告警（心跳元告警的「恢复」判定用）。 */
     public Optional<Alert> findActiveByName(String alertName) {
         String sql = "SELECT * FROM sys_alert WHERE alert_name = ? AND status IN ('FIRING', 'ACKNOWLEDGED') LIMIT 1";

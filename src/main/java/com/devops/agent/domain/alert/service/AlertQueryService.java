@@ -203,6 +203,26 @@ public class AlertQueryService {
     }
 
     /**
+     * 同事件告警查询（建议3：告警详情页「同事件告警」联动）。
+     * <p>以锚点告警的 system + service + 首次发生时间为口径，
+     * 取 ±window 分钟窗内的兄弟告警（排除自身）。窗口上限由 Controller 夹紧。
+     * 返回的每条也补「观察中」派生标识，与列表口径一致。</p>
+     */
+    public List<Alert> findRelated(Long id, int windowMinutes) {
+        Alert alert = requireExisting(id);
+        java.time.LocalDateTime anchor = alert.getFirstOccurredAt() != null
+                ? alert.getFirstOccurredAt() : alert.getCreateTime();
+        // 时间锚点都没了（理论不会）——无法圈窗，返回空不硬凑
+        if (anchor == null) {
+            return List.of();
+        }
+        List<Alert> related = alertRepository.findRelated(
+                alert.getId(), alert.getSystem(), alert.getService(), anchor, windowMinutes);
+        related.forEach(a -> a.setObserving(alertService.isObserving(a)));
+        return related;
+    }
+
+    /**
      * 全局风暴模式状态快照（FR-2.5 可视面，告警列表横幅读它）。
      * <p>透传 AlertService 的风暴守卫状态——控制器只认本服务（六层分工）。</p>
      */
