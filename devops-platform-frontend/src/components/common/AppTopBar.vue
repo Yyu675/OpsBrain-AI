@@ -2,14 +2,21 @@
 /**
  * AppTopBar —— 内容区顶部窄条（2026-09-27 侧栏布局壳改造）。
  *
- * 职责（从原 AppNavbar 拆分而来）：全局搜索 + 通知铃铛 + 访客登录入口 +
- * 移动端汉堡。导航与用户信息归 AppSidebar，本组件不碰。
+ * 职责（从原 AppNavbar 拆分而来）：全局搜索 + 通知铃铛 + 用户菜单 +
+ * 访客登录入口 + 移动端汉堡。导航归 AppSidebar，本组件不碰。
  * 页面标题由各页自带 page-header 承载，这里不重复显示。
+ *
+ * 用户菜单 2026-09-27 从侧栏左下迁到右上：顶部右侧是行业惯例的
+ * 账户区位置（GitHub/Grafana/Cloud 控制台皆然），且侧栏折叠成
+ * 图标轨后左下已放不下用户卡。
  */
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, CheckCheck, LogIn, Menu } from 'lucide-vue-next'
+import { Bell, CheckCheck, LogIn, LogOut, LifeBuoy, Menu, Settings, User } from 'lucide-vue-next'
+import { ElMessageBox } from 'element-plus'
 import GlobalSearchBar from '@/components/common/GlobalSearchBar.vue'
+import AvatarFallback from '@/components/common/AvatarFallback.vue'
+import ProfileDialog from '@/components/common/ProfileDialog.vue'
 import { useAppStore } from '@/stores/app'
 import { useNotificationsStore, type AppNotification } from '@/stores/notifications'
 import { useMobileNavState } from '@/composables/useMobileNavState'
@@ -43,6 +50,46 @@ const markAllRead = () => {
 const handleClickOutside = (e: MouseEvent) => {
   const target = e.target as HTMLElement
   if (!target.closest('.notification-wrapper')) showNotifications.value = false
+  if (!target.closest('.user-menu-wrapper')) showUserMenu.value = false
+}
+
+// ==================== 用户菜单（右上角账户区） ====================
+
+const showUserMenu = ref(false)
+const profileVisible = ref(false)
+
+const toggleUserMenu = () => { showUserMenu.value = !showUserMenu.value }
+
+const goProfile = () => {
+  showUserMenu.value = false
+  profileVisible.value = true
+}
+
+const goSettings = () => {
+  showUserMenu.value = false
+  void router.push('/settings')
+}
+
+// 帮助中心入口在用户菜单（2026-09-27 导航收敛）
+const goHelp = () => {
+  showUserMenu.value = false
+  void router.push('/help')
+}
+
+const doLogout = async () => {
+  showUserMenu.value = false
+  try {
+    await ElMessageBox.confirm('确定要退出登录吗？', '退出登录', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await app.signOut()
+    notify.success('已退出登录')
+    router.push('/login')
+  } catch {
+    // cancel
+  }
 }
 
 onMounted(() => {
@@ -125,8 +172,46 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <!-- 用户菜单：右上角账户区（从头像点开，下拉含个人中心/设置/帮助/退出） -->
+      <div v-if="app.isAuthenticated" class="user-menu-wrapper">
+        <button
+          class="user-btn"
+          type="button"
+          :title="`${app.currentUser.name}（${app.currentUser.title || app.roleLabel}）`"
+          @click.stop="toggleUserMenu"
+        >
+          <AvatarFallback :name="app.currentUser.name" :size="28" />
+        </button>
+
+        <div v-if="showUserMenu" class="user-dropdown" @click.stop>
+          <div class="user-dropdown-head">
+            <span class="user-dropdown-name">{{ app.currentUser.name }}</span>
+            <span class="user-dropdown-role">{{ app.currentUser.title || app.roleLabel }}</span>
+          </div>
+          <button class="dropdown-item" @click="goProfile">
+            <User :size="15" />
+            个人中心
+          </button>
+          <button class="dropdown-item" @click="goSettings">
+            <Settings :size="15" />
+            系统设置
+          </button>
+          <button class="dropdown-item" @click="goHelp">
+            <LifeBuoy :size="15" />
+            帮助中心
+          </button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item dropdown-item-danger" @click="doLogout">
+            <LogOut :size="15" />
+            退出登录
+          </button>
+        </div>
+      </div>
     </div>
   </header>
+
+  <ProfileDialog :visible="profileVisible" @update:visible="profileVisible = $event" />
 </template>
 
 <style scoped lang="scss">
@@ -357,6 +442,98 @@ onBeforeUnmount(() => {
 .notification-time {
   font-size: var(--text-xs);
   color: var(--text-3);
+}
+
+/* ===== 用户菜单（右上角账户区） ===== */
+.user-menu-wrapper {
+  position: relative;
+}
+
+.user-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border-1);
+  border-radius: 50%;
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+
+  &:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-2, var(--border-1));
+  }
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 200px;
+  padding: 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 60;
+  animation: dropdown-in var(--duration-fast) var(--ease-out);
+}
+
+.user-dropdown-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--border-1);
+  margin-bottom: 4px;
+}
+
+.user-dropdown-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-dropdown-role {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-out);
+
+  &:hover { background: var(--surface-hover); }
+}
+
+.dropdown-item-danger {
+  color: var(--danger);
+
+  &:hover { background: var(--danger-subtle, var(--surface-hover)); }
+}
+
+.dropdown-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-1);
 }
 
 /* ===== 窄屏：汉堡出现，搜索收窄 ===== */

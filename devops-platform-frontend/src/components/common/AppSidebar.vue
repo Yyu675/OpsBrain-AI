@@ -9,23 +9,19 @@
  * 数据源不变：导航项仍来自 config/navigation.ts（RBAC 过滤），
  * 待审角标仍由 usePendingApprovalCountQuery 驱动。
  */
-import { notify } from '@/utils/notify'
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   LayoutDashboard, BookOpen, Ticket, Bell, Activity, ListChecks, Gauge,
-  ClipboardCheck, Monitor, ChevronRight, User, Settings, LifeBuoy, LogOut, X,
+  ClipboardCheck, Monitor, ChevronRight, ChevronsLeft, ChevronsRight, X,
 } from 'lucide-vue-next'
-import ProfileDialog from '@/components/common/ProfileDialog.vue'
-import AvatarFallback from '@/components/common/AvatarFallback.vue'
 import { useAppStore, type Role } from '@/stores/app'
 import { primaryNavigationItems } from '@/config/navigation'
 import { usePendingApprovalCountQuery } from '@/api/queries/approval.query'
 import { useMobileNavState } from '@/composables/useMobileNavState'
+import { loadPersisted, savePersisted } from '@/utils/persist'
 
 const route = useRoute()
-const router = useRouter()
 const app = useAppStore()
 
 // 方向 F RBAC：按当前用户角色过滤导航项（不变契约）
@@ -36,6 +32,14 @@ const navItems = computed(() =>
 /** 处置中心待审角标（审批决策后由 query invalidation 自动刷新） */
 const canSeeApprovals = computed(() => app.isAuthenticated && app.hasRole(['admin']))
 const { count: approvalPending } = usePendingApprovalCountQuery(canSeeApprovals)
+
+/** 侧栏折叠：收起为纯图标轨，状态跨会话持久化（用户偏好） */
+const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
+const collapsed = ref(loadPersisted<boolean>(SIDEBAR_COLLAPSED_KEY, 1) ?? false)
+const toggleCollapse = () => {
+  collapsed.value = !collapsed.value
+  savePersisted(SIDEBAR_COLLAPSED_KEY, collapsed.value, 1)
+}
 
 /** 导航图标：key → lucide 组件（navigation.ts 管清单与顺序，这里只管视觉映射） */
 const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
@@ -108,55 +112,9 @@ watch(mobileNavOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
 
-// ==================== 用户菜单 ====================
+// 用户菜单已迁到 AppTopBar 右上角（2026-09-27 布局调整）
 
-const showUserMenu = ref(false)
-const profileVisible = ref(false)
-
-const toggleUserMenu = () => { showUserMenu.value = !showUserMenu.value }
-
-const goProfile = () => {
-  showUserMenu.value = false
-  profileVisible.value = true
-}
-
-const goSettings = () => {
-  showUserMenu.value = false
-  void router.push('/settings')
-}
-
-// 帮助中心入口在用户菜单（2026-09-27 导航收敛）
-const goHelp = () => {
-  showUserMenu.value = false
-  void router.push('/help')
-}
-
-const doLogout = async () => {
-  showUserMenu.value = false
-  try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '退出登录', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    await app.signOut()
-    notify.success('已退出登录')
-    router.push('/login')
-  } catch {
-    // cancel
-  }
-}
-
-const handleClickOutside = (e: MouseEvent) => {
-  const target = e.target as HTMLElement
-  if (!target.closest('.sidebar-user')) showUserMenu.value = false
-}
-
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-})
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside)
   hoverTimers.forEach(t => clearTimeout(t))
   hoverTimers.clear()
   document.body.style.overflow = ''
@@ -165,7 +123,7 @@ onBeforeUnmount(() => {
 
 <template>
   <!-- 桌面侧栏：窄屏整体隐藏，由 AppTopBar 的汉堡 + 底部抽屉接管 -->
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ collapsed }">
     <RouterLink to="/" class="sidebar-logo">
       <div class="logo-icon">
         <Monitor :size="18" />
@@ -183,54 +141,38 @@ onBeforeUnmount(() => {
         :to="item.path"
         class="nav-item"
         :class="{ active: activeKey === item.key }"
+        :title="collapsed ? item.label : undefined"
         @mouseenter="prefetchWithIntent(item.key)"
         @mouseleave="cancelPrefetch(item.key)"
         @focus="doPrefetch(item.key)"
         @touchstart.passive="doPrefetch(item.key)"
       >
         <component :is="NAV_ICONS[item.key] ?? Monitor" :size="16" class="nav-icon" />
-        <span class="nav-label">{{ item.label }}</span>
+        <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
         <span
           v-if="item.key === 'disposal' && approvalPending > 0"
           class="nav-badge"
+          :class="{ 'nav-badge--dot': collapsed }"
           :title="`${approvalPending} 项待审批`"
-        >{{ approvalPending > 99 ? '99+' : approvalPending }}</span>
-        <ChevronRight v-else-if="activeKey === item.key" :size="14" class="nav-chevron" />
+        >{{ collapsed ? '' : (approvalPending > 99 ? '99+' : approvalPending) }}</span>
+        <ChevronRight v-else-if="!collapsed && activeKey === item.key" :size="14" class="nav-chevron" />
       </RouterLink>
     </nav>
 
-    <!-- 底部用户卡：点开用户菜单（个人中心/设置/帮助/退出） -->
-    <div v-if="app.isAuthenticated" class="sidebar-user">
-      <button class="user-card" type="button" @click.stop="toggleUserMenu">
-        <AvatarFallback :name="app.currentUser.name" :size="32" />
-        <div class="user-meta">
-          <span class="user-name">{{ app.currentUser.name }}</span>
-          <span class="user-role">{{ app.currentUser.title || app.roleLabel }}</span>
-        </div>
+    <!-- 底部：折叠开关（用户菜单已迁到 TopBar 右上角） -->
+    <div class="sidebar-foot">
+      <button
+        class="collapse-btn"
+        type="button"
+        :title="collapsed ? '展开导航' : '收起为图标轨'"
+        :aria-label="collapsed ? '展开导航' : '收起为图标轨'"
+        @click="toggleCollapse"
+      >
+        <ChevronsRight v-if="collapsed" :size="16" />
+        <ChevronsLeft v-else :size="16" />
+        <span v-if="!collapsed">收起导航</span>
       </button>
-
-      <div v-if="showUserMenu" class="user-dropdown" @click.stop>
-        <button class="dropdown-item" @click="goProfile">
-          <User :size="15" />
-          个人中心
-        </button>
-        <button class="dropdown-item" @click="goSettings">
-          <Settings :size="15" />
-          系统设置
-        </button>
-        <button class="dropdown-item" @click="goHelp">
-          <LifeBuoy :size="15" />
-          帮助中心
-        </button>
-        <div class="dropdown-divider"></div>
-        <button class="dropdown-item dropdown-item-danger" @click="doLogout">
-          <LogOut :size="15" />
-          退出登录
-        </button>
-      </div>
     </div>
-
-    <ProfileDialog :visible="profileVisible" @update:visible="profileVisible = $event" />
   </aside>
 
   <!-- 移动端抽屉（≤768px，由 AppTopBar 的汉堡触发） -->
@@ -394,103 +336,62 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-/* ===== 底部用户卡 ===== */
-.sidebar-user {
-  position: relative;
+/* ===== 底部：折叠开关 ===== */
+.sidebar-foot {
   border-top: 1px solid var(--border-1);
   padding: 10px 12px;
 }
 
-.user-card {
+.collapse-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
-  padding: 6px;
+  padding: 8px 10px;
   border: none;
   border-radius: var(--radius);
   background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: background var(--duration-fast) var(--ease-out);
-
-  &:hover { background: var(--surface-hover); }
-}
-
-.user-meta {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.user-name {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-1);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-role {
-  font-size: 10px;
   color: var(--text-3);
-}
-
-/* 用户菜单从用户卡向上弹出（用户在底部，菜单向上长） */
-.user-dropdown {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: calc(100% + 6px);
-  padding: 6px;
-  background: var(--surface-3);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  z-index: 60;
-  animation: dropup-in var(--duration-fast) var(--ease-out);
-}
-
-@keyframes dropup-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 10px;
-  border: none;
-  background: transparent;
-  font-size: var(--text-sm);
-  color: var(--text-1);
+  font-size: var(--text-xs);
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  text-align: left;
-  transition: background var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 
   &:hover {
-    background: var(--brand-subtle);
-    color: var(--brand);
-  }
-
-  &.dropdown-item-danger {
-    color: var(--danger);
-
-    &:hover {
-      background: var(--danger-subtle);
-      color: var(--danger);
-    }
+    background: var(--surface-hover);
+    color: var(--text-1);
   }
 }
 
-.dropdown-divider {
-  height: 1px;
-  background: var(--border-1);
-  margin: 4px 0;
+/* ===== 折叠态（纯图标轨，60px） ===== */
+.sidebar.collapsed {
+  width: 60px;
+
+  .sidebar-logo {
+    justify-content: center;
+    padding: 16px 0;
+  }
+
+  .logo-text { display: none; }
+
+  .nav-item {
+    justify-content: center;
+    padding: 10px 0;
+    gap: 0;
+  }
+
+  .nav-chevron { display: none; }
+
+  /* 折叠时角标退化为圆点（数字放不下，有就是有） */
+  .nav-badge--dot {
+    min-width: 8px;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border-radius: 50%;
+    margin-left: 4px;
+  }
 }
 
 /* ===== 移动端抽屉 ===== */

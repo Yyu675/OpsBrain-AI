@@ -2,7 +2,7 @@
  * AppSidebar（左侧导航栏）测试。
  *
  * 由 AppNavbar 测试拆分而来（2026-09-27 侧栏布局壳改造）：
- * 导航/RBAC/角标/用户菜单归侧栏，通知/搜索归 TopBar。
+ * 导航/RBAC/角标归侧栏，通知/搜索/用户菜单归 TopBar。
  * 「下拉面板互斥」用例随之退役——通知与用户菜单分处两个屏幕区域，
  * 物理上不再可能重叠，互斥逻辑本身被结构消除了。
  *
@@ -11,26 +11,13 @@
  *   不该显示却显示 = 普通用户点进去吃 403）
  * - 当前页高亮（含子路由归属、未覆盖路径不误高亮首页）
  * - 待审角标只对管理员拉取（端点限 ADMIN，非管理员请求只收获 403）
- * - 退出登录的二次确认与 await 顺序
+ * - 侧栏折叠：点击切换图标轨 + 状态跨会话持久化
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent } from 'vue'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-
-const confirmMock = vi.hoisted(() => vi.fn())
-vi.mock('element-plus', () => ({
-  ElMessageBox: { confirm: confirmMock, prompt: vi.fn() },
-  ElMessage: Object.assign(vi.fn(), {
-    success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(),
-  }),
-}))
-
-vi.mock('@/utils/notify', () => ({
-  notify: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(), clearCooldown: vi.fn() },
-  handleServerError: vi.fn(),
-}))
 
 // 只桩网络层：角标是否发请求这件事本身就是被测点之一
 const approvalApi = vi.hoisted(() => ({
@@ -53,7 +40,6 @@ const appStore = vi.hoisted(() => ({
     if (this.hasAllPermissions) return true
     return roles.includes(this.currentUser.role)
   },
-  signOut: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/stores/app', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/stores/app')
@@ -102,10 +88,6 @@ const mountSidebar = async (over: {
           }),
         }],
       ],
-      stubs: {
-        ProfileDialog: true,
-        AvatarFallback: true,
-      },
     },
   })
   await flushPromises()
@@ -115,16 +97,13 @@ const mountSidebar = async (over: {
 type Vm = {
   navItems: Array<{ key: string; label: string }>
   activeKey: string
-  showUserMenu: boolean
-  goSettings: () => void
-  goHelp: () => void
-  doLogout: () => Promise<void>
+  collapsed: boolean
+  toggleCollapse: () => void
 }
 const vmOf = (w: VueWrapper) => w.vm as unknown as Vm
 
 beforeEach(() => {
   vi.clearAllMocks()
-  confirmMock.mockResolvedValue('confirm')
   appStore.hasAllPermissions = false
 })
 
@@ -241,58 +220,32 @@ describe('当前页高亮', () => {
   })
 })
 
-describe('用户菜单入口', () => {
-  it('系统设置导航到 /settings', async () => {
+describe('侧栏折叠', () => {
+  it('点击折叠按钮切换图标轨形态', async () => {
     const w = await mountSidebar()
 
-    vmOf(w).goSettings()
-    await flushPromises()
+    expect(vmOf(w).collapsed).toBe(false)
+    expect(w.find('.sidebar.collapsed').exists()).toBe(false)
 
-    expect(router.currentRoute.value.path).toBe('/settings')
+    await w.find('.collapse-btn').trigger('click')
+    await w.vm.$nextTick()
+
+    expect(vmOf(w).collapsed).toBe(true)
+    expect(w.find('.sidebar.collapsed').exists()).toBe(true)
   })
 
-  it('帮助中心导航到 /help（已从顶栏降级到用户菜单）', async () => {
-    const w = await mountSidebar()
+  it('折叠偏好跨会话持久化——刷新后仍是图标轨', async () => {
+    localStorage.clear()
+    const w1 = await mountSidebar()
+    await w1.find('.collapse-btn').trigger('click')
+    await w1.vm.$nextTick()
+    w1.unmount()
 
-    vmOf(w).goHelp()
-    await flushPromises()
+    // 第二实例（模拟刷新）应读到持久化的 collapsed=true
+    const w2 = await mountSidebar()
+    expect(vmOf(w2).collapsed).toBe(true)
+    expect(w2.find('.sidebar.collapsed').exists()).toBe(true)
 
-    expect(router.currentRoute.value.path).toBe('/help')
-  })
-})
-
-describe('退出登录', () => {
-  it('先二次确认，取消则不登出', async () => {
-    confirmMock.mockRejectedValue('cancel')
-    const w = await mountSidebar()
-
-    await vmOf(w).doLogout()
-
-    expect(appStore.signOut).not.toHaveBeenCalled()
-  })
-
-  it('确认后清登录态并跳登录页', async () => {
-    const w = await mountSidebar()
-
-    await vmOf(w).doLogout()
-    await flushPromises()
-
-    expect(appStore.signOut).toHaveBeenCalled()
-    expect(router.currentRoute.value.path).toBe('/login')
-  })
-
-  it('await signOut 之后才跳转——否则可能带着未清的 token 进登录页', async () => {
-    let resolveSignOut: () => void = () => {}
-    appStore.signOut.mockReturnValue(new Promise<void>((r) => { resolveSignOut = r }))
-    const w = await mountSidebar()
-
-    const p = vmOf(w).doLogout()
-    await flushPromises()
-    expect(router.currentRoute.value.path).not.toBe('/login')
-
-    resolveSignOut()
-    await p
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/login')
+    localStorage.clear()
   })
 })

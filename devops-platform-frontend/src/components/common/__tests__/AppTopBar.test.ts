@@ -2,17 +2,26 @@
  * AppTopBar（内容区顶部窄条）测试。
  *
  * 由 AppNavbar 测试拆分而来（2026-09-27 侧栏布局壳改造）：
- * 通知/搜索/访客登录入口归 TopBar，导航/用户菜单归 AppSidebar。
+ * 通知/搜索/访客登录入口/用户菜单归 TopBar，导航归 AppSidebar。
  *
  * 保护的行为：
- * - 访客态：显示登录入口、不显示通知（通知需受保护 API，访客调用必 401）
+ * - 访客态：显示登录入口、不显示通知（通知需受保护 API，访客调用必 401）、不显示用户菜单
  * - 通知开关的诚实性：关闭时未读角标必须归零（关开关等于没关是最蠢的坏法）
  * - 通知点击的已读 + 跳转语义
+ * - 用户菜单：设置/帮助跳转语义 + 退出的二次确认与 await 顺序
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent } from 'vue'
+
+const confirmMock = vi.hoisted(() => vi.fn())
+vi.mock('element-plus', () => ({
+  ElMessageBox: { confirm: confirmMock, prompt: vi.fn() },
+  ElMessage: Object.assign(vi.fn(), {
+    success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(),
+  }),
+}))
 
 vi.mock('@/utils/notify', () => ({
   notify: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(), clearCooldown: vi.fn() },
@@ -21,7 +30,10 @@ vi.mock('@/utils/notify', () => ({
 
 const appStore = vi.hoisted(() => ({
   isAuthenticated: true,
+  currentUser: { name: '张明', role: 'operator', title: '运维专员' },
+  roleLabel: '运维专员',
   settings: { notificationsEnabled: true },
+  signOut: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/stores/app', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/stores/app')
@@ -61,6 +73,7 @@ const mountTopBar = async (over: {
       { path: '/', component: blank },
       { path: '/login', component: blank },
       { path: '/settings', component: blank },
+      { path: '/help', component: blank },
       { path: '/alerts/:id', component: blank },
     ],
   })
@@ -73,6 +86,8 @@ const mountTopBar = async (over: {
       stubs: {
         // 全局搜索有自己的测试；这里只验证它「在不在场」，不牵进它的行为
         GlobalSearchBar: { template: '<div class="stub-search" />' },
+        ProfileDialog: true,
+        AvatarFallback: true,
       },
     },
   })
@@ -83,23 +98,30 @@ const mountTopBar = async (over: {
 type Vm = {
   unreadCount: number
   showNotifications: boolean
+  showUserMenu: boolean
   toggleNotifications: () => void
   readNotification: (n: { id: string; linkTo?: string }) => void
   markAllRead: () => void
+  toggleUserMenu: () => void
+  goSettings: () => void
+  goHelp: () => void
+  doLogout: () => Promise<void>
 }
 const vmOf = (w: VueWrapper) => w.vm as unknown as Vm
 
 beforeEach(() => {
   vi.clearAllMocks()
+  confirmMock.mockResolvedValue('confirm')
 })
 
 describe('访客态', () => {
-  it('显示登录入口，不显示通知铃与全局搜索', async () => {
+  it('显示登录入口，不显示通知铃、全局搜索与用户菜单', async () => {
     const w = await mountTopBar({ authed: false })
 
     expect(w.find('.login-btn').exists()).toBe(true)
     expect(w.find('.notification-btn').exists()).toBe(false)
     expect(w.find('.stub-search').exists()).toBe(false)
+    expect(w.find('.user-menu-wrapper').exists()).toBe(false)
   })
 })
 
@@ -166,5 +188,83 @@ describe('通知', () => {
     await w.vm.$nextTick()
 
     expect(vm.showNotifications).toBe(false)
+  })
+})
+
+describe('用户菜单', () => {
+  it('已登录显示用户菜单，点击头像展开下拉', async () => {
+    const w = await mountTopBar({ authed: true })
+
+    expect(w.find('.user-menu-wrapper').exists()).toBe(true)
+
+    await w.find('.user-btn').trigger('click')
+    await w.vm.$nextTick()
+
+    expect(vmOf(w).showUserMenu).toBe(true)
+    expect(w.text()).toContain('退出登录')
+  })
+
+  it('系统设置导航到 /settings', async () => {
+    const w = await mountTopBar()
+
+    vmOf(w).goSettings()
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/settings')
+  })
+
+  it('帮助中心导航到 /help（已从顶栏降级到用户菜单）', async () => {
+    const w = await mountTopBar()
+
+    vmOf(w).goHelp()
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/help')
+  })
+
+  it('点击用户菜单外部关闭下拉', async () => {
+    const w = await mountTopBar()
+    vmOf(w).showUserMenu = true
+
+    document.body.click()
+    await w.vm.$nextTick()
+
+    expect(vmOf(w).showUserMenu).toBe(false)
+  })
+})
+
+describe('退出登录', () => {
+  it('先二次确认，取消则不登出', async () => {
+    confirmMock.mockRejectedValue('cancel')
+    const w = await mountTopBar()
+
+    await vmOf(w).doLogout()
+
+    expect(appStore.signOut).not.toHaveBeenCalled()
+  })
+
+  it('确认后清登录态并跳登录页', async () => {
+    const w = await mountTopBar()
+
+    await vmOf(w).doLogout()
+    await flushPromises()
+
+    expect(appStore.signOut).toHaveBeenCalled()
+    expect(router.currentRoute.value.path).toBe('/login')
+  })
+
+  it('await signOut 之后才跳转——否则可能带着未清的 token 进登录页', async () => {
+    let resolveSignOut: () => void = () => {}
+    appStore.signOut.mockReturnValue(new Promise<void>((r) => { resolveSignOut = r }))
+    const w = await mountTopBar()
+
+    const p = vmOf(w).doLogout()
+    await flushPromises()
+    expect(router.currentRoute.value.path).not.toBe('/login')
+
+    resolveSignOut()
+    await p
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 })

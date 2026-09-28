@@ -16,7 +16,7 @@ interface NavigationItem {
 }
 
 /**
- * 全站主导航模型（顶栏 = 日常作业面）。
+ * 全站主导航模型（侧栏 = 日常作业面，顺序即处置动线）。
  *
  * ── 2026-09-26 信息架构整合 ───────────────────────────────────
  * 1. 实时监控 + 趋势分析合并为「监控中心」（/trends 重定向到 /monitoring）；
@@ -33,17 +33,22 @@ interface NavigationItem {
  * 5. 审批中心 + 自愈中心合并为「处置中心」（/disposal，标签页承载），
  *    两者都是「自动化走到需要人」的 admin 队列，同一使用场景同一角色；
  * 6. 「帮助中心」降级到用户菜单——值班处置时没人看帮助，顶栏留给日常作业。
+ *
+ * ── 2026-09-27 三次收敛（按运维流程排序） ─────────────────────
+ * 菜单顺序 = 故障处置动线：事件到达（告警）→ 处置（工单）→ 跟踪（改进项）
+ * → 沉淀（知识库）→ 观测（监控）→ 度量（效能）→ 审批兜底（处置中心）。
+ * 值班时从上往下点，就是一条完整的处置旅程。
  */
 /** @public knip 假阳存证：%s */
 export const navigationItems: NavigationItem[] = [
   { key: 'home', label: '首页', path: '/', stage: 'L1', visible: true },
-  { key: 'knowledge', label: '知识库', path: '/knowledge', stage: 'L1', visible: true },
-  { key: 'tickets', label: '智能工单', path: '/tickets', stage: 'L1', visible: true },
   // 告警是值班人每天要用的入口
   { key: 'alerts', label: '告警事件', path: '/alerts', stage: 'L2', visible: true },
+  { key: 'tickets', label: '智能工单', path: '/tickets', stage: 'L1', visible: true },
+  { key: 'action-items', label: '改进项', path: '/action-items', stage: 'L1', visible: true },
+  { key: 'knowledge', label: '知识库', path: '/knowledge', stage: 'L1', visible: true },
   // 监控中心 = 实时态势 + 趋势分析（合并后值班人只认这一个入口）
   { key: 'monitoring', label: '监控中心', path: '/monitoring', stage: 'L2', visible: true },
-  { key: 'action-items', label: '改进项', path: '/action-items', stage: 'L1', visible: true },
   { key: 'effectiveness', label: '效能大盘', path: '/effectiveness', stage: 'L3', visible: true },
   // 处置中心 = 审批队列 + 自愈台账（标签页承载），限 admin；待审角标在 AppSidebar
   { key: 'disposal', label: '处置中心', path: '/disposal', stage: 'L3', visible: true, roles: ['admin'] },
