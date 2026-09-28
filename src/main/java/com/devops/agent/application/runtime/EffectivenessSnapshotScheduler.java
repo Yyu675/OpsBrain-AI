@@ -85,6 +85,8 @@ public class EffectivenessSnapshotScheduler {
             long postmortems = postmortemRepository.countAll();
             long alertSourced = ticketRepository.countByCreator("alert-bot");
             long alertsTotal = alertRepository.countSince(LocalDate.of(2000, 1, 1).atStartOfDay());
+            // 建议4 / Incident 方案 C：派生事件数（同 system+service+10分钟窗归并），累计口径与告警一致
+            long eventsTotal = alertRepository.countDerivedIncidents(LocalDate.of(2000, 1, 1).atStartOfDay());
             Map<String, Long> healing = healingRepository.stats();
 
             // 诊断与知识命中：从证据表聚合（知识方向 SUCCESS / 总知识证据）
@@ -99,15 +101,16 @@ public class EffectivenessSnapshotScheduler {
             jdbcTemplate.update("""
                     INSERT INTO sys_effectiveness_snapshot
                         (snapshot_date, total_tickets, finished_tickets, postmortem_count,
-                         alert_sourced_tickets, alerts_total, diagnosis_total, diagnosis_sufficient,
+                         alert_sourced_tickets, alerts_total, events_total, diagnosis_total, diagnosis_sufficient,
                          knowledge_evidence, knowledge_hits, healing_total, healing_succeeded)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT (snapshot_date) DO UPDATE SET
                         total_tickets = EXCLUDED.total_tickets,
                         finished_tickets = EXCLUDED.finished_tickets,
                         postmortem_count = EXCLUDED.postmortem_count,
                         alert_sourced_tickets = EXCLUDED.alert_sourced_tickets,
                         alerts_total = EXCLUDED.alerts_total,
+                        events_total = EXCLUDED.events_total,
                         diagnosis_total = EXCLUDED.diagnosis_total,
                         diagnosis_sufficient = EXCLUDED.diagnosis_sufficient,
                         knowledge_evidence = EXCLUDED.knowledge_evidence,
@@ -115,11 +118,11 @@ public class EffectivenessSnapshotScheduler {
                         healing_total = EXCLUDED.healing_total,
                         healing_succeeded = EXCLUDED.healing_succeeded
                     """,
-                    day, totalTickets, finished, postmortems, alertSourced, alertsTotal,
+                    day, totalTickets, finished, postmortems, alertSourced, alertsTotal, eventsTotal,
                     diagnosisTotal, diagnosisSufficient, knowledgeEvidence, knowledgeHits,
                     healing.getOrDefault("total", 0L), healing.getOrDefault("succeeded", 0L));
-            log.info("📊 [EffectivenessSnapshot] 快照已落 | {} | 工单={} 复盘={} 告警={}",
-                    day, totalTickets, postmortems, alertsTotal);
+            log.info("📊 [EffectivenessSnapshot] 快照已落 | {} | 工单={} 复盘={} 告警={} 事件={}",
+                    day, totalTickets, postmortems, alertsTotal, eventsTotal);
             // 保留策略：只留近 400 天——趋势图与周报的窗口远小于此，
             // 更老的行只是占地方（与审计表治理同族）
             int pruned = jdbcTemplate.update(
@@ -137,7 +140,7 @@ public class EffectivenessSnapshotScheduler {
     public List<Map<String, Object>> trend(int days) {
         return jdbcTemplate.queryForList("""
                 SELECT snapshot_date, total_tickets, finished_tickets, postmortem_count,
-                       alert_sourced_tickets, alerts_total, diagnosis_total, diagnosis_sufficient,
+                       alert_sourced_tickets, alerts_total, events_total, diagnosis_total, diagnosis_sufficient,
                        knowledge_evidence, knowledge_hits, healing_total, healing_succeeded
                   FROM sys_effectiveness_snapshot
                  WHERE snapshot_date >= CURRENT_DATE - (?::int - 1)

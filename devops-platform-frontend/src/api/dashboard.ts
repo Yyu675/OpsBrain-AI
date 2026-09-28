@@ -96,6 +96,8 @@ export interface EffectivenessSnapshot {
   postmortem_count: number
   alert_sourced_tickets: number
   alerts_total: number
+  /** 派生事件数（同 system+service+10 分钟窗归并，累计口径，建议4） */
+  events_total: number
   diagnosis_total: number
   diagnosis_sufficient: number
   knowledge_evidence: number

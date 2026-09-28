@@ -283,6 +283,23 @@ const trendLabels = computed(() =>
   (trend.data.value ?? []).map(s => s.snapshot_date?.slice(5) ?? '')
 )
 
+/**
+ * 告警/事件/工单 处置漏斗趋势（建议4）：三档累计口径的水位变化。
+ * 事件数 = 同 system+service+10 分钟窗归并（Incident 方案 C），
+ * 工单线取「告警来源建单」（alert_sourced_tickets）而非全部工单——
+ * 漏斗量纲必须同源，全量工单含手动单会让「工单」线反超「事件」线、漏斗失真。
+ * 三条线的间距即压缩比——告警线到事件线是「去同桶重复」，事件线到工单线是「自动建单收敛」。
+ */
+const funnelTrendSeries = computed<TrendSeries[]>(() => {
+  const rows = trend.data.value ?? []
+  if (!rows.length) return []
+  return [
+    { name: '告警', data: rows.map(s => s.alerts_total), color: '#f56c6c', suffix: ' 条', area: true },
+    { name: '事件', data: rows.map(s => s.events_total ?? 0), color: '#e6a23c', suffix: ' 条' },
+    { name: '告警建单', data: rows.map(s => s.alert_sourced_tickets), color: '#67c23a', suffix: ' 单' },
+  ]
+})
+
 const trendSeries = computed<TrendSeries[]>(() => {
   const rows = trend.data.value ?? []
   if (!rows.length) return []
@@ -490,6 +507,19 @@ const trendSeries = computed<TrendSeries[]>(() => {
             :series="trendSeries"
             height="280px"
             :target-line="{ value: 70, label: '复盘率目标 70%' }"
+          />
+        </section>
+
+        <!-- 告警/事件/工单 处置漏斗（建议4）：三档累计口径，间距即压缩比 -->
+        <section class="panel" style="margin-bottom: 16px;">
+          <h2 class="panel-title">告警 / 事件 / 工单 漏斗（近 30 天累计）</h2>
+          <p class="panel-sub">事件 = 同系统·同服务 10 分钟窗归并——告警到事件削掉高频重复，事件到工单是自动建单收敛</p>
+          <p v-if="!funnelTrendSeries.length" class="panel-empty">快照自今日开始累积，明天起出现漏斗趋势</p>
+          <TrendChart
+            v-else
+            :labels="trendLabels"
+            :series="funnelTrendSeries"
+            height="260px"
           />
         </section>
 
