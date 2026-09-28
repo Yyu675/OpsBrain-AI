@@ -17,11 +17,13 @@ import { notify } from '@/utils/notify'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { useQuery } from '@tanstack/vue-query'
 import {
   Bell, CheckCircle, AlertTriangle, Clock, Loader2,
-  RefreshCw, Hash, Server, Boxes, Radio, Ticket
+  RefreshCw, Hash, Server, Boxes, Radio, Ticket, Network
 } from 'lucide-vue-next'
 import { useAlertDetailQuery, useAlertMutations } from '@/api/queries/alerts.query'
+import { fetchRelatedAlerts } from '@/api/alerts'
 import { fetchTicketById } from '@/api/tickets'
 import { levelTagType, statusTagType, getAlertStatusLabel } from '@/utils/alert'
 import { formatAbsolute, parseDate } from '@/utils/time'
@@ -50,6 +52,19 @@ const alertId = computed(() => String(route.params.id ?? ''))
  */
 const detailQuery = useAlertDetailQuery(alertId)
 const { acknowledge: ackMutation, resolve: resolveMutation } = useAlertMutations()
+
+/**
+ * 同事件告警联动（建议3）：同 system + service ±10 分钟窗内。
+ * 请求挂在详情数据就绪之后（enabled 依赖 alert 已载入），
+ * 切换 id 走 key 变化自动重拉。结果仅是增强信息，失败降级空数组。
+ */
+const relatedQuery = useQuery({
+  queryKey: computed(() => ['related-alerts', alertId.value]),
+  queryFn: () => fetchRelatedAlerts(Number(alertId.value)),
+  enabled: computed(() => !!alertId.value && detailQuery.data.value !== null),
+  staleTime: 30_000,
+})
+const relatedAlerts = computed(() => relatedQuery.data.value ?? [])
 
 const alert = detailQuery.data
 const loading = detailQuery.isLoading
@@ -327,6 +342,32 @@ const goList = () => router.push('/alerts')
                 </li>
               </ul>
             </section>
+
+            <!-- 同事件告警（建议3）：同 system + service ±10 分钟窗，一条故障波及的兄弟告警 -->
+            <section class="card">
+              <h3 class="card-title">
+                <Network :size="15" />
+                同事件告警
+                <span v-if="relatedAlerts.length" class="card-count">{{ relatedAlerts.length }} 条</span>
+              </h3>
+              <p class="related-hint">
+                与本告警同一来源系统、同一服务、首次发生时间 ±10 分钟窗内——一次故障反复触响的兄弟告警
+              </p>
+              <div v-if="relatedQuery.isLoading.value" class="related-empty">加载中…</div>
+              <ul v-else-if="relatedAlerts.length" class="related-list">
+                <li v-for="r in relatedAlerts" :key="r.id" class="related-item">
+                  <RouterLink :to="`/alerts/${r.id}`" class="related-link">
+                    <el-tag :type="levelTagType(r.level)" size="small" effect="dark">{{ r.level || '—' }}</el-tag>
+                    <span class="related-name">{{ r.title || r.alertName || `告警 #${r.id}` }}</span>
+                    <span v-if="r.observing" class="observing-badge">观察中</span>
+                    <span class="related-time">
+                      <RelativeTime :value="r.firstOccurredAt" />
+                    </span>
+                  </RouterLink>
+                </li>
+              </ul>
+              <p v-else class="related-empty">窗口内没有同源同服务的其他告警</p>
+            </section>
           </div>
 
           <!-- 右栏 -->
@@ -566,6 +607,84 @@ const goList = () => router.push('/alerts')
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   color: var(--text-1);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  svg { color: var(--text-3); }
+}
+
+.card-count {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+  color: var(--text-3);
+  background: var(--surface-2, var(--surface-2));
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+/* ===== 同事件告警 ===== */
+.related-hint {
+  margin: -4px 0 12px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  line-height: 1.5;
+}
+
+.related-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.related-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.related-item { border-bottom: 1px solid var(--border-1); }
+.related-item:last-child { border-bottom: none; }
+
+.related-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  text-decoration: none;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+
+  &:hover { background: var(--surface-hover); }
+}
+
+.related-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.related-time {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.observing-badge {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--warning, #b45309);
+  background: var(--warning-subtle, #fffbeb);
+  padding: 1px 7px;
+  border-radius: 999px;
 }
 
 .desc-body {

@@ -76,6 +76,22 @@ export async function fetchAlertById(id: number | string): Promise<Alert | null>
 }
 
 /**
+ * 同事件告警联动（建议3）：同 system + service，首次发生时间 ±window 分钟窗内。
+ * 拉取失败降级为空数组——联动列表是增强信息，拿不到不阻塞详情页主内容。
+ */
+export async function fetchRelatedAlerts(id: number, window = 10): Promise<Alert[]> {
+  const safeWindow = Math.min(Math.max(1, window), 60)
+  try {
+    const payload = await http.get<unknown>(
+      `${API_ENDPOINTS.ALERTS_BY_ID(id)}/related?window=${safeWindow}`)
+    const data = unwrapBiz<Alert[]>(payload, '查询同事件告警失败')
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
+
+/**
  * 人工确认告警（FIRING/ACKNOWLEDGED → ACKNOWLEDGED，幂等）
  */
 export async function acknowledgeAlert(id: number): Promise<Alert> {

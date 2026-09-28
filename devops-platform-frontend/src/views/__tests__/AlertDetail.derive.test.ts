@@ -51,6 +51,7 @@ vi.mock('@/utils/notify', () => ({
 const api = vi.hoisted(() => ({
   fetchAlerts: vi.fn(),
   fetchAlertById: vi.fn(),
+  fetchRelatedAlerts: vi.fn().mockResolvedValue([]),
   acknowledgeAlert: vi.fn(),
   resolveAlert: vi.fn(),
 }))
