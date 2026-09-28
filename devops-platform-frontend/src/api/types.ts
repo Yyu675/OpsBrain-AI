@@ -487,6 +487,10 @@ export interface Alert {
   ticketId: string | null
   /** 读路径派生（FR-3.1）：处于自愈观察窗内——活跃+未建单+观察级+未超窗 */
   observing?: boolean
+  /** webhook 原始 labels 的 JSON 串（V11）：instance/pod/namespace/job 等下钻维度 */
+  labelsJson?: string | null
+  /** webhook 原始 annotations 的 JSON 串（V11）：runbook_url/当前值/阈值等 */
+  annotationsJson?: string | null
   createTime: string | null
   updateTime: string | null
 }

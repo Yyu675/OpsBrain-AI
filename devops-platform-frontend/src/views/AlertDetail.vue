@@ -210,6 +210,32 @@ const durationText = computed(() => {
   return rh ? `${d} 天 ${rh} 小时` : `${d} 天`
 })
 
+// ==================== 原始标签 / 注解（V11 落库） ====================
+
+/** 防御性解析 labels/annotations JSON 串 → 键值对数组；非法/空 JSON 降级为空数组 */
+const parseJsonEntries = (raw: string | null | undefined): { key: string; value: string }[] => {
+  if (!raw) return []
+  try {
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return []
+    return Object.entries(obj).map(([key, value]) => ({ key, value: String(value) }))
+  } catch {
+    return []
+  }
+}
+
+// 这些键已在上方「告警属性」卡或徽标里展示，不再重复——
+// 「原始标签」只呈现属性区没有的下钻维度（instance/pod/namespace/job…）
+const LABEL_KEYS_SHOWN_ELSEWHERE = new Set(['alertname', 'service', 'module', 'severity', 'system'])
+
+/** 原始标签（过滤掉已在属性区展示的键），值班人看 instance/pod 即可定位实体，不用跳 Grafana */
+const alertLabels = computed(() =>
+  parseJsonEntries(alert.value?.labelsJson).filter(e => !LABEL_KEYS_SHOWN_ELSEWHERE.has(e.key))
+)
+
+/** 告警注解（summary/description/runbook_url/当前值/阈值），全量展示 */
+const alertAnnotations = computed(() => parseJsonEntries(alert.value?.annotationsJson))
+
 const canAcknowledge = computed(() => {
   const s = alert.value?.status
   return s !== 'ACKNOWLEDGED' && s !== 'RESOLVED'
@@ -401,6 +427,28 @@ const goList = () => router.push('/alerts')
                 <div class="prop-row prop-row--stack">
                   <dt><Hash :size="13" /> 去重键</dt>
                   <dd class="mono dedup">{{ alert.dedupKey || '—' }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <!-- 原始标签（V11：instance/pod/namespace/job 等下钻维度） -->
+            <section v-if="alertLabels.length" class="card">
+              <h3 class="card-title">原始标签</h3>
+              <dl class="prop-list">
+                <div v-for="e in alertLabels" :key="e.key" class="prop-row prop-row--stack">
+                  <dt class="mono label-key">{{ e.key }}</dt>
+                  <dd class="mono label-val">{{ e.value }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <!-- 告警注解（summary/description/runbook_url/当前值/阈值） -->
+            <section v-if="alertAnnotations.length" class="card">
+              <h3 class="card-title">告警注解</h3>
+              <dl class="prop-list">
+                <div v-for="e in alertAnnotations" :key="e.key" class="prop-row prop-row--stack">
+                  <dt class="mono label-key">{{ e.key }}</dt>
+                  <dd class="annotation-val">{{ e.value }}</dd>
                 </div>
               </dl>
             </section>
@@ -826,6 +874,30 @@ const goList = () => router.push('/alerts')
   background: var(--surface-2, var(--surface-2));
   border-radius: var(--radius-sm);
   word-break: break-all;
+}
+
+/* 原始标签/注解（V11）：键名等宽弱色，值承载长内容可断行 */
+.label-key {
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+.label-val {
+  margin-top: 3px;
+  padding: 5px 8px;
+  background: var(--surface-2, var(--surface-2));
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+  font-size: var(--text-xs);
+}
+
+/* 注解值常是长文本（description/runbook_url/阈值说明），不用等宽、正常换行 */
+.annotation-val {
+  margin-top: 3px;
+  color: var(--text-2);
+  line-height: var(--leading-normal);
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .val-warn {
