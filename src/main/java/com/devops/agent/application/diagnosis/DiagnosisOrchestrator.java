@@ -88,6 +88,14 @@ public class DiagnosisOrchestrator {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
+    /**
+     * 跨服务依赖拓扑（轻量版）：{@code devops.diagnosis.service-dependencies}。
+     * 格式 {@code order-service:redis-server,mysql-server;payment-service:mysql-server}。
+     * 默认空串 = 不配依赖、不收集拓扑证据，诊断行为与此前完全一致（零风险默认关）。
+     */
+    @org.springframework.beans.factory.annotation.Value("${devops.diagnosis.service-dependencies:}")
+    private String serviceDependenciesConfig;
+
     public DiagnosisOrchestrator(MetricsEvidenceCollector metricsCollector,
                                  ChangesEvidenceCollector changesCollector,
                                  LogsEvidenceCollector logsCollector,
@@ -285,6 +293,85 @@ public class DiagnosisOrchestrator {
         }
     }
 
+    /**
+     * 解析服务依赖配置 → 服务 → 上游依赖列表。
+     * 格式 {@code order-service:redis,mysql;payment-svc:mysql}；空/坏值降级为空 Map。
+     */
+    private java.util.Map<String, List<String>> parseServiceDependencies() {
+        if (serviceDependenciesConfig == null || serviceDependenciesConfig.isBlank()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, List<String>> map = new java.util.LinkedHashMap<>();
+        for (String pair : serviceDependenciesConfig.split(";")) {
+            String[] kv = pair.split(":");
+            if (kv.length != 2) continue;
+            String svc = kv[0].trim();
+            List<String> deps = new ArrayList<>();
+            for (String d : kv[1].split(",")) {
+                if (!d.trim().isEmpty()) deps.add(d.trim());
+            }
+            if (!svc.isEmpty() && !deps.isEmpty()) map.put(svc, deps);
+        }
+        return map;
+    }
+
+    /**
+     * 跨服务依赖拓扑取证（轻量版）：对本服务的每个上游依赖，收集其指标 + 日志
+     * 关键证据，汇总为一个 TOPOLOGY 证据。让「Redis 雪崩 → 后端报错」这类跨服务
+     * 因果能进诊断视野，而不是单服务孤立诊断。
+     *
+     * <p>设计要点：</p>
+     * <ul>
+     *   <li>复用现有 metrics/logs 收集器，仅把目标服务换成依赖服务，零新依赖；</li>
+     *   <li>类型 TOPOLOGY——EvidenceAggregator 将其设为非关键增强项，
+     *       不计入充分性统计，不稀释本服务的证据判定；</li>
+     *   <li>依赖收集失败只降级为该依赖缺席，不阻断主诊断；</li>
+     *   <li>未配置依赖时返回 null（调用方不追加证据），行为与此前完全一致。</li>
+     * </ul>
+     */
+    private Evidence collectTopologyEvidence(String service) {
+        java.util.Map<String, List<String>> deps = parseServiceDependencies();
+        List<String> upstreams = deps.get(service);
+        if (upstreams == null || upstreams.isEmpty()) {
+            return null;
+        }
+        String metricCsv = String.join(",", catalog.availableMetrics());
+        List<java.util.Map<String, Object>> depDetails = new ArrayList<>();
+        int anomalyServices = 0;
+        for (String up : upstreams) {
+            try {
+                Evidence m = metricsCollector.collect(up, COLLECT_RANGE, metricCsv);
+                Evidence l = logsCollector.collect(up, COLLECT_RANGE, "ERROR", null);
+                java.util.Map<String, Object> d = new java.util.LinkedHashMap<>();
+                d.put("service", up);
+                d.put("metricsStatus", m.status().name());
+                d.put("metricsTitle", m.title());
+                d.put("logsStatus", l.status().name());
+                d.put("logsTitle", l.title());
+                // 依赖服务指标异常数（content.anomalyCount）是因果判断的关键信号
+                Object ac = m.content() == null ? null : m.content().get("anomalyCount");
+                d.put("metricsAnomalyCount", ac instanceof Number ? ((Number) ac).intValue() : 0);
+                if (ac instanceof Number && ((Number) ac).intValue() > 0) anomalyServices++;
+                depDetails.add(d);
+            } catch (Exception ex) {
+                log.warn("⚠️ [Diagnosis] 依赖服务取证失败（降级为该依赖缺席） | service={} upstream={} | {}",
+                        service, up, ex.getMessage());
+            }
+        }
+        if (depDetails.isEmpty()) {
+            return null;
+        }
+        java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
+        content.put("service", service);
+        content.put("dependencyCount", depDetails.size());
+        content.put("anomalousDependencyCount", anomalyServices);
+        content.put("dependencies", depDetails);
+        String title = "上游依赖拓扑：" + depDetails.size() + " 个依赖服务"
+                + (anomalyServices > 0 ? "，其中 " + anomalyServices + " 个指标异常" : "，指标均未见异常");
+        return new Evidence(Evidence.EvidenceStatus.SUCCESS, Evidence.Type.TOPOLOGY,
+                title, content, "service-dependencies-config", null, java.time.Instant.now());
+    }
+
     // ───────────── helpers ─────────────
 
     private List<Evidence> collect(String service, AlertAnchor anchor) {
@@ -310,6 +397,13 @@ public class DiagnosisOrchestrator {
         // P0 2026-09-24：诊断接入知识库——检索命中作为 KNOWLEDGE 证据进推理与回流。
         // 查询锚点=告警名+描述（2026-09-25 实测：服务名是语义噪声，会稀释相似度）
         evidences.add(knowledgeCollector.collect(service, COLLECT_RANGE, anchor.name(), anchor.description()));
+
+        // 跨服务依赖拓扑（轻量版）：配置了依赖才收集；TOPOLOGY 证据不计入充分性
+        // 统计（EvidenceAggregator 非关键增强项），不稀释本服务的证据判定。
+        Evidence topology = collectTopologyEvidence(service);
+        if (topology != null) {
+            evidences.add(topology);
+        }
         return evidences;
     }
 
