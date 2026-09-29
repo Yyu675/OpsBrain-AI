@@ -33,14 +33,15 @@ scrape_configs:
         target_label: stream
 
   # 宿主机后端日志（mvn spring-boot:run 不在容器里，docker_sd 天生抓不到）。
-  # app 标签对齐查询约定：告警 service=devops-platform / backend 时，
-  # {app=~"devops-platform.*"} 能命中。诊断对后端自身故障的日志取证从此非空。
+  # app 标签必须与告警的 service 字段对齐——诊断按 {app=~"<service>.*"} 查。
+  # 后端在告警里的 service 是 opsbrain-ai（Prometheus 规则的 service label），
+  # 所以 app 打 opsbrain-ai 而非容器名 devops-platform-backend，否则日志取证恒空。
   - job_name: host-backend
     static_configs:
       - targets: [localhost]
         labels:
           job: host-backend
-          app: devops-platform-backend
+          app: opsbrain-ai
           __path__: /host-logs/*.log
     pipeline_stages:
       # 多行堆栈合并：TRACE/DEBUG 行后跟 "\tat ..." 缩进行时并入前一行，

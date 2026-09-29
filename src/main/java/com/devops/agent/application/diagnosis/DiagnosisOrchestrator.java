@@ -245,16 +245,19 @@ public class DiagnosisOrchestrator {
         }
 
         /**
-         * 日志取证的 keyword 候选：instance > pod > container > namespace。
-         * 告警规则里这些标签指明「哪个具体实体出的事」，比服务名精确得多——
-         * Loki 里同服务多实例的日志混在一个流里，不滤就直接把别的实例的
-         * 堆栈当成证据。
+         * 日志取证的内容关键词：恒为 null（不做正文过滤）。
+         *
+         * <p>2026-09-29 实证修正：此前用 instance/pod/container/namespace 标签值做
+         * 正文关键词（{@code |= "<instance>"}），意图是「同服务多实例精确到实体」。
+         * 但实例标识（K8s pod 名 / host:port）从不出现在应用日志正文里——它们是
+         * 调度层元数据，不是日志内容。结果是正文过滤把日志滤光：opsbrain-ai 明明
+         * 有 16 行 WARN，加 {@code |= "evid-..."} 后恒为 0 行（NO_DATA）。</p>
+         *
+         * <p>日志取证的正确过滤维度是 Loki <b>标签</b>（app/service）+ 级别，
+         * 不是正文关键词。实例级过滤若未来需要，应给 promtail 加 instance/pod
+         * <b>标签</b>后用标签选择器（{@code {app=..., instance=...}}），而非正文匹配。</p>
          */
         String logKeyword() {
-            for (String key : new String[]{"instance", "pod", "container", "namespace"}) {
-                String v = labels.get(key);
-                if (v != null && !v.isBlank()) return v;
-            }
             return null;
         }
     }
