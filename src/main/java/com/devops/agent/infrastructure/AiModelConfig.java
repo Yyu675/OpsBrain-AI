@@ -63,14 +63,44 @@ public class AiModelConfig {
         this.circuitBreakerRegistry = circuitBreakerRegistry;
     }
 
+    /** 已告警过的「渠道:协议」组合——同一非兼容协议只告警一次，不刷屏。 */
+    private final java.util.Set<String> protocolWarned =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * 协议边界护栏（方案 B：诚实收敛，防"假配置"误导）。
+     * <p>当前调用层只接入了 OpenAI 兼容协议（OpenAiCompatibleModelFactory）。若渠道配了
+     * 非 OpenAI 协议（AZURE_OPENAI/ANTHROPIC/CUSTOM），调用仍按 OpenAI 兼容发出——
+     * 这会静默用错协议导致调用失败。故此处在装配模型时显式告警：
+     * 该协议暂未接入调用，当前按 OpenAI 兼容处理。要真正支持需引入对应
+     * LangChain4j 客户端（langchain4j-anthropic / langchain4j-azure-open-ai）。</p>
+     */
+    private void warnIfNonOpenAiProtocol(AiChannel ch) {
+        if (ch == null || ch.protocol() == null || ch.protocol().isBlank()
+                || AiChannel.PROTOCOL_OPENAI_COMPATIBLE.equals(ch.protocol())) {
+            return;
+        }
+        String key = ch.channelKey() + ":" + ch.protocol();
+        if (protocolWarned.add(key)) {
+            log.warn("⚠️ [AiModelConfig] 渠道 {} 配置了非 OpenAI 兼容协议 {}，但当前调用层仅接入 "
+                    + "OpenAI 兼容协议——本次调用将按 OpenAI 兼容发出（可能失败）。"
+                    + "要真正支持 {} 需引入对应 LangChain4j 客户端并接入构建逻辑。",
+                    ch.channelKey(), ch.protocol(), ch.protocol());
+        }
+    }
+
     /** chat 渠道当前生效配置（DB 为主，缺失回落已装配的 yml 字段）。 */
     private AiChannel chatChannel() {
-        return channelRepo.findByKey(AiChannel.KEY_CHAT).orElse(null);
+        AiChannel ch = channelRepo.findByKey(AiChannel.KEY_CHAT).orElse(null);
+        warnIfNonOpenAiProtocol(ch);
+        return ch;
     }
 
     /** embedding 渠道当前生效配置。 */
     private AiChannel embeddingChannel() {
-        return channelRepo.findByKey(AiChannel.KEY_EMBEDDING).orElse(null);
+        AiChannel ch = channelRepo.findByKey(AiChannel.KEY_EMBEDDING).orElse(null);
+        warnIfNonOpenAiProtocol(ch);
+        return ch;
     }
 
     // ==================== 多渠道配置（方案 C，批 74）====================

@@ -150,6 +150,10 @@ const applyTemplate = async (tpl: ChannelTemplate) => {
   }
 }
 
+/** 协议是否真实接入调用层（方案 B 诚实收敛：非 OpenAI 兼容暂未接入，仅记录不生效）。 */
+const isUnsupportedProtocol = (protocol?: string | null) =>
+  Boolean(protocol && protocol !== 'OPENAI_COMPATIBLE')
+
 /** 从表单构建 patch：空串/undefined 不打包 → 后端按「不修改」处理。 */
 function buildPatch(): AiChannelUpdatePayload {
   const f = editForm.value
@@ -605,7 +609,10 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </div>
             <div class="field-row">
               <span class="field-label">API 协议</span>
-              <span class="field-value">{{ dash(chatChannel?.protocol) }}</span>
+              <span class="field-value">
+                {{ dash(chatChannel?.protocol) }}
+                <span v-if="isUnsupportedProtocol(chatChannel?.protocol)" class="protocol-unsupported-flag" title="该协议暂未接入调用层，当前按 OpenAI 兼容处理">未接入</span>
+              </span>
             </div>
             <div class="field-row">
               <span class="field-label">端点</span>
@@ -675,7 +682,10 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </div>
             <div class="field-row">
               <span class="field-label">API 协议</span>
-              <span class="field-value">{{ dash(embeddingChannel?.protocol) }}</span>
+              <span class="field-value">
+                {{ dash(embeddingChannel?.protocol) }}
+                <span v-if="isUnsupportedProtocol(embeddingChannel?.protocol)" class="protocol-unsupported-flag" title="该协议暂未接入调用层，当前按 OpenAI 兼容处理">未接入</span>
+              </span>
             </div>
             <div class="field-row">
               <span class="field-label">端点</span>
@@ -741,7 +751,10 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </div>
             <div class="field-row">
               <span class="field-label">API 协议</span>
-              <span class="field-value">{{ dash(rerankerChannel?.protocol) }}</span>
+              <span class="field-value">
+                {{ dash(rerankerChannel?.protocol) }}
+                <span v-if="isUnsupportedProtocol(rerankerChannel?.protocol)" class="protocol-unsupported-flag" title="该协议暂未接入调用层，当前按 OpenAI 兼容处理">未接入</span>
+              </span>
             </div>
             <div class="field-row">
               <span class="field-label">端点</span>
@@ -816,10 +829,15 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
           </label>
           <select v-model="editForm.protocol" class="edit-input">
             <option value="OPENAI_COMPATIBLE">OpenAI 兼容（assistant/DeepSeek/智谱/本地 vLLM 等绝大多数）</option>
-            <option value="AZURE_OPENAI">Azure OpenAI（/openai/deployments 路径 + api-version）</option>
-            <option value="ANTHROPIC">Anthropic 原生（/v1/messages）</option>
-            <option value="CUSTOM">自定义/其他</option>
+            <option value="AZURE_OPENAI">Azure OpenAI（暂未接入调用）</option>
+            <option value="ANTHROPIC">Anthropic 原生（暂未接入调用）</option>
+            <option value="CUSTOM">自定义/其他（暂未接入调用）</option>
           </select>
+          <!-- 方案 B 诚实收敛：非 OpenAI 协议暂未接入调用层，选中即显式告知，防止"配了=在用"的误导 -->
+          <p v-if="editForm.protocol && editForm.protocol !== 'OPENAI_COMPATIBLE'" class="protocol-warn">
+            ⚠️ 该协议暂未接入调用层——保存后调用仍将按 <b>OpenAI 兼容协议</b>发出（可能失败）。
+            当前仅 OpenAI 兼容协议真实生效；接入 Anthropic/Azure 需引入对应 LangChain4j 客户端。
+          </p>
 
           <label class="edit-label">
             供应商
@@ -1342,6 +1360,30 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .template-item__models { font-size: 12px; color: var(--text-2); }
 .template-item__desc { font-size: 12px; color: var(--text-3); }
 .template-empty { text-align: center; color: var(--text-3); font-size: 13px; padding: 24px 0; }
+
+/* 方案 B 协议边界提示：编辑表单选中非 OpenAI 协议时的警示横幅 */
+.protocol-warn {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--warning-subtle, #fffbeb);
+  border: 1px solid var(--warning, #d97706);
+  border-radius: var(--radius-sm);
+  color: var(--warning, #b45309);
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* 渠道卡片协议行的「未接入」警示徽标 */
+.protocol-unsupported-flag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--warning-subtle, #fffbeb);
+  border: 1px solid var(--warning, #d97706);
+  color: var(--warning, #b45309);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: help;
+}
 
 .reset-btn {
   display: block;
