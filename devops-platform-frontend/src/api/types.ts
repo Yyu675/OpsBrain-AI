@@ -537,10 +537,16 @@ export interface AiChannelView {
   fallbackModel?: string | null
   /** 备用 key 脱敏展示（明文/密文永不流出） */
   fallbackMaskedKey?: string | null
+  /** 供应商名称（从 baseUrl 推断，如「阿里云 assistant（通义）」），人性化展示用 */
+  provider?: string | null
+  /** API 协议（如「OpenAI 兼容」），从 baseUrl 推断 */
+  protocol?: string | null
 }
 
 export interface AiChannelListResponse {
   channels: AiChannelView[]
+  /** 当前 AI 运行模式（MOCK=演示假数据 / REAL=真实调用大模型），前端据此给人性化提示 */
+  aiMode?: string
 }
 
 /** PUT /model-channels/{channelKey} 请求体。空串/null = 不修改该字段。 */

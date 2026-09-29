@@ -63,6 +63,9 @@ public class ModelChannelController {
     @Value("${devops.ai.vector.dimension:1536}") private int vectorDimension;
     @Value("${MODEL_KEY_CRYPT_SECRET:}") private String cryptSecret;
 
+    /** 当前 AI 模式（MOCK/REAL）——前端据此给出「演示数据/真实模型」的人性化提示。 */
+    @Value("${devops.ai.mode:MOCK}") private String aiMode;
+
     public ModelChannelController(AiChannelRepository repo, AiChannelService channelService,
             AiChannelHistoryRepository historyRepo,
             com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe,
@@ -77,7 +80,7 @@ public class ModelChannelController {
     @GetMapping
     public ApiResponse<ChannelList> listChannels() {
         List<ChannelView> views = repo.findAll().stream().map(ch -> toView(ch, false)).toList();
-        return ApiResponse.success(new ChannelList(views));
+        return ApiResponse.success(new ChannelList(views, aiMode));
     }
 
     @PutMapping("/{channelKey}")
@@ -251,7 +254,33 @@ public class ModelChannelController {
     private ChannelView toView(AiChannel c, boolean restartRequired) {
         return new ChannelView(c.channelKey(), c.baseUrl(), c.maskedKey(), c.turboModel(), c.reasonerModel(),
                 c.model(), c.dimension(), c.status(), c.updatedAt(), restartRequired,
-                c.fallbackBaseUrl(), c.fallbackModel(), c.fallbackMaskedKey());
+                c.fallbackBaseUrl(), c.fallbackModel(), c.fallbackMaskedKey(),
+                inferProvider(c.baseUrl()), inferProtocol(c.baseUrl()));
+    }
+
+    /**
+     * 从 baseUrl 推断供应商名称（人性化展示——用户看「阿里云 assistant」比看一串 URL 直观）。
+     * 未识别的回落为 URL 的 host，不编造供应商名。
+     */
+    private String inferProvider(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) return "未配置";
+        String u = baseUrl.toLowerCase();
+        if (u.contains("dashscope.aliyuncs.com")) return "阿里云 assistant（通义）";
+        if (u.contains("api.openai.com")) return "assistant";
+        if (u.contains("api.deepseek.com")) return "DeepSeek";
+        if (u.contains("api.moonshot.cn")) return "Moonshot（Kimi）";
+        if (u.contains("bigmodel.cn")) return "智谱（GLM）";
+        if (u.contains("localhost") || u.contains("127.0.0.1") || u.contains("host.docker.internal")) return "本地/自建";
+        // 未识别：透出 host 帮助识别，不硬编一个供应商名
+        return u.replaceFirst("^https?://", "").replaceAll("/.*$", "");
+    }
+
+    /** 从 baseUrl 推断 API 协议（/v1 或 compatible-mode 即 OpenAI 兼容协议）。 */
+    private String inferProtocol(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) return "未配置";
+        String u = baseUrl.toLowerCase();
+        if (u.contains("compatible-mode") || u.contains("/v1")) return "OpenAI 兼容";
+        return "自定义/其他";
     }
 
     /** 历史视图：密文字段一概不映射——历史行同样承载 key 密文，安全契约与列表一致。 */
@@ -295,8 +324,9 @@ public class ModelChannelController {
     public record ChannelView(String channelKey, String baseUrl, String maskedKey, String turboModel,
             String reasonerModel, String model, Integer dimension, String status, LocalDateTime updatedAt,
             boolean restartRequired,
-            String fallbackBaseUrl, String fallbackModel, String fallbackMaskedKey) {}
-    public record ChannelList(List<ChannelView> channels) {}
+            String fallbackBaseUrl, String fallbackModel, String fallbackMaskedKey,
+            String provider, String protocol) {}
+    public record ChannelList(List<ChannelView> channels, String aiMode) {}
     public record HistoryView(Long id, String channelKey, String baseUrl, String maskedKey, String turboModel,
             String reasonerModel, String model, Integer dimension, String status,
             String fallbackBaseUrl, String fallbackModel, String fallbackMaskedKey,

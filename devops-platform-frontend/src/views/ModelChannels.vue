@@ -31,6 +31,8 @@ type ChannelKey = 'chat' | 'embedding' | 'reranker'
 const channels = ref<AiChannelView[]>([])
 const loading = ref(false)
 const loadError = ref<unknown>(null)
+/** 当前 AI 运行模式（MOCK/REAL），用于顶部人性化模式横幅 */
+const aiMode = ref<string>('')
 
 const loadChannels = async () => {
   loading.value = true
@@ -38,6 +40,7 @@ const loadChannels = async () => {
   try {
     const resp = await fetchModelChannels()
     channels.value = resp.channels ?? []
+    aiMode.value = resp.aiMode ?? ''
     // 能力探测结果一并拉取（GET 不触发实测，零成本）——探测过的渠道卡片直接显示三态摘要
     await loadAllCapabilities()
   } catch (e) {
@@ -517,6 +520,18 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
       </p>
     </div>
 
+    <!-- AI 模式横幅（人性化提示：当前是演示假数据还是真实调用） -->
+    <div v-if="aiMode" class="ai-mode-banner" :class="aiMode === 'REAL' ? 'ai-mode-banner--real' : 'ai-mode-banner--mock'">
+      <span class="ai-mode-banner__dot"></span>
+      <span v-if="aiMode === 'REAL'" class="ai-mode-banner__text">
+        <b>真实模式（REAL）</b>——正在调用真实大模型，每次调用消耗 API 额度
+      </span>
+      <span v-else class="ai-mode-banner__text">
+        <b>演示模式（MOCK）</b>——AI 返回写死的假数据，不调用真实模型、不产生费用。
+        切换真实模式：改后端 .env 的 AI_MODE=REAL 并重启
+      </span>
+    </div>
+
     <!-- 渠道卡片区 -->
     <DataStateBoundary
       :loading="loading"
@@ -538,6 +553,14 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </el-tag>
           </div>
           <div class="channel-card__body">
+            <div class="field-row">
+              <span class="field-label">供应商</span>
+              <span class="field-value"><el-tag size="small" type="primary" effect="plain">{{ dash(chatChannel?.provider) }}</el-tag></span>
+            </div>
+            <div class="field-row">
+              <span class="field-label">API 协议</span>
+              <span class="field-value">{{ dash(chatChannel?.protocol) }}</span>
+            </div>
             <div class="field-row">
               <span class="field-label">端点</span>
               <span class="field-value field-value--mono">{{ dash(chatChannel?.baseUrl) }}</span>
@@ -600,6 +623,14 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
           </div>
           <div class="channel-card__body">
             <div class="field-row">
+              <span class="field-label">供应商</span>
+              <span class="field-value"><el-tag size="small" type="primary" effect="plain">{{ dash(embeddingChannel?.provider) }}</el-tag></span>
+            </div>
+            <div class="field-row">
+              <span class="field-label">API 协议</span>
+              <span class="field-value">{{ dash(embeddingChannel?.protocol) }}</span>
+            </div>
+            <div class="field-row">
               <span class="field-label">端点</span>
               <span class="field-value field-value--mono">{{ dash(embeddingChannel?.baseUrl) }}</span>
             </div>
@@ -656,6 +687,14 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </el-tag>
           </div>
           <div class="channel-card__body">
+            <div class="field-row">
+              <span class="field-label">供应商</span>
+              <span class="field-value"><el-tag size="small" type="primary" effect="plain">{{ dash(rerankerChannel?.provider) }}</el-tag></span>
+            </div>
+            <div class="field-row">
+              <span class="field-label">API 协议</span>
+              <span class="field-value">{{ dash(rerankerChannel?.protocol) }}</span>
+            </div>
             <div class="field-row">
               <span class="field-label">端点</span>
               <span class="field-value field-value--mono">{{ dash(rerankerChannel?.baseUrl) }}</span>
@@ -993,6 +1032,37 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
   margin: 0;
   line-height: 1.6;
 }
+
+/* AI 模式横幅：REAL=绿（真实调用），MOCK=黄（演示假数据），一眼可辨 */
+.ai-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid;
+}
+.ai-mode-banner__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ai-mode-banner--real {
+  background: var(--success-subtle, #f0fdf4);
+  border-color: var(--success, #16a34a);
+  color: var(--success, #15803d);
+}
+.ai-mode-banner--real .ai-mode-banner__dot { background: var(--success, #16a34a); }
+.ai-mode-banner--mock {
+  background: var(--warning-subtle, #fffbeb);
+  border-color: var(--warning, #d97706);
+  color: var(--warning, #b45309);
+}
+.ai-mode-banner--mock .ai-mode-banner__dot { background: var(--warning, #d97706); }
 
 /* 三列卡片 */
 .channels-grid {
