@@ -92,7 +92,8 @@ public class ModelChannelController {
                     readInteger(rawBody, "dimension"), readString(rawBody, "apiKey"),
                     readString(rawBody, "status"),
                     readString(rawBody, "fallbackBaseUrl"), readString(rawBody, "fallbackModel"),
-                    readString(rawBody, "fallbackApiKey"), readBoolean(rawBody, "clearFallback"));
+                    readString(rawBody, "fallbackApiKey"), readBoolean(rawBody, "clearFallback"),
+                    readString(rawBody, "protocol"), readString(rawBody, "provider"));
             AiChannel saved = channelService.update(patch, currentOperator());
             boolean hotReloaded = false;
             ChannelRefreshService refreshService = refreshServiceProvider.getIfAvailable();
@@ -255,7 +256,9 @@ public class ModelChannelController {
         return new ChannelView(c.channelKey(), c.baseUrl(), c.maskedKey(), c.turboModel(), c.reasonerModel(),
                 c.model(), c.dimension(), c.status(), c.updatedAt(), restartRequired,
                 c.fallbackBaseUrl(), c.fallbackModel(), c.fallbackMaskedKey(),
-                inferProvider(c.baseUrl()), inferProtocol(c.baseUrl()));
+                // V12：protocol/provider 从 DB 读（显式配置）；留空时兜底推断（向后兼容存量数据）
+                c.provider() != null && !c.provider().isBlank() ? c.provider() : inferProvider(c.baseUrl()),
+                c.protocol() != null && !c.protocol().isBlank() ? c.protocol() : inferProtocol(c.baseUrl()));
     }
 
     /**

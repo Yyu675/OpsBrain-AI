@@ -69,6 +69,10 @@ const rerankerChannel = computed(() =>
 
 interface EditForm {
   baseUrl: string
+  /** API 协议（显式选择，不从 URL 推断） */
+  protocol: string
+  /** 供应商名称（可编辑；留空则后端从 baseUrl 推断兜底） */
+  provider: string
   turboModel: string
   reasonerModel: string
   model: string
@@ -85,7 +89,7 @@ interface EditForm {
 const editOpen = ref(false)
 const editTarget = ref<AiChannelView | null>(null)
 const saving = ref(false)
-const editForm = ref<EditForm>({ baseUrl: '', turboModel: '', reasonerModel: '', model: '', dimension: undefined, apiKey: '', status: 'ACTIVE', fallbackEnabled: false, fallbackBaseUrl: '', fallbackModel: '', fallbackApiKey: '' })
+const editForm = ref<EditForm>({ baseUrl: '', protocol: 'OPENAI_COMPATIBLE', provider: '', turboModel: '', reasonerModel: '', model: '', dimension: undefined, apiKey: '', status: 'ACTIVE', fallbackEnabled: false, fallbackBaseUrl: '', fallbackModel: '', fallbackApiKey: '' })
 const editRestartHint = ref(false)
 
 const openEdit = (ch: AiChannelView) => {
@@ -93,6 +97,8 @@ const openEdit = (ch: AiChannelView) => {
   editRestartHint.value = false
   editForm.value = {
     baseUrl: ch.baseUrl ?? '',
+    protocol: ch.protocol ?? 'OPENAI_COMPATIBLE',
+    provider: ch.provider ?? '',
     turboModel: ch.turboModel ?? '',
     reasonerModel: ch.reasonerModel ?? '',
     model: ch.model ?? '',
@@ -115,6 +121,9 @@ function buildPatch(): AiChannelUpdatePayload {
     if (v !== '' && v !== undefined) p[k] = v
   }
   set('baseUrl', f.baseUrl)
+  // 协议显式配置（显式选择，不从 URL 推断）；供应商留空 = 后端推断兜底
+  set('protocol', f.protocol)
+  set('provider', f.provider)
   if (editTarget.value?.channelKey === 'embedding' || editTarget.value?.channelKey === 'reranker') {
     set('model', f.model)
     if (editTarget.value?.channelKey === 'embedding') set('dimension', f.dimension)
@@ -760,6 +769,23 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
               @click="applyVendorTemplate(key)"
             >{{ v.label }}</button>
           </div>
+
+          <label class="edit-label">
+            API 协议
+            <span class="edit-label-hint">（调用契约，勿靠 URL 猜）</span>
+          </label>
+          <select v-model="editForm.protocol" class="edit-input">
+            <option value="OPENAI_COMPATIBLE">OpenAI 兼容（assistant/DeepSeek/智谱/本地 vLLM 等绝大多数）</option>
+            <option value="AZURE_OPENAI">Azure OpenAI（/openai/deployments 路径 + api-version）</option>
+            <option value="ANTHROPIC">Anthropic 原生（/v1/messages）</option>
+            <option value="CUSTOM">自定义/其他</option>
+          </select>
+
+          <label class="edit-label">
+            供应商
+            <span class="edit-label-hint">（留空 = 按端点地址自动识别）</span>
+          </label>
+          <input v-model="editForm.provider" class="edit-input" placeholder="如：阿里云 assistant / Azure / 自建网关" />
 
           <label class="edit-label">端点地址</label>
           <input v-model="editForm.baseUrl" class="edit-input" placeholder="https://api.example.com/v1" />

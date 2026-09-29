@@ -44,13 +44,15 @@ public class AiChannelRepository {
                     rs.getString("fallback_base_url"),
                     rs.getString("fallback_model"),
                     rs.getString("fallback_api_key_enc"),
-                    rs.getString("fallback_key_masked")
+                    rs.getString("fallback_key_masked"),
+                    rs.getString("protocol"),
+                    rs.getString("provider")
             );
 
     /** 目标列清单（写入时逐列 upsert）。 */
     private static final String COLS =
             "channel_key, base_url, api_key_enc, key_masked, turbo_model, reasoner_model, model, dimension, status, updated_at,"
-                    + " fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked";
+                    + " fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked, protocol, provider";
 
     /**
      * 幂等 upsert 单条渠道。
@@ -64,8 +66,9 @@ public class AiChannelRepository {
         String sql = """
                 INSERT INTO sys_ai_channel (channel_key, base_url, api_key_enc, key_masked,
                                             turbo_model, reasoner_model, model, dimension, status, updated_at,
-                                            fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked)
-                VALUES (?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP, ?,?,?,?)
+                                            fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked,
+                                            protocol, provider)
+                VALUES (?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP, ?,?,?,?,?,?)
                 ON CONFLICT (channel_key) DO UPDATE SET
                     base_url             = EXCLUDED.base_url,
                     api_key_enc          = EXCLUDED.api_key_enc,
@@ -79,13 +82,16 @@ public class AiChannelRepository {
                     fallback_model       = EXCLUDED.fallback_model,
                     fallback_api_key_enc = EXCLUDED.fallback_api_key_enc,
                     fallback_key_masked  = EXCLUDED.fallback_key_masked,
+                    protocol             = EXCLUDED.protocol,
+                    provider             = EXCLUDED.provider,
                     updated_at           = CURRENT_TIMESTAMP
                 """;
         jdbcTemplate.update(sql,
                 ch.channelKey(), ch.baseUrl(), ch.apiKeyEnc(), ch.maskedKey(),
                 ch.turboModel(), ch.reasonerModel(), ch.model(), ch.dimension(),
                 ch.status() == null ? "ACTIVE" : ch.status(),
-                ch.fallbackBaseUrl(), ch.fallbackModel(), ch.fallbackApiKeyEnc(), ch.fallbackMaskedKey());
+                ch.fallbackBaseUrl(), ch.fallbackModel(), ch.fallbackApiKeyEnc(), ch.fallbackMaskedKey(),
+                ch.protocol() == null ? AiChannel.PROTOCOL_OPENAI_COMPATIBLE : ch.protocol(), ch.provider());
     }
 
     /** 全量（含非 ACTIVE），用于展示与镜像。 */
@@ -114,6 +120,7 @@ public class AiChannelRepository {
                     dimension = ?, status = ?,
                     fallback_base_url = ?, fallback_model = ?,
                     fallback_api_key_enc = ?, fallback_key_masked = ?,
+                    protocol = ?, provider = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE channel_key = ?
                 """,
@@ -121,6 +128,7 @@ public class AiChannelRepository {
                 ch.turboModel(), ch.reasonerModel(), ch.model(),
                 ch.dimension(), ch.status() == null ? "ACTIVE" : ch.status(),
                 ch.fallbackBaseUrl(), ch.fallbackModel(), ch.fallbackApiKeyEnc(), ch.fallbackMaskedKey(),
+                ch.protocol() == null ? AiChannel.PROTOCOL_OPENAI_COMPATIBLE : ch.protocol(), ch.provider(),
                 ch.channelKey());
     }
 

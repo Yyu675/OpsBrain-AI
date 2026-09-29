@@ -34,6 +34,9 @@ public class AiChannelService {
     private static final Set<String> KNOWN_KEYS = Set.of(
             AiChannel.KEY_CHAT, AiChannel.KEY_EMBEDDING, AiChannel.KEY_RERANKER);
     private static final Set<String> STATUSES = Set.of("ACTIVE", "DISABLED");
+    /** V12：API 协议合法枚举（显式配置，不从 URL 推断）。 */
+    private static final Set<String> PROTOCOLS = Set.of(
+            "OPENAI_COMPATIBLE", "AZURE_OPENAI", "ANTHROPIC", "CUSTOM");
 
     private final AiChannelRepository repo;
     private final AiChannelHistoryRepository historyRepo;
@@ -88,6 +91,19 @@ public class AiChannelService {
             }
             status = s;
         }
+
+        // V12：协议显式配置（null/blank = 保留既有，不从 URL 推断——协议是调用契约）
+        String protocol = existing.protocol();
+        if (patch.protocol() != null && !patch.protocol().isBlank()) {
+            String p = patch.protocol().trim().toUpperCase();
+            if (!PROTOCOLS.contains(p)) {
+                throw new IllegalArgumentException("protocol 只能是 " + String.join("/", PROTOCOLS));
+            }
+            protocol = p;
+        }
+        // V12：供应商显式可编辑（null/blank = 保留既有，展示层从 baseUrl 推断兜底）
+        String provider = patch.provider() != null && !patch.provider().isBlank()
+                ? patch.provider().trim() : existing.provider();
 
         String turbo = existing.turboModel();
         String reasoner = existing.reasonerModel();
@@ -164,7 +180,8 @@ public class AiChannelService {
                 AiChannel.KEY_CHAT.equals(key) ? reasoner : null,
                 AiChannel.KEY_CHAT.equals(key) ? null : model,
                 dimension, status, null,
-                fbUrl, fbModel, fbKeyEnc, fbMasked);
+                fbUrl, fbModel, fbKeyEnc, fbMasked,
+                protocol, provider);
 
         // V5：变更前快照旧行——回滚的唯一依据。快照失败不阻断编辑（历史是兜底，不是主流程），
         // 但必须留 WARN 痕迹，否则「改错了回不去」时无任何线索（静默 catch 契约）。

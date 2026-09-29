@@ -552,6 +552,10 @@ export interface AiChannelListResponse {
 /** PUT /model-channels/{channelKey} 请求体。空串/null = 不修改该字段。 */
 export interface AiChannelUpdatePayload {
   baseUrl?: string
+  /** API 协议（显式配置，不从 URL 推断）：OPENAI_COMPATIBLE/AZURE_OPENAI/ANTHROPIC/CUSTOM */
+  protocol?: string
+  /** 供应商名称（可编辑；留空 = 后端从 baseUrl 推断兜底） */
+  provider?: string
   turboModel?: string
   reasonerModel?: string
   model?: string

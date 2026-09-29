@@ -30,6 +30,9 @@ import java.time.LocalDateTime;
  * @param fallbackModel     备用模型名（主模型熔断时自动切换）
  * @param fallbackApiKeyEnc 备用 key 密文（规则同 apiKeyEnc，永不外泄）
  * @param fallbackMaskedKey 备用 key 脱敏展示
+ * @param protocol          API 协议（调用契约，V12 显式可配置，不从 URL 推断）：
+ *                          OPENAI_COMPATIBLE（默认）/ AZURE_OPENAI / ANTHROPIC / CUSTOM
+ * @param provider          供应商名称（可显式编辑；null 时展示层从 baseUrl 推断兜底）
  */
 public record AiChannel(
         String channelKey,
@@ -45,12 +48,28 @@ public record AiChannel(
         String fallbackBaseUrl,
         String fallbackModel,
         String fallbackApiKeyEnc,
-        String fallbackMaskedKey
+        String fallbackMaskedKey,
+        String protocol,
+        String provider
 ) {
 
     public static final String KEY_CHAT = "chat";
     public static final String KEY_EMBEDDING = "embedding";
     public static final String KEY_RERANKER = "reranker";
+
+    /** 协议默认值：绝大多数厂商走 OpenAI 兼容协议（阿里云/DeepSeek/智谱/本地 vLLM）。 */
+    public static final String PROTOCOL_OPENAI_COMPATIBLE = "OPENAI_COMPATIBLE";
+
+    /** 无 protocol/provider 的 14 参便捷构造（存量调用点兼容：默认 OpenAI 兼容协议）。 */
+    public AiChannel(String channelKey, String baseUrl, String apiKeyEnc, String maskedKey,
+                     String turboModel, String reasonerModel, String model,
+                     Integer dimension, String status, LocalDateTime updatedAt,
+                     String fallbackBaseUrl, String fallbackModel, String fallbackApiKeyEnc,
+                     String fallbackMaskedKey) {
+        this(channelKey, baseUrl, apiKeyEnc, maskedKey, turboModel, reasonerModel,
+                model, dimension, status, updatedAt, fallbackBaseUrl, fallbackModel,
+                fallbackApiKeyEnc, fallbackMaskedKey, PROTOCOL_OPENAI_COMPATIBLE, null);
+    }
 
     /** 无备用模型的便捷构造（绝大多数调用点不关心 fallback）。 */
     public AiChannel(String channelKey, String baseUrl, String apiKeyEnc, String maskedKey,

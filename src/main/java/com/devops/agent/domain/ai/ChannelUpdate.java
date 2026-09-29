@@ -27,6 +27,9 @@ package com.devops.agent.domain.ai;
  * @param fallbackModel   备用模型名（仅 chat）
  * @param fallbackApiKey  备用模型 Key（可选；空 = 保留既有备用 key）
  * @param clearFallback   true = 清除整组备用配置
+ * @param protocol        API 协议（V12 显式可配置，null = 不改）：
+ *                        OPENAI_COMPATIBLE / AZURE_OPENAI / ANTHROPIC / CUSTOM
+ * @param provider        供应商名称（可显式编辑；null = 不改，展示层从 baseUrl 推断兜底）
  */
 public record ChannelUpdate(
         String channelKey,
@@ -40,8 +43,21 @@ public record ChannelUpdate(
         String fallbackBaseUrl,
         String fallbackModel,
         String fallbackApiKey,
-        Boolean clearFallback
+        Boolean clearFallback,
+        String protocol,
+        String provider
 ) {
+
+    /** 无 protocol/provider 的 12 参便捷构造（存量调用点兼容）。 */
+    public ChannelUpdate(String channelKey, String baseUrl, String turboModel,
+                         String reasonerModel, String model, Integer dimension,
+                         String apiKey, String status,
+                         String fallbackBaseUrl, String fallbackModel, String fallbackApiKey,
+                         Boolean clearFallback) {
+        this(channelKey, baseUrl, turboModel, reasonerModel, model, dimension,
+                apiKey, status, fallbackBaseUrl, fallbackModel, fallbackApiKey, clearFallback,
+                null, null);
+    }
 
     /** 无 fallback 字段的便捷构造（既有调用点不受影响）。 */
     public ChannelUpdate(String channelKey, String baseUrl, String turboModel,
