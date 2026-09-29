@@ -847,6 +847,14 @@ public class AlertService {
             log.info("⏸️ [AlertService] 自动诊断已关闭，跳过 | alertId={}", alert.getId());
             return;
         }
+        // 保留告警（恒真心跳/风暴摘要）不触发诊断——它们是管道健康信号而非故障，
+        // 每次触发就诊断一次只会浪费 AI 调用且恒 NO_DATA（monitoring-pipeline 无指标）
+        if (ReservedAlertNames.PIPELINE_WATCHDOG.equals(alert.getAlertName())
+                || ReservedAlertNames.PIPELINE_SILENT.equals(alert.getAlertName())
+                || ReservedAlertNames.STORM_SUMMARY.equals(alert.getAlertName())) {
+            log.debug("⏭️ [AlertService] 保留告警跳过诊断 | alertName={}", alert.getAlertName());
+            return;
+        }
         if (service == null || service.isBlank()) {
             log.info("ℹ️ [AlertService] 告警无服务名，跳过诊断 | alertId={} | alertName={}",
                     alert.getId(), alert.getAlertName());
