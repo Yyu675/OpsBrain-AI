@@ -407,7 +407,38 @@ public class DiagnosisOrchestrator {
         if (topology != null) {
             evidences.add(topology);
         }
+
+        // 告警分类（业务/技术/安全/因果）：业务性告警注入业务上下文证据，
+        // 防止 AI 把「工单积压」这类业务流程问题硬读成技术故障（实测曾误诊为 SQL 注入）。
+        Evidence kindContext = collectKindContext(service, anchor);
+        if (kindContext != null) {
+            evidences.add(kindContext);
+        }
         return evidences;
+    }
+
+    /**
+     * 业务性告警的业务上下文证据（AIOps 业界共识：业务/技术告警的诊断策略本质不同）。
+     * <p>仅当告警分类为 BUSINESS 时注入——告诉 AI「这是业务流程问题（积压/SLA/转化），
+     * 请从业务流程角度分析（工单分布/负责人排班/SLA 状态），不要硬找技术指标」。
+     * 其他类型返回 null，不改变现有行为。</p>
+     */
+    private Evidence collectKindContext(String service, AlertAnchor anchor) {
+        com.devops.agent.domain.alert.AlertKind kind =
+                com.devops.agent.domain.alert.AlertKindClassifier.classify(
+                        anchor.name(), anchor.labels(), anchor.description());
+        if (kind != com.devops.agent.domain.alert.AlertKind.BUSINESS) {
+            return null;
+        }
+        java.util.Map<String, Object> content = new java.util.LinkedHashMap<>();
+        content.put("alertKind", "BUSINESS");
+        content.put("guidance", "这是业务性告警（工单积压/SLA 预警/转化异常等业务流程指标），"
+                + "不是技术故障。请从业务流程角度分析：工单优先级分布、负责人排班、SLA 时限、"
+                + "业务量级变化。不要硬找 CPU/内存/日志等技术指标——它们对本类告警无意义。");
+        content.put("service", service);
+        return new Evidence(Evidence.EvidenceStatus.SUCCESS, "business-context",
+                "业务性告警上下文（请按业务流程分析，勿找技术指标）", content,
+                "alert-kind-classifier", null, java.time.Instant.now());
     }
 
     private List<com.devops.agent.domain.diagnosis.HypothesisGenerator.RankedEvidence> persistEvidence(
