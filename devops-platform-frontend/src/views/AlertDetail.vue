@@ -20,7 +20,7 @@ import { ElMessageBox } from 'element-plus'
 import { useQuery } from '@tanstack/vue-query'
 import {
   Bell, CheckCircle, AlertTriangle, Clock, Loader2,
-  RefreshCw, Hash, Server, Boxes, Radio, Ticket, Network
+  RefreshCw, Hash, Server, Boxes, Radio, Ticket, Network, ChevronDown, ChevronRight
 } from 'lucide-vue-next'
 import { useAlertDetailQuery, useAlertMutations } from '@/api/queries/alerts.query'
 import { fetchRelatedAlerts } from '@/api/alerts'
@@ -235,6 +235,28 @@ const alertLabels = computed(() =>
 
 /** 告警注解（summary/description/runbook_url/当前值/阈值），全量展示 */
 const alertAnnotations = computed(() => parseJsonEntries(alert.value?.annotationsJson))
+
+// ==================== 原始负载（结构化 JSON 全量） ====================
+
+/** 「原始负载」折叠区开关——默认收起，需要排查/复制时展开 */
+const showRawPayload = ref(false)
+
+/**
+ * 原始负载 JSON：labels + annotations 合并为单个格式化 JSON 树。
+ * 键值对列表只读友好，但排查时往往要复制完整原始负载（贴给同事/贴进工单），
+ * 这里给一份格式化 JSON——数据本就在 labelsJson/annotationsJson，零额外接口。
+ */
+const rawPayloadJson = computed(() => {
+  const a = alert.value
+  if (!a) return ''
+  const parse = (raw: string | null | undefined) => {
+    if (!raw) return {}
+    try { const o = JSON.parse(raw); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {} } catch { return {} }
+  }
+  const payload = { labels: parse(a.labelsJson), annotations: parse(a.annotationsJson) }
+  if (!Object.keys(payload.labels).length && !Object.keys(payload.annotations).length) return ''
+  return JSON.stringify(payload, null, 2)
+})
 
 const canAcknowledge = computed(() => {
   const s = alert.value?.status
@@ -451,6 +473,16 @@ const goList = () => router.push('/alerts')
                   <dd class="annotation-val">{{ e.value }}</dd>
                 </div>
               </dl>
+            </section>
+
+            <!-- 原始负载（结构化 JSON 全量，默认折叠——排查/复制原始数据时展开） -->
+            <section v-if="rawPayloadJson" class="card">
+              <button type="button" class="raw-payload-toggle" @click="showRawPayload = !showRawPayload">
+                <component :is="showRawPayload ? ChevronDown : ChevronRight" :size="14" />
+                原始负载（结构化 JSON）
+                <span class="raw-payload-hint">{{ showRawPayload ? '收起' : '展开以查看/复制完整 labels + annotations' }}</span>
+              </button>
+              <pre v-if="showRawPayload" class="raw-payload-json">{{ rawPayloadJson }}</pre>
             </section>
 
             <!-- 关联工单 -->
@@ -880,6 +912,42 @@ const goList = () => router.push('/alerts')
 .label-key {
   font-size: var(--text-xs);
   letter-spacing: 0.02em;
+}
+
+/* 原始负载折叠区（结构化 JSON 全量） */
+.raw-payload-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-1);
+  cursor: pointer;
+  text-align: left;
+}
+.raw-payload-hint {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-3);
+}
+.raw-payload-json {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-2);
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .label-val {
