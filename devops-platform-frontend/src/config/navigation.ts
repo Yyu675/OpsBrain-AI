@@ -46,6 +46,8 @@ export const navigationItems: NavigationItem[] = [
   { key: 'alerts', label: '告警事件', path: '/alerts', stage: 'L2', visible: true },
   { key: 'tickets', label: '智能工单', path: '/tickets', stage: 'L1', visible: true },
   { key: 'action-items', label: '改进项', path: '/action-items', stage: 'L1', visible: true },
+  // L1 被动问答入口——用户自然语言提问 → AI 检索知识库 → 回答（飞轮闭环首端）
+  { key: 'ai-chat', label: '智能问答', path: '/ai-chat', stage: 'L1', visible: true },
   { key: 'knowledge', label: '知识库', path: '/knowledge', stage: 'L1', visible: true },
   // 监控中心 = 实时态势 + 趋势分析（合并后值班人只认这一个入口）
   { key: 'monitoring', label: '监控中心', path: '/monitoring', stage: 'L2', visible: true },
