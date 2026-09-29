@@ -150,9 +150,9 @@ const applyTemplate = async (tpl: ChannelTemplate) => {
   }
 }
 
-/** 协议是否真实接入调用层（方案 B 诚实收敛：非 OpenAI 兼容暂未接入，仅记录不生效）。 */
+/** 协议是否真实接入调用层。方案 A 已接入 Anthropic/Azure；仅 CUSTOM（未识别）未接入，按 OpenAI 兼容处理。 */
 const isUnsupportedProtocol = (protocol?: string | null) =>
-  Boolean(protocol && protocol !== 'OPENAI_COMPATIBLE')
+  Boolean(protocol && protocol !== 'OPENAI_COMPATIBLE' && protocol !== 'ANTHROPIC' && protocol !== 'AZURE_OPENAI')
 
 /** 从表单构建 patch：空串/undefined 不打包 → 后端按「不修改」处理。 */
 function buildPatch(): AiChannelUpdatePayload {
@@ -829,14 +829,14 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
           </label>
           <select v-model="editForm.protocol" class="edit-input">
             <option value="OPENAI_COMPATIBLE">OpenAI 兼容（assistant/DeepSeek/智谱/本地 vLLM 等绝大多数）</option>
-            <option value="AZURE_OPENAI">Azure OpenAI（暂未接入调用）</option>
-            <option value="ANTHROPIC">Anthropic 原生（暂未接入调用）</option>
-            <option value="CUSTOM">自定义/其他（暂未接入调用）</option>
+            <option value="AZURE_OPENAI">Azure OpenAI（/openai/deployments 路径 + api-version）</option>
+            <option value="ANTHROPIC">Anthropic 原生（/v1/messages）</option>
+            <option value="CUSTOM">自定义/其他（按 OpenAI 兼容处理）</option>
           </select>
-          <!-- 方案 B 诚实收敛：非 OpenAI 协议暂未接入调用层，选中即显式告知，防止"配了=在用"的误导 -->
-          <p v-if="editForm.protocol && editForm.protocol !== 'OPENAI_COMPATIBLE'" class="protocol-warn">
-            ⚠️ 该协议暂未接入调用层——保存后调用仍将按 <b>OpenAI 兼容协议</b>发出（可能失败）。
-            当前仅 OpenAI 兼容协议真实生效；接入 Anthropic/Azure 需引入对应 LangChain4j 客户端。
+          <!-- 仅 CUSTOM（未识别协议）提示：它按 OpenAI 兼容处理，可能不匹配。Anthropic/Azure 已真实接入。 -->
+          <p v-if="editForm.protocol === 'CUSTOM'" class="protocol-warn">
+            ⚠️ 自定义协议将按 <b>OpenAI 兼容协议</b>处理。若该服务不兼容 OpenAI 格式会调用失败——
+            Anthropic/Azure OpenAI 请直接用对应选项（已真实接入）。
           </p>
 
           <label class="edit-label">

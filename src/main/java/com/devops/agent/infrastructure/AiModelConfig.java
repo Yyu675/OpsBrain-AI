@@ -2,6 +2,7 @@ package com.devops.agent.infrastructure;
 
 import com.devops.agent.infrastructure.llm.LlmEndpointSpec;
 import com.devops.agent.infrastructure.llm.OpenAiCompatibleModelFactory;
+import com.devops.agent.infrastructure.llm.ProtocolAwareModelFactory;
 import com.devops.agent.infrastructure.llm.ApiKeyCrypt;
 import com.devops.agent.infrastructure.llm.RateLimitedEmbeddingModel;
 import com.devops.agent.infrastructure.guard.ModelFingerprintGuard;
@@ -63,29 +64,28 @@ public class AiModelConfig {
         this.circuitBreakerRegistry = circuitBreakerRegistry;
     }
 
-    /** 已告警过的「渠道:协议」组合——同一非兼容协议只告警一次，不刷屏。 */
+    /** 已告警过的「渠道:协议」组合——同一协议只告警一次，不刷屏。 */
     private final java.util.Set<String> protocolWarned =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
-     * 协议边界护栏（方案 B：诚实收敛，防"假配置"误导）。
-     * <p>当前调用层只接入了 OpenAI 兼容协议（OpenAiCompatibleModelFactory）。若渠道配了
-     * 非 OpenAI 协议（AZURE_OPENAI/ANTHROPIC/CUSTOM），调用仍按 OpenAI 兼容发出——
-     * 这会静默用错协议导致调用失败。故此处在装配模型时显式告警：
-     * 该协议暂未接入调用，当前按 OpenAI 兼容处理。要真正支持需引入对应
-     * LangChain4j 客户端（langchain4j-anthropic / langchain4j-azure-open-ai）。</p>
+     * 协议边界护栏（方案 A 落地后收窄）：Anthropic/Azure OpenAI 已由
+     * {@code ProtocolAwareModelFactory} 真实接入，不再告警。仅 CUSTOM（自定义/未识别协议）
+     * 仍按 OpenAI 兼容处理并告警——这是真正「协议未接入调用」的场景。
      */
     private void warnIfNonOpenAiProtocol(AiChannel ch) {
         if (ch == null || ch.protocol() == null || ch.protocol().isBlank()
                 || AiChannel.PROTOCOL_OPENAI_COMPATIBLE.equals(ch.protocol())) {
             return;
         }
+        // Anthropic/Azure 已真实接入（ProtocolAwareModelFactory），不告警
+        if ("ANTHROPIC".equals(ch.protocol()) || "AZURE_OPENAI".equals(ch.protocol())) {
+            return;
+        }
         String key = ch.channelKey() + ":" + ch.protocol();
         if (protocolWarned.add(key)) {
-            log.warn("⚠️ [AiModelConfig] 渠道 {} 配置了非 OpenAI 兼容协议 {}，但当前调用层仅接入 "
-                    + "OpenAI 兼容协议——本次调用将按 OpenAI 兼容发出（可能失败）。"
-                    + "要真正支持 {} 需引入对应 LangChain4j 客户端并接入构建逻辑。",
-                    ch.channelKey(), ch.protocol(), ch.protocol());
+            log.warn("⚠️ [AiModelConfig] 渠道 {} 配置了未识别协议 {}，当前按 OpenAI 兼容处理。",
+                    ch.channelKey(), ch.protocol());
         }
     }
 
@@ -217,6 +217,18 @@ public class AiModelConfig {
         return ModelFingerprintGuard.fingerprint(url, model, vectorDimension);
     }
 
+    /** chat 渠道当前协议（OPENAI_COMPATIBLE/ANTHROPIC/AZURE_OPENAI/CUSTOM），缺省 OpenAI 兼容。 */
+    private String chatProtocol() {
+        AiChannel ch = chatChannel();
+        return ch != null && notBlank(ch.protocol()) ? ch.protocol() : AiChannel.PROTOCOL_OPENAI_COMPATIBLE;
+    }
+
+    /** embedding 渠道当前协议，缺省 OpenAI 兼容。 */
+    private String embeddingProtocol() {
+        AiChannel ch = embeddingChannel();
+        return ch != null && notBlank(ch.protocol()) ? ch.protocol() : AiChannel.PROTOCOL_OPENAI_COMPATIBLE;
+    }
+
     private static boolean notBlank(String s) {
         return s != null && !s.isBlank();
     }
@@ -234,41 +246,41 @@ public class AiModelConfig {
     // embedding 不包——维度铁律禁止换模型（见 V4 注释）。
 
     public ChatModel buildTurboChat() {
-        ChatModel primary = OpenAiCompatibleModelFactory.chat(turboSpec(), true);
+        ChatModel primary = ProtocolAwareModelFactory.chat(turboSpec(), chatProtocol(), true);
         LlmEndpointSpec fb = turboFallbackSpec();
         if (fb == null) return primary;
         log.info("🛡 [AiModelConfig] Turbo 备用模型已启用: {}（主模型熔断/失败自动切换）", fb.describe());
-        return new FallbackChatModel(primary, OpenAiCompatibleModelFactory.chat(fb, true),
+        return new FallbackChatModel(primary, ProtocolAwareModelFactory.chat(fb, chatProtocol(), true),
                 circuitBreakerRegistry.circuitBreaker("llm-chat-turbo"),
                 turboSpec().modelName(), fb.modelName());
     }
 
     public ChatModel buildReasonerChat() {
-        ChatModel primary = OpenAiCompatibleModelFactory.chat(reasonerSpec(), true);
+        ChatModel primary = ProtocolAwareModelFactory.chat(reasonerSpec(), chatProtocol(), true);
         LlmEndpointSpec fb = reasonerFallbackSpec();
         if (fb == null) return primary;
         log.info("🛡 [AiModelConfig] Reasoner 备用模型已启用: {}（主模型熔断/失败自动切换）", fb.describe());
-        return new FallbackChatModel(primary, OpenAiCompatibleModelFactory.chat(fb, true),
+        return new FallbackChatModel(primary, ProtocolAwareModelFactory.chat(fb, chatProtocol(), true),
                 circuitBreakerRegistry.circuitBreaker("llm-chat-reasoner"),
                 reasonerSpec().modelName(), fb.modelName());
     }
 
     public StreamingChatModel buildTurboStreaming() {
-        StreamingChatModel primary = OpenAiCompatibleModelFactory.streamingChat(turboSpec().streaming(), true);
+        StreamingChatModel primary = ProtocolAwareModelFactory.streamingChat(turboSpec().streaming(), chatProtocol(), true);
         LlmEndpointSpec fb = turboFallbackSpec();
         if (fb == null) return primary;
         return new FallbackStreamingChatModel(primary,
-                OpenAiCompatibleModelFactory.streamingChat(fb.streaming(), true),
+                ProtocolAwareModelFactory.streamingChat(fb.streaming(), chatProtocol(), true),
                 circuitBreakerRegistry.circuitBreaker("llm-chat-turbo"),
                 turboSpec().modelName(), fb.modelName());
     }
 
     public StreamingChatModel buildReasonerStreaming() {
-        StreamingChatModel primary = OpenAiCompatibleModelFactory.streamingChat(reasonerSpec().streaming(), true);
+        StreamingChatModel primary = ProtocolAwareModelFactory.streamingChat(reasonerSpec().streaming(), chatProtocol(), true);
         LlmEndpointSpec fb = reasonerFallbackSpec();
         if (fb == null) return primary;
         return new FallbackStreamingChatModel(primary,
-                OpenAiCompatibleModelFactory.streamingChat(fb.streaming(), true),
+                ProtocolAwareModelFactory.streamingChat(fb.streaming(), chatProtocol(), true),
                 circuitBreakerRegistry.circuitBreaker("llm-chat-reasoner"),
                 reasonerSpec().modelName(), fb.modelName());
     }
@@ -276,7 +288,7 @@ public class AiModelConfig {
     public EmbeddingModel buildEmbedding() {
         LlmEndpointSpec spec = embeddingSpec();
         return new RateLimitedEmbeddingModel(
-                OpenAiCompatibleModelFactory.embedding(spec), embeddingRateLimiter);
+                ProtocolAwareModelFactory.embedding(spec, embeddingProtocol()), embeddingRateLimiter);
     }
 
     @Bean(name = "turboModel")

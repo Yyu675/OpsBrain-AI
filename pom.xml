@@ -232,6 +232,29 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- Anthropic 原生协议（方案 A 多协议支持：AnthropicChatModel） -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-anthropic</artifactId>
+            <exclusions>
+                <!-- 排除 JDK HTTP 客户端，统一使用 Spring RestClient（同 langchain4j-open-ai） -->
+                <exclusion>
+                    <groupId>dev.langchain4j</groupId>
+                    <artifactId>langchain4j-http-client-jdk</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- Azure OpenAI（方案 A 多协议支持：AzureOpenAiChatModel） -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-azure-open-ai</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>dev.langchain4j</groupId>
+                    <artifactId>langchain4j-http-client-jdk</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <!-- PgVector 向量存储 -->
         <dependency>
             <groupId>dev.langchain4j</groupId>

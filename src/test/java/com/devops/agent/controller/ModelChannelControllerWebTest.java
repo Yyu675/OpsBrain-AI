@@ -104,6 +104,9 @@ class ModelChannelControllerWebTest {
     private com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe;
 
     @MockitoBean
+    private com.devops.agent.domain.ai.ChannelTemplateRepository templateRepo;
+
+    @MockitoBean
     @Qualifier("turboModel")
     private ChatModel turboModel;
 
