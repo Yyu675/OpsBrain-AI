@@ -16,8 +16,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { RefreshCw, Cpu, Layers, Search, History, FlaskConical } from 'lucide-vue-next'
 
-import { fetchModelChannels, updateModelChannel, resetModelChannel, testModelChannelConnectivity, fetchAvailableModels, fetchChannelHistory, rollbackModelChannel, probeChannelCapabilities, fetchChannelCapabilities } from '@/api/modelChannels'
-import type { AiChannelHistoryView, AiChannelView, AiChannelUpdatePayload, CapabilityItem, CapabilityState, ChannelProbeResult } from '@/api/types'
+import { fetchModelChannels, updateModelChannel, resetModelChannel, testModelChannelConnectivity, fetchAvailableModels, fetchChannelHistory, rollbackModelChannel, probeChannelCapabilities, fetchChannelCapabilities, fetchChannelTemplates, applyChannelTemplate } from '@/api/modelChannels'
+import type { AiChannelHistoryView, AiChannelView, AiChannelUpdatePayload, CapabilityItem, CapabilityState, ChannelProbeResult, ChannelTemplate } from '@/api/types'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { notify, handleServerError } from '@/utils/notify'
 import { parseDate } from '@/utils/time'
@@ -111,6 +111,43 @@ const openEdit = (ch: AiChannelView) => {
     fallbackApiKey: '',
   }
   editOpen.value = true
+}
+
+// ==================== 渠道模板库（多渠道一键切换） ====================
+
+const templates = ref<ChannelTemplate[]>([])
+const templateDialogOpen = ref(false)
+const templateDialogChannel = ref<AiChannelView | null>(null)
+const applyingTemplate = ref(false)
+
+/** 打开「切换供应商」对话框：列出该渠道适用的模板 */
+const openTemplateDialog = async (ch: AiChannelView) => {
+  templateDialogChannel.value = ch
+  try {
+    templates.value = await fetchChannelTemplates(ch.channelKey)
+  } catch (e) {
+    handleServerError(e, { action: '加载渠道模板' })
+    return
+  }
+  templateDialogOpen.value = true
+}
+
+/** 一键应用模板：保留现有 apiKey，只换 baseUrl/协议/供应商/模型名 */
+const applyTemplate = async (tpl: ChannelTemplate) => {
+  const ch = templateDialogChannel.value
+  if (!ch || applyingTemplate.value) return
+  applyingTemplate.value = true
+  try {
+    const saved = await applyChannelTemplate(ch.channelKey, tpl.id)
+    const idx = channels.value.findIndex(c => c.channelKey === saved.channelKey)
+    if (idx >= 0) channels.value[idx] = saved
+    templateDialogOpen.value = false
+    notify.success(`已切换到「${tpl.templateName}」` + (saved.restartRequired ? '——热更新失败，重启后端后生效' : '，已即时生效（apiKey 保留现有）'))
+  } catch (e) {
+    handleServerError(e, { action: '应用渠道模板' })
+  } finally {
+    applyingTemplate.value = false
+  }
 }
 
 /** 从表单构建 patch：空串/undefined 不打包 → 后端按「不修改」处理。 */
@@ -608,6 +645,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                 <span v-if="staleReason('chat')" class="stale-flag" :title="staleReason('chat')!">结果可能过期</span>
               </span>
             </div>
+            <button v-if="chatChannel" class="switch-btn" @click="openTemplateDialog(chatChannel)">切换供应商</button>
             <button v-if="chatChannel" class="edit-btn" @click="openEdit(chatChannel)">编辑</button>
             <div v-if="chatChannel" class="btn-pair">
               <button class="tool-btn" @click="openHistory(chatChannel)">
@@ -673,6 +711,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                 <span v-if="staleReason('embedding')" class="stale-flag" :title="staleReason('embedding')!">结果可能过期</span>
               </span>
             </div>
+            <button v-if="embeddingChannel" class="switch-btn" @click="openTemplateDialog(embeddingChannel)">切换供应商</button>
             <button v-if="embeddingChannel" class="edit-btn" @click="openEdit(embeddingChannel)">编辑</button>
             <div v-if="embeddingChannel" class="btn-pair">
               <button class="tool-btn" @click="openHistory(embeddingChannel)">
@@ -729,6 +768,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                 <span v-if="staleReason('reranker')" class="stale-flag" :title="staleReason('reranker')!">结果可能过期</span>
               </span>
             </div>
+            <button v-if="rerankerChannel" class="switch-btn" @click="openTemplateDialog(rerankerChannel)">切换供应商</button>
             <button v-if="rerankerChannel" class="edit-btn" @click="openEdit(rerankerChannel)">编辑</button>
             <div v-if="rerankerChannel" class="btn-pair">
               <button class="tool-btn" @click="openHistory(rerankerChannel)">
@@ -1007,6 +1047,33 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
       </template>
     </el-dialog>
 
+    <!-- 切换供应商（渠道模板库，多渠道一键切换） -->
+    <el-dialog v-model="templateDialogOpen" :title="`切换供应商 — ${templateDialogChannel?.channelKey ?? ''}`" width="560px">
+      <p class="template-dialog-desc">
+        选择要切换到的供应商模板。应用只替换端点/协议/供应商/模型名，<b>现有 API Key 保留</b>。
+      </p>
+      <div class="template-list">
+        <button
+          v-for="tpl in templates"
+          :key="tpl.id"
+          class="template-item"
+          :disabled="applyingTemplate"
+          @click="applyTemplate(tpl)"
+        >
+          <div class="template-item__head">
+            <span class="template-item__name">{{ tpl.templateName }}</span>
+            <el-tag size="small" effect="plain" type="info">{{ tpl.protocol }}</el-tag>
+          </div>
+          <div class="template-item__url">{{ tpl.baseUrl }}</div>
+          <div class="template-item__models">
+            {{ tpl.channelKey === 'chat' ? `${tpl.turboModel} / ${tpl.reasonerModel}` : tpl.model }}
+          </div>
+          <div v-if="tpl.description" class="template-item__desc">{{ tpl.description }}</div>
+        </button>
+        <p v-if="!templates.length" class="template-empty">该渠道暂无可用模板</p>
+      </div>
+    </el-dialog>
+
     <!-- 刷新按钮 -->
     <div class="page-actions">
       <button class="btn-retry" @click="loadChannels" :disabled="loading">
@@ -1234,6 +1301,47 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 }
 
 .edit-btn:hover { background: #e5e7eb; }
+
+/* 切换供应商按钮（模板库一键切换，品牌色描边以区分于普通编辑） */
+.switch-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 5px 0;
+  border: 1px solid var(--brand, #2563eb);
+  border-radius: 4px;
+  background: var(--brand-subtle, #eff6ff);
+  color: var(--brand, #2563eb);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch-btn:hover { background: var(--brand, #2563eb); color: #fff; }
+
+/* 模板选择对话框 */
+.template-dialog-desc { font-size: 13px; color: var(--text-2); margin: 0 0 12px; line-height: 1.6; }
+.template-list { display: flex; flex-direction: column; gap: 10px; }
+.template-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.template-item:hover:not(:disabled) { border-color: var(--brand, #2563eb); background: var(--brand-subtle, #eff6ff); }
+.template-item:disabled { opacity: 0.6; cursor: not-allowed; }
+.template-item__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.template-item__name { font-weight: 600; color: var(--text-1); font-size: 13px; }
+.template-item__url { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--text-3); word-break: break-all; }
+.template-item__models { font-size: 12px; color: var(--text-2); }
+.template-item__desc { font-size: 12px; color: var(--text-3); }
+.template-empty { text-align: center; color: var(--text-3); font-size: 13px; padding: 24px 0; }
 
 .reset-btn {
   display: block;

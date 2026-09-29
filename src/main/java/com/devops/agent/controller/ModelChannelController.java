@@ -46,6 +46,7 @@ public class ModelChannelController {
     private final AiChannelService channelService;
     private final AiChannelHistoryRepository historyRepo;
     private final com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe;
+    private final com.devops.agent.domain.ai.ChannelTemplateRepository templateRepo;
     // MOCK 模式下 Refreshable* 模型 Bean 与 ChannelRefreshService 均不装配（热更新无对象），
     // 故用 ObjectProvider 延迟解析，保证 MOCK 上下文正常启动；编辑后的热更新尝试只在 REAL 模式有意义。
     private final org.springframework.beans.factory.ObjectProvider<ChannelRefreshService> refreshServiceProvider;
@@ -69,11 +70,13 @@ public class ModelChannelController {
     public ModelChannelController(AiChannelRepository repo, AiChannelService channelService,
             AiChannelHistoryRepository historyRepo,
             com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe,
+            com.devops.agent.domain.ai.ChannelTemplateRepository templateRepo,
             org.springframework.beans.factory.ObjectProvider<ChannelRefreshService> refreshServiceProvider) {
         this.repo = repo;
         this.channelService = channelService;
         this.historyRepo = historyRepo;
         this.capabilityProbe = capabilityProbe;
+        this.templateRepo = templateRepo;
         this.refreshServiceProvider = refreshServiceProvider;
     }
 
@@ -81,6 +84,52 @@ public class ModelChannelController {
     public ApiResponse<ChannelList> listChannels() {
         List<ChannelView> views = repo.findAll().stream().map(ch -> toView(ch, false)).toList();
         return ApiResponse.success(new ChannelList(views, aiMode));
+    }
+
+    /** 列出渠道配置模板（V13 多渠道一键切换）。可按 channelKey 过滤，不过滤返回全部。 */
+    @GetMapping("/templates")
+    public ApiResponse<List<com.devops.agent.domain.ai.ChannelTemplate>> listTemplates(
+            @RequestParam(required = false) String channelKey) {
+        return ApiResponse.success(templateRepo.findEnabled(channelKey));
+    }
+
+    /**
+     * 应用模板到渠道（V13 一键切换供应商）。把模板的 baseUrl/协议/供应商/模型名应用进渠道，
+     * <b>不覆盖现有 apiKey</b>（密钥不随模板走——模板的密钥语义是「需重新填」）。
+     * 应用后照常触发热更新。
+     */
+    @PostMapping("/{channelKey}/apply-template")
+    public ApiResponse<ChannelView> applyTemplate(@PathVariable String channelKey,
+                                                  @RequestBody java.util.Map<String, Long> body) {
+        Long templateId = body == null ? null : body.get("templateId");
+        if (templateId == null) {
+            return ApiResponse.error(ApiCode.BAD_REQUEST, "templateId 不能为空");
+        }
+        return templateRepo.findById(templateId).map(tpl -> {
+            if (!tpl.channelKey().equals(channelKey)) {
+                return ApiResponse.<ChannelView>error(ApiCode.BAD_REQUEST,
+                        "模板「" + tpl.templateName() + "」不适用渠道 " + channelKey);
+            }
+            try {
+                ChannelUpdate patch = new ChannelUpdate(channelKey, tpl.baseUrl(), tpl.turboModel(),
+                        tpl.reasonerModel(), tpl.model(), tpl.dimension(),
+                        null /* apiKey 保留现有 */, null /* status 不改 */,
+                        null, null, null, null, tpl.protocol(), tpl.provider());
+                AiChannel saved = channelService.update(patch, currentOperator());
+                boolean hotReloaded = false;
+                ChannelRefreshService refreshService = refreshServiceProvider.getIfAvailable();
+                if (refreshService != null) {
+                    try { refreshService.refresh(channelKey); hotReloaded = true; }
+                    catch (Exception e) { log.warn("[ModelChannel] 模板应用后热更新失败 | {}", e.getMessage()); }
+                }
+                log.info("🛰 [ModelChannel] 模板已应用 | key={} | template={}", channelKey, tpl.templateName());
+                return ApiResponse.success(toView(saved, !hotReloaded));
+            } catch (IllegalArgumentException e) {
+                return ApiResponse.<ChannelView>error(ApiCode.BAD_REQUEST, "应用模板失败：" + e.getMessage());
+            } catch (IllegalStateException e) {
+                return ApiResponse.<ChannelView>error(ApiCode.NOT_FOUND, e.getMessage());
+            }
+        }).orElseGet(() -> ApiResponse.error(ApiCode.NOT_FOUND, "模板不存在或已停用: " + templateId));
     }
 
     @PutMapping("/{channelKey}")

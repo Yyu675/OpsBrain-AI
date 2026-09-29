@@ -10,7 +10,7 @@
 
 import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz } from '../utils/http'
-import type { AiChannelHistoryListResponse, AiChannelListResponse, AiChannelUpdatePayload, AiChannelView, ChannelProbeResult, ConnectivityResult } from './types'
+import type { AiChannelHistoryListResponse, AiChannelListResponse, AiChannelUpdatePayload, AiChannelView, ChannelProbeResult, ChannelTemplate, ConnectivityResult } from './types'
 
 /**
  * 拉取全部生效的模型渠道配置（chat/embedding/reranker）。
@@ -136,4 +136,31 @@ export async function fetchChannelCapabilities(
     `${API_ENDPOINTS.MODEL_CHANNELS}/${channelKey}/capabilities`,
   )
   return unwrapBiz<ChannelProbeResult | null>(payload, '查询能力探测结果失败')
+}
+
+/**
+ * 列出渠道配置模板（V13 多渠道一键切换）。channelKey 可选——传入则只列该渠道适用模板。
+ */
+export async function fetchChannelTemplates(
+  channelKey?: 'chat' | 'embedding' | 'reranker',
+): Promise<ChannelTemplate[]> {
+  const url = channelKey
+    ? `${API_ENDPOINTS.MODEL_CHANNELS}/templates?channelKey=${channelKey}`
+    : `${API_ENDPOINTS.MODEL_CHANNELS}/templates`
+  const payload = await http.get<unknown>(url)
+  return unwrapBiz<ChannelTemplate[]>(payload, '获取渠道模板失败')
+}
+
+/**
+ * 应用模板到渠道（一键切换供应商）。apiKey 不被模板覆盖——保留渠道现有密钥。
+ */
+export async function applyChannelTemplate(
+  channelKey: 'chat' | 'embedding' | 'reranker',
+  templateId: number,
+): Promise<AiChannelView> {
+  const payload = await http.post<unknown>(
+    `${API_ENDPOINTS.MODEL_CHANNELS}/${channelKey}/apply-template`,
+    { templateId },
+  )
+  return unwrapBiz<AiChannelView>(payload, '应用模板失败')
 }

@@ -549,6 +549,22 @@ export interface AiChannelListResponse {
   aiMode?: string
 }
 
+/** AI 渠道配置模板（V13 多渠道一键切换）。模板不存 apiKey——应用时保留渠道现有密钥。 */
+export interface ChannelTemplate {
+  id: number
+  channelKey: 'chat' | 'embedding' | 'reranker'
+  templateName: string
+  provider: string | null
+  baseUrl: string
+  protocol: string
+  turboModel: string | null
+  reasonerModel: string | null
+  model: string | null
+  dimension: number | null
+  description: string | null
+  sortOrder: number
+}
+
 /** PUT /model-channels/{channelKey} 请求体。空串/null = 不修改该字段。 */
 export interface AiChannelUpdatePayload {
   baseUrl?: string
