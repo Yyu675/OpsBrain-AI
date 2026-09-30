@@ -114,6 +114,66 @@ public class AlertService {
     }
 
     /**
+     * 构建工单描述（告警完整上下文，2026-09-30）。
+     *
+     * <p>此前工单描述 = 告警的一两句话（annotations.description），值班人拿到工单
+     * 看不出具体问题在哪——不像排查 bug 能看到报错日志、定位到哪个实例/服务/级别。
+     * 本方法把告警的完整上下文（labels/annotations 的关键字段 + 原始负载）
+     * 结构化地写进工单描述，让值班人一眼看到告警全貌。</p>
+     *
+     * <p>结构：核心描述 → 告警元信息（级别/服务/实例/模块）→ 原始标签 → 告警注解。
+     * 数据全部来自告警本体（labels_json/annotations_json），零额外查询。</p>
+     */
+    private String buildTicketDescription(Alert alert, String title) {
+        StringBuilder sb = new StringBuilder();
+        // 核心描述（告警的 annotations.description）
+        String core = alert.getDescription() != null && !alert.getDescription().isBlank()
+                ? alert.getDescription() : title;
+        sb.append(core);
+
+        // 告警元信息（级别/服务/实例/模块）
+        sb.append("\n\n---\n### 告警元信息\n");
+        sb.append("- 级别: ").append(alert.getLevel() != null ? alert.getLevel() : "—").append("\n");
+        sb.append("- 服务: ").append(alert.getService() != null ? alert.getService() : "—").append("\n");
+        sb.append("- 模块: ").append(alert.getModule() != null ? alert.getModule() : "—").append("\n");
+        sb.append("- 发生次数: ").append(alert.getOccurrenceCount() != null ? alert.getOccurrenceCount() : 1).append("\n");
+        sb.append("- 去重键: ").append(alert.getDedupKey() != null ? alert.getDedupKey() : "—").append("\n");
+
+        // 原始标签（labels_json 的关键字段）
+        Map<String, String> labels = parseJsonMap(alert.getLabelsJson());
+        if (!labels.isEmpty()) {
+            sb.append("\n### 原始标签（labels）\n");
+            for (Map.Entry<String, String> e : labels.entrySet()) {
+                sb.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
+            }
+        }
+
+        // 告警注解（annotations_json 的关键字段：summary/runbook_url 等）
+        Map<String, String> annotations = parseJsonMap(alert.getAnnotationsJson());
+        if (!annotations.isEmpty()) {
+            sb.append("\n### 告警注解（annotations）\n");
+            for (Map.Entry<String, String> e : annotations.entrySet()) {
+                sb.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    /** 解析 JSON 字符串为 Map（labels/annotations 解析用；空/坏值降级为空 Map）。 */
+    private Map<String, String> parseJsonMap(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json)) return Map.of();
+        if (objectMapper == null) return Map.of();
+        try {
+            return objectMapper.readValue(json,
+                    objectMapper.getTypeFactory().constructMapType(
+                            java.util.LinkedHashMap.class, String.class, String.class));
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    /**
      * 服务 → 值班负责人路由（2026-09-25，待分配积压治理）。
      * <p>
      * 真实库 27/28 张工单停在「待分配」：自动建单恒传 assignee=null，
@@ -897,7 +957,7 @@ public class AlertService {
             String category = MODULE_TO_CATEGORY.getOrDefault(module, DEFAULT_CATEGORY);
             String sla = mapPriorityToSla(priority);
             String title = "【告警】" + alertName + (service != null && !service.isBlank() ? " - " + service : "");
-            String description = alert.getDescription() != null ? alert.getDescription() : title;
+            String description = buildTicketDescription(alert, title);
 
             // 服务路由：命中的服务直接把工单派给值班负责人，不再一律「待分配」
             String assignee = null;
