@@ -71,6 +71,9 @@ class DiagnosisOrchestratorTest {
     private com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier;
     @Mock
     private com.devops.agent.domain.notify.Notifier notifier;
+    /** 方案 B：取证记录写工单活动流的依赖（字段注入，测试里显式装上） */
+    @Mock
+    private com.devops.agent.domain.biz.service.TicketService ticketService;
 
     private DiagnosisOrchestrator orchestrator;
     private String traceId;
@@ -109,6 +112,9 @@ class DiagnosisOrchestratorTest {
                 aiAnalysisService, hypothesisGenerator, hypothesisRepository,
                 wsNotifier, notifier,
                 mock(com.devops.agent.domain.alert.repository.AlertRepository.class));
+        // 活动流留痕是 @Autowired(required=false) 字段注入——非 Spring 环境显式装上
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                orchestrator, "ticketService", ticketService);
     }
 
     @AfterEach
@@ -182,7 +188,54 @@ class DiagnosisOrchestratorTest {
         verify(stateManager, atLeastOnce())
                 .transition(eq(AgentState.FAILED),
                         any(AgentStateTransition.TriggerType.class), anyString());
+        // 方案 B 补齐：取证链崩了工单侧也要有痕——「没查」和「查挂了」不能同外观
+        verify(ticketService).recordActivity(eq("TK-003"), anyString(),
+                contains("AI 诊断执行失败"), contains("traceId="),
+                eq("AI 诊断"), eq(false));
         // 上层捕获了全部异常，诊断链不停
         assertThatCode(() -> TraceContext.getOrCreate());
+    }
+
+    @Test
+    @DisplayName("回填摘要含取证明细：逐方向状态进分析区与工单活动流（方案 B）")
+    void summaryCarriesEvidenceDigest() throws Exception {
+        traceId = orchestrator.submit(1005L, "TK-005", "order-service");
+        Thread.sleep(200);
+
+        // 分析区回填与活动流留痕都必须带【取证明细】——值班人在工单侧
+        // 不点诊断页也能看到「查了哪些方向、各自什么状态」
+        verify(aiAnalysisService).save(eq("TK-005"), contains("【取证明细】"),
+                isNull(), isNull(), isNull(), anyInt(), isNull());
+        verify(ticketService).recordActivity(eq("TK-005"), anyString(),
+                contains("AI 诊断完成"), contains("【取证明细】"),
+                eq("AI 诊断"), eq(false));
+    }
+
+    @Test
+    @DisplayName("证据不足：不进分析表（批79 占版本坑），活动流留下取证明细转人工")
+    void insufficientSkipsAnalysisButWritesActivity() throws Exception {
+        // 两个方向 FAILED → failedTotal>=2 → INSUFFICIENT
+        when(metricsCollector.collect(anyString(), anyString(), anyString()))
+                .thenReturn(new Evidence(
+                        Evidence.EvidenceStatus.FAILED, "metrics", "指标源不可达",
+                        Map.of(), "ref", null, Instant.now()));
+        when(changesCollector.collect(anyString(), anyString()))
+                .thenReturn(new Evidence(
+                        Evidence.EvidenceStatus.FAILED, "changes", "变更源不可达",
+                        Map.of(), "ref", null, Instant.now()));
+
+        traceId = orchestrator.submit(1006L, "TK-006", "order-service");
+        Thread.sleep(200);
+
+        verify(sessionRepository).complete(anyLong(), anyString(), anyString(),
+                contains("证据不足"));
+        // 批79：INSUFFICIENT 不占分析表版本（空态「生成」按钮必须还在）
+        verify(aiAnalysisService, never()).save(any(), any(), any(), any(), any(), any(), any());
+        // 但活动流必须留下取证记录——「AI 查了什么、哪个源挂了」在工单侧可见
+        verify(ticketService).recordActivity(eq("TK-006"), eq("warning"),
+                eq("AI 取证结果（证据不足，待人工）"),
+                argThat(d -> d != null && d.contains("【取证明细】")
+                        && d.contains("[metrics] FAILED") && d.contains("traceId=")),
+                eq("AI 诊断"), eq(false));
     }
 }

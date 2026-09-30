@@ -140,8 +140,10 @@ server:
 # 此处会打印为空，属预期行为，可据此发现遗漏的跨线程传递点。
 logging:
   pattern:
-    console: "%d{HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n"
+    # %xEx：异常时打印完整堆栈（含类/方法/行号）——诊断要能定位到代码行，
+    # 缺它则异常日志只有一行消息，AI 无法定位到具体类/方法/行。
+    console: "%d{HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n%xEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n%xEx"
 
 spring.servlet.multipart:
   # 单文件与单请求上限。与 devops.storage.attachment.max-file-size 保持一致，
@@ -676,14 +678,16 @@ devops:
         app-uptime-seconds: 'process_uptime_seconds{service="{service}"}'
 
   # ================= S1-3 日志数据源（Loki）=================
-  # 默认未启用：compose/CI 均没有 Loki——部署形态如实上报 UNAVAILABLE，
-  # 不因「查不了」而伪装「查过没有」。
+  # 2026-09-30 起默认启用（方案 B「日志证据 → 工单」）：取证明细要能进工单，
+  # 日志这条腿默认必须是通的。Loki 缺席时查询如实 FAILED（连不上≠查过没有），
+  # 诊断摘要/活动流会点名「LOGS: FAILED：日志查询失败…」，不再静默 UNAVAILABLE；
+  # 不接 Loki 的部署显式 LOKI_ENABLED=false 回到 UNAVAILABLE 语义（省掉无效探测）。
   logs:
     loki:
-      # docker-compose.dev 若后续接入 Loki，宿主机映射口与 metrics 同风格（23100）
+      # compose 的 logs profile 已挂 Loki/Promtail（--profile logs up -d loki promtail）
       base-url: ${LOKI_BASE_URL:http://localhost:23100}
       timeout-ms: ${LOKI_TIMEOUT_MS:5000}
-      enabled: ${LOKI_ENABLED:false}
+      enabled: ${LOKI_ENABLED:true}
       # LogQL 流选择器的 label 键。现场 label 约定不同（app/job/container/service_name）
       # 时改这里 —— 与 metrics 的 query-catalog 同理：模板数据进配置，不进代码。
       service-label: ${LOKI_SERVICE_LABEL:app}

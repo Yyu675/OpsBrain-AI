@@ -871,10 +871,11 @@ const onSinkGotoDoc = (docId: number) => {
               @mark-mitigated="doMarkMitigated"
             />
 
-            <!-- 工单描述 -->
+            <!-- 工单描述（2026-09-30：告警自动建单写入 Markdown 结构化描述 + JSON 块，
+                 走 safeMarkdown 渲染——纯文本 pre-wrap 会把 ###/``` 原样晒给用户） -->
             <div v-if="ticket.description" class="ticket-description-card">
               <h3 class="description-title">工单描述</h3>
-              <div class="description-body">{{ ticket.description }}</div>
+              <div class="description-body" v-html="renderMarkdown(ticket.description)"></div>
             </div>
 
             <!-- ========== Timeline ==========
@@ -1152,8 +1153,47 @@ const onSinkGotoDoc = (docId: number) => {
   font-size: 0.9375rem;
   line-height: 1.7;
   color: var(--text-1, var(--text-1));
-  white-space: pre-wrap;
   word-break: break-word;
+}
+/* v-html 产物不带 scope 属性，Markdown 子元素必须 :deep（复刻 KnowledgeSinkDrawer
+   的 .markdown-body 视觉：标题降级、JSON 代码块深底、列表/分隔线与全站一致） */
+.description-body {
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+    margin: 12px 0 4px;
+    font-size: var(--text-sm, 0.875rem);
+    font-weight: 600;
+    color: var(--text-1);
+    &:first-child { margin-top: 0; }
+  }
+  :deep(p) { margin: 0 0 6px; &:last-child { margin-bottom: 0; } }
+  :deep(ul), :deep(ol) { margin: 0 0 6px; padding-left: 16px; }
+  :deep(li) { margin-bottom: 2px; }
+  :deep(hr) { border: none; border-top: 1px solid var(--border-1, var(--border-1)); margin: 8px 0; }
+  :deep(code) {
+    padding: 1px 5px;
+    background: var(--surface-2, #f1f5f9);
+    border-radius: 4px;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8125em;
+    word-break: break-all;
+  }
+  :deep(pre) {
+    margin: 6px 0;
+    padding: 10px 12px;
+    background: #1E293B;
+    border-radius: 8px;
+    overflow-x: auto;
+    code {
+      display: block;
+      padding: 0;
+      background: transparent;
+      color: #CBD5E1;
+      font-size: 0.75rem;
+      line-height: 1.5;
+      word-break: normal;
+      white-space: pre-wrap;
+    }
+  }
 }
 
 .ticket-badges {

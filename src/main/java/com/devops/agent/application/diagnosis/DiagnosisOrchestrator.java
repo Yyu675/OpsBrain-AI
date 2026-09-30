@@ -73,6 +73,16 @@ public class DiagnosisOrchestrator {
     private final AgentStateManager stateManager;
     /** 2-1.5：诊断结果回填工单 AI 分析区。 */
     private final com.devops.agent.domain.biz.service.TicketAiAnalysisService aiAnalysisService;
+
+    /**
+     * 工单活动流写入（2026-09-30 方案 B）：每次诊断完成在工单时间线留一条
+     * 取证记录——分析区可能被「近期已有版本」跳过或归档，活动流是
+     * 「AI 查了什么、查到什么」在工单侧的唯一常驻入口。
+     * 字段注入 required=false：既有测试用固定构造直配，缺装时留痕跳过，
+     * 诊断主流程与回填不受影响（附属增值一族护身）。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.domain.biz.service.TicketService ticketService;
     /** S2-2：假设生成器（规则基线永远可用；LLM 版可插拔后补，此接口不变）。 */
     private final com.devops.agent.domain.diagnosis.HypothesisGenerator hypothesisGenerator;
     /** S2-2：假设落库（点开假设看证据的关联侧）。 */
@@ -218,6 +228,10 @@ public class DiagnosisOrchestrator {
             if (aggregated.sufficiency() != EvidenceAggregator.Sufficiency.INSUFFICIENT) {
                 summary = generateAndPersistHypotheses(traceId, aggregated, ranked, summary);
             }
+            // ── ③.1 取证明细（2026-09-30 方案 B）：逐方向状态 + 日志 Top 模式/样本
+            // 拼进摘要——摘要流向分析区回填/会话落库/钉钉 WS 通知，一处拼全部可见。
+            // 放在假设之后：假设的「；Top-1 假设…」续在结论句尾，明细独立成段收尾。
+            summary = summary + "\n\n" + buildEvidenceDigest(aggregated);
 
             // ── ④ 判定 + 会话收尾（证据不足硬终止转人工）
             completeSession(traceId, alertId, ticketId, aggregated, summary);
@@ -225,6 +239,10 @@ public class DiagnosisOrchestrator {
             log.error("❌ [Diagnosis] 诊断异常 | traceId={} alertId={} | {}",
                     traceId, alertId, ex.getMessage(), ex);
             safeFailSession(traceId, alertId, ex.getMessage());
+            // 方案 B 补齐（2026-09-30）：取证链崩了工单侧也不能静默——
+            // 否则 collectorThrows 这类异常在工单时间线上零痕迹，
+            // 值班人只能看到「没有取证明细」而不知道 AI 是没查还是挂了。
+            recordDiagnosisFailureActivity(traceId, ticketId, ex);
             safeTransition(AgentState.FAILED, TriggerType.SYSTEM_ERROR,
                     "诊断异常：" + ex.getMessage());
             // 单独兜底，不向上抛。
@@ -512,6 +530,11 @@ public class DiagnosisOrchestrator {
                 log.info("⏭️ [Diagnosis] 证据不足（INSUFFICIENT），结论不进 AI 分析表，走人工介入通知 | ticketId={}",
                         ticketId);
             }
+            // 活动流留痕（2026-09-30 方案 B）：无论结论是否回填分析表，工单时间线
+            // 都要有一条可见的取证记录。批79 只禁 INSUFFICIENT 占分析表版本号，
+            // 不禁活动流——且分析区可能被「近期已有版本」跳过，活动流是取证内容
+            // 在工单侧的常驻入口。旁路：留痕失败仅 WARN。
+            recordDiagnosisActivity(traceId, ticketId, aggregated, summary);
             AgentState finalState = aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
                     ? AgentState.FAILED : AgentState.DRAFT_READY;
             safeTransition(finalState,
@@ -578,6 +601,125 @@ public class DiagnosisOrchestrator {
             log.debug("[Diagnosis] 状态机转移跳过 | to={} trigger={} 原因={}",
                     toState, trigger, ignore.getMessage());
         }
+    }
+
+    /**
+     * 取证明细段（2026-09-30 方案 B）：逐方向状态 + 日志 Top 模式/样本行。
+     *
+     * <p>拼进摘要后流向四处：AI 分析区回填、诊断会话落库、钉钉/WS 通知、
+     * 工单活动流——「查了什么、查到什么、哪个源没接」在任何入口都可见。
+     * 此前证据只有诊断页/证据回放看得到，值班人在工单里只看到一句结论，
+     * 证据不足时连 buildFinalSummary 承诺的「附已获得的取证记录」都没真附。</p>
+     *
+     * <p>日志模式带样本首行：那行往往就是报错堆栈（类/方法/行号）——
+     * 「像查 bug 一样先看报错日志」落到工单上的就是这一段。</p>
+     */
+    private String buildEvidenceDigest(EvidenceAggregator.AggregateResult agg) {
+        StringBuilder sb = new StringBuilder("【取证明细】");
+        for (Evidence e : agg.evidences()) {
+            if (e == null) {
+                continue;
+            }
+            sb.append("\n- [").append(e.evidenceType()).append("] ")
+              .append(e.status().name()).append("：").append(clip(e.title(), 160));
+            if (Evidence.Type.LOGS.equals(e.evidenceType())
+                    && e.status() == Evidence.EvidenceStatus.SUCCESS) {
+                appendLogPatterns(sb, e);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 日志证据的 Top 模式展开：模板（报错形状）+ 次数 + 首个样本行（真实堆栈片段）。 */
+    private void appendLogPatterns(StringBuilder sb, Evidence e) {
+        Object raw = e.content().get("patterns");
+        if (!(raw instanceof List<?> patterns) || patterns.isEmpty()) {
+            return;
+        }
+        if (Boolean.TRUE.equals(e.content().get("summarized"))) {
+            sb.append("（内容超预算已截断，全量见证据回放）");
+        }
+        int shown = 0;
+        for (Object p : patterns) {
+            if (shown >= 5) {
+                break;
+            }
+            if (!(p instanceof Map<?, ?> m)) {
+                continue;
+            }
+            shown++;
+            // Map<?,?> 的 getOrDefault 会撞泛型捕获（默认值无法收窄到 capture），
+            // 用 get + 空值兜底取原始值
+            Object level = m.get("worstLevel");
+            Object template = m.get("template");
+            sb.append("\n  ").append(shown).append(". [")
+              .append(level == null ? "?" : level).append("] ")
+              .append(clip(oneLine(template == null ? "" : String.valueOf(template)), 140))
+              .append(" ×").append(m.get("count"));
+            Object samplesRaw = m.get("samples");
+            if (samplesRaw instanceof List<?> samples && !samples.isEmpty()) {
+                String sample = oneLine(String.valueOf(samples.get(0))
+                        .replace("<untrusted_log>", "").replace("</untrusted_log>", ""));
+                sb.append("\n     样本: ").append(clip(sample, 160));
+            }
+        }
+    }
+
+    /** 工单活动流留痕（失败不反噬诊断主流程）。 */
+    private void recordDiagnosisActivity(String traceId, String ticketId,
+                                         EvidenceAggregator.AggregateResult aggregated,
+                                         String summary) {        if (ticketId == null || ticketId.isBlank() || ticketService == null) {
+            return;
+        }
+        try {
+            String text = switch (aggregated.sufficiency()) {
+                case INSUFFICIENT -> "AI 取证结果（证据不足，待人工）";
+                case WEAK -> "AI 诊断完成（证据薄弱）";
+                case SUFFICIENT -> "AI 诊断完成，取证明细如下";
+            };
+            ticketService.recordActivity(ticketId, "warning", text,
+                    summary + "\n\n（证据回放:traceId=" + traceId + "）", "AI 诊断", false);
+        } catch (Exception ex) {
+            log.warn("⚠️ [Diagnosis] 工单活动流留痕失败（不影响诊断主流程）| ticketId={} why={}",
+                    ticketId, ex.getMessage());
+        }
+    }
+
+    /**
+     * 诊断异常的活动流留痕（2026-09-30 方案 B 补齐）。
+     * <p>取证链中途崩掉时 {@link #completeSession} 根本走不到（无 aggregated/summary），
+     * 若不在 catch 里留痕，工单时间线上「AI 没查」和「AI 查挂了」外观完全一样——
+     * 这是诊断链最后一条静默路径。错误消息裁剪进 detail，现场按 traceId 回放。</p>
+     */
+    private void recordDiagnosisFailureActivity(String traceId, String ticketId, Exception ex) {
+        if (ticketId == null || ticketId.isBlank() || ticketService == null) {
+            return;
+        }
+        try {
+            String msg = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            ticketService.recordActivity(ticketId, "warning", "AI 诊断执行失败（不影响工单处置）",
+                    "取证链路异常终止：" + clip(msg, 200)
+                            + "\n\n（错误现场:traceId=" + traceId + "，详见后端日志与诊断会话）",
+                    "AI 诊断", false);
+        } catch (Exception ignore) {
+            // 留痕失败同样不反噬——与诊断主链同族护身
+            log.warn("⚠️ [Diagnosis] 诊断失败留痕失败（已忽略）| ticketId={} why={}",
+                    ticketId, ignore.getMessage());
+        }
+    }
+
+    /** 摘要裁剪：单行化 + 截断（取证明细进通知/活动流，长度必须有界）。 */
+    private static String clip(String s, int max) {
+        if (s == null || s.isBlank() || "null".equals(s)) {
+            return "—";
+        }
+        String oneLine = s.replace("\r", " ").replace("\n", " ");
+        return oneLine.length() <= max ? oneLine : oneLine.substring(0, max) + "…";
+    }
+
+    /** 换行压平（样本行常带多行堆栈，进摘要只保留首行形状）。 */
+    private static String oneLine(String s) {
+        return s == null ? "" : s.replace("\r", " ").replace("\n", " ");
     }
 
     /** 结论计算（SUFFICIENT 走 placeholder 文案，S2-2 才接管真实推理正文）。 */

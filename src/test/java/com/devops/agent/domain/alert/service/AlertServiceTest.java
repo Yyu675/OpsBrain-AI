@@ -21,13 +21,16 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -89,6 +92,10 @@ class AlertServiceTest {
         ReflectionTestUtils.setField(service, "aggregateWindowMinutes", 5);
         ReflectionTestUtils.setField(service, "autoDiagnoseEnabled", true);
         ReflectionTestUtils.setField(service, "autoTicketMinLevel", "P3");
+        // Jackson 生产环境恒在（Spring 上下文装配）：labels/annotations JSON 落库
+        // 与工单描述 JSON 块都走这个字段，不注入则测的是「Jackson 缺席」的退化形态
+        ReflectionTestUtils.setField(service, "objectMapper",
+                new com.fasterxml.jackson.databind.ObjectMapper());
 
         // 默认：无活跃告警、无可聚合的组工单、保存后回填 ID
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
@@ -385,6 +392,44 @@ class AlertServiceTest {
         }
 
         @Test
+        @DisplayName("建单描述结构化：Markdown 段 + JSON 机读块，labels 全量入块（方案 A）")
+        void ticketDescriptionCarriesStructuredContext() {
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "HighCPU", "service", "order", "module", "pod",
+                            "severity", "critical", "instance", "node-1:9100"))));
+
+            ArgumentCaptor<String> desc = ArgumentCaptor.forClass(String.class);
+            verify(ticketService).createTicket(anyString(), anyString(), anyString(), desc.capture(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+            String d = desc.getValue();
+            // 人看的 Markdown 段（级别/服务/标签），机读的 JSON 块（告警全字段）
+            assertTrue(d.contains("### 告警元信息"), "缺告警元信息段: " + d);
+            assertTrue(d.contains("### 原始标签"), "缺原始标签段: " + d);
+            assertTrue(d.contains("### 结构化上下文（JSON）"), "缺 JSON 块: " + d);
+            assertTrue(d.contains("\"instance\"") && d.contains("node-1:9100"),
+                    "JSON 块缺 instance 标签: " + d);
+        }
+
+        @Test
+        @DisplayName("钉钉通知只带核心描述——结构化全文（含 JSON 块）进通知卡会淹掉关键信息")
+        void notifyCarriesCoreDescriptionOnly() {
+            AlertmanagerWebhook.Alert a = incoming("firing",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "critical"));
+            Map<String, String> ann = new LinkedHashMap<>();
+            ann.put("description", "CPU 使用率连续 5 分钟超过 90%");
+            a.setAnnotations(ann);
+
+            service.processWebhook(webhook(a));
+
+            ArgumentCaptor<com.devops.agent.domain.notify.NotifyMessage> msg =
+                    ArgumentCaptor.forClass(com.devops.agent.domain.notify.NotifyMessage.class);
+            verify(dingTalk).send(msg.capture());
+            String md = msg.getValue().markdown();
+            assertTrue(md.contains("CPU 使用率连续 5 分钟超过 90%"), "通知丢了核心描述: " + md);
+            assertFalse(md.contains("结构化上下文（JSON）"), "通知混入了 JSON 块: " + md);
+        }
+
+        @Test
         @DisplayName("服务路由命中：工单直接派给值班负责人，不再停在「待分配」")
         void routedServiceAssignsOwner() {
             // 2026-09-25 真实库：27/28 张工单停在待分配——建单恒传 null assignee。
@@ -541,6 +586,25 @@ class AlertServiceTest {
 
             verify(ticketService).recordActivity(eq("TK-2026-0001"), anyString(), anyString(),
                     anyString(), anyString(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("聚合留痕带级别与实例：一行也能看出哪台机器、什么级别")
+        void aggregationTraceCarriesLevelAndInstance() {
+            Alert group = new Alert();
+            group.setId(100L);
+            group.setTicketId("TK-2026-0001");
+            when(alertRepository.findActiveGroupTicket(any(), any(), anyInt()))
+                    .thenReturn(Optional.of(group));
+
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "NodeDown", "service", "order", "module", "host",
+                            "severity", "warning", "instance", "node-9:9100"))));
+
+            verify(ticketService).recordActivity(eq("TK-2026-0001"), anyString(),
+                    eq("关联告警"),
+                    argThat(d -> d != null && d.contains("（P2）") && d.contains("@node-9:9100")),
+                    anyString(), anyBoolean());
         }
 
         @Test

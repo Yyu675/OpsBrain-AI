@@ -157,6 +157,39 @@ public class AlertService {
             }
         }
 
+        // 结构化上下文（JSON 机读块，2026-09-30 方案 A）：上面的 Markdown 段给人看，
+        // 这个块给自动化/检索/跨系统对接消费——同一份告警全字段，两种消费面。
+        // 序列化失败只丢块不丢描述（描述是主链，JSON 是增值旁路，同族护身）。
+        if (objectMapper != null) {
+            try {
+                Map<String, Object> ctx = new LinkedHashMap<>();
+                ctx.put("alertName", alert.getAlertName());
+                ctx.put("title", alert.getTitle());
+                ctx.put("level", alert.getLevel());
+                ctx.put("service", alert.getService());
+                ctx.put("module", alert.getModule());
+                ctx.put("status", alert.getStatus());
+                ctx.put("source", alert.getSource());
+                ctx.put("system", alert.getSystem());
+                ctx.put("occurrenceCount", alert.getOccurrenceCount());
+                // 时间转 String 再入块：LocalDateTime 直接序列化依赖 JSR310 模块，
+                // 裸 ObjectMapper（非 Spring 装配）会抛异常把整个 JSON 块打掉
+                ctx.put("firstOccurredAt",
+                        alert.getFirstOccurredAt() == null ? null : alert.getFirstOccurredAt().toString());
+                ctx.put("lastOccurredAt",
+                        alert.getLastOccurredAt() == null ? null : alert.getLastOccurredAt().toString());
+                ctx.put("dedupKey", alert.getDedupKey());
+                ctx.put("labels", labels);
+                ctx.put("annotations", annotations);
+                sb.append("\n### 结构化上下文（JSON）\n```json\n")
+                  .append(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(ctx))
+                  .append("\n```\n");
+            } catch (Exception e) {
+                log.warn("⚠️ [AlertService] 工单描述 JSON 块序列化失败（跳过该块，描述其余部分不受影响）| {}",
+                        e.getMessage());
+            }
+        }
+
         return sb.toString();
     }
 
@@ -958,6 +991,10 @@ public class AlertService {
             String sla = mapPriorityToSla(priority);
             String title = "【告警】" + alertName + (service != null && !service.isBlank() ? " - " + service : "");
             String description = buildTicketDescription(alert, title);
+            // 钉钉通知只带核心描述（一两句话），不带完整结构化描述——
+            // 后者含 JSON 块与全部标签，塞进通知卡片只会把关键信息淹掉
+            String notifyCore = alert.getDescription() != null && !alert.getDescription().isBlank()
+                    ? alert.getDescription() : title;
 
             // 服务路由：命中的服务直接把工单派给值班负责人，不再一律「待分配」
             String assignee = null;
@@ -991,7 +1028,7 @@ public class AlertService {
             // L2 通知（方向二）：高危告警强提醒值班 SRE（蓝图 §二 P0/P1 一键弹窗强提醒）。
             // 旁路——DingTalkNotifier 内部异步 + 失败仅 WARN，不影响建单主流程。
             String ticketId = ticket != null ? ticket.getId() : null;
-            notifyAlert(alert, alertName, service, priority, description, ticketId);
+            notifyAlert(alert, alertName, service, priority, notifyCore, ticketId);
         } catch (Exception e) {
             log.error("❌ [AlertService] 告警自动建单失败 | alertId={} | alertName={} | error={}",
                     alert.getId(), alertName, e.getMessage(), e);
@@ -1052,10 +1089,21 @@ public class AlertService {
      */
     private void appendAggregatedAlert(String ticketId, Alert alert, String alertName) {
         try {
-            String detail = "聚合关联告警：" + alertName
-                    + (alert.getDescription() != null && !alert.getDescription().isBlank()
-                        ? " — " + alert.getDescription() : "");
-            ticketService.recordActivity(ticketId, "warning", "关联告警", detail, ALERT_CREATOR, false);
+            // 一行留痕也要可定位：级别定轻重、instance/pod 指到实体、描述说明是什么
+            StringBuilder detail = new StringBuilder("聚合关联告警：").append(alertName)
+                    .append("（").append(alert.getLevel() != null ? alert.getLevel() : "—").append("）");
+            Map<String, String> labels = parseJsonMap(alert.getLabelsJson());
+            String instance = labels.get("instance");
+            if (instance == null || instance.isBlank()) {
+                instance = labels.get("pod");
+            }
+            if (instance != null && !instance.isBlank()) {
+                detail.append(" @").append(instance);
+            }
+            if (alert.getDescription() != null && !alert.getDescription().isBlank()) {
+                detail.append(" — ").append(alert.getDescription());
+            }
+            ticketService.recordActivity(ticketId, "warning", "关联告警", detail.toString(), ALERT_CREATOR, false);
         } catch (Exception e) {
             log.warn("⚠️ [AlertService] 聚合关联留痕失败（已忽略）| ticketId={} | alertId={} | {}",
                     ticketId, alert.getId(), e.getMessage());

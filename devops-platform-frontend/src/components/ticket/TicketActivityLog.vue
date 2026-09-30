@@ -97,6 +97,10 @@ defineProps<{
   font-size: var(--text-xs, 0.75rem);
   color: var(--text-2, var(--text-2));
   margin: 0;
+  /* 诊断取证明细是多行文本（【取证明细】+ 逐方向状态行）——
+     不保留换行会把整段挤成一行墙字；overflow-wrap 兜长哈希/LogQL 断行 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .activity-detail {

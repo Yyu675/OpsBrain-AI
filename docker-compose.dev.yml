@@ -205,10 +205,10 @@ services:
       - "host.docker.internal:host-gateway"
 
   # ------------------- S1-3 日志栈（可选，profile=logs）：Loki + Promtail -------------------
-  # 默认不启动：诊断的日志证据在缺位时如实上报 UNAVAILABLE（307 条证据行的现状），
-  # 而不是伪装成「查了但没有」。要启用：
+  # 2026-09-30 起后端 LOKI_ENABLED 默认 true（方案 B：日志证据要进工单取证明细），
+  # 本 profile 容器未起时查询会如实 FAILED（连不上≠查过没有）。要接上日志栈：
   #   1) docker compose -f docker-compose.dev.yml --profile logs up -d loki promtail
-  #   2) .env 加 LOKI_ENABLED=true，重启后端
+  #   2) 重启后端（.env 的 LOKI_ENABLED 可显式覆盖默认值）
   # Promtail 经 docker socket 抓取本机全部容器 stdout/stderr，容器名作 app 标签——
   # 与 LokiLogQueryClient 的流选择器 {app=~"<service>.*"} 对齐。
   loki:
