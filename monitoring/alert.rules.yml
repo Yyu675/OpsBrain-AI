@@ -59,6 +59,7 @@ groups:
           severity: warning        # → P2
           service: host-node
           module: HOST
+          alert_kind: causal       # 因果型——磁盘将满是可预测的资源耗尽，走趋势预测
         annotations:
           summary: "根分区磁盘使用率超过 85%"
           description: "根分区可用空间不足 15%，持续 2 分钟。需清理日志/临时文件或扩容磁盘。"
@@ -139,6 +140,7 @@ groups:
           severity: warning        # → P2
           service: opsbrain-ai
           module: APP
+          alert_kind: business     # 业务性告警——诊断走业务上下文，勿找技术指标
         annotations:
           summary: "P0/P1 高优工单积压(>10 张,持续 15 分钟)"
           description: "与看板 KPI 同口径——先按 module/priority 分布拆积压构成,再按值班 SOP 高开单排班疏导;必要时升级 P1 评估增援。起步阈值,真窗首周校准。"
@@ -151,6 +153,7 @@ groups:
           severity: warning        # → P2
           service: opsbrain-ai
           module: APP
+          alert_kind: business     # 业务性告警——审批积压是排班/治理问题，非技术故障
         annotations:
           summary: "待审批积压(>5 笔,持续 1 小时)"
           description: "审批闸空置积压 = 治理链路没哑火、只是没人批。先到审批页清账;夜班常态请评估当班审批人排班,不要盲目调高阈值。起步阈值,真窗首周校准。"
@@ -212,6 +215,7 @@ groups:
           severity: warning        # → P2
           service: opsbrain-ai
           module: APP
+          alert_kind: causal       # 因果型——JVM 堆将满是可预测的资源耗尽，走趋势预测
         annotations:
           summary: "JVM 老年代使用率 >85%(持续 10 分钟)"
           description: "先看是检索大结果集还是 SSE 长会话堆积;容器 limit 2g(批 76 口径),堆约 1.5g——调预算先看 Grafana 基线再动,OOMKill 不是降速。"
