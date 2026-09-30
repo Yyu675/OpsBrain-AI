@@ -518,3 +518,33 @@ describe('关闭与卸载：流必须停', () => {
     expect(vm.streaming).toBe(false)
   })
 })
+
+describe('AI 整理源文本的卫生（方案 B 下游：多行明细与 JSON 块不进 prompt）', () => {
+  it('描述剥掉结构化 JSON 块；多行活动明细压平并截断——一条活动一行的结构不被打散', async () => {
+    const w = await mountDrawer()
+    await w.setProps({
+      ticketDescription:
+        'P99 延迟超标 5 分钟\n\n### 结构化上下文（JSON）\n```json\n{"level":"P0"}\n```',
+      ticketActivities: [
+        { text: 'AI 诊断完成（证据薄弱）', detail: '第一行\n第二行' + '长'.repeat(300), user: 'AI 诊断', time: '10:00' },
+      ],
+    })
+
+    const gen = w.findAll('button.link-btn')
+      .find(b => b.text().includes('生成') && !b.text().includes('重新'))
+    expect(gen).toBeTruthy()
+    await gen!.trigger('click')
+    await flushPromises()
+
+    expect(chatStreamMock).toHaveBeenCalledTimes(1)
+    const prompt = String(chatStreamMock.mock.calls[0]?.[0] ?? '')
+
+    // JSON 块是工单侧的机器副本，对 LLM 是重复 token；正文段必须保留
+    expect(prompt).not.toContain('结构化上下文')
+    expect(prompt).toContain('P99 延迟超标 5 分钟')
+    // 多行明细压平进单行括号（\n→空格），超 200 字截断（… 收尾）
+    expect(prompt).toContain('（第一行 第二行')
+    expect(prompt).toContain('…）')
+    expect(prompt).not.toMatch(/第一行\n第二行/)
+  })
+})

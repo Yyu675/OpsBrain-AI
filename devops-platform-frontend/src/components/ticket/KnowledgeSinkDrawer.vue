@@ -134,7 +134,9 @@ const buildSinkQuery = (): string => {
   parts.push(`不要复述工单号、负责人等元信息，只写技术内容。\n`)
   parts.push(`【工单标题】${props.ticketTitle}`)
   parts.push(`【服务】${props.ticketService}`)
-  parts.push(`【描述】${props.ticketDescription}`)
+  // 结构化 JSON 块是描述正文段的 1:1 机器副本（给工单侧人读/机读用），
+  // 沉淀给 LLM 的源文本带它等于把描述烧两遍 token、还引入围栏噪声
+  parts.push(`【描述】${stripStructuredJson(props.ticketDescription)}`)
 
   if (props.ticketReplies?.length) {
     const replyText = props.ticketReplies
@@ -144,12 +146,26 @@ const buildSinkQuery = (): string => {
   }
   if (props.ticketActivities?.length) {
     const actText = props.ticketActivities
-      .map(a => `[${a.time}][${a.user}] ${a.text}${a.detail ? `（${a.detail}）` : ''}`)
+      .map(a => `[${a.time}][${a.user}] ${a.text}${a.detail ? `（${compactDetail(a.detail)}）` : ''}`)
       .join('\n')
     parts.push(`【活动流】\n${actText}`)
   }
 
   return parts.join('\n')
+}
+
+/** 去掉工单描述尾部的结构化 JSON 围栏块（正文段已含同信息；无块则原样返回） */
+const stripStructuredJson = (desc: string) =>
+  desc.replace(/\n?### 结构化上下文（JSON）[\s\S]*$/, '')
+
+/**
+ * 活动 detail 自 V15 起可能是多行诊断取证明细（TEXT）——本源文本的结构约定是
+ * 「一条活动一行」（\n 是活动间分隔符），明细里的换行混进来会打散结构；
+ * 200 字截断防一条 1.5KB 明细吃掉整段 prompt，全文在工单活动流可查。
+ */
+const compactDetail = (d: string) => {
+  const oneLine = d.replace(/\s+/g, ' ').trim()
+  return oneLine.length > 200 ? oneLine.slice(0, 200) + '…' : oneLine
 }
 
 // ==================== 触发 AI 整理 ====================
