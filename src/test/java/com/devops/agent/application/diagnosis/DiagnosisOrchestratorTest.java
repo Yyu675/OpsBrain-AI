@@ -151,6 +151,8 @@ class DiagnosisOrchestratorTest {
         // 状态机 DRAFT_READY 被点醒。
         verify(stateManager).transition(eq(AgentState.DRAFT_READY),
                 eq(AgentStateTransition.TriggerType.DRAFT_GENERATED), anyString());
+        // 会话行 service 必须落真实被诊断服务（曾硬编码 diagnosis-engine）
+        verify(sessionRepository).createIfAbsent(anyString(), any(), eq("order-service"));
         // 2-1.5：SUFFICIENT 时结论回填工单 AI 分析区（conf 启发值 80）
         verify(aiAnalysisService).save(eq("TK-001"), contains("证据充分"),
                 isNull(), isNull(), isNull(), eq(80), isNull());
@@ -192,6 +194,8 @@ class DiagnosisOrchestratorTest {
         verify(ticketService).recordActivity(eq("TK-003"), anyString(),
                 contains("AI 诊断执行失败"), contains("traceId="),
                 eq("AI 诊断"), eq(false));
+        // 失败路径同样落真实服务名（safeFailSession 曾硬编码 diagnosis-engine）
+        verify(sessionRepository).createIfAbsent(anyString(), any(), eq("order-service"));
         // 上层捕获了全部异常，诊断链不停
         assertThatCode(() -> TraceContext.getOrCreate());
     }

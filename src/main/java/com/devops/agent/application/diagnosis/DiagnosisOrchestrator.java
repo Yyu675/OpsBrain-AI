@@ -234,11 +234,11 @@ public class DiagnosisOrchestrator {
             summary = summary + "\n\n" + buildEvidenceDigest(aggregated);
 
             // ── ④ 判定 + 会话收尾（证据不足硬终止转人工）
-            completeSession(traceId, alertId, ticketId, aggregated, summary);
+            completeSession(traceId, alertId, ticketId, service, aggregated, summary);
         } catch (Exception ex) {
             log.error("❌ [Diagnosis] 诊断异常 | traceId={} alertId={} | {}",
                     traceId, alertId, ex.getMessage(), ex);
-            safeFailSession(traceId, alertId, ex.getMessage());
+            safeFailSession(traceId, alertId, service, ex.getMessage());
             // 方案 B 补齐（2026-09-30）：取证链崩了工单侧也不能静默——
             // 否则 collectorThrows 这类异常在工单时间线上零痕迹，
             // 值班人只能看到「没有取证明细」而不知道 AI 是没查还是挂了。
@@ -476,11 +476,21 @@ public class DiagnosisOrchestrator {
         return ranked;
     }
 
-    private void completeSession(String traceId, Long alertId, String ticketId,
+    /**
+     * 会话行 service 落值 = 被诊断服务真实名；空值回退执行器自述。
+     * 2026-10-01 修复：completeSession/safeFailSession 曾硬编码第三参
+     * "diagnosis-engine"——正常路径的会话/回放页 service 与真实服务失联，
+     * 而 QUEUED 路径（enqueueIfAbsent）传的又是真名，两条路径自相矛盾。
+     */
+    private static String sessionServiceOf(String service) {
+        return (service == null || service.isBlank()) ? "diagnosis-engine" : service;
+    }
+
+    private void completeSession(String traceId, Long alertId, String ticketId, String service,
                                  EvidenceAggregator.AggregateResult aggregated,
                                  String summary) {
         try {
-            Long sessionId = sessionRepository.createIfAbsent(traceId, alertId, "diagnosis-engine");
+            Long sessionId = sessionRepository.createIfAbsent(traceId, alertId, sessionServiceOf(service));
             if (sessionId != null) {
                 int rows = sessionRepository.complete(sessionId, ticketId,
                         String.valueOf(aggregated.sufficiency()), summary);
@@ -574,9 +584,9 @@ public class DiagnosisOrchestrator {
         }
     }
 
-    private void safeFailSession(String traceId, Long alertId, String errorMessage) {
+    private void safeFailSession(String traceId, Long alertId, String service, String errorMessage) {
         try {
-            Long sessionId = sessionRepository.createIfAbsent(traceId, alertId, "diagnosis-engine");
+            Long sessionId = sessionRepository.createIfAbsent(traceId, alertId, sessionServiceOf(service));
             if (sessionId != null) {
                 int rows = sessionRepository.fail(sessionId,
                         errorMessage == null ? "<unknown>" :

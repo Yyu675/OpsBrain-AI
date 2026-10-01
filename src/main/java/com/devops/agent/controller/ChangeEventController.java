@@ -30,7 +30,7 @@ import java.util.Map;
  * </p>
  * <p>curl 示例（见报告 104）：</p>
  * <pre>
- * curl -X POST /api/changes -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
+ * curl -X POST /api/v1/changes -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
  *   "serviceName":"order-service","changeType":"deploy","operator":"jenkins-bot",
  *   "summary":"order-service 1.4.2 → 1.4.3","changeTime":"2026-09-07T14:30:00",
  *   "source":"ci-callback","externalId":"jenkins-order-service-891"
@@ -38,7 +38,11 @@ import java.util.Map;
  * </pre>
  */
 @RestController
-@RequestMapping("/api/changes")
+// v1 主路径（平台统一前缀，ControllerApiPrefixContractTest 扫包钉住）；
+// "/api/changes" 为遗留别名——本端点是 CI/CD 回调契约（报告 104），外部流水线
+// 可能已按旧路径配置，直接摘除即断链（8.1 破坏性操作需先确认）；外部回调迁到
+// v1 后可摘别名。
+@RequestMapping({"/api/v1/changes", "/api/changes"})
 public class ChangeEventController {
 
     private static final Logger log = LoggerFactory.getLogger(ChangeEventController.class);
