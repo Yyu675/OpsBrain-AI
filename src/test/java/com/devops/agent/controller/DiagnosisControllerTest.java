@@ -35,6 +35,17 @@ class DiagnosisControllerTest {
     }
 
     @Test
+    @DisplayName("类级路径必须带 /api/v1——平台统一前缀，前端 config/api.ts 按此取值")
+    void mappingPathIsVersioned() {
+        var rm = DiagnosisController.class.getAnnotation(
+                org.springframework.web.bind.annotation.RequestMapping.class);
+        assertThat(rm).isNotNull();
+        // 2026-10-01 回归钉子：此处曾为 "/api/diagnosis"（缺 v1），回放/反馈/boost
+        // 回流对前端全部 404，而本类纯直调不看 URL 没拦住——路径契约必须有测试。
+        assertThat(rm.value()).containsExactly("/api/v1/diagnosis");
+    }
+
+    @Test
     @DisplayName("完整链路：会话+证据+假设按 traceId 汇总出同一份回放视图")
     void fullReplayView() {
         when(sessionRepository.findByTraceId("t-1")).thenReturn(Map.of(

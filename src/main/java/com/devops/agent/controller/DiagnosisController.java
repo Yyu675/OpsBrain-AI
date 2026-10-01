@@ -28,7 +28,10 @@ import java.util.Map;
  * </p>
  */
 @RestController
-@RequestMapping("/api/diagnosis")
+// 平台统一 /api/v1 前缀（前端 config/api.ts 的 DIAGNOSIS/DIAGNOSIS_FEEDBACK 均按 v1 取值）。
+// 2026-10-01 前此处误为 "/api/diagnosis"：诊断回放、假设反馈（含知识 boost 回流）
+// 自 S2-3 上线起对前端全部 404（测试纯直调不看 URL，故未拦住）——截图技能首跑揪出。
+@RequestMapping("/api/v1/diagnosis")
 @Tag(name = "诊断回放", description = "告警驱动诊断的证据/假设/会话回放 API（S2-3）")
 public class DiagnosisController {
 
