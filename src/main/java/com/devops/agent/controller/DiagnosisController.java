@@ -33,6 +33,7 @@ import java.util.Map;
 // 自 S2-3 上线起对前端全部 404（测试纯直调不看 URL，故未拦住）——截图技能首跑揪出。
 @RequestMapping("/api/v1/diagnosis")
 @Tag(name = "诊断回放", description = "告警驱动诊断的证据/假设/会话回放 API（S2-3）")
+@lombok.extern.slf4j.Slf4j
 public class DiagnosisController {
 
     private final DiagnosisSessionRepository sessionRepository;
@@ -153,10 +154,10 @@ public class DiagnosisController {
             }
             return new java.util.ArrayList<>(knowledgeBoostRepository.resolveChunkIds(citations));
         } catch (Exception e) {
-            // 回流是增值冒险：解析失败只告警，不反噬「反馈已落库」这一事实
-            org.slf4j.LoggerFactory.getLogger(DiagnosisController.class)
-                    .warn("⚠️ [Diagnosis] 反馈回流解析失败（不影响反馈本身）| hypothesisId={} | {}",
-                            hypothesisId, e.getMessage());
+            // 回流是增值冒险：解析失败只告警，不反噬「反馈已落库」这一事实。
+            // log 写法（非内联 LoggerFactory）——SilentCatchContractTest 的 HAS_LOG 契约靠 `\blog\.` 识别
+            log.warn("⚠️ [Diagnosis] 反馈回流解析失败（不影响反馈本身）| hypothesisId={} | {}",
+                    hypothesisId, e.getMessage());
             return null;
         }
     }

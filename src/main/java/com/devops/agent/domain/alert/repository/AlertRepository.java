@@ -513,8 +513,16 @@ public class AlertRepository {
                 "dedup_key, service, module, occurrence_count, first_occurred_at, last_occurred_at, " +
                 "acknowledged_at, resolved_at, ticket_id, labels_json, annotations_json, create_time, update_time) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?) " +
-                "ON CONFLICT (dedup_key) WHERE status IN ('FIRING','ACKNOWLEDGED') " +
-                "DO UPDATE SET occurrence_count = sys_alert.occurrence_count + 1, " +
+                "ON CONFLICT (dedup_key) WHERE status IN ('FIRING','ACKNOWLEDGED') DO UPDATE SET " +
+                // 方案①（2026-10-01）：severity 不参与去重键——同键 label 重映射
+                // 升级（WARNING→CRITICAL）此前只 +1 计次，level 永远停在首次值，
+                // 下游按 level 的分级/建单/风暴抑制全部读旧值。冲突时刷源真值：
+                // level/description/labels/annotations 恒取最新推送。
+                "level = EXCLUDED.level, " +
+                "description = EXCLUDED.description, " +
+                "labels_json = EXCLUDED.labels_json, " +
+                "annotations_json = EXCLUDED.annotations_json, " +
+                "occurrence_count = sys_alert.occurrence_count + 1, " +
                 "last_occurred_at = EXCLUDED.last_occurred_at, update_time = EXCLUDED.update_time " +
                 "RETURNING (xmax = 0) AS inserted";
         LocalDateTime now = LocalDateTime.now();
@@ -588,6 +596,34 @@ public class AlertRepository {
             log.warn("⚠️ 告警恢复无影响 | id={}（可能已不存在或已恢复）", id);
         }
         return rows;
+    }
+
+    /**
+     * 标记已恢复（resolvedAt=真实恢复时刻——Alertmanager endsAt 穿透，方案④；
+     * null/零值由调用方兜底为当前时间）。MTTR/持续时长以业务真实恢复为准，
+     * 否则恒多算一段推送延迟。
+     *
+     * @return 受影响行数（0 表示告警不存在或已恢复）
+     */
+    public int resolve(Long id, LocalDateTime resolvedAt) {
+        String sql = "UPDATE sys_alert SET status = 'RESOLVED', resolved_at = ?, update_time = ? WHERE id = ? AND status <> 'RESOLVED'";
+        LocalDateTime at = resolvedAt != null ? resolvedAt : LocalDateTime.now();
+        int rows = jdbcTemplate.update(sql, at, LocalDateTime.now(), id);
+        if (rows > 0) {
+            log.info("✅ 告警已恢复 | id={} | resolvedAt={}", id, at);
+        } else {
+            log.warn("⚠️ 告警恢复无影响 | id={}（可能已不存在或已恢复）", id);
+        }
+        return rows;
+    }
+
+    /** ② 恢复联动 auto 模式的守门计数：该单还有多少其它活跃关联告警（>0 就不关组单）。 */
+    public long countOtherActiveByTicket(String ticketId, Long excludeAlertId) {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM sys_alert WHERE ticket_id = ? AND id <> ? "
+                        + "AND status IN ('FIRING','ACKNOWLEDGED')",
+                Long.class, ticketId, excludeAlertId);
+        return n == null ? 0 : n;
     }
 
     /**

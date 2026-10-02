@@ -22,6 +22,8 @@ import java.util.Map;
  * @param severity 原始 severity 标签（CRITICAL/WARNING/INFO 或 P0~P4）——
  *                 到 P0~P4 的归一化留核心链（跨源统一的规则）
  * @param source   来源标识（如 "prometheus"），落库到 {@code sys_alert.source}
+ * @param endsAt   真实恢复时刻（Alertmanager RFC3339 endsAt 透传）；firing 信号为 null，
+ *                 零值（0001-01-01）由 resolve 侧回退为处理时刻
  */
 public record AlertSignal(
         String alertName,
@@ -34,5 +36,6 @@ public record AlertSignal(
         Map<String, String> annotations,
         String description,
         OffsetDateTime startsAt,
-        boolean resolved) {
+        boolean resolved,
+        OffsetDateTime endsAt) {
 }

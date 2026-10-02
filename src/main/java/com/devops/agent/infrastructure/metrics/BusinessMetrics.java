@@ -10,8 +10,10 @@ import com.devops.agent.domain.approval.ApprovalRequestRepository;
 import com.devops.agent.domain.approval.ApprovalStatus;
 import com.devops.agent.domain.biz.repository.DevOpsTicketRepository;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 
 /**
  * 关键业务指标（S5-1.4，批 49 / 报告 152）。
@@ -36,10 +38,59 @@ public class BusinessMetrics {
 
     private static final Logger log = LoggerFactory.getLogger(BusinessMetrics.class);
 
+    // ==================== 增量流速面（方案⑥ RED 指标，2026-10-01）=================
+    // 「存量水位」回答现在有多少，这一族回答刚才发生了多少/多快——
+    // 告警系统自身的可观测此前是盲的（Prometheus 只抓容器不抓后端业务事件）。
+
+    private final MeterRegistry registry;
+    private final Counter alertReceived;
+    private final Counter alertDedup;
+    private final Timer ticketAutoCreateOk;
+    private final Timer ticketAutoCreateFailed;
+    private final Timer diagnosisCompleted;
+    private final Timer diagnosisFailed;
+    private final Counter notifyCounterSuccess;
+    private final Counter notifyCounterFailed;
+    private final Counter notifyCounterDegraded;
+
+    /** 通知发送原子账（看门狗 delta 判定与效能卡读它——Micrometer Counter 不回读增量窗口） */
+    private final java.util.concurrent.atomic.AtomicLong notifyAttempts =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong notifySuccesses =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong notifyFailed =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong notifyDegraded =
+            new java.util.concurrent.atomic.AtomicLong();
+    /** 最近一次发送成功时刻（epoch ms）；0 = 本次进程尚无成功 */
+    private volatile long notifyLastSuccessAt;
+    private final java.util.concurrent.atomic.AtomicBoolean queueGaugeRegistered =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     public BusinessMetrics(MeterRegistry registry,
                            DevOpsTicketRepository tickets,
                            AlertRepository alerts,
                            ApprovalRequestRepository approvals) {
+        this.registry = registry;
+        this.alertReceived = Counter.builder("opsbrain.alert_received_total")
+                .description("告警信号到达数（webhook 每条有效信号）").register(registry);
+        this.alertDedup = Counter.builder("opsbrain.alert_dedup_total")
+                .description("重复告警命中数（去重生效：计次而非新建）").register(registry);
+        this.ticketAutoCreateOk = Timer.builder("opsbrain.ticket_autocreate_seconds")
+                .tag("result", "ok").description("告警自动建单耗时（成功）").register(registry);
+        this.ticketAutoCreateFailed = Timer.builder("opsbrain.ticket_autocreate_seconds")
+                .tag("result", "failed").description("告警自动建单耗时（失败）").register(registry);
+        this.diagnosisCompleted = Timer.builder("opsbrain.diagnosis_seconds")
+                .tag("result", "completed").description("诊断全链耗时（完成）").register(registry);
+        this.diagnosisFailed = Timer.builder("opsbrain.diagnosis_seconds")
+                .tag("result", "failed").description("诊断全链耗时（异常）").register(registry);
+        this.notifyCounterSuccess = Counter.builder("opsbrain.notify_total")
+                .tag("result", "success").description("通知发送（至少一渠道受理）").register(registry);
+        this.notifyCounterFailed = Counter.builder("opsbrain.notify_total")
+                .tag("result", "failed").description("通知发送（有渠道但全部抛异常）").register(registry);
+        this.notifyCounterDegraded = Counter.builder("opsbrain.notify_total")
+                .tag("result", "degraded").description("通知降级日志（无可用渠道）——"
+                        + "本地/未配渠道环境的常态，配合 available() 判配置而非误报").register(registry);
         Gauge.builder("opsbrain.tickets.total", () -> safe(() -> (double) tickets.countAll()))
                 .description("工单总量（全部状态）")
                 .register(registry);
@@ -54,7 +105,82 @@ public class BusinessMetrics {
                         () -> safe(() -> (double) approvals.countByStatus(ApprovalStatus.PENDING.name())))
                 .description("待审批排队数（值与审批页待办清单同口径）")
                 .register(registry);
-        log.info("📏 [Metrics] 业务水位计已登记（4 枚存量 Gauge）");
+        log.info("📏 [Metrics] 业务水位计已登记（4 枚存量 Gauge + RED 流速面）");
+    }
+
+    // ==================== 流速面 API（调用方负责判空——本类 @ConditionalOnProperty 可缺席）=================
+
+    public void incAlertReceived() {
+        alertReceived.increment();
+    }
+
+    public void incAlertDedup() {
+        alertDedup.increment();
+    }
+
+    public void recordTicketAutoCreate(long millis, boolean ok) {
+        (ok ? ticketAutoCreateOk : ticketAutoCreateFailed)
+                .record(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    public void recordDiagnosis(long millis, boolean ok) {
+        (ok ? diagnosisCompleted : diagnosisFailed)
+                .record(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * 通知一次发送尝试的结果（CompositeNotifier 每次 send 收尾调一次）。
+     * {@code result}：success（≥1 渠道受理）/ failed（有渠道但全抛）/ degraded（无可用渠道）。
+     */
+    public void notifyOutcome(String result) {
+        notifyAttempts.incrementAndGet();
+        if ("success".equals(result)) {
+            notifySuccesses.incrementAndGet();
+            notifyLastSuccessAt = System.currentTimeMillis();
+            notifyCounterSuccess.increment();
+        } else if ("failed".equals(result)) {
+            notifyFailed.incrementAndGet();
+            notifyCounterFailed.increment();
+        } else {
+            notifyDegraded.incrementAndGet();
+            notifyCounterDegraded.increment();
+        }
+    }
+
+    public long notifyAttempts() {
+        return notifyAttempts.get();
+    }
+
+    public long notifySuccesses() {
+        return notifySuccesses.get();
+    }
+
+    /**
+     * 通知健康快照（看门狗 delta 源 + 效能卡读它）。
+     * {@code lastSuccessAt} 为 ISO 时间或 null（尚无成功）。
+     */
+    public java.util.Map<String, Object> notifySnapshot() {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("attempts", notifyAttempts.get());
+        m.put("successes", notifySuccesses.get());
+        m.put("failed", notifyFailed.get());
+        m.put("degraded", notifyDegraded.get());
+        long last = notifyLastSuccessAt;
+        m.put("lastSuccessAt", last > 0
+                ? java.time.Instant.ofEpochMilli(last).toString() : null);
+        return m;
+    }
+
+    /**
+     * 诊断队列深度 gauge 登记（幂等）：编排器构造后经字段注入拿到本类，
+     * 首次调用注册一次，后续调用直接返回——Gauge 重复注册同名会叠影。
+     */
+    public void registerDiagnosisQueueGauge(java.util.function.Supplier<Number> queueSize) {
+        if (queueGaugeRegistered.compareAndSet(false, true)) {
+            Gauge.builder("opsbrain.diagnosis_queue_depth", queueSize, q -> q.get().doubleValue())
+                    .description("诊断队列待处理任务数（批 76 排队深度）")
+                    .register(registry);
+        }
     }
 
     /**

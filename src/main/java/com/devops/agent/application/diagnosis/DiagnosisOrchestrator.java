@@ -106,6 +106,18 @@ public class DiagnosisOrchestrator {
     @org.springframework.beans.factory.annotation.Value("${devops.diagnosis.service-dependencies:}")
     private String serviceDependenciesConfig;
 
+    /** 方案⑥ RED 流速面（2026-10-01）：字段注入可缺席；接线处判空，gauge/计时挂这里 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.infrastructure.metrics.BusinessMetrics businessMetrics;
+
+    /** 诊断队列深度 gauge 只登记一次（构造后字段注入才可用，故 @PostConstruct 而非构造器） */
+    @jakarta.annotation.PostConstruct
+    void registerDiagnosisGauges() {
+        if (businessMetrics != null) {
+            businessMetrics.registerDiagnosisQueueGauge(() -> pool.getQueue().size());
+        }
+    }
+
     public DiagnosisOrchestrator(MetricsEvidenceCollector metricsCollector,
                                  ChangesEvidenceCollector changesCollector,
                                  LogsEvidenceCollector logsCollector,
@@ -209,6 +221,7 @@ public class DiagnosisOrchestrator {
 
     private void runDiagnosis(String traceId, Map<String, String> snapshot,
                               Long alertId, String ticketId, String service) {
+        long metricsT0 = System.nanoTime();
         try {
             TraceContext.restore(snapshot);
             stateManager.transition(AgentState.CONTEXT_PREPARED, TriggerType.SECURITY_PASSED,
@@ -235,10 +248,16 @@ public class DiagnosisOrchestrator {
 
             // ── ④ 判定 + 会话收尾（证据不足硬终止转人工）
             completeSession(traceId, alertId, ticketId, service, aggregated, summary);
+            if (businessMetrics != null) {
+                businessMetrics.recordDiagnosis((System.nanoTime() - metricsT0) / 1_000_000, true);
+            }
         } catch (Exception ex) {
             log.error("❌ [Diagnosis] 诊断异常 | traceId={} alertId={} | {}",
                     traceId, alertId, ex.getMessage(), ex);
             safeFailSession(traceId, alertId, service, ex.getMessage());
+            if (businessMetrics != null) {
+                businessMetrics.recordDiagnosis((System.nanoTime() - metricsT0) / 1_000_000, false);
+            }
             // 方案 B 补齐（2026-09-30）：取证链崩了工单侧也不能静默——
             // 否则 collectorThrows 这类异常在工单时间线上零痕迹，
             // 值班人只能看到「没有取证明细」而不知道 AI 是没查还是挂了。

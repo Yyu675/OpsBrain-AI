@@ -543,6 +543,10 @@ devops:
       #     authorization: { type: Bearer, credentials: <secret> }
       #   —— 或用 Alertmanager 支持的自定义 header 方式传 X-Webhook-Token。
       secret: ${ALERT_WEBHOOK_SECRET:}
+      # HMAC-SHA256 签名密钥（可选，与 token/Bearer 并存；方案⑤，2026-10-01）。
+      # 配置后带 X-Webhook-Signature + X-Webhook-Timestamp 的请求走签名通道
+      # （canonical = ts + "." + body，±300s 防重放）；留空走原 token 链零破坏。
+      hmac-secret: ${ALERT_WEBHOOK_HMAC_SECRET:}
       # 单来源 IP 在窗口内允许的最大推送次数；<=0 关闭限流。
       # 300/分钟 是按「一次较大规模故障的告警量」留的余量：
       # 正常业务远低于此，而告警风暴（网络分区可产生上万条）会被挡住。
@@ -571,6 +575,13 @@ devops:
     observation-window-minutes: ${ALERT_OBSERVATION_WINDOW_MINUTES:10}
     # 观察窗扫描间隔（毫秒）。1 分钟一轮：补建延迟最坏 = 窗口 + 一个扫描周期
     observation-scan-interval-ms: 60000
+    # 告警恢复 → 工单联动策略（方案②，2026-10-01 拍板 hint 默认）：
+    #   hint=活动流提示可关单（不改状态）/ auto=最后一条关联告警恢复自动 RESOLVED（有人动过则只提示）/ off=不联动
+    resolve-close-policy: ${ALERT_RESOLVE_CLOSE_POLICY:hint}
+    # 通知链静默看门狗（方案③）：扫描间隔即健康窗口（有发送 0 成功 → OpsBrainNotifySilent 元告警）
+    notify-watchdog:
+      enabled: ${ALERT_NOTIFY_WATCHDOG_ENABLED:true}
+      scan-interval-ms: ${ALERT_NOTIFY_WATCHDOG_SCAN_INTERVAL_MS:300000}
 
     # ==================== 全局风暴模式（PRD FR-2.5） ====================
     # 全局告警速率超阈值后进入风暴模式：P0/P1 高危照常建单，

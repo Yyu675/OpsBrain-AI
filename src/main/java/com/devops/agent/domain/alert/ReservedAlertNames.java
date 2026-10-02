@@ -27,4 +27,29 @@ public final class ReservedAlertNames {
      * 速率回落后由风暴守卫自动标记恢复。
      */
     public static final String STORM_SUMMARY = "OpsBrainAlertStormSummary";
+
+    /** 日志管道静默元告警名（LogsPipelineWatchdogScheduler 构造上报）。 */
+    public static final String LOGS_SILENT = "OpsBrainLogsSilent";
+
+    /**
+     * 通知管道静默元告警名（NotifySilentWatchdogScheduler 构造上报，评审项③）。
+     * 配了渠道但窗口内发送成功数为 0 时上报——「P0 提醒发不出去」是比
+     * 任何单条业务告警都紧急的信号。
+     */
+    public static final String NOTIFY_SILENT = "OpsBrainNotifySilent";
+
+    /**
+     * 是否平台保留信号（恒真心跳 / 静默元告警 / 风暴摘要 / 日志-通知静默）。
+     * <p>它们报的是<b>平台自身健康</b>而非业务故障：诊断跳过（对管道告警跑 LLM
+     * 只会烧钱得 NO_DATA）、风暴期豁免放行（平台自监控在风暴里更要可见）。
+     * 新增保留名必须同步进本集合——2026-10-01 前 LOGS_SILENT 就漏在两处名单外，
+     * 是「常量加了但使用方各写各的」这种发散的直接后果。</p>
+     */
+    public static boolean isReserved(String name) {
+        return PIPELINE_WATCHDOG.equals(name)
+                || PIPELINE_SILENT.equals(name)
+                || STORM_SUMMARY.equals(name)
+                || LOGS_SILENT.equals(name)
+                || NOTIFY_SILENT.equals(name);
+    }
 }

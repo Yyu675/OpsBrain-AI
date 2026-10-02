@@ -165,7 +165,7 @@ public class AlertQueryService {
      */
     public Alert resolve(Long id) {
         Alert alert = requireExisting(id);
-        int rows = alertRepository.resolve(id);
+        int rows = alertRepository.resolve(id, null);
         if (rows == 0) {
             throw new IllegalStateException("告警已恢复，无需重复操作");
         }

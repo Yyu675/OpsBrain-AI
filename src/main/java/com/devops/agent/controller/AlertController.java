@@ -145,6 +145,25 @@ public class AlertController {
     private int pipelineHeartbeatSilenceMinutes;
 
     /**
+     * 通知链自监控快照（方案③，与 /logs-heartbeat 同族，告警页/效能卡读它）。
+     * attempts/successes/failed/degraded=进程启动以来累计；lastSuccessAt=ISO 或 null；
+     * silent=true 表示最近窗口有发送 0 成功（已上报 OpsBrainNotifySilent 元告警）；
+     * configured=false=未配置渠道（未知态——按「未配置」呈现，不是「故障」）。
+     */
+    @GetMapping("/notify-health")
+    public ApiResponse<java.util.Map<String, Object>> notifyHealth() {
+        if (notifyWatchdog == null) {
+            return ApiResponse.success(java.util.Map.of(
+                    "configured", false, "enabled", false, "silent", false));
+        }
+        return ApiResponse.success(notifyWatchdog.snapshot());
+    }
+
+    /** 通知看门狗（可选装配：BusinessMetrics 缺席时 bean 仍在，快照如实报 enabled=false） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.application.runtime.NotifySilentWatchdogScheduler notifyWatchdog;
+
+    /**
      * 自愈观察窗统计（FR-3.1 的可视面，效能大盘「自愈观察窗」卡读它）。
      * <p>观察窗关闭时返回 {@code enabled=false}，前端据此隐藏区块而非显示一排 0。</p>
      */

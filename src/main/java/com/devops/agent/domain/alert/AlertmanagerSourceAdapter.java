@@ -66,7 +66,8 @@ public class AlertmanagerSourceAdapter implements AlertSourceAdapter {
                 annotations,
                 a.descriptionText(),
                 a.getStartsAt(),
-                a.isResolved());
+                a.isResolved(),
+                a.getEndsAt());
     }
 
     /** 从标签推断业务模块：显式 module 标签（大写化）> OTHER。 */

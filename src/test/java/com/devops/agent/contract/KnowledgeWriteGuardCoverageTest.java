@@ -46,7 +46,8 @@ class KnowledgeWriteGuardCoverageTest {
     private static final Map<String, Integer> KNOWLEDGE_CONTROLLERS = Map.of(
             // 2026-09-18 V2：upload 端点新增（requireEdit）；
             // 顺带补登记 batch-import（9d2b8ff 引入时漏了更新此处）
-            "KnowledgeDocController.java", 9,
+            // 2026-10-02：+feedback/citations（有意豁免写守卫，见循环内豁免注释）
+            "KnowledgeDocController.java", 10,
             "KnowledgeCategoryController.java", 4,
             "KnowledgeTagController.java", 4,
             // V2 知识库顶层实体：create/update（requireEdit）+ reindex-all（requireDestructive）
@@ -89,6 +90,13 @@ class KnowledgeWriteGuardCoverageTest {
                 int to = (i + 1 < starts.size()) ? starts.get(i + 1) : code.length();
                 String block = code.substring(from, to);
                 if (!GUARDED.matcher(block).find()) {
+                    // 有意豁免（2026-10-02）：/feedback/citations 是「阅读反馈」不是内容编辑——
+                    // 任何登录用户可对答案点有用/没用，boost 是检索权重遥测不是知识内容。
+                    // 加守卫会把产品语义从「人人可反馈」收成 ADMIN/OPS，属于功能倒退
+                    // （该端点 javadoc 已写明此决策）。豁免按端点路径匹配，其余漏防照常红。
+                    if (block.contains("/feedback/citations")) {
+                        continue;
+                    }
                     unguarded.add(e.getKey() + " L" + lineOf(code, from)
                             + " → " + firstMethodSignature(block));
                 }

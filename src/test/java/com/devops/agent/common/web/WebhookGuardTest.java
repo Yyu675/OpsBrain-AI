@@ -227,4 +227,74 @@ class WebhookGuardTest {
                 .tryAcquire(anyString(), org.mockito.ArgumentMatchers.eq("10.0.0.1"),
                         anyInt(), anyLong(), anyBoolean());
     }
+
+    // ==================== 方案⑤ HMAC 签名通道 ====================
+
+    private static String hmacHex(String secret, String canonical) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    secret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] d = mac.doFinal(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** 构造带签名头与缓存 body 的请求（guard 以 instanceof 取缓存字节，故用真实 wrapper 类型 mock） */
+    private org.springframework.web.util.ContentCachingRequestWrapper signedRequest(
+            String ts, String body, String sig) {
+        org.springframework.web.util.ContentCachingRequestWrapper w =
+                mock(org.springframework.web.util.ContentCachingRequestWrapper.class);
+        when(w.getHeader(WebhookGuard.HMAC_TS_HEADER)).thenReturn(ts);
+        when(w.getHeader(WebhookGuard.HMAC_SIG_HEADER)).thenReturn(sig);
+        when(w.getContentAsByteArray())
+                .thenReturn(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        ReflectionTestUtils.setField(guard, "hmacSecret", "s3cr3t");
+        return w;
+    }
+
+    @Test
+    @DisplayName("方案⑤：合法签名 + 时间戳新鲜 → 放行（不依赖 token 头）")
+    void validHmacPasses() {
+        String ts = String.valueOf(System.currentTimeMillis() / 1000);
+        String body = "{\"alerts\":[],\"status\":\"firing\"}";
+        var req = signedRequest(ts, body, hmacHex("s3cr3t", ts + "." + body));
+        assertDoesNotThrow(() -> guard.verify(req));
+    }
+
+    @Test
+    @DisplayName("方案⑤：时间戳超 ±300s 容差 → 拒（重放窗口外）")
+    void expiredTimestampRejected() {
+        String ts = String.valueOf(System.currentTimeMillis() / 1000 - 400);
+        String body = "{}";
+        var req = signedRequest(ts, body, hmacHex("s3cr3t", ts + "." + body));
+        assertThrows(WebhookRejectedException.class, () -> guard.verify(req));
+    }
+
+    @Test
+    @DisplayName("方案⑤：hmacSecret 已配但调用方无签名头（Alertmanager 场景）→ token 通道共存放行")
+    void hmacConfiguredButUnsigned_tokenChannelCoexists() {
+        // 两个密钥语义不同、同时存在：secret=token 通道比对值；hmacSecret=签名通道密钥。
+        // Alertmanager v0.27 发不了自定义签名头——配了 hmacSecret 后它必须仍走 token 通。
+        ReflectionTestUtils.setField(guard, "hmacSecret", "unit-hmac-secret");
+        ReflectionTestUtils.setField(guard, "secret", "t3st-token");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn("t3st-token");
+        // X-Webhook-Signature/Timestamp 未 stub → mock 默认 null → 不进 HMAC 块
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("方案⑤：body 被篡改 → 签名不匹配拒绝（完整性绑定）")
+    void tamperedBodyRejected() {
+        String ts = String.valueOf(System.currentTimeMillis() / 1000);
+        String body = "{\"alerts\":[{\"x\":1}]}";
+        var req = signedRequest(ts, body, hmacHex("s3cr3t", ts + "." + "{\"alerts\":[]}"));
+        assertThrows(WebhookRejectedException.class, () -> guard.verify(req));
+    }
 }

@@ -657,6 +657,53 @@ public class TicketService {
         ticket.setResolveDeadline(base.plusMinutes(TicketEnums.Sla.resolveMinutes(p)));
     }
 
+    /**
+     * ① 告警升级联动（2026-10-01）：工单优先级**只升不降**。
+     *
+     * <p>告警侧 ON CONFLICT 刷新级别后，由 AlertService 比对新旧级别并调本方法。
+     * 降级抖动不会走到这里（调用方已挡），本方法再挡一层「newOrd >= curOrd 直接
+     * 返回」——双保险的因为是：优先级被反向改动会让 SLA 考核与值班排序失真。</p>
+     *
+     * <p>SLA 重算复用 {@link #applySlaDeadlines}，基准 = <b>建单时刻</b>而非当前
+     * 时刻（沿用其文档口径：中途提级不把已消耗时间一笔勾销）。更新走乐观锁
+     * （version+1，并发下 0 行 = 有人抢先改过 → 本轮放弃，下次重复推送重试）。</p>
+     *
+     * @return 变更串 {@code "P2 → P0"}；无需变更/工单不存在/并发冲突返回 null
+     */
+    public String raisePriorityFromAlert(String ticketId, String newPriority) {
+        DevOpsTicket ticket = ticketRepository.findById(ticketId);
+        if (ticket == null) {
+            log.warn("⚠️ [TicketService] 升级联动找不到工单 | ticketId={}", ticketId);
+            return null;
+        }
+        String cur = ticket.getPriority();
+        int curOrd = priorityOrdinal(cur);
+        int newOrd = priorityOrdinal(newPriority);
+        if (newOrd < 0 || curOrd < 0 || newOrd >= curOrd) {
+            return null; // 非法值或并非收紧（只升不降）
+        }
+        ticket.setPriority(newPriority);
+        applySlaDeadlines(ticket, ticket.getCreateTime());
+        int rows = ticketRepository.update(ticket); // 乐观锁 6.11
+        if (rows == 0) {
+            log.warn("⚠️ [TicketService] 升级联动乐观锁冲突，本轮放弃 | ticketId={}", ticketId);
+            return null;
+        }
+        return cur + " → " + newPriority;
+    }
+
+    /** 优先级序数（P0=0 最紧 … P3=3 最松）；未知值 -1（调用方按不变更处理）。 */
+    private static int priorityOrdinal(String priority) {
+        if (priority == null) return -1;
+        return switch (priority.trim().toUpperCase()) {
+            case "P0" -> 0;
+            case "P1" -> 1;
+            case "P2" -> 2;
+            case "P3" -> 3;
+            default -> -1;
+        };
+    }
+
     // ==================== B1 首响 / 升级 ====================
 
     /**

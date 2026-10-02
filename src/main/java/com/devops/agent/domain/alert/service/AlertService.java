@@ -94,6 +94,10 @@ public class AlertService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.devops.agent.domain.healing.HealingAutoTrigger healingAutoTrigger;
 
+    /** 方案⑥ RED 流速面：字段注入保持既有构造兼容；bean 可缺席（@ConditionalOnProperty），计数处判空 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.infrastructure.metrics.BusinessMetrics businessMetrics;
+
     /**
      * V11：labels/annotations → JSON 串。字段注入保持 5 参构造兼容；
      * 缺装或序列化失败降级为 "{}"——原始标签是诊断增强而非主链，
@@ -202,6 +206,9 @@ public class AlertService {
                     objectMapper.getTypeFactory().constructMapType(
                             java.util.LinkedHashMap.class, String.class, String.class));
         } catch (Exception e) {
+            // 降级空 Map 是预期分支，但「库里存了坏 JSON」值得留痕——
+            // SilentCatch 契约：吞掉必须有线索，否则排查时现场无证据
+            log.warn("⚠️ [AlertService] labels/annotations JSON 解析失败（降级空 Map，本段跳过）| {}", e.getMessage());
             return Map.of();
         }
     }
@@ -272,6 +279,14 @@ public class AlertService {
     /** 观察窗口（分钟）：告警首次发生后等这么久，未自愈才建单 */
     @Value("${devops.alert.observation-window-minutes:10}")
     private int observationWindowMinutes;
+
+    /**
+     * 方案②告警恢复→工单联动策略（2026-10-01 拍板：hint 为默认）。
+     * hint=活动流提示可关单（不改状态）/ auto=最后一条关联告警恢复时自动
+     * RESOLVED（仍有人动作过则只提示）/ off=完全不联动。
+     */
+    @Value("${devops.alert.resolve-close-policy:hint}")
+    private String resolveClosePolicy;
 
     /** 观察补建的回看上限（小时）：更老的未建单活跃告警不再补建，防配置错配时反复捞同一批 */
     private static final int OBSERVATION_LOOKBACK_HOURS = 24;
@@ -494,7 +509,7 @@ public class AlertService {
                     labels.put("system", pathSystem);
                     return new AlertSignal(s.alertName(), s.service(), s.severity(), s.module(),
                             s.fingerprint(), s.source(), labels, s.annotations(),
-                            s.description(), s.startsAt(), s.resolved());
+                            s.description(), s.startsAt(), s.resolved(), s.endsAt());
                 })
                 .toList();
     }
@@ -611,10 +626,8 @@ public class AlertService {
         if (alert.isHighRisk()) {
             return false;
         }
-        String name = alert.getAlertName();
-        return !ReservedAlertNames.PIPELINE_WATCHDOG.equals(name)
-                && !ReservedAlertNames.PIPELINE_SILENT.equals(name)
-                && !ReservedAlertNames.STORM_SUMMARY.equals(name);
+        // 平台保留信号风暴期照常放行建单——风暴里平台自监控更要可见
+        return !ReservedAlertNames.isReserved(alert.getAlertName());
     }
 
     /**
@@ -657,7 +670,7 @@ public class AlertService {
     private void resolveStormSummary() {
         try {
             alertRepository.findActiveByDedupKey(STORM_SUMMARY_DEDUP_KEY).ifPresent(a -> {
-                alertRepository.resolve(a.getId());
+                alertRepository.resolve(a.getId(), null);
                 a.setStatus("RESOLVED");
                 alertNotifier.broadcastResolved(a);
                 log.info("✅ [AlertService] 风暴摘要事件已自动恢复 | id={}", a.getId());
@@ -709,15 +722,22 @@ public class AlertService {
             log.warn("⚠️ [AlertService] 告警缺少 alertname，跳过 | fingerprint={}", signal.fingerprint());
             return;
         }
+        if (businessMetrics != null) businessMetrics.incAlertReceived();
 
         // 计算去重键：排除 alertname/service/severity 避免重复
         String dedupKey = computeDedupKey(alertName, service, signal.labels());
 
-        // 已恢复告警：标记活跃告警为 RESOLVED
+        // 已恢复告警：标记活跃告警为 RESOLVED（endsAt 穿透——真实恢复时刻）
         if (signal.resolved()) {
-            handleResolvedAlert(dedupKey);
+            handleResolvedAlert(dedupKey, signal.endsAt());
             return;
         }
+
+        // 方案①升级检测：upsert 前 advisory 预读旧级别——写仍走原子 upsert
+        // （批 76 语义不变），预读只为拿「升级前」比对；并发同键双推最坏是
+        // 重复一条升级活动流，级别落库本身由 upsert 的 EXCLUDED 保证。
+        String prevLevel = alertRepository.findActiveByDedupKey(dedupKey)
+                .map(Alert::getLevel).orElse(null);
 
         // 原子去重（批 76 / P2-1，报告 174 审计件）：单条 upsert 完成
         // 「新告警插入 或 既有活跃告警计次」。原「查后插」在并发同键推送下，
@@ -739,8 +759,12 @@ public class AlertService {
             proceedNewAlert(candidate, alertName, service);
         } else {
             // 重复告警计次完成：查最新态广播更新（非阻塞旁路——推送失败不影响主流程）
-            alertRepository.findActiveByDedupKey(dedupKey)
-                    .ifPresent(alertNotifier::broadcastUpdate);
+            // upsert 已把 labels/description 刷为源真值——此处拿到的是刷新后的行
+            alertRepository.findActiveByDedupKey(dedupKey).ifPresent(latest -> {
+                alertNotifier.broadcastUpdate(latest);
+                maybeEscalate(prevLevel, latest);
+            });
+            if (businessMetrics != null) businessMetrics.incAlertDedup();
         }
     }
 
@@ -754,16 +778,128 @@ public class AlertService {
      * （可能已在超时窗口内自动恢复）。
      * </p>
      */
-    private void handleResolvedAlert(String dedupKey) {
+    private void handleResolvedAlert(String dedupKey, java.time.OffsetDateTime endsAt) {
         Optional<Alert> existing = alertRepository.findActiveByDedupKey(dedupKey);
         if (existing.isPresent()) {
             Alert alert = existing.get();
-            alertRepository.resolve(alert.getId());
-            log.info("✅ [AlertService] 告警已恢复 | id={} | dedupKey={}", alert.getId(), dedupKey);
+            // endsAt 穿透（方案④）：Alertmanager 恢复推送里的真实结束时刻；
+            // 零值（0001 年）/缺失回退当前时间——与前端 parseDate 的 isResolved 判零同约定
+            java.time.OffsetDateTime sane = (endsAt != null && endsAt.getYear() > 1) ? endsAt : null;
+            java.time.LocalDateTime resolvedAt = toLocalDateTime(sane);
+            alertRepository.resolve(alert.getId(), resolvedAt);
+            alert.setStatus("RESOLVED");
+            alert.setResolvedAt(resolvedAt);
+            log.info("✅ [AlertService] 告警已恢复 | id={} | dedupKey={} | resolvedAt={}",
+                    alert.getId(), dedupKey, resolvedAt);
             // WebSocket 广播恢复（非阻塞旁路——推送失败不影响主流程）
             alertNotifier.broadcastResolved(alert);
+            // 方案②：恢复 → 关联工单联动（hint 提示 / auto 自动关 / off 跳过）
+            applyResolveClosePolicy(alert, resolvedAt);
         } else {
             log.debug("ℹ️ [AlertService] 收到已恢复告警，但无活跃记录 | dedupKey={}", dedupKey);
+        }
+    }
+
+    /**
+     * 方案②：告警恢复 → 关联工单联动。
+     * <p>
+     * hint（默认）=只在活动流留「可关单」提示，状态永远人来拍——与本项目
+     * 「AI 不替人决策」同调。auto=最后一条活跃告警恢复才自动 RESOLVED
+     * （组单还有其它活跃告警时降级为提示，避免误关）；自动关失败降级为提示，
+     * 「恢复」这件事在工单上必有痕。off=完全不联动。
+     * </p>
+     */
+    private void applyResolveClosePolicy(Alert alert, java.time.LocalDateTime resolvedAt) {
+        try {
+            String ticketId = alert.getTicketId();
+            if (ticketId == null || ticketId.isBlank() || "off".equalsIgnoreCase(resolveClosePolicy)) {
+                return;
+            }
+            String at = resolvedAt != null ? resolvedAt.toString() : "—";
+            if ("auto".equalsIgnoreCase(resolveClosePolicy)) {
+                try {
+                    long others = alertRepository.countOtherActiveByTicket(ticketId, alert.getId());
+                    if (others > 0) {
+                        ticketService.recordActivity(ticketId, "success", "关联告警已恢复",
+                                "告警「" + alert.getAlertName() + "」已恢复（" + at + "）；该工单仍关联 "
+                                        + others + " 条活跃告警，未自动关单", alertCreator, false);
+                        return;
+                    }
+                    ticketService.updateStatus(ticketId, TicketEnums.Status.RESOLVED);
+                    ticketService.recordActivity(ticketId, "success", "关联告警已恢复",
+                            "最后一条关联告警「" + alert.getAlertName() + "」已恢复（" + at
+                                    + "），自动关单", alertCreator, true);
+                    log.info("🎫 [AlertService] 告警恢复自动关单 | ticketId={} | alertId={}",
+                            ticketId, alert.getId());
+                    return;
+                } catch (Exception e) {
+                    log.warn("⚠️ [AlertService] 自动关单失败，降级为提示 | ticketId={} | {}",
+                            ticketId, e.getMessage());
+                    // 落到下方 hint 留痕：恢复事件在工单上必须有痕
+                }
+            }
+            ticketService.recordActivity(ticketId, "success", "关联告警已恢复",
+                    "告警「" + alert.getAlertName() + "」已恢复（" + at + "），处置完成可关单",
+                    alertCreator, false);
+        } catch (Exception e) {
+            log.warn("⚠️ [AlertService] 恢复关单联动失败（不影响告警链）| alertId={} | {}",
+                    alert.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 方案①：重复告警级别升级 → 工单联动（只升不降）。
+     * <p>
+     * prevLevel 是 upsert 前的 advisory 预读值；库里已被 EXCLUDED 刷成源真值。
+     * 升级（P0 更紧急）才动工单：priority 单向收紧 + SLA 以建单时刻为基准重算
+     * （单源 applySlaDeadlines）+ 活动流留痕 + 升到 P0/P1 追加强提醒——
+     * 建单通知对老单早已发过，「升级」是必须触达的新事实。降级只跟告警库，
+     * 不动处置中的工单（label 抖动不该把在办工单降级）。
+     * </p>
+     */
+    private void maybeEscalate(String prevLevel, Alert alert) {
+        try {
+            if (prevLevel == null || alert == null || alert.getTicketId() == null) {
+                return;
+            }
+            String newLevel = alert.getLevel();
+            if (newLevel == null || newLevel.equals(prevLevel)) {
+                return;
+            }
+            int prevOrd = levelOrdinal(prevLevel);
+            int newOrd = levelOrdinal(newLevel);
+            if (prevOrd < 0 || newOrd < 0 || newOrd >= prevOrd) {
+                return; // 序号不可比或未变/降级：只跟告警库，不动工单
+            }
+            String change = ticketService.raisePriorityFromAlert(
+                    alert.getTicketId(), mapLevelToPriority(newLevel));
+            if (change == null) {
+                return; // 工单缺席 / 乐观锁冲突 / 本就更高（内部已留线索）
+            }
+            String title = "⬆️ 告警升级 " + newLevel + " · " + alert.getAlertName();
+            ticketService.recordActivity(alert.getTicketId(), "warning", "告警级别升级",
+                    "告警「" + alert.getAlertName() + "」级别 " + prevLevel + " → " + newLevel
+                            + "（工单优先级 " + change + "）", alertCreator, true);
+            if (businessMetrics != null) {
+                // 升级本身也是信号：计入到达面不影响（到达面在入口已计），此处不重复
+            }
+            if (alert.isHighRisk()) {
+                try {
+                    StringBuilder md = new StringBuilder();
+                    md.append("### ").append(title).append("\n\n")
+                      .append("- **级别**：").append(prevLevel).append(" → ").append(newLevel).append("\n")
+                      .append("- **服务**：").append(alert.getService() != null ? alert.getService() : "—").append("\n")
+                      .append("- **工单**：").append(alert.getTicketId()).append("\n")
+                      .append("- **时间**：").append(alert.getLastOccurredAt()).append("\n");
+                    notifier.send(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md.toString()));
+                } catch (Exception ne) {
+                    log.warn("⚠️ [AlertService] 升级通知失败（不影响主链）| {}", ne.getMessage());
+                }
+            }
+            log.info("⬆️ [AlertService] 告警级别升级联动 | alertId={} | {} → {} | ticket={} | {}",
+                    alert.getId(), prevLevel, newLevel, alert.getTicketId(), change);
+        } catch (Exception e) {
+            log.warn("⚠️ [AlertService] 升级联动失败（不影响告警链）| {}", e.getMessage());
         }
     }
 
@@ -942,9 +1078,7 @@ public class AlertService {
         }
         // 保留告警（恒真心跳/风暴摘要）不触发诊断——它们是管道健康信号而非故障，
         // 每次触发就诊断一次只会浪费 AI 调用且恒 NO_DATA（monitoring-pipeline 无指标）
-        if (ReservedAlertNames.PIPELINE_WATCHDOG.equals(alert.getAlertName())
-                || ReservedAlertNames.PIPELINE_SILENT.equals(alert.getAlertName())
-                || ReservedAlertNames.STORM_SUMMARY.equals(alert.getAlertName())) {
+        if (ReservedAlertNames.isReserved(alert.getAlertName())) {
             log.debug("⏭️ [AlertService] 保留告警跳过诊断 | alertName={}", alert.getAlertName());
             return;
         }
@@ -985,6 +1119,7 @@ public class AlertService {
             return;
         }
 
+        long t0 = System.nanoTime();
         try {
             String priority = mapLevelToPriority(alert.getLevel());
             String category = MODULE_TO_CATEGORY.getOrDefault(module, DEFAULT_CATEGORY);
@@ -1024,6 +1159,9 @@ public class AlertService {
 
             log.info("🎫 [AlertService] 告警自动建单成功 | alertId={} | alertName={} | ticketId={} | priority={} | category={}",
                     alert.getId(), alertName, ticket != null ? ticket.getId() : null, priority, category);
+            if (businessMetrics != null) {
+                businessMetrics.recordTicketAutoCreate((System.nanoTime() - t0) / 1_000_000, true);
+            }
 
             // L2 通知（方向二）：高危告警强提醒值班 SRE（蓝图 §二 P0/P1 一键弹窗强提醒）。
             // 旁路——DingTalkNotifier 内部异步 + 失败仅 WARN，不影响建单主流程。
@@ -1032,6 +1170,9 @@ public class AlertService {
         } catch (Exception e) {
             log.error("❌ [AlertService] 告警自动建单失败 | alertId={} | alertName={} | error={}",
                     alert.getId(), alertName, e.getMessage(), e);
+            if (businessMetrics != null) {
+                businessMetrics.recordTicketAutoCreate((System.nanoTime() - t0) / 1_000_000, false);
+            }
         }
     }
 

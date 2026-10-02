@@ -76,6 +76,10 @@ public class CompositeNotifier implements Notifier {
      */
     private final List<Notifier> delegates;
 
+    /** 方案③ RED 流速面：字段注入保持既有构造兼容；bean 可缺席，记账处判空 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.infrastructure.metrics.BusinessMetrics businessMetrics;
+
     public CompositeNotifier(List<Notifier> delegates) {
         this.delegates = delegates == null ? List.of() : List.copyOf(delegates);
         log.info("📣 [Notify] 通知渠道已注册 {} 个: {}",
@@ -124,16 +128,28 @@ public class CompositeNotifier implements Notifier {
         if (message == null) return;
 
         boolean dispatched = false;
+        int delivered = 0;
+        int failedCount = 0;
         for (Notifier delegate : delegates) {
             if (!delegate.available()) continue;
             dispatched = true;
             try {
                 delegate.send(message);
+                delivered++;
             } catch (RuntimeException e) {
                 // 单渠道失败不阻断其余渠道：通知的价值在「至少一条路送达」
+                failedCount++;
                 log.warn("⚠️ [Notify] 渠道发送异常（已隔离，其余渠道继续）| channel={} | {}",
                         delegate.channel(), e.getMessage());
             }
+        }
+
+        // 方案③（2026-10-01）：每次发送的结果态入账——success（≥1 受理）/
+        // failed（有渠道全抛）/ degraded（无渠道）。看门狗与效能卡读它；
+        // 「有渠道在却全失败」连续成窗即触发 OpsBrainNotifySilent 元告警。
+        if (businessMetrics != null) {
+            businessMetrics.notifyOutcome(delivered > 0 ? "success"
+                    : (failedCount > 0 ? "failed" : "degraded"));
         }
 
         if (!dispatched) {

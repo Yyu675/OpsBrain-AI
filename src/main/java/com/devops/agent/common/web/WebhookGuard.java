@@ -46,9 +46,25 @@ public class WebhookGuard {
 
     public static final String TOKEN_HEADER = "X-Webhook-Token";
 
+    /** 方案⑤ HMAC 通道（2026-10-01）：签名头与时间戳头 */
+    public static final String HMAC_SIG_HEADER = "X-Webhook-Signature";
+    public static final String HMAC_TS_HEADER = "X-Webhook-Timestamp";
+
+    /** 签名时间戳容差（秒）——防重放窗口，超出即拒 */
+    private static final long HMAC_TOLERANCE_SECONDS = 300;
+
     /** 共享密钥。为空则跳过校验（向后兼容，生产必须配置） */
     @Value("${devops.alert.webhook.secret:}")
     private String secret;
+
+    /**
+     * 方案⑤ HMAC-SHA256 签名密钥（可选，与 token/Bearer 通道并存互不排斥）。
+     * 未配置 → 签名头被忽略走原 token 链（Alertmanager 兼容，现网零破坏）；
+     * 配置后 → 带签名头的请求按 {@code ts + "." + rawBody} 常量时间校验 + ±5min 防重放。
+     * 完整性绑定 body——token 只能证明「谁发的」，签名还能证明「内容没被改过」。
+     */
+    @Value("${devops.alert.webhook.hmac-secret:}")
+    private String hmacSecret;
 
     /**
      * 生产密钥强制（批 75 / P1-2，报告 174 审计）：
@@ -99,6 +115,15 @@ public class WebhookGuard {
             throw WebhookRejectedException.rateLimited((int) Math.ceil(rateWindowMs / 1000.0));
         }
 
+        // 1.5) HMAC 签名通道（方案⑤）。带签名头且已配 hmac-secret 时独立校验并
+        //      直接放行（验过 body 完整性 + 时间戳新鲜度）；二者任缺则回落到
+        //      下方 token/Bearer 通道——两条通道同强度、互为兜底。
+        String sig = request.getHeader(HMAC_SIG_HEADER);
+        if (sig != null && !sig.isBlank() && hmacSecret != null && !hmacSecret.isBlank()) {
+            verifyHmac(request, sig, clientIp);
+            return;
+        }
+
         // 2) 共享密钥
         if (secret == null || secret.isBlank()) {
             // 批 75 / P1-2：prod 无密钥=拒绝处理而非 WARN 放行。
@@ -132,6 +157,63 @@ public class WebhookGuard {
         if (provided == null || !constantTimeEquals(provided, secret)) {
             log.warn("🚫 [WebhookGuard] 密钥校验失败 | ip={} | hasHeader={}", clientIp, provided != null);
             throw WebhookRejectedException.unauthorized();
+        }
+    }
+
+    /**
+     * 方案⑤：校验 {@code HMAC-SHA256(hmacSecret, ts + "." + rawBody)} 签名。
+     * <p>
+     * rawBody 来自 {@link WebhookBodyCachingFilter} 包装的请求（控制器方法体内
+     * 取流为时已晚——Spring 已消费，必须过滤器缓存）。时戳 ±300s 防重放；
+     * 签名十六进制大小写不敏感，常量时间比较。
+     * </p>
+     */
+    private void verifyHmac(HttpServletRequest request, String sig, String clientIp) {
+        String ts = request.getHeader(HMAC_TS_HEADER);
+        if (ts == null || ts.isBlank()) {
+            log.warn("🚫 [WebhookGuard] 缺时间戳头 | ip={}", clientIp);
+            throw WebhookRejectedException.unauthorized();
+        }
+        long tsSec;
+        try {
+            tsSec = Long.parseLong(ts.trim());
+        } catch (NumberFormatException e) {
+            log.warn("🚫 [WebhookGuard] 时间戳非 epoch 秒 | ip={}", clientIp);
+            throw WebhookRejectedException.unauthorized();
+        }
+        if (Math.abs(System.currentTimeMillis() / 1000 - tsSec) > HMAC_TOLERANCE_SECONDS) {
+            log.warn("🚫 [WebhookGuard] 时间戳超容差（{}s）| ip={}", HMAC_TOLERANCE_SECONDS, clientIp);
+            throw WebhookRejectedException.unauthorized();
+        }
+        byte[] raw = request instanceof org.springframework.web.util.ContentCachingRequestWrapper w
+                ? w.getContentAsByteArray() : new byte[0];
+        if (raw.length == 0) {
+            // 过滤器缺席/未消费：无法验证 body 完整性 → 拒（fail-closed，签名通道不能裸过）
+            log.warn("🚫 [WebhookGuard] 缺缓存 body（WebhookBodyCachingFilter 未生效？）| ip={}", clientIp);
+            throw WebhookRejectedException.unauthorized();
+        }
+        String canonical = ts + "." + new String(raw, StandardCharsets.UTF_8);
+        if (!constantTimeEquals(hmacHex(canonical), sig.trim().toLowerCase())) {
+            log.warn("🚫 [WebhookGuard] HMAC 签名校验失败 | ip={}", clientIp);
+            throw WebhookRejectedException.unauthorized();
+        }
+        log.debug("✅ [WebhookGuard] HMAC 通道通过 | ip={}", clientIp);
+    }
+
+    /** 十六进制小写 HMAC-SHA256（JDK 强制算法；不可达时抛 IllegalStateException 而非静默放行） */
+    private String hmacHex(String canonical) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    hmacSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] digest = mac.doFinal(canonical.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException | java.security.InvalidKeyException e) {
+            throw new IllegalStateException("HMAC-SHA256 不可用", e);
         }
     }
 

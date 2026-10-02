@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -88,6 +89,8 @@ class AlertServiceTest {
         ReflectionTestUtils.setField(service, "alertEnabled", true);
         ReflectionTestUtils.setField(service, "autoTicketEnabled", true);
         ReflectionTestUtils.setField(service, "alertCreator", "alert-bot");
+        // 方案②恢复联动策略字段（非 Spring 环境不注入）：hint=活动流提示（拍板默认值）
+        ReflectionTestUtils.setField(service, "resolveClosePolicy", "hint");
         ReflectionTestUtils.setField(service, "aggregateEnabled", true);
         ReflectionTestUtils.setField(service, "aggregateWindowMinutes", 5);
         ReflectionTestUtils.setField(service, "autoDiagnoseEnabled", true);
@@ -302,7 +305,7 @@ class AlertServiceTest {
             service.processWebhook(webhook(incoming("resolved",
                     labels("alertname", "HighCpu", "service", "api"))));
 
-            verify(alertRepository).resolve(7L);
+            verify(alertRepository).resolve(eq(7L), any());
             verify(notifier).broadcastResolved(active);
             // 恢复不该建单，也不该新增告警记录
             verify(alertRepository, never()).insertOrIncrement(any());
@@ -1016,7 +1019,7 @@ class AlertServiceTest {
             service.processWebhook(firingBatch("D"));
 
             // 摘要事件被自动恢复，新告警 D 走正常链路（观察窗未开 → 直接建单）
-            verify(alertRepository).resolve(eq(99L));
+            verify(alertRepository).resolve(eq(99L), any());
         }
         @Test
         @DisplayName("风暴状态快照：反映当前速率与状态（告警列表横幅的数据源）")
@@ -1098,6 +1101,125 @@ class AlertServiceTest {
             verify(alertRepository, never()).findObservationDue(any(), anyInt(), anyInt(), anyInt());
             verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(),
                     anyString(), any(), anyString(), anyString(), anyString(), anyString());
+        }
+    }
+
+    // ==================== 方案①升级 + 方案②恢复关单联动（2026-10-01） ====================
+
+    private Alert activeAlert(String level, String ticketId) {
+        Alert a = new Alert();
+        a.setId(42L);
+        a.setAlertName("HighCPU");
+        a.setDedupKey("dk");
+        a.setStatus("FIRING");
+        a.setLevel(level);
+        a.setService("order-service");
+        a.setTicketId(ticketId);
+        a.setLastOccurredAt(java.time.LocalDateTime.now());
+        return a;
+    }
+
+    @Nested
+    @DisplayName("方案①重复告警级别升级 + 方案②恢复关单联动")
+    class EscalationAndResolvePolicy {
+
+        @Test
+        @DisplayName("resolved 的 endsAt 穿透进 resolve——MTTR 用真实恢复时刻而非到达时刻")
+        void resolvedPassesEndsAt() {
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P2", null)));
+            OffsetDateTime endsAt = OffsetDateTime.parse("2026-09-30T00:30:00Z");
+            AlertmanagerWebhook.Alert a = incoming("resolved",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "warning"));
+            a.setEndsAt(endsAt);
+            service.processWebhook(webhook(a));
+
+            java.time.LocalDateTime expected = java.time.LocalDateTime.ofInstant(
+                    endsAt.toInstant(), java.time.ZoneId.systemDefault());
+            verify(alertRepository).resolve(42L, expected);
+        }
+
+        @Test
+        @DisplayName("级别升级（P2→P0）→ 工单只升不降：priority 收紧 + 活动流留痕")
+        void escalationRaisesTicketPriority() {
+            when(alertRepository.insertOrIncrement(any(Alert.class))).thenReturn(false);
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(
+                    Optional.of(activeAlert("P2", "TK-1")),
+                    Optional.of(activeAlert("P0", "TK-1")));
+            when(ticketService.raisePriorityFromAlert("TK-1", "P0")).thenReturn("P2 → P0");
+
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "critical"))));
+
+            verify(ticketService).raisePriorityFromAlert("TK-1", "P0");
+            verify(ticketService).recordActivity(eq("TK-1"), eq("warning"),
+                    contains("告警级别升级"), contains("P2 → P0"), eq("alert-bot"), eq(true));
+            verify(dingTalk).send(any());
+        }
+
+        @Test
+        @DisplayName("级别降级（P0→P2）只跟告警库，不动处置中的工单")
+        void downgradeLeavesTicketAlone() {
+            when(alertRepository.insertOrIncrement(any(Alert.class))).thenReturn(false);
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(
+                    Optional.of(activeAlert("P0", "TK-1")),
+                    Optional.of(activeAlert("P2", "TK-1")));
+
+            service.processWebhook(webhook(incoming("firing",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "warning"))));
+
+            verify(ticketService, never()).raisePriorityFromAlert(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("hint（默认拍板）：恢复只留活动流提示，不改工单状态")
+        void hintRecordsButNeverCloses() {
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P2", "TK-1")));
+            service.processWebhook(webhook(incoming("resolved",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "warning"))));
+
+            verify(ticketService).recordActivity(eq("TK-1"), anyString(),
+                    contains("关联告警已恢复"), contains("可关单"), eq("alert-bot"), eq(false));
+            verify(ticketService, never()).updateStatus(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("auto + 最后一条活跃恢复 → 自动关单；组内仍有其它活跃告警只提示不关")
+        void autoClosesOnlyLastActive() {
+            ReflectionTestUtils.setField(service, "resolveClosePolicy", "auto");
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P2", "TK-1")));
+            when(alertRepository.countOtherActiveByTicket(anyString(), anyLong())).thenReturn(0L);
+            service.processWebhook(webhook(incoming("resolved",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "warning"))));
+
+            verify(ticketService).updateStatus("TK-1", "RESOLVED");
+            // recordActivity 参数位：text=「关联告警已恢复」（标题位），detail=「自动关单」
+            verify(ticketService).recordActivity(eq("TK-1"), anyString(),
+                    contains("关联告警已恢复"), contains("自动关单"), eq("alert-bot"), eq(true));
+
+            // 组单还有其它活跃告警：只提示不关
+            org.mockito.Mockito.reset(ticketService);
+            when(alertRepository.countOtherActiveByTicket(anyString(), anyLong())).thenReturn(2L);
+            service.processWebhook(webhook(incoming("resolved",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "warning"))));
+            verify(ticketService, never()).updateStatus(anyString(), anyString());
+            verify(ticketService).recordActivity(eq("TK-1"), anyString(),
+                    contains("关联告警已恢复"), contains("未自动关单"), eq("alert-bot"), eq(false));
+        }
+
+        @Test
+        @DisplayName("off：恢复完全不碰工单")
+        void offDoesNothing() {
+            ReflectionTestUtils.setField(service, "resolveClosePolicy", "off");
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P2", "TK-1")));
+            service.processWebhook(webhook(incoming("resolved",
+                    labels("alertname", "HighCPU", "service", "order", "severity", "warning"))));
+
+            verify(ticketService, never()).recordActivity(any(), any(), any(), any(), any(), anyBoolean());
+            verify(ticketService, never()).updateStatus(anyString(), anyString());
         }
     }
 
