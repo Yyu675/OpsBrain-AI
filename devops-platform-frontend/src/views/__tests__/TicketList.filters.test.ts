@@ -17,7 +17,7 @@
  * 只 mock api 层，router 用真实的 memory history —— URL 同步正是被测对象，
  * mock 掉 router 等于什么都没测。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createRouter, createMemoryHistory, type Router } from 'vue-router'
@@ -77,6 +77,12 @@ const emptyTicket = (id: string): FrontendTicket =>
 
 let router: Router
 
+// 每测各挂但从不卸载 → 陈旧实例的 useUrlFilters watch / router.replace 队列会拖进
+// 环境拆卸窗口（泄漏面照补）。注意：拆卸期 console 撞 RPC 关闭的
+// EnvironmentTeardownError 并非全由此来（本文件卸载后仍 2 连发实测）——
+// 那条竞态已由 vitest.config 的 disableConsoleIntercept 结构性根除。
+const mountedWrappers: VueWrapper[] = []
+
 const mountAt = async (url: string) => {
   api.fetchTickets.mockResolvedValue({
     tickets: [emptyTicket('T-1')], total: 1, totalPages: 1, currentPage: 1, pageSize: 10,
@@ -111,6 +117,7 @@ const mountAt = async (url: string) => {
   })
   await vi.waitFor(() => expect(api.fetchTickets).toHaveBeenCalled())
   await wrapper.vm.$nextTick()
+  mountedWrappers.push(wrapper)
   return wrapper
 }
 
@@ -144,6 +151,10 @@ beforeEach(() => {
   localStorage.clear()
   setActivePinia(createPinia())
   vi.clearAllMocks()
+})
+
+afterEach(() => {
+  mountedWrappers.splice(0).forEach(w => w.unmount())
 })
 
 describe('TicketList — URL → 筛选状态（进入时读取）', () => {
