@@ -43,6 +43,8 @@ export const API_ENDPOINTS = {
   KNOWLEDGE_DOC_TAGS_HOT: `${API_BASE}/knowledge/docs/tags/hot`,
   KNOWLEDGE_CATEGORIES: `${API_BASE}/knowledge/categories`,
   KNOWLEDGE_BASE: `${API_BASE}/knowledge`,
+  // 知识运营看板统计（Step 3 / PRD §5.5）
+  KNOWLEDGE_OPS_STATS: `${API_BASE}/knowledge/ops/stats`,
 
   // M7 工单
   TICKETS: `${API_BASE}/tickets`,
