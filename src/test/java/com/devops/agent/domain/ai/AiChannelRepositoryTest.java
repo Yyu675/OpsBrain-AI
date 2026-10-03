@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
  *
  * <h3>覆盖重点</h3>
  * <ul>
- *   <li><b>P0 只写「启动镜像」幂等 upsert</b>，9 列参数顺序与语句一一对应；</li>
+ *   <li><b>P0 只写「启动镜像」幂等 upsert</b>，15 列参数顺序与语句一一对应（9 主列 + fallback 四列 + protocol/provider，协议显式批后 9→13→15）；</li>
  *   <li><b>status 缺省落 ACTIVE</b>（镜像构造可不显式给状态）；</li>
  *   <li><b>embedding 的 model/dimension 不串到 chat 专用列</b>；</li>
  *   <li>RowMapper 把 ResultSet 行映射回实体（含 apiKeyEnc 承载、dimension null 语义）。</li>
@@ -57,8 +57,8 @@ class AiChannelRepositoryTest {
         }
 
         @Test
-        @DisplayName("chat：13 列参数顺序与语句占位符一一对应（含 fallback 四列）")
-        void upsertChatBindsAllNineColumnsInOrder() {
+        @DisplayName("chat：15 列参数顺序与语句占位符一一对应（9 主列 + fallback 四列 + protocol/provider）")
+        void upsertChatBindsAllColumnsInOrder() {
             AiChannel chat = new AiChannel("chat", "https://dashscope.aliyuncs.com/compatible-mode/v1",
                     "enc:v1:AbC", "sk-ws-****7890", "qwen-turbo", "deepseek-v4-flash-0731",
                     null, null, "ACTIVE", null);
@@ -74,13 +74,14 @@ class AiChannelRepositoryTest {
             assertThat(sqlCaptor.getValue())
                     .contains("INSERT INTO sys_ai_channel")
                     .contains("ON CONFLICT (channel_key) DO UPDATE");
-            // 13 列参数顺序：channel_key, base_url, api_key_enc, key_masked,
+            // 15 列参数顺序：channel_key, base_url, api_key_enc, key_masked,
             //   turbo_model, reasoner_model, model, dimension, status,
-            //   fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked
+            //   fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked,
+            //   protocol（null → PROTOCOL_OPENAI_COMPATIBLE 默认落绑）、provider
             assertThat(argsCaptor.getValue()).containsExactly(
                     "chat", "https://dashscope.aliyuncs.com/compatible-mode/v1",
                     "enc:v1:AbC", "sk-ws-****7890", "qwen-turbo", "deepseek-v4-flash-0731",
-                    null, null, "ACTIVE", null, null, null, null);
+                    null, null, "ACTIVE", null, null, null, null, "OPENAI_COMPATIBLE", null);
         }
 
         @Test
@@ -96,7 +97,8 @@ class AiChannelRepositoryTest {
 
             assertThat(argsCaptor.getValue()).containsExactly(
                     "embedding", "https://x", "enc:v1:X", "sk-ws-****1",
-                    null, null, "qwen3.7-text-embedding", 1536, "ACTIVE", null, null, null, null);
+                    null, null, "qwen3.7-text-embedding", 1536, "ACTIVE",
+                    null, null, null, null, "OPENAI_COMPATIBLE", null);
         }
 
         @Test
@@ -113,7 +115,8 @@ class AiChannelRepositoryTest {
             // turbo/reasoner 列为 null（chat 专用），model/dimension 各自落位
             assertThat(argsCaptor.getValue()).containsExactly(
                     "embedding", "https://x", null, null,
-                    null, null, "qwen3.7-text-embedding", 1536, "ACTIVE", null, null, null, null);
+                    null, null, "qwen3.7-text-embedding", 1536, "ACTIVE",
+                    null, null, null, null, "OPENAI_COMPATIBLE", null);
         }
 
         @Test
@@ -131,10 +134,15 @@ class AiChannelRepositoryTest {
             org.mockito.ArgumentCaptor<Object[]> argsCaptor = argsCaptor();
             verify(jdbc).update(sqlCaptor.capture(), argsCaptor.capture());
 
-            assertThat(sqlCaptor.getValue()).contains("fallback_base_url").contains("fallback_api_key_enc");
-            // 末 4 位是 fallback 列，顺序与 SQL 一致
-            assertThat(argsCaptor.getValue()).endsWith(
-                    "https://api.deepseek.com/v1", "deepseek-chat", "enc:v1:Fb", "sk-fb-****5678");
+            assertThat(sqlCaptor.getValue()).contains("fallback_base_url").contains("fallback_api_key_enc")
+                    .contains("protocol").contains("provider");
+            // fallback 四列在 10~13 位，14~15 位 = protocol/provider（协议显式批加入）
+            assertThat(argsCaptor.getValue()).containsExactly(
+                    "chat", "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "enc:v1:AbC", "sk-ws-****7890", "qwen-turbo", "deepseek-v4-flash-0731",
+                    null, null, "ACTIVE",
+                    "https://api.deepseek.com/v1", "deepseek-chat", "enc:v1:Fb", "sk-fb-****5678",
+                    "OPENAI_COMPATIBLE", null);
         }
     }
 
@@ -145,7 +153,9 @@ class AiChannelRepositoryTest {
         @Test
         @DisplayName("findByKey 按渠道键查询，命中多条只取首条（stream.findFirst）")
         void findByKeyQueriesByChannelKey() {
-            String sql = "SELECT channel_key, base_url, api_key_enc, key_masked, turbo_model, reasoner_model, model, dimension, status, updated_at, fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked FROM sys_ai_channel WHERE channel_key = ?";
+            // SQL 从实现侧常量直引（同包）——COLS 增列时测试自动跟随，
+            // 不再留硬编码文本副本（V5 协议显式批改列后正是副本漂移爆了 6 红）
+            String sql = AiChannelRepository.FIND_BY_KEY_SQL;
             AiChannel row = mock(AiChannel.class);
             when(jdbc.query(eq(sql),
                     org.mockito.ArgumentMatchers.<RowMapper<AiChannel>>any(),
@@ -171,7 +181,7 @@ class AiChannelRepositoryTest {
         }
 
         @Test
-        @DisplayName("updateMerged：整行更新（P1 权威源），13 值 + WHERE 键一一对应")
+        @DisplayName("updateMerged：整行更新（P1 权威源），15 值 + WHERE 键一一对应")
         void updateMergedWritesAllColumnsWithWhereKey() {
             AiChannel merged = new AiChannel("chat", "https://new.example.com/v1",
                     "enc:v1:NewKey", "sk-ws-****9999",
@@ -191,13 +201,14 @@ class AiChannelRepositoryTest {
                     .as("P1 编辑走 UPDATE 而非 INSERT——只改既有行，渠道不存在由影响行数=0 判 404")
                     .startsWith("UPDATE sys_ai_channel")
                     .contains("WHERE channel_key = ?");
-            // 参数顺序：9 主列 + 4 fallback 列 + WHERE 键（updated_at 由 CURRENT_TIMESTAMP 占位）
+            // 参数顺序：9 主列 + 4 fallback 列 + protocol/provider + WHERE 键
+            //（updated_at 由 CURRENT_TIMESTAMP 占位）
             assertThat(argsCaptor.getValue()).containsExactly(
                     "https://new.example.com/v1", "enc:v1:NewKey", "sk-ws-****9999",
                     "qwen-turbo-v2", "deepseek-v4-flash-0731", null, null,
                     "ACTIVE",
                     "https://api.deepseek.com/v1", "deepseek-chat", "enc:v1:Fb", "sk-fb-****5678",
-                    "chat");
+                    "OPENAI_COMPATIBLE", null, "chat");
         }
     }
 

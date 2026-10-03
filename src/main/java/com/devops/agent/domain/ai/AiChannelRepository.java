@@ -55,6 +55,13 @@ public class AiChannelRepository {
                     + " fallback_base_url, fallback_model, fallback_api_key_enc, fallback_key_masked, protocol, provider";
 
     /**
+     * 按渠道键查询语句——提为包级常量供同包测试直接引用（与 MAPPER 同族的
+     * 单源纪律）：COLS 增列时测试自动跟随，不再留硬编码文本副本漂移。
+     */
+    static final String FIND_BY_KEY_SQL =
+            "SELECT " + COLS + " FROM sys_ai_channel WHERE channel_key = ?";
+
+    /**
      * 幂等 upsert 单条渠道。
      * <p>
      * P1 起 DB 是权威源：本方法只用于<b>空库种子</b>
@@ -102,8 +109,7 @@ public class AiChannelRepository {
 
     /** 按渠道键查单条。 */
     public Optional<AiChannel> findByKey(String channelKey) {
-        List<AiChannel> list = jdbcTemplate.query(
-                "SELECT " + COLS + " FROM sys_ai_channel WHERE channel_key = ?", MAPPER, channelKey);
+        List<AiChannel> list = jdbcTemplate.query(FIND_BY_KEY_SQL, MAPPER, channelKey);
         return list.stream().findFirst();
     }
 

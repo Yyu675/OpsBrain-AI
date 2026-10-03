@@ -397,6 +397,14 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <trimStackTrace>false</trimStackTrace>
+                    <!-- 项4（2026-10-03）：钉死 fork 堆上限。单 fork 复用跑 184 个测试类，
+                         堆无界增长在本机 15.2G 提交额度边缘必撞墙——实测 fork 启动期
+                         连 G1 空间 255MB 的 mmap 都被拒（Native memory allocation
+                         failed / insufficient memory，hs_err + dumpstream 双证）。
+                         1280m 覆盖 @SpringBootTest 上下文族（默认 25%×16G=4G 的
+                         无界要价才是撞墙主因）。self-attach 不进 argLine（CI 不需要），
+                         继续走命令行 JAVA_TOOL_OPTIONS——见 tools/ci 跑批脚本。 -->
+                    <argLine>-Xmx1280m</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -483,5 +491,67 @@
             </plugin>
         </plugins>
     </build>
+
+    <!-- 项4（2026-10-03）：全量测试分段 profile。单 fork 复用 184 类，堆随类数
+         无界增长在本机 15.2G 提交额度下必撞墙——实测第 150 类（KnowledgeDoc-
+         ControllerWebTest）处 fork 崩（G1 扩容 mmap 被拒 → hs_err/replay_pid，
+         9-30~10-03 仓库累计 10 份 hs_err = 全量近期从未完整跑通过的元凶）。
+         分段 = 段间 JVM 重启堆归零，单段峰值 ≈ 全量 1/3。三段由
+         tools/ci/run-backend-full-suite.sh 串联 = 全量一键；任一段可独立
+         跑（-Pt1 = controller+application 48 类）。argLine/trimStackTrace
+         继承基础 build 配置（Maven 按元素合并未覆盖键）。 -->
+    <profiles>
+        <profile>
+            <id>t1</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/controller/**/*Test.java</include>
+                                <include>**/application/**/*Test.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>t2</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/domain/**/*Test.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>t3</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/controller/**/*Test.java</exclude>
+                                <exclude>**/application/**/*Test.java</exclude>
+                                <exclude>**/domain/**/*Test.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>
