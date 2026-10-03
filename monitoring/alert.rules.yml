@@ -249,3 +249,23 @@ groups:
         annotations:
           summary: "监控管道心跳"
           description: "恒真告警：存在即证明 Prometheus→Alertmanager→OpsBrain 管道存活。它消失才是故障信号。"
+
+      # ---- 送达级失败（项2，2026-10-03）：渠道 HTTP 亲口报错，10 分钟窗口点名 ----
+      # 与 OpsBrainNotifySilent（NotifySilentWatchdogScheduler，受理账、全静默 5min 才报）互补：
+      # 这里盯送达账 notify_delivery_total{result="error"}（2xx+errcode=0 才算送达）——
+      # 单次失败即可见，补上「受理≠送达」的最后一环。
+      # severity=warning→P2 与 NotifySilent 同族同档：不做渠道自推送——被测渠道可能
+      # 正是坏的那个，自推送=空转循环。找人路径分两级（实测 2026-10-03 钻 J）：
+      # FIRING 期间告警页强可见；瞬态失败 10 分钟自愈 = 零工单纯统计（观察窗
+      # 「自愈留统计不留单」），持续未自愈才由观察窗补建工单。
+      # 保留名 ∈ ReservedAlertNames.isReserved：跳过 LLM 诊断、风暴期照常放行建单。
+      - alert: OpsBrainNotifyDeliveryFail
+        expr: increase(opsbrain_notify_delivery_total{result="error"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning        # → P2（与 OpsBrainNotifySilent 同族同档）
+          service: opsbrain-ai
+          module: OTHER
+        annotations:
+          summary: "通知送达失败（10 分钟窗口内渠道回执报错）"
+          description: "notify_delivery_total{result=error} 非 2xx/errcode≠0（≠受理失败，那条由 OpsBrainNotifySilent 盯）。查 /ai/api/v1/alerts/notify-health 的 deliverFailed/lastDeliveredAt 与钉钉端点连通性；窗口内零错误自动 resolved。"

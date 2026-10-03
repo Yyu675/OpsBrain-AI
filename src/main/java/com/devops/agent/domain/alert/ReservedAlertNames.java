@@ -39,7 +39,15 @@ public final class ReservedAlertNames {
     public static final String NOTIFY_SILENT = "OpsBrainNotifySilent";
 
     /**
-     * 是否平台保留信号（恒真心跳 / 静默元告警 / 风暴摘要 / 日志-通知静默）。
+     * 送达失败元告警名（Prometheus 规则 OpsBrainNotifyDeliveryFail，ROI 项2）。
+     * 盯送达账 notify_delivery_total{result="error"}——单次渠道回执错误即在 10 分钟
+     * 窗口点名，与 NOTIFY_SILENT（受理账、全静默才报）互补：受理≠送达。
+     * 与规则侧常量同名对齐（monitoring/alert.rules.yml）。
+     */
+    public static final String NOTIFY_DELIVERY_FAIL = "OpsBrainNotifyDeliveryFail";
+
+    /**
+     * 是否平台保留信号（恒真心跳 / 静默元告警 / 风暴摘要 / 日志-通知静默 / 送达失败）。
      * <p>它们报的是<b>平台自身健康</b>而非业务故障：诊断跳过（对管道告警跑 LLM
      * 只会烧钱得 NO_DATA）、风暴期豁免放行（平台自监控在风暴里更要可见）。
      * 新增保留名必须同步进本集合——2026-10-01 前 LOGS_SILENT 就漏在两处名单外，
@@ -50,6 +58,7 @@ public final class ReservedAlertNames {
                 || PIPELINE_SILENT.equals(name)
                 || STORM_SUMMARY.equals(name)
                 || LOGS_SILENT.equals(name)
-                || NOTIFY_SILENT.equals(name);
+                || NOTIFY_SILENT.equals(name)
+                || NOTIFY_DELIVERY_FAIL.equals(name);
     }
 }
