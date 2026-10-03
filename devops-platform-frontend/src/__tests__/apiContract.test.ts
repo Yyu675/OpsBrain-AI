@@ -11,8 +11,10 @@
  *   GetMapping/PostMapping/PutMapping/DeleteMapping/RequestMapping（先剥注释——
  *   javadoc 里常引用 @RequestMapping("/api/...") 示例，不剥会把示例当真映射；
  *   正则容忍 FQN 注解（@org...PostMapping）与命名参数（path=/value="/stream")）；
- * - API_ENDPOINTS 的值是纯路径/取 id 函数，不带 method → 只校验 path 段级
- *   （{xxx}/${xxx} 通配任意段）；method 语义由各端点行为测试兜底；
+ * - API_ENDPOINTS 的值是纯路径/取 id 函数，不带 method → path 段级校验分两道：
+ *   源码扫描（下述）× springdoc 快照交叉（快照由 tools/ci/sync-openapi.sh 从活体
+ *   /ai/v3/api-docs 拉取固化，自带每个 path 的 HTTP 方法——⑦ 的 method 级数据在此
+ *   入场，orval 类型生成接续）；行为语义由各端点行为测试兜底；
  * - 用法定性：src 中常量每次出现的下一字符全是 '/' → 纯前缀拼接
  *   （${HEALING}/executions 形态）→ 按前缀存在性断言；出现过裸调用 → 必须精确命中；
  * - 方向性：前端要的必须在后端存在（前端多写 = 404 事故形态）；
@@ -56,6 +58,45 @@ function pathPrefix(front: string[], back: string[]): boolean {
   return front.every((seg, i) => seg === '*' || back[i] === '*' || seg === back[i])
 }
 
+/** 前端 API_ENDPOINTS 使用画像（两道校验共用的单源收集器）：
+ *  值解析（函数 → 哨兵 '{probe}'）、段归一、用法定性（每次出现的下一字符
+ *  是否全是 '/' → 纯前缀拼接形态）。 */
+function collectFrontEndpoints(): Array<{
+  key: string; raw: string; front: string[]; prefixOnly: boolean; ok: boolean
+}> {
+  // 文件间留空格，防常量名在文件边界处被拼成另一个标识符
+  const feSrc = (fs.readdirSync(FE_SRC, { recursive: true }) as string[])
+    .filter(f => /\.(ts|vue)$/.test(String(f)))
+    .map(f => fs.readFileSync(path.join(FE_SRC, String(f)), 'utf8'))
+    .join(' ')
+  const out: Array<{
+    key: string; raw: string; front: string[]; prefixOnly: boolean; ok: boolean
+  }> = []
+  for (const [key, url] of Object.entries(API_ENDPOINTS)) {
+    // 值有三种形态：字符串 / 取 id 的箭头函数 / 其他。
+    // 函数用哨兵参 '{probe}' 调用——归一后成占位段，正好与后端 {id} 通配
+    const raw = typeof url === 'function'
+      ? String((url as (a: string) => string)('{probe}'))
+      : url
+    if (typeof raw !== 'string') {
+      out.push({ key, raw: '', front: [], prefixOnly: false, ok: false })
+      continue
+    }
+    // 用法定性：每次出现的下一字符若全是 '/' → 纯前缀拼接（${X}/子路径 形态）。
+    // 注意模板形态是 `${API_ENDPOINTS.X}/子路径`——KEY 后紧跟 '}'，要再看一位
+    const useRe = new RegExp(`API_ENDPOINTS\\.${key}(?![\\w$])`, 'g')
+    const nextChars: string[] = []
+    let um: RegExpExecArray | null
+    while ((um = useRe.exec(feSrc)) !== null) {
+      const c1 = feSrc[um.index + um[0].length] ?? ''
+      nextChars.push(c1 === '}' ? (feSrc[um.index + um[0].length + 1] ?? '') : c1)
+    }
+    const prefixOnly = nextChars.length > 0 && nextChars.every(c => c === '/')
+    out.push({ key, raw, front: normalize(raw), prefixOnly, ok: true })
+  }
+  return out
+}
+
 describe('前后端接口契约（config/api.ts ↔ Controller 映射）', () => {
   it('前端 API_ENDPOINTS 每个 path 后端都有映射', () => {
     const files = fs.existsSync(CONTROLLERS_DIR)
@@ -78,41 +119,45 @@ describe('前后端接口契约（config/api.ts ↔ Controller 映射）', () =>
     }
     expect(backendPaths.length).toBeGreaterThan(50)
 
-    // 前端源码全集：判定常量是「裸调用」还是「纯前缀拼接」
-    const feSrc = (fs.readdirSync(FE_SRC, { recursive: true }) as string[])
-      .filter(f => /\.(ts|vue)$/.test(String(f)))
-      .map(f => fs.readFileSync(path.join(FE_SRC, String(f)), 'utf8'))
-      .join(' ')   // 文件间留空格，防常量名在文件边界处被拼成另一个标识符
-
     const missing: string[] = []
-    for (const [key, url] of Object.entries(API_ENDPOINTS)) {
-      // 值有三种形态：字符串 / 取 id 的箭头函数 / 其他。
-      // 函数用哨兵参 '{probe}' 调用——归一后成占位段，正好与后端 {id} 通配
-      const raw = typeof url === 'function'
-        ? String((url as (a: string) => string)('{probe}'))
-        : url
-      if (typeof raw !== 'string') {
-        missing.push(`${key}: 无法解析的值类型`)
-        continue
-      }
-      const front = normalize(raw)
-
-      // 用法定性：每次出现的下一字符若全是 '/' → 纯前缀拼接（${X}/子路径 形态）。
-      // 注意模板形态是 `${API_ENDPOINTS.X}/子路径`——KEY 后紧跟 '}'，要再看一位
-      const useRe = new RegExp(`API_ENDPOINTS\\.${key}(?![\\w$])`, 'g')
-      const nextChars: string[] = []
-      let um: RegExpExecArray | null
-      while ((um = useRe.exec(feSrc)) !== null) {
-        const c1 = feSrc[um.index + um[0].length] ?? ''
-        nextChars.push(c1 === '}' ? (feSrc[um.index + um[0].length + 1] ?? '') : c1)
-      }
-      const prefixOnly = nextChars.length > 0 && nextChars.every(c => c === '/')
-
-      const hit = prefixOnly
-        ? backendPaths.some(b => pathPrefix(front, b))
-        : backendPaths.some(b => pathMatches(front, b))
-      if (!hit) missing.push(`${key}: ${raw}${prefixOnly ? '（前缀型）' : ''}`)
+    for (const ep of collectFrontEndpoints()) {
+      if (!ep.ok) { missing.push(`${ep.key}: 无法解析的值类型`); continue }
+      const hit = ep.prefixOnly
+        ? backendPaths.some(b => pathPrefix(ep.front, b))
+        : backendPaths.some(b => pathMatches(ep.front, b))
+      if (!hit) missing.push(`${ep.key}: ${ep.raw}${ep.prefixOnly ? '（前缀型）' : ''}`)
     }
     expect(missing, `前端调了后端不存在的 path（404 事故形态）：${missing.join(' | ')}`).toEqual([])
+  })
+
+  it('方法级（⑦ 收口）：API_ENDPOINTS 全量命中 springdoc 快照，快照方法数据齐全', () => {
+    // 快照 = 活体 /ai/v3/api-docs 固化件（tools/ci/sync-openapi.sh 生成、随库提交）。
+    // springdoc 反射 Controller 与上方源码正则是两个独立解析器——双向交叉后
+    // 漂移无处藏；每条 path 自带 HTTP 方法 = ⑦ 缺的 method 数据在此入场。
+    const SNAP = path.resolve(process.cwd(), '../openapi/api-docs.snapshot.json')
+    expect(fs.existsSync(SNAP),
+      '快照缺失——跑 bash tools/ci/sync-openapi.sh（需 dev 后端 8088 活着）后提交').toBe(true)
+    const snap = JSON.parse(fs.readFileSync(SNAP, 'utf8')) as {
+      paths: Record<string, Record<string, unknown>>
+    }
+    const snapPaths = Object.keys(snap.paths)
+    expect(snapPaths.length, '快照空壳').toBeGreaterThan(20)
+
+    // 快照内部健康：每条 path 至少一个动词（方法数据在场，为 orval 类型生成备料）
+    const VERBS = ['get', 'post', 'put', 'delete', 'patch']
+    const noMethod = snapPaths.filter(p =>
+      !Object.keys(snap.paths[p]).some(m => VERBS.includes(m.toLowerCase())))
+    expect(noMethod, `无任何 HTTP 方法的 path：${noMethod.join(' | ')}`).toEqual([])
+
+    const backendPaths = snapPaths.map(p => normalize(p))
+    const missing: string[] = []
+    for (const ep of collectFrontEndpoints()) {
+      if (!ep.ok) continue   // 首测已报，不重复
+      const hit = ep.prefixOnly
+        ? backendPaths.some(b => pathPrefix(ep.front, b))
+        : backendPaths.some(b => pathMatches(ep.front, b))
+      if (!hit) missing.push(`${ep.key}: ${ep.raw}${ep.prefixOnly ? '（前缀型）' : ''}`)
+    }
+    expect(missing, `前端调了但 springdoc 快照没有（反射/契约漂移形态）：${missing.join(' | ')}`).toEqual([])
   })
 })
