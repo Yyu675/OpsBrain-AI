@@ -16,7 +16,9 @@ WORKDIR /build/web
 # 先只拷贝清单再 npm ci：依赖未变时这一层命中缓存，
 # 改业务代码不会触发重新装包（几分钟 → 几秒）。
 COPY devops-platform-frontend/package.json devops-platform-frontend/package-lock.json ./
-RUN npm ci
+# registry.npmjs.org 长连接在本机网络下扛不住千包下载（2026-10-03 实测 686s 后
+# FETCH_ERROR）——构建期显式走 npmmirror；tarball 完整性由 lockfile sha512 校验，换源无安全影响。
+RUN npm ci --registry=https://registry.npmmirror.com
 
 COPY devops-platform-frontend/ ./
 RUN npm run build
@@ -29,7 +31,15 @@ WORKDIR /build
 # 同理：先拉依赖，后拷源码
 COPY pom.xml ./
 COPY .mvn/ ./.mvn/
-RUN mvn -B -ntp dependency:go-offline
+# 网络会在任意连接上静默掐断（单次 read timeout 即整步致命，2026-10-03 实测
+# commons-compress:pom 78s Read timed out）——失败则整步重试，~/.m2 热缓存续传，5 次内收敛。
+RUN i=0; until mvn -B -ntp -s .mvn/settings.xml \
+        -Daether.connector.connectTimeout=15000 -Daether.connector.requestTimeout=30000 \
+        dependency:go-offline; do \
+        i=$((i+1)); \
+        if [ "$i" -ge 5 ]; then echo "go-offline failed $i times, give up"; exit 1; fi; \
+        echo "go-offline retry #$i in 5s"; sleep 5; \
+    done
 
 COPY src/ ./src/
 # 前端产物放进 static，由 Spring Boot 直接托管
@@ -37,14 +47,23 @@ COPY --from=web /build/web/dist/ ./src/main/resources/static/
 
 # 跳过测试：测试已在 CI 中执行过（且需要 DB/Redis），
 # 镜像构建阶段不应依赖外部中间件。
-RUN mvn -B -ntp clean package -DskipTests
+RUN i=0; until mvn -B -ntp -s .mvn/settings.xml \
+        -Daether.connector.connectTimeout=15000 -Daether.connector.requestTimeout=30000 \
+        clean package -DskipTests; do \
+        i=$((i+1)); \
+        if [ "$i" -ge 5 ]; then echo "package failed $i times, give up"; exit 1; fi; \
+        echo "package retry #$i in 5s"; sleep 5; \
+    done
 
 
 # ---------- 阶段 3：运行时 ----------
 FROM eclipse-temurin:21-jre-alpine
 
 # curl 供 HEALTHCHECK 使用；tzdata 保证日志时间是本地时区
-RUN apk add --no-cache curl tzdata \
+# dl-cdn.alpinelinux.org 在本机网络 TLS 握手失败（2026-10-03 实测 APKINDEX
+# fetch TLS unspecified error）——构建期换阿里云镜像源（v3.24 索引实测 200）。
+RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine/#https://mirrors.aliyun.com/alpine/#' /etc/apk/repositories \
+    && apk add --no-cache curl tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" > /etc/timezone
 

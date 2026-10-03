@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Docker 构建专用 Maven settings（仅 Dockerfile 里 `mvn -s .mvn/settings.xml` 显式引用，
+  不会自动加载——开发机 `mvn` 不带 -s 时行为不变）。
+  背景：容器内直连 repo.maven.apache.org 在国内网络下停滞（2026-10-03 实测
+  dependency:go-offline 卡死在 271MB 零增长），必须走镜像源。
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>aliyun-public</id>
+      <mirrorOf>central</mirrorOf>
+      <name>Aliyun Maven Public (proxies central)</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>

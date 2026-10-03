@@ -82,7 +82,9 @@ services:
           memory: 768m
 
   postgres:
-    image: ankane/pgvector:v0.5.1
+    # 不要换回 ankane/pgvector:v0.5.1：其 2022 年代 tarball 在本机 containerd-snapshotter
+    # 解包路径下 47% 普通文件变空字节（exec format error，双镜像源复现），官方继任镜像实测正常。
+    image: pgvector/pgvector:pg16
     container_name: opsbrain-postgres
     restart: unless-stopped
     environment:
