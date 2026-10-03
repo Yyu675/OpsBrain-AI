@@ -141,6 +141,53 @@
           "legendFormat": "工具 p95 {{tool}}"
         }
       ]
+    },
+    {
+      "title": "告警链 RED 自监控（接收/去重/建单/诊断/受理/送达）",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(opsbrain_alert_received_total[5m]))",
+          "legendFormat": "信号到达"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(opsbrain_alert_dedup_total[5m]))",
+          "legendFormat": "去重命中"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(opsbrain_ticket_autocreate_seconds_count[5m]))",
+          "legendFormat": "自动建单"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (result) (rate(opsbrain_diagnosis_seconds_count[5m]))",
+          "legendFormat": "诊断-{{result}}"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (result) (rate(opsbrain_notify_total[5m]))",
+          "legendFormat": "通知受理-{{result}}"
+        },
+        {
+          "refId": "F",
+          "expr": "sum by (result) (rate(opsbrain_notify_delivery_total[5m]))",
+          "legendFormat": "通知送达-{{result}}"
+        },
+        {
+          "refId": "G",
+          "expr": "sum(rate(opsbrain_alert_time_fallback_total[5m]))",
+          "legendFormat": "告警时间回退"
+        }
+      ]
     }
   ]
 }

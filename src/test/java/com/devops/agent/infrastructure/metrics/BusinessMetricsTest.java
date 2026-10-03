@@ -56,4 +56,37 @@ class BusinessMetricsTest {
         assertThat(registry.get("opsbrain.tickets.total").gauge().value()).isNaN();
         assertThat(registry.get("opsbrain.tickets.urgent_pending").gauge().value()).isEqualTo(2.0);
     }
+
+    @Test
+    @DisplayName("送达回执与时间回退计数 + notify 快照补字段（ROI#1/#2）")
+    void deliveryAndFallbackCounters() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BusinessMetrics m = new BusinessMetrics(
+                registry,
+                mock(DevOpsTicketRepository.class),
+                mock(AlertRepository.class),
+                mock(ApprovalRequestRepository.class));
+
+        m.notifyDelivery(true);
+        m.notifyDelivery(true);
+        m.notifyDelivery(false);
+        m.incAlertTimeFallback("startsAt");
+        m.incAlertTimeFallback("endsAt");
+        m.incAlertTimeFallback("endsAt");
+
+        assertThat(registry.get("opsbrain.notify_delivery_total")
+                .tags("result", "ok").counter().count()).isEqualTo(2.0);
+        assertThat(registry.get("opsbrain.notify_delivery_total")
+                .tags("result", "error").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.alert_time_fallback_total")
+                .tags("field", "startsAt").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.alert_time_fallback_total")
+                .tags("field", "endsAt").counter().count()).isEqualTo(2.0);
+
+        var snap = m.notifySnapshot();
+        assertThat(snap)
+                .containsEntry("delivered", 2L)
+                .containsEntry("deliverFailed", 1L)
+                .containsKey("lastDeliveredAt");
+    }
 }

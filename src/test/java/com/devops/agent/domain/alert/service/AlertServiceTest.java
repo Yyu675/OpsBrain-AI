@@ -160,6 +160,29 @@ class AlertServiceTest {
         return cap.getAllValues();
     }
 
+    /** 送达回执/时间回退计数（字段注入：非 Spring 环境手动装，ROI#2 用例专用） */
+    private com.devops.agent.infrastructure.metrics.BusinessMetrics businessMetrics;
+
+    @Test
+    @DisplayName("ROI#2：startsAt/endsAt 缺失回退 now 不再静默——WARN 伴随计数（时序口径的唯一线索）")
+    void missingAlertTimesAreCounted() {
+        businessMetrics = mock(com.devops.agent.infrastructure.metrics.BusinessMetrics.class);
+        ReflectionTestUtils.setField(service, "businessMetrics", businessMetrics);
+
+        // startsAt 置空 → processSignal 入口守卫（回退 first_occurred_at=now 必须留痕）
+        AlertmanagerWebhook.Alert noStart =
+                incoming("firing", labels("alertname", "NoStartDrill", "service", "x"));
+        noStart.setStartsAt(null);
+        service.processWebhook(webhook(noStart));
+        verify(businessMetrics).incAlertTimeFallback("startsAt");
+
+        // resolved 无 endsAt → handleResolvedAlert 守卫（fixture 的 startsAt 合法，只触 endsAt）
+        when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(new Alert()));
+        service.processWebhook(webhook(incoming("resolved",
+                labels("alertname", "NoEndsDrill", "service", "x"))));
+        verify(businessMetrics).incAlertTimeFallback("endsAt");
+    }
+
     // ==================================================================
 
     @Nested

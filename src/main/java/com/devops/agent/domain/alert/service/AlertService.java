@@ -722,6 +722,13 @@ public class AlertService {
             log.warn("⚠️ [AlertService] 告警缺少 alertname，跳过 | fingerprint={}", signal.fingerprint());
             return;
         }
+        // ROI#2 可观测性：startsAt 缺失/离谱 → first_occurred_at 回退 now 只能是兜底。
+        // 静默回退会把告警时序/MTTR 全算错——WARN + 计数，让「源没给时间」可见
+        if (signal.startsAt() == null || signal.startsAt().getYear() < 2000) {
+            log.warn("⚠️ [AlertService] startsAt 缺失/非法，first_occurred_at 回退当前时间 | alertName={} | startsAt={}",
+                    alertName, signal.startsAt());
+            if (businessMetrics != null) businessMetrics.incAlertTimeFallback("startsAt");
+        }
         if (businessMetrics != null) businessMetrics.incAlertReceived();
 
         // 计算去重键：排除 alertname/service/severity 避免重复
@@ -782,9 +789,14 @@ public class AlertService {
         Optional<Alert> existing = alertRepository.findActiveByDedupKey(dedupKey);
         if (existing.isPresent()) {
             Alert alert = existing.get();
-            // endsAt 穿透（方案④）：Alertmanager 恢复推送里的真实结束时刻；
-            // 零值（0001 年）/缺失回退当前时间——与前端 parseDate 的 isResolved 判零同约定
+            // endsAt 穿透（方案④ + ROI#2 可观测性）：Alertmanager 恢复推送里的真实结束时刻；
+            // 零值（0001 年）/缺失回退当前时间——与前端 parseDate 的 isResolved 判零同约定。
+            // 回退会把 MTTR 口径算错，必须 WARN + 计数（此前静默）
             java.time.OffsetDateTime sane = (endsAt != null && endsAt.getYear() > 1) ? endsAt : null;
+            if (sane == null) {
+                log.warn("⚠️ [AlertService] 恢复推送 endsAt 缺失/非法，resolved_at 回退当前时间 | dedupKey={}", dedupKey);
+                if (businessMetrics != null) businessMetrics.incAlertTimeFallback("endsAt");
+            }
             java.time.LocalDateTime resolvedAt = toLocalDateTime(sane);
             alertRepository.resolve(alert.getId(), resolvedAt);
             alert.setStatus("RESOLVED");

@@ -36,6 +36,24 @@
 - **测试**：后端目标集 88/88 + WebhookGuard 17/17；前端全量 **100 文件 1812/1812 exit 0**；截图技能两页 **console errors: none**
 - **演练治理**：0004 唯一演示样例；0002/0005 及钻 A/A2 演练告警全 RESOLVED、演练单全 VOID
 
+## 四点五、ROI 第 1/2 项落地追记（2026-10-03，拍板后执行）
+
+| 项 | 落点 | 关键语义 |
+| - | - | - |
+| **ROI#1 送达级监控** | `BusinessMetrics.notifyDelivery` + `DingTalkNotifier.doSend` 三出口埋点（ok/error/异常）；快照 +`delivered`/`deliverFailed`/`lastDeliveredAt`；Grafana「告警链 RED 自监控」第 7 面板（y=24，7 系含送达/回退） | **受理 ≠ 送达**：`notify_total{result}` = 渠道接口受理；`notify_delivery_total{result=ok\|error}` = 渠道 HTTP 亲口回执（2xx + errcode=0）。看门狗 silent 判定仍用受理账（送达失败语义不同，注释已声明） |
+| **ROI#2 时间回退可见** | `processSignal` 入口守 startsAt（<2000/空）；`handleResolvedAlert` 守 endsAt → WARN + `opsbrain.alert_time_fallback_total{field=startsAt\|endsAt}` | 回退 now 只能是兜底——静默回退会把时序/MTTR 全算错，「源没给时间」必须可计数可查 |
+
+**真机证据**：假钉钉（127.0.0.1:19099 固定 `{"errcode":0}`）→ 5 条通知全部
+`delivery ok=5`、快照 `delivered=5 + lastDeliveredAt 有值 + configured=true`；
+钻 I 无 startsAt 建单 `first=now` 且 `fallback startsAt=1 + WARN 1`、
+无 endsAt 恢复 `resolved_at=now` 且 `fallback endsAt=1`。测试 8 类 **104/104**
+（BusinessMetricsTest 增送达/回退/快照断言，AlertServiceTest 增双守卫用例）。
+
+**本批工程教训**（防复发写死）：① Edit 多次「工具报成功实未落盘」+ 并行验证抢跑
+→ 一律**串行 grep 验证后再编译**；② `Stop-Process` 被防护层 255 静默拦 → 用
+`taskkill //F //T //PID`；③ playwright 残留 42 个 chromium 吃 commit 内存致
+后端 test-compile OOM——收尾先清浏览器进程。
+
 ## 四、边界与后补（防循环恶化，详见 ROI 清单）
 
 - notify `success` = 「至少一渠道**受理**」≠渠道 HTTP 送达（Alertmanager v0.27 发不了自定义签名头是硬约束）→ 送达码落点 + Grafana 面板 = 下一批 P1

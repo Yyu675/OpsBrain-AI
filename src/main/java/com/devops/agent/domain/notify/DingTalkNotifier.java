@@ -63,6 +63,14 @@ public class DingTalkNotifier implements Notifier {
     private final ObjectMapper objectMapper;
 
     /**
+     * 送达回执指标（ROI#1，字段注入）：BusinessMetrics 按
+     * {@code devops.metrics.business.enabled} 条件装配——缺席时三处回执点
+     * 判空跳过，通知主链不依赖指标存在。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.infrastructure.metrics.BusinessMetrics businessMetrics;
+
+    /**
      * 发送专用线程池：单线程够用（通知量小）。
      *
      * <p>改用 {@link com.devops.agent.infrastructure.concurrent.ManagedExecutors#forBestEffort}
@@ -169,12 +177,16 @@ public class DingTalkNotifier implements Notifier {
             // 钉钉成功返回 {"errcode":0,...}；errcode!=0 记 WARN（如限流 130101、加签失败 310000）
             if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("\"errcode\":0")) {
                 log.info("✅ [DingTalk] 通知已推送 | {}", msg.title());
+                // ROI#1 送达回执：受理(success)≠送达——这里才是渠道亲口确认
+                if (businessMetrics != null) businessMetrics.notifyDelivery(true);
             } else {
                 log.warn("⚠️ [DingTalk] 推送返回异常（已忽略）| status={} | body={}", resp.statusCode(), resp.body());
+                if (businessMetrics != null) businessMetrics.notifyDelivery(false);
             }
         } catch (Exception e) {
             // 网络/加签/序列化任何异常都不外抛——通知失败绝不影响告警与工单主流程
             log.warn("⚠️ [DingTalk] 推送失败（已忽略，不影响主流程）: {}", e.getMessage());
+            if (businessMetrics != null) businessMetrics.notifyDelivery(false);
         }
     }
 

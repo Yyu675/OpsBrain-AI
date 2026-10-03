@@ -52,6 +52,11 @@ public class BusinessMetrics {
     private final Counter notifyCounterSuccess;
     private final Counter notifyCounterFailed;
     private final Counter notifyCounterDegraded;
+    /** ROI#1 送达回执（受理≠送达）+ ROI#2 时间回退（回退 now 必须可见） */
+    private final Counter notifyDeliveryOk;
+    private final Counter notifyDeliveryErr;
+    private final Counter timeFallbackStartsAt;
+    private final Counter timeFallbackEndsAt;
 
     /** 通知发送原子账（看门狗 delta 判定与效能卡读它——Micrometer Counter 不回读增量窗口） */
     private final java.util.concurrent.atomic.AtomicLong notifyAttempts =
@@ -62,6 +67,13 @@ public class BusinessMetrics {
             new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong notifyDegraded =
             new java.util.concurrent.atomic.AtomicLong();
+    /** ROI#1 送达回执账：受理≠送达——原子数供快照，Counter 供 Prometheus 抓取 */
+    private final java.util.concurrent.atomic.AtomicLong notifyDelivered =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong notifyDeliveryFailed =
+            new java.util.concurrent.atomic.AtomicLong();
+    /** 最近一次送达成功时刻（epoch ms）；0 = 本次进程尚无送达 */
+    private volatile long notifyLastDeliveredAt;
     /** 最近一次发送成功时刻（epoch ms）；0 = 本次进程尚无成功 */
     private volatile long notifyLastSuccessAt;
     private final java.util.concurrent.atomic.AtomicBoolean queueGaugeRegistered =
@@ -91,6 +103,16 @@ public class BusinessMetrics {
         this.notifyCounterDegraded = Counter.builder("opsbrain.notify_total")
                 .tag("result", "degraded").description("通知降级日志（无可用渠道）——"
                         + "本地/未配渠道环境的常态，配合 available() 判配置而非误报").register(registry);
+        // ROI#1：送达回执——受理(success)是渠道接口接了单，送达是渠道亲口说「收到」
+        this.notifyDeliveryOk = Counter.builder("opsbrain.notify_delivery_total")
+                .tag("result", "ok").description("通知送达回执（渠道 HTTP 2xx 且 errcode=0）").register(registry);
+        this.notifyDeliveryErr = Counter.builder("opsbrain.notify_delivery_total")
+                .tag("result", "error").description("通知送达失败回执（HTTP 非 200/errcode≠0/网络异常）").register(registry);
+        // ROI#2：时间回退——startsAt/endsAt 缺失回退 now 必须可见（静默会算错时序/MTTR）
+        this.timeFallbackStartsAt = Counter.builder("opsbrain.alert_time_fallback_total")
+                .tag("field", "startsAt").description("告警 startsAt 缺失/非法回退当前时间次数").register(registry);
+        this.timeFallbackEndsAt = Counter.builder("opsbrain.alert_time_fallback_total")
+                .tag("field", "endsAt").description("恢复推送 endsAt 缺失/非法回退当前时间次数").register(registry);
         Gauge.builder("opsbrain.tickets.total", () -> safe(() -> (double) tickets.countAll()))
                 .description("工单总量（全部状态）")
                 .register(registry);
@@ -116,6 +138,31 @@ public class BusinessMetrics {
 
     public void incAlertDedup() {
         alertDedup.increment();
+    }
+
+    /** 渠道送达回执（doSend 收尾调用）：与 notifyOutcome 的「受理」互补——渠道亲口确认才算送达。 */
+    public void notifyDelivery(boolean ok) {
+        if (ok) {
+            notifyDelivered.incrementAndGet();
+            notifyDeliveryOk.increment();
+            notifyLastDeliveredAt = System.currentTimeMillis();
+        } else {
+            notifyDeliveryFailed.incrementAndGet();
+            notifyDeliveryErr.increment();
+        }
+    }
+
+    public long notifyDelivered() {
+        return notifyDelivered.get();
+    }
+
+    /** 告警时间回退计数（signal.startsAt/endsAt 异常回退 now 的可见性钩子，ROI#2）。 */
+    public void incAlertTimeFallback(String field) {
+        if ("endsAt".equals(field)) {
+            timeFallbackEndsAt.increment();
+        } else {
+            timeFallbackStartsAt.increment();
+        }
     }
 
     public void recordTicketAutoCreate(long millis, boolean ok) {
@@ -165,6 +212,12 @@ public class BusinessMetrics {
         m.put("successes", notifySuccesses.get());
         m.put("failed", notifyFailed.get());
         m.put("degraded", notifyDegraded.get());
+        // ROI#1：送达回执三字段（受理≠送达——快照要能一句话答「渠道收到没」）
+        m.put("delivered", notifyDelivered.get());
+        m.put("deliverFailed", notifyDeliveryFailed.get());
+        long dl = notifyLastDeliveredAt;
+        m.put("lastDeliveredAt", dl > 0
+                ? java.time.Instant.ofEpochMilli(dl).toString() : null);
         long last = notifyLastSuccessAt;
         m.put("lastSuccessAt", last > 0
                 ? java.time.Instant.ofEpochMilli(last).toString() : null);
