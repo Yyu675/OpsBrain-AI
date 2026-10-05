@@ -101,7 +101,7 @@ export async function listHealingExecutors(): Promise<string[]> {
 }
 
 /** 自愈执行台账聚合统计（/healing/stats） */
-export interface HealingStats {
+interface HealingStats {
   total: number
   succeeded: number
   failed: number

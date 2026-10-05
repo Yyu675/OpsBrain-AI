@@ -302,7 +302,7 @@ export async function findDocsBySourceTicket(ticketId: string): Promise<Knowledg
 }
 
 /** 单篇回链文档的反馈计数（doc → 其全部 chunk 的 boost 票数之和）。 */
-export interface KnowledgeDocFeedbackStat {
+interface KnowledgeDocFeedbackStat {
   docId: number
   title: string
   helpfulCount: number

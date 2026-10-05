@@ -132,7 +132,7 @@ export interface LogsHeartbeat {
 }
 
 /** 自愈观察窗统计（FR-3.1 可视面，效能大盘 ObservationStatsPanel 读它） */
-export interface ObservationStats {
+interface ObservationStats {
   /** 观察窗是否开启——false 时前端隐藏区块而非显示一排 0 */
   enabled: boolean
   windowMinutes: number

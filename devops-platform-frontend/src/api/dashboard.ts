@@ -75,7 +75,7 @@ export async function getDocHealth(): Promise<DocHealth[]> {
 }
 
 /** 已完结但没有复盘的工单（复盘完成率的行动出口清单） */
-export interface MissingPostmortemItem {
+interface MissingPostmortemItem {
   id: string
   title: string
   status: string
@@ -89,7 +89,7 @@ export async function getMissingPostmortem(limit = 20): Promise<MissingPostmorte
 }
 
 /** 效能指标每日快照行（效能大盘趋势图数据源） */
-export interface EffectivenessSnapshot {
+interface EffectivenessSnapshot {
   snapshot_date: string
   total_tickets: number
   finished_tickets: number
