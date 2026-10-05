@@ -321,13 +321,16 @@ public class AutomationGovernanceService {
                     "风险等级「" + policy.getDisplayName() + "」未在 "
                             + environment + " 环境开放（当前开放：" + policy.getAllowedEnvironments() + "）");
         }
-        if (!policy.isAutoExecuteAllowed()) {
-            return GovernanceViews.EvaluateResult.deny(actionKey, environment,
-                    "风险等级「" + policy.getDisplayName()
-                            + "」未开启自动执行，需人工手动触发");
-        }
-
         applyEffective(entry, policy);
+        // auto_execute_allowed=FALSE 的语义是「不许无阻拦地自动跑」，不是「拒绝一切」：
+        // 人工闸（审批单）就是判词所指的「人工手动触发」通道——强制 requiresApproval，
+        // 让编排器落 PENDING_APPROVAL 等人批。2026-10-05 前这里误判成硬拒，
+        // 导致 REQUIRES_APPROVAL 分支对全部种子策略不可达（手工 POST 必 REJECTED、
+        // 自动链静默丢建议），与 9-25 评审清单「手工触发看台账 SUCCEEDED」矛盾。
+        // 免审批的配置组合（条目/审批档都放行）在此倒向最严：人工闸不可绕过。
+        if (!policy.isAutoExecuteAllowed() && !Boolean.TRUE.equals(entry.getEffectiveRequiresApproval())) {
+            entry.setEffectiveRequiresApproval(Boolean.TRUE);
+        }
         return GovernanceViews.EvaluateResult.allow(actionKey, environment,
                 entry.getEffectiveRequiresApproval(),
                 policy.getApprovalMode().name(),

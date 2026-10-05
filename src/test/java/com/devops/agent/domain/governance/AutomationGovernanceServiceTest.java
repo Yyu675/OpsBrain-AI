@@ -317,16 +317,32 @@ class AutomationGovernanceServiceTest {
         }
 
         @Test
-        @DisplayName("策略未开自动执行时拒绝，即便条目本身允许该环境")
-        void deniesWhenAutoExecuteOff() {
+        @DisplayName("auto_execute_allowed=FALSE 不再硬拒——放行但强制人闸，REQUIRES_APPROVAL 路由此前是死代码")
+        void allowsButForcesApprovalWhenAutoExecuteOff() {
             ActionAllowlistEntry e = entry("k8s.pod.restart", "CONTROLLED_WRITE", "staging");
             when(allowlistRepo.findByActionKey("k8s.pod.restart")).thenReturn(Optional.of(e));
             when(policyRepo.findByRiskLevel("CONTROLLED_WRITE")).thenReturn(
                     Optional.of(policy("CONTROLLED_WRITE", ApprovalMode.SINGLE, "staging", false, 5)));
 
             GovernanceViews.EvaluateResult r = service.evaluate("k8s.pod.restart", "staging");
-            assertFalse(r.allowed());
-            assertTrue(r.reason().contains("未开启自动执行"));
+            // 语义：auto=false = 不许无阻拦地自动跑，不是拒绝一切——
+            // 「人工闸（审批单）」正是判词所指的「人工手动触发」通道
+            assertTrue(r.allowed());
+            assertEquals(Boolean.TRUE, r.requiresApproval());
+            assertEquals("SINGLE", r.approvalMode());
+        }
+
+        @Test
+        @DisplayName("auto=false 且审批档 NONE 的裸组合：人工闸不可绕过，强制 requiresApproval")
+        void forcesApprovalEvenWhenModeNone() {
+            ActionAllowlistEntry e = entry("k8s.deploy.scale", "CONTROLLED_WRITE", "staging");
+            when(allowlistRepo.findByActionKey("k8s.deploy.scale")).thenReturn(Optional.of(e));
+            when(policyRepo.findByRiskLevel("CONTROLLED_WRITE")).thenReturn(
+                    Optional.of(policy("CONTROLLED_WRITE", ApprovalMode.NONE, "staging", false, 5)));
+
+            GovernanceViews.EvaluateResult r = service.evaluate("k8s.deploy.scale", "staging");
+            assertTrue(r.allowed());
+            assertEquals(Boolean.TRUE, r.requiresApproval());
         }
 
         @Test
