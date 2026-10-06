@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { parseDate } from '@/utils/time'
+import { rcLabel } from '@/utils/ticketPresentation'
 import { computed, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { RefreshCw, Ticket, Zap, Activity, Coins } from 'lucide-vue-next'
@@ -99,12 +100,7 @@ const costTrendSeries = computed<TrendSeries[]>(() => {
   ]
 })
 
-// 根因分类中文标签
-const RC_LABELS: Record<string, string> = {
-  CONFIG: '配置错误', CAPACITY: '容量不足', CODE: '代码缺陷',
-  DEPENDENCY: '依赖故障', NETWORK: '网络问题', DATA: '数据异常',
-  HUMAN: '人为操作', EXTERNAL: '外部服务', UNKNOWN: '未定位'
-}
+// 根因分类中文标签（批87 残影收敛：本地副本删除，单源走 utils/ticketPresentation.rcLabel）
 
 // KPI 数据（从 API 动态生成）
 // 口径说明（后端 DashboardServiceImpl 已对齐）：
@@ -286,7 +282,7 @@ const rootCauseTop = computed(() =>
               <div class="panel-body panel-body--auto">
                 <div v-if="rootCauseTop.length" class="rc-list">
                   <div v-for="[cat, count] in rootCauseTop" :key="cat" class="rc-item">
-                    <span class="rc-label">{{ RC_LABELS[cat] || cat }}</span>
+                    <span class="rc-label">{{ rcLabel(cat) }}</span>
                     <span class="rc-count">{{ count }}</span>
                   </div>
                 </div>

@@ -545,6 +545,19 @@ const applyVendorTemplate = (key: string) => {
 // ==================== 辅助 ====================
 
 /** null / 空串 → '—' 展示 */
+/**
+ * 协议码 → 展示名（后端 AiChannelService 四值白名单；未知码原样透出）。
+ * OPENAI_COMPATIBLE 全大写下划线对人不友好，但它是码值——只换展示不动数据。
+ */
+const PROTOCOL_LABELS: Record<string, string> = {
+  OPENAI_COMPATIBLE: 'OpenAI 兼容',
+  AZURE_OPENAI: 'Azure OpenAI',
+  ANTHROPIC: 'Anthropic',
+  CUSTOM: '自定义'
+}
+const protocolLabel = (p: string | null | undefined) =>
+  (p && PROTOCOL_LABELS[p]) || p || '—'
+
 const dash = (v: string | null | undefined) => v || '—'
 
 /** status → Element Plus type */
@@ -610,7 +623,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             <div class="field-row">
               <span class="field-label">API 协议</span>
               <span class="field-value">
-                {{ dash(chatChannel?.protocol) }}
+                {{ dash(protocolLabel(chatChannel?.protocol)) }}
                 <span v-if="isUnsupportedProtocol(chatChannel?.protocol)" class="protocol-unsupported-flag" title="该协议暂未接入调用层，当前按 OpenAI 兼容处理">未接入</span>
               </span>
             </div>
@@ -683,7 +696,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             <div class="field-row">
               <span class="field-label">API 协议</span>
               <span class="field-value">
-                {{ dash(embeddingChannel?.protocol) }}
+                {{ dash(protocolLabel(embeddingChannel?.protocol)) }}
                 <span v-if="isUnsupportedProtocol(embeddingChannel?.protocol)" class="protocol-unsupported-flag" title="该协议暂未接入调用层，当前按 OpenAI 兼容处理">未接入</span>
               </span>
             </div>
@@ -752,7 +765,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             <div class="field-row">
               <span class="field-label">API 协议</span>
               <span class="field-value">
-                {{ dash(rerankerChannel?.protocol) }}
+                {{ dash(protocolLabel(rerankerChannel?.protocol)) }}
                 <span v-if="isUnsupportedProtocol(rerankerChannel?.protocol)" class="protocol-unsupported-flag" title="该协议暂未接入调用层，当前按 OpenAI 兼容处理">未接入</span>
               </span>
             </div>
@@ -1080,7 +1093,7 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
         >
           <div class="template-item__head">
             <span class="template-item__name">{{ tpl.templateName }}</span>
-            <el-tag size="small" effect="plain" type="info">{{ tpl.protocol }}</el-tag>
+            <el-tag size="small" effect="plain" type="info">{{ protocolLabel(tpl.protocol) }}</el-tag>
           </div>
           <div class="template-item__url">{{ tpl.baseUrl }}</div>
           <div class="template-item__models">

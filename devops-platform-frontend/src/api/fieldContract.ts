@@ -7,11 +7,14 @@
  * - `X_Extra`  ≠ never ⟶ 手写有后端已删的字段（或快照滞后：改契约后没跑 api:refresh）
  *   → 该字段 runtime 恒 undefined。先 sync 快照再看红是否仍在，在=后端真删了。
  *
- * **边界（如实声明，不是偷懒）**：只对账字段名集合。必填性 / 枚举值域 / nullable
- * / 值类型以手写为准——springdoc→orval 的产物全字段 optional、无字面量枚举、无
- * 字段级 JSDoc（Java 无 required 概念、未注解 nullable 产不出），生成物是字段全集
- * 的**下界**，不是值域真相源。因此本文件不 import 手写类型去替换、只做结构对账；
- * 值域漂移（字段类型改了、枚举加值）由真机联调兜底（用户工作流：随时真实启动）。
+ * **边界（如实声明，不是偷懒）**：接口只对账字段名集合——必填性 / nullable / 值类型
+ * 以手写为准（Java 无 required 概念、未注解 nullable 产不出，生成物是字段全集的
+ * **下界**，不是值域真相源），故不替换、只对账；值类型漂移归真机兜底
+ * （用户工作流：随时真实启动）。
+ * **枚举值域已升维（批87）**：Java enum 字段 springdoc 会产 const enum →
+ * union↔enum 双向 Exclude 断言（ApprovalMode / EscalateTarget 两对）；
+ * String 字段承载的手写枚举（如 RiskLevel——DTO 侧是 String，无 enum 孪生）
+ * 仍无依据，归真机。快照 refresh：契约变更后 `npm run api:refresh`。
  *
  * **为什么不是测试类**（2026-10-06 用户纪律：不写功能测试类）：这是普通 .ts
  * 编译期断言，vue-tsc（六闸之一）天然执行，零运行时、零新增用例。
@@ -35,18 +38,26 @@ import type { HealingExecution as GenHealingExecution } from './generated/healin
 import type { KnowledgeTag as GenKnowledgeTag } from './generated/knowledgeTag'
 import type { ListItem as GenListItem } from './generated/listItem'
 import type { DocPage as GenDocPage } from './generated/docPage'
+import type { CreateRequest as GenCreateRequest } from './generated/createRequest'
+import type { UpdateRequest as GenUpdateRequest } from './generated/updateRequest'
+import type { HistoryView as GenHistoryView } from './generated/historyView'
+import type { ProbeResult as GenProbeResult } from './generated/probeResult'
 import type { PolicyStats as GenPolicyStats } from './generated/policyStats'
 import type { RiskPolicy as GenRiskPolicy } from './generated/riskPolicy'
+import type { RiskPolicyApprovalMode as GenRiskPolicyApprovalMode } from './generated/riskPolicyApprovalMode'
+import type { RiskPolicyEscalateTarget as GenRiskPolicyEscalateTarget } from './generated/riskPolicyEscalateTarget'
 import type { SimulatedRow as GenSimulatedRow } from './generated/simulatedRow'
 import type { SimulateResult as GenSimulateResult } from './generated/simulateResult'
 import type { StormStatus as GenStormStatus } from './generated/stormStatus'
 
-import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse } from './types'
+import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult } from './types'
 import type { BackendTicket } from './types/ticket'
 import type { StormStatus } from './alerts'
 import type { ApprovalRequest } from './approval'
 import type {
   RiskPolicy,
+  ApprovalMode,
+  EscalateTarget,
   ActionAllowlistEntry,
   ActionStats,
   ActionFilterOptions,
@@ -87,6 +98,10 @@ export type KnowledgeDocListItem_Missing = AssertDriftFree<GenOnly<GenListItem, 
 export type KnowledgeDocListItem_Extra = AssertDriftFree<HandOnly<GenListItem, KnowledgeDocListItem>>
 export type KnowledgeDocPageResponse_Missing = AssertDriftFree<GenOnly<GenDocPage, KnowledgeDocPageResponse>>
 export type KnowledgeDocPageResponse_Extra = AssertDriftFree<HandOnly<GenDocPage, KnowledgeDocPageResponse>>
+export type KnowledgeDocCreateRequest_Missing = AssertDriftFree<GenOnly<GenCreateRequest, KnowledgeDocCreateRequest>>
+export type KnowledgeDocCreateRequest_Extra = AssertDriftFree<HandOnly<GenCreateRequest, KnowledgeDocCreateRequest>>
+export type KnowledgeDocUpdateRequest_Missing = AssertDriftFree<GenOnly<GenUpdateRequest, KnowledgeDocUpdateRequest>>
+export type KnowledgeDocUpdateRequest_Extra = AssertDriftFree<HandOnly<GenUpdateRequest, KnowledgeDocUpdateRequest>>
 
 // ==================== 审批 / 治理域 ====================
 
@@ -124,6 +139,18 @@ export type ConnectivityResult_Missing = AssertDriftFree<GenOnly<GenConnectivity
 export type ConnectivityResult_Extra = AssertDriftFree<HandOnly<GenConnectivityResult, ConnectivityResult>>
 export type CapabilityItem_Missing = AssertDriftFree<GenOnly<GenCapabilityItem, CapabilityItem>>
 export type CapabilityItem_Extra = AssertDriftFree<HandOnly<GenCapabilityItem, CapabilityItem>>
+export type AiChannelHistoryView_Missing = AssertDriftFree<GenOnly<GenHistoryView, AiChannelHistoryView>>
+export type AiChannelHistoryView_Extra = AssertDriftFree<HandOnly<GenHistoryView, AiChannelHistoryView>>
+export type ChannelProbeResult_Missing = AssertDriftFree<GenOnly<GenProbeResult, ChannelProbeResult>>
+export type ChannelProbeResult_Extra = AssertDriftFree<HandOnly<GenProbeResult, ChannelProbeResult>>
+
+// ==================== 枚举值域对账（批87 升维：Java enum 字段 springdoc 产 const enum）====================
+// 双向 Exclude：后端枚举加值手写没跟 / 手写多值后端删了 → 编译期点名。
+
+export type ApprovalMode_GenOnly = AssertDriftFree<Exclude<GenRiskPolicyApprovalMode, ApprovalMode>>
+export type ApprovalMode_HandOnly = AssertDriftFree<Exclude<ApprovalMode, GenRiskPolicyApprovalMode>>
+export type EscalateTarget_GenOnly = AssertDriftFree<Exclude<GenRiskPolicyEscalateTarget, EscalateTarget>>
+export type EscalateTarget_HandOnly = AssertDriftFree<Exclude<EscalateTarget, GenRiskPolicyEscalateTarget>>
 
 // ==================== 工单活动流 ====================
 // 刻意豁免（2026-10-06 甄别）：TicketReply/TicketActivity 的手写形态是

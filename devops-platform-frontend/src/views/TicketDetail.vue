@@ -8,6 +8,7 @@ import {
 } from 'lucide-vue-next'
 import { useTicketsStore, getStatusLabel, getPriorityLabel, UNASSIGNED } from '@/stores/tickets'
 import { canTransitionStatus, isTerminalStatus } from '@/constants/ticket'
+import { stageLabel } from '@/utils/ticketPresentation'
 import { useAppStore } from '@/stores/app'
 import {
   fetchTicketById,
@@ -475,12 +476,6 @@ const doMarkMitigated = async () => {
 const rootCauseDialogVisible = ref(false)
 const rootCauseForm = ref({ rootCause: '', category: 'UNKNOWN' })
 const rootCauseSubmitting = ref(false)
-
-/** 处置阶段的中文名（枚举本体随阶段切换条搬到了 TicketActionSection） */
-const STAGE_LABELS: Record<string, string> = {
-  TRIAGE: '排查中', MITIGATED: '已止损', FIXING: '修复中', VERIFYING: '验证中'
-}
-const stageLabel = (stage: string) => STAGE_LABELS[stage] || stage
 
 const openRootCauseDialog = () => {
   // 预填 AI 建议的最新分析内容（一键采纳）

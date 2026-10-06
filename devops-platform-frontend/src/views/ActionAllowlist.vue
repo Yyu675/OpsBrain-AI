@@ -58,7 +58,7 @@ import {
 } from '@/composables/useUrlFilters'
 import { notify } from '@/utils/notify'
 import { riskLabel } from '@/constants/risk'
-import { envLabel } from '@/constants/environment'
+import { envLabel, envListLabel } from '@/constants/environment'
 
 defineOptions({ name: 'ActionAllowlist' })
 
@@ -200,7 +200,7 @@ const toggling = useAsyncAction(
       await ElMessageBox.confirm(
         `即将启用高风险动作「${row.displayName}」。\n\n` +
           `动作标识：${row.actionKey}\n` +
-          `生效环境：${row.environments}\n` +
+          `生效环境：${envListLabel(row.environments)}\n` +
           `目标范围：${row.targetPattern || '（未限制）'}\n\n` +
           '启用后自动化引擎可在满足审批条件时调用该动作。确认继续？',
         '启用高风险动作',

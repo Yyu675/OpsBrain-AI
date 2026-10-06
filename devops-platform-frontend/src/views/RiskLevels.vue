@@ -23,6 +23,7 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import { envLabel } from '@/constants/environment'
 import {
   AlertTriangle,
   Check,
@@ -181,7 +182,7 @@ const loosenings = (level: string): string[] => {
     .map((s) => s.trim())
     .filter((e) => e && !originalEnvs.includes(e))
   if (added.length) {
-    reasons.push(`新增生效环境：${added.join('、')}`)
+    reasons.push(`新增生效环境：${added.map(envLabel).join('、')}`)
   }
   return reasons
 }

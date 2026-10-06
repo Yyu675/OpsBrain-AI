@@ -7,6 +7,7 @@
  * 「画什么」，切换阶段、标记止损的写操作仍由父组件执行后抛事件回来。
  */
 import type { TicketActionRecord } from '@/api/tickets'
+import { STAGE_OPTIONS } from '@/utils/ticketPresentation'
 
 defineProps<{
   /** 仅处理中的工单显示阶段切换条 */
@@ -21,13 +22,6 @@ const emit = defineEmits<{
   'update-stage': [stage: string]
   'mark-mitigated': []
 }>()
-
-const STAGES = [
-  { value: 'TRIAGE', label: '排查中' },
-  { value: 'MITIGATED', label: '已止损' },
-  { value: 'FIXING', label: '修复中' },
-  { value: 'VERIFYING', label: '验证中' }
-]
 
 const ACTION_TYPES = [
   { value: 'MITIGATE', label: '止损' },
@@ -50,7 +44,7 @@ const onStageClick = (stage: string) => {
   <!-- B2 处置阶段切换（仅在处理中状态显示） -->
   <div v-if="showStageSwitcher" class="stage-switcher">
     <button
-      v-for="s in STAGES"
+      v-for="s in STAGE_OPTIONS"
       :key="s.value"
       class="stage-btn"
       :class="{ active: currentStage === s.value }"

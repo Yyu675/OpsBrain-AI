@@ -44,7 +44,7 @@ const selfHealRateText = computed(() => {
       自愈观察窗
     </h2>
     <p class="panel-sub">
-      {{ stats.levels.map(getAlertLevelLabel).join(' / ') }} 级告警先观察 {{ stats.windowMinutes }} 分钟再建单——自愈率越高，被消掉的抖动工单越多
+      {{ stats.levels.map(getAlertLevelLabel).join('、') }}级告警先观察 {{ stats.windowMinutes }} 分钟再建单——自愈率越高，被消掉的抖动工单越多
     </p>
     <div class="obs-grid">
       <div class="obs-kpi">

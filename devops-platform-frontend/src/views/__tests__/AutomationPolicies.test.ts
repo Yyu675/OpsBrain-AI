@@ -340,7 +340,8 @@ describe('AutomationPolicies — 演练模式开关', () => {
 
     const message = String(confirmMock.mock.calls[0][0])
     expect(message).toContain('优雅重启 Pod')
-    expect(message).toContain('staging')
+    // 环境码经 envLabel 人话化（staging→预发）——断言锁字典生效
+    expect(message).toContain('预发')
   })
 
   it('切换后刷新统计——「真实执行」数必须跟着变', async () => {

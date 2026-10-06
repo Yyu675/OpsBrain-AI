@@ -43,11 +43,19 @@ export const slaClass = (row: { slaProgress?: number; slaBreached?: boolean }) =
   return 'sla-normal'
 }
 
-/** B2 处置阶段中文标签（内部字典——外部消费 stageLabel() 单函数，导出字典属多余出口） */
+/** B2 处置阶段中文标签（内部字典；对外出口 = stageLabel() 与下方派生的 STAGE_OPTIONS，字典本体不外露） */
 const STAGE_LABELS: Record<string, string> = {
   TRIAGE: '排查中', MITIGATED: '已止损', FIXING: '修复中', VERIFYING: '验证中'
 }
 export const stageLabel = (stage: string) => STAGE_LABELS[stage] || stage
+
+/**
+ * 处置阶段下拉选项（批87 单源派生，供阶段切换条 v-for——TicketActionSection）。
+ * 对象字面量序 = 状态机推进序 TRIAGE→MITIGATED→FIXING→VERIFYING，
+ * **勿重排上方字典**：切换条与 stageLabel 消费同一顺序。
+ */
+export const STAGE_OPTIONS: { value: string; label: string }[] =
+  Object.entries(STAGE_LABELS).map(([value, label]) => ({ value, label }))
 
 /** B3 根因分类中文标签（内部字典——外部消费 rcLabel() 单函数） */
 const RC_LABELS: Record<string, string> = {

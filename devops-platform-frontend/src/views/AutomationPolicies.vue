@@ -236,7 +236,7 @@ const togglingDryRun = useAsyncAction(
         `即将关闭「${row.name}」的演练模式。\n\n` +
           `关闭后，匹配到的告警将真实执行动作：${row.actionDisplayName ?? row.actionKey}\n` +
           `匹配条件：${describeMatch(row)}\n` +
-          `生效环境：${row.environment}\n\n` +
+          `生效环境：${envLabel(row.environment)}\n\n` +
           '建议先用「匹配预演」确认匹配范围符合预期。确认继续？',
         '关闭演练模式',
         {

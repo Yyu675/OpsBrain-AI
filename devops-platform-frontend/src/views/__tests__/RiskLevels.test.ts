@@ -229,7 +229,8 @@ describe('RiskLevels — 放宽检测（决定是否二次确认）', () => {
     await w.vm.$nextTick()
 
     const reasons = vm.loosenings('CONTROLLED_WRITE')
-    expect(reasons.some((r) => r.includes('prod'))).toBe(true)
+    // 环境码经 envLabel 人话化（prod→生产）——断言锁字典生效
+    expect(reasons.some((r) => r.includes('生产'))).toBe(true)
   })
 
   it('移除生效环境不算放宽', async () => {

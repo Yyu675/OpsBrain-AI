@@ -46,6 +46,7 @@ import {
   useUrlFilters,
 } from '@/composables/useUrlFilters'
 import { formatAbsolute } from '@/utils/time'
+import { auditActionLabel } from '@/constants/audit'
 import { handleServerError } from '@/utils/notify'
 
 defineOptions({ name: 'AuditLogs' })
@@ -703,7 +704,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
             </el-table-column>
             <el-table-column label="操作" min-width="190">
               <template #default="{ row }">
-                <span class="tag-action">{{ row.action }}</span>
+                <span class="tag-action">{{ auditActionLabel(row.action) }}</span>
               </template>
             </el-table-column>
             <el-table-column label="对象" min-width="160">
@@ -816,7 +817,7 @@ const shortTrace = (t: string | null) => (t ? t.slice(0, 8) : '—')
               <span class="op-dot" :class="op.success ? 'is-ok' : 'is-fail'" />
               <div class="op-content">
                 <div class="op-line">
-                  <span class="tag-action">{{ op.action }}</span>
+                  <span class="tag-action">{{ auditActionLabel(op.action) }}</span>
                   <span v-if="op.target_id" class="c-target-id">{{ op.target_type }}·{{ op.target_id }}</span>
                   <span class="dot-tag" :class="op.success ? 'is-ok' : 'is-fail'">
                     <i class="dot" />{{ op.success ? '成功' : `失败 ${op.status_code}` }}
