@@ -1,4 +1,4 @@
-<script setup lang="ts">
+ <script setup lang="ts">
 /**
  * 效能大盘（PRD FR-7 的最小可用面）。
  *
@@ -21,6 +21,7 @@ import { getClosureMetrics, getDiagnosisBoard, getMissingPostmortem, getDocHealt
 import { useAiAnalysisStatsQuery } from '@/api/queries/dashboard.query'
 import { deprecateKnowledgeDoc } from '@/api/knowledge'
 import { notify } from '@/utils/notify'
+import { getStatusLabel } from '@/constants/ticket'
 import { ElMessageBox } from 'element-plus'
 import { getHealingStats } from '@/api/healing'
 import { fetchAlerts, fetchPipelineHeartbeat, fetchLogsHeartbeat, type LogsHeartbeat } from '@/api/alerts'
@@ -552,7 +553,8 @@ const trendSeries = computed<TrendSeries[]>(() => {
         >
           <span class="missing-id">{{ t.id }}</span>
           <span class="missing-title">{{ t.title }}</span>
-          <span class="missing-status">{{ t.status }}</span>
+          <!-- 后端透传大写 status（PENDING/RESOLVED…）；与前端枚举同词根，小写即过字典 -->
+          <span class="missing-status">{{ getStatusLabel(t.status.toLowerCase()) }}</span>
         </RouterLink>
       </div>
     </el-dialog>

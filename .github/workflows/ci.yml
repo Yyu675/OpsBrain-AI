@@ -142,6 +142,13 @@ jobs:
         # GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉。
         run: ./mvnw -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
 
+      - name: OpenAPI 快照新鲜度（门禁 · 批88）
+        # target/openapi.json 由上一步 mvn verify 内的 OpenApiSchemaIntegrationTest
+        # 每次导出（当次代码活体反射）；对账随库快照 path/method + schema 属性集。
+        # 后端改契约没跑 api:refresh → 此步红——apiContract（前端↔快照）与
+        # fieldContract（手写↔生成）都站在快照上，底不新鲜则两闸空转。
+        run: node tools/ci/check-openapi-freshness.js
+
       - name: 失败诊断回帖（沙箱日志取证道 · 批 45 红案催生）
         # 背景：托管 runner 日志归档在 azure blob，开发沙箱 egress 不通该域，
         # gh api/gh run view --log 都取不到失败日志（批 45 红案两度空跑）。
@@ -261,6 +268,12 @@ jobs:
         # （构建侧风险等位较低、变异噪声高）——全量含 dev 的账本随 Trivy 周巡件。
         # 2026-09-08 量：prod 0 / 全量 0，门禁从干净地板起步，回弹即出警。
         run: npm audit --omit=dev --audit-level=high
+
+      - name: 生成物新鲜度（门禁 · 批88）
+        # 快照改了没跑 gen、或 generated/ 被手改 → 此步红。
+        # orval 经 scripts/gen-api.mjs 的 ajv hook 运行，路径全部相对 cwd，
+        # Linux CI 与 Windows 本机同一套；或 v7.21.0 由 lock 锁定 → 生成幂等。
+        run: npm run gen:check
 
       - name: 类型检查
         run: npm run typecheck

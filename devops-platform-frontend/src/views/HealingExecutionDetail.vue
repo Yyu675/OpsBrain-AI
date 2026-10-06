@@ -16,22 +16,8 @@ import { getHealingExecution, undoHealing, type HealingExecution, type HealingSt
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import { envLabel } from '@/constants/environment'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
-
-const STATUS_META: Record<string, { label: string; type: 'success' | 'warning' | 'danger' | 'info' | 'primary' }> = {
-  SUCCEEDED: { label: '已执行', type: 'success' },
-  FAILED: { label: '执行失败', type: 'danger' },
-  PENDING_APPROVAL: { label: '待审批', type: 'warning' },
-  REJECTED: { label: '已拒绝', type: 'info' },
-  UNDONE: { label: '已撤销', type: 'primary' },
-  UNDO_FAILED: { label: '撤销失败', type: 'danger' },
-}
-
-const DECISION_LABELS: Record<string, string> = {
-  AUTO_EXECUTE: '免审直执行',
-  REQUIRES_APPROVAL: '需审批',
-  DENIED: '门拒绝',
-  NO_EXECUTOR: '无执行器',
-}
+// 批88 残影收口：与 HealingCenter 逐字双份字典归 constants/healing 单源
+import { HEALING_STATUS_META as STATUS_META, HEALING_DECISION_META } from '@/constants/healing'
 
 const route = useRoute()
 const router = useRouter()
@@ -126,7 +112,7 @@ onMounted(load)
           <el-descriptions-item label="动作" :span="2">{{ row.actionKey }}</el-descriptions-item>
           <el-descriptions-item label="环境">{{ envLabel(row.environment) }}</el-descriptions-item>
           <el-descriptions-item label="目标">{{ row.target || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="门裁决">{{ DECISION_LABELS[row.gateDecision] || row.gateDecision }}</el-descriptions-item>
+          <el-descriptions-item label="门裁决">{{ HEALING_DECISION_META[row.gateDecision]?.label || row.gateDecision }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag size="small" :type="STATUS_META[row.status]?.type || 'info'">
               {{ STATUS_META[row.status]?.label || row.status }}

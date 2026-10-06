@@ -22,22 +22,9 @@ import {
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import { envLabel } from '@/constants/environment'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
-
-const STATUS_META: Record<string, { label: string; type: 'success' | 'warning' | 'danger' | 'info' | 'primary' }> = {
-  SUCCEEDED: { label: '已执行', type: 'success' },
-  FAILED: { label: '执行失败', type: 'danger' },
-  PENDING_APPROVAL: { label: '待审批', type: 'warning' },
-  REJECTED: { label: '已拒绝', type: 'info' },
-  UNDONE: { label: '已撤销', type: 'primary' },
-  UNDO_FAILED: { label: '撤销失败', type: 'danger' },
-}
-
-const DECISION_META: Record<string, { label: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
-  AUTO_EXECUTE: { label: '免审直执行', type: 'success' },
-  REQUIRES_APPROVAL: { label: '需审批', type: 'warning' },
-  DENIED: { label: '门拒绝', type: 'danger' },
-  NO_EXECUTOR: { label: '无执行器', type: 'info' },
-}
+// 批88 残影收口：与 HealingExecutionDetail 逐字双份的 STATUS/DECISION 字典
+// 归 constants/healing 单源，别名导入让模板调用点零改
+import { HEALING_STATUS_META as STATUS_META, HEALING_DECISION_META as DECISION_META } from '@/constants/healing'
 
 const items = ref<HealingExecution[]>([])
 const executors = ref<string[]>([])
