@@ -43,14 +43,14 @@ export const slaClass = (row: { slaProgress?: number; slaBreached?: boolean }) =
   return 'sla-normal'
 }
 
-/** B2 处置阶段中文标签 */
-export const STAGE_LABELS: Record<string, string> = {
+/** B2 处置阶段中文标签（内部字典——外部消费 stageLabel() 单函数，导出字典属多余出口） */
+const STAGE_LABELS: Record<string, string> = {
   TRIAGE: '排查中', MITIGATED: '已止损', FIXING: '修复中', VERIFYING: '验证中'
 }
 export const stageLabel = (stage: string) => STAGE_LABELS[stage] || stage
 
-/** B3 根因分类中文标签 */
-export const RC_LABELS: Record<string, string> = {
+/** B3 根因分类中文标签（内部字典——外部消费 rcLabel() 单函数） */
+const RC_LABELS: Record<string, string> = {
   CONFIG: '配置错误', CAPACITY: '容量不足', CODE: '代码缺陷',
   DEPENDENCY: '依赖故障', NETWORK: '网络问题', DATA: '数据异常',
   HUMAN: '人为操作', EXTERNAL: '外部服务', UNKNOWN: '未定位'

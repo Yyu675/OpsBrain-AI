@@ -40,6 +40,7 @@ interface AlertEvent {
  * 详情页的状态翻转都靠它，不为每个消费方各开一条连接。
  * 通知逻辑（下方 onmessage）只是订阅者之一。
  */
+/** @public knip 假阳存证：%s —— 事件订阅契约的公共面（subscribeAlertEvents 签名语义），消费者可写自有 handler 类型 */
 export type AlertEventListener = (e: AlertEvent) => void
 const alertEventListeners = new Set<AlertEventListener>()
 

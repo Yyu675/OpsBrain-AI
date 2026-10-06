@@ -54,6 +54,10 @@ export interface RiskPolicy {
   version: number
   updatedBy: string | null
   updateTime: string | null
+  /** 完全无需人工介入即可执行（免审批 + 允许自动执行，后端派生） */
+  fullyAutonomous: boolean
+  /** 创建时间（与 updatedBy/updateTime 对偶的审计字段） */
+  createTime: string | null
 }
 
 export interface ActionAllowlistEntry {
@@ -79,6 +83,9 @@ export interface ActionAllowlistEntry {
   version: number
   updatedBy: string | null
   updateTime: string | null
+  /** 创建人 / 创建时间（与 updatedBy/updateTime 对偶的审计字段） */
+  createdBy: string | null
+  createTime: string | null
 
   /**
    * 服务端算好的「生效后实际约束」。
@@ -320,6 +327,10 @@ export interface AutomationPolicy {
   /** 演练模式：照常匹配与记录，但不执行。新建默认 true */
   dryRun: boolean
   enabled: boolean
+
+  /** 创建人 / 创建时间（与 updatedBy/updateTime 对偶的审计字段） */
+  createdBy: string | null
+  createTime: string | null
 
   version: number
   updatedBy: string | null

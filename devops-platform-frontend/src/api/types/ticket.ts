@@ -100,6 +100,18 @@ export interface BackendTicket {
   verifySkipReason?: string | null
   createTime: string
   updateTime: string
+  /** 首响截止时点（建单时按优先级冻结） */
+  responseDeadline?: string | null
+  /** 解决截止时点（建单时冻结的精确时刻，SLA 预算以其推算） */
+  resolveDeadline?: string | null
+  /** 是否已首响（后端派生，避免前端重复写 firstResponseAt != null） */
+  firstResponded?: boolean
+  /** MTTR 分钟（工单完成后才有值，一位小数） */
+  mttrMinutes?: number | null
+  /** 计时停止态（RESOLVED/CLOSED/VOID——SLA/首响倒计时到此为止） */
+  terminalStatus?: boolean
+  /** 真正不可再操作（仅 VOID；与 terminalStatus 是两件事，见后端 isImmutableStatus） */
+  immutableStatus?: boolean
 }
 
 /**

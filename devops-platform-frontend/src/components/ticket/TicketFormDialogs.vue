@@ -7,21 +7,21 @@
  * 强耦合；组件内再复制一份会与之漂移。这里只负责画弹窗并把表单双向绑定回去。
  */
 
-export interface ActionFormState {
+interface ActionFormState {
   actionType: string
   summary: string
   detail: string
   effective: boolean | null
 }
 
-export interface VerifyFormState {
+interface VerifyFormState {
   method: string
   conclusion: string
   skip: boolean
   skipReason: string
 }
 
-export interface RootCauseFormState {
+interface RootCauseFormState {
   rootCause: string
   category: string
 }

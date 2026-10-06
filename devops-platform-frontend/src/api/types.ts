@@ -493,6 +493,10 @@ export interface Alert {
   annotationsJson?: string | null
   createTime: string | null
   updateTime: string | null
+  /** 高危派生：P0/P1（后端 isHighRisk）——前端强标识与筛选用 */
+  highRisk?: boolean
+  /** 低危派生：P3/P4 低危告警（AI 可自动处理，后端 isLowRisk） */
+  lowRisk?: boolean
 }
 
 /**

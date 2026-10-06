@@ -16,9 +16,11 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "knip": "knip",
+    "gen:api": "node scripts/gen-api.mjs",
+    "api:refresh": "bash ../tools/ci/sync-openapi.sh && npm run gen:api",
     "verify": "npm run typecheck && npm run lint && npm run audit:tokens && npm run test",
     "audit:tokens": "node tools/audit/check_tokens.cjs",
-    "size:gate": "npm run build >/dev/null && node ../tools/audit/check_bundle_budget.js"
+    "size:gate": "npm run build && node ../tools/audit/check_bundle_budget.js"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
@@ -59,12 +61,14 @@
     "@vue/test-utils": "^2.4.11",
     "@vue/tsconfig": "^0.9.1",
     "echarts": "^6.1.0",
+    "@element-plus/icons-vue": "^2.3.2",
     "element-plus": "^2.14.3",
     "eslint": "^10.9.0",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.11.0",
     "jsdom": "^30.0.1",
     "knip": "^5.88.1",
+    "orval": "^7.21.0",
     "pinia": "^3.0.4",
     "sass-embedded": "^1.104.1",
     "typescript": "~6.0.2",

@@ -17,9 +17,13 @@ const config: KnipConfig = {
     // 测试文件是自身的入口
     'src/**/*.{test,spec}.ts',
     'src/test-setup.ts',
+    // 项3 Phase B：字段集契约互证是编译期自证文件（vue-tsc 执行，无运行时消费方）；
+    // orval 生成物按快照整目录入库，未被 import 的孪生类型属正常形态
+    'src/api/fieldContract.ts',
   ],
   project: ['src/**/*.{ts,vue}'],
   ignore: [
+    'src/api/generated/**',
     // unplugin 生成物
     'auto-imports.d.ts',
     'components.d.ts',

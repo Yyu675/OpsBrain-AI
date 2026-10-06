@@ -93,3 +93,6 @@ docs/99-personal/
 # Python 字节码缓存（scan_*.py 被 run_audit.py import 时生成）
 __pycache__/
 *.pyc
+
+# orval 弃件（client 文件不入库，真产物是 src/api/generated）
+tools/orval-out/

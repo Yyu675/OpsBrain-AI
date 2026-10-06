@@ -225,14 +225,30 @@ export default tseslint.config(
      * tools/ 下是构建/审计脚本（如 check_bundle_budget.cjs），跑在 Node 而非
      * 浏览器：require/__dirname/console/process 都是合法全局，且 CJS 的
      * require 是它该有的模块形式——不适用前端源码的 ESM 约束。
+     * scripts/ 同类（playwright 驱动脚本 shot-ticket-detail.cjs 等）。
      */
-    files: ['tools/**/*.cjs'],
+    files: ['tools/**/*.cjs', 'scripts/**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
-      globals: { ...globals.node },
+      // document：playwright 脚本 page.evaluate() 回调跑在浏览器上下文
+      //（shot-ticket-detail.cjs 第 59 行），同文件双上下文是该类脚本常态
+      globals: { ...globals.node, document: 'readonly' },
     },
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+
+  {
+    /**
+     * scripts/ 下的 ESM 工具（gen-api.mjs = orval 类型生成入口）。
+     * 跑在 Node：console/process 是合法全局。缺本块时它掉进
+     * js.recommended 默认块（无 node globals）→ no-undef 一片红。
+     */
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: { ...globals.node },
     },
   }
 )

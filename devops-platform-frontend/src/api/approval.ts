@@ -26,6 +26,12 @@ export interface ApprovalRequest {
   executeResult: string | null
   createTime: string
   updateTime: string
+  /** 可处置派生：当前状态允许 approve/reject（后端 isDecidable） */
+  decidable: boolean
+  /** 是否高危动作（HIGH_RISK_EXECUTION）——前端强标识 */
+  highRisk: boolean
+  /** 是否已超时（供前端标红提醒；实际 EXPIRED 由定时任务固化） */
+  overdue: boolean
 }
 
 export interface ApprovalPage {
