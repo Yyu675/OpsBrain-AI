@@ -69,6 +69,9 @@ import {
   useUrlFilters,
 } from '@/composables/useUrlFilters'
 import { notify } from '@/utils/notify'
+import { getAlertLevelLabel } from '@/utils/alert'
+import { envLabel, envListLabel } from '@/constants/environment'
+import { riskLabel } from '@/constants/risk'
 
 defineOptions({ name: 'AutomationPolicies' })
 
@@ -364,7 +367,7 @@ const formError = computed<string | null>(() => {
   // 选中动作后提前提示环境不符，省一次往返
   if (selectedAction.value && !selectedAction.value.environments
     .split(',').map((s) => s.trim()).includes(form.environment)) {
-    return `动作「${selectedAction.value.displayName}」未在 ${form.environment} 环境开放`
+    return `动作「${selectedAction.value.displayName}」未在 ${envLabel(form.environment)} 环境开放`
   }
   return null
 })
@@ -495,7 +498,7 @@ const OUTCOME_LABELS: Record<string, string> = {
         <label class="filter-field">
           <select v-model="environment" class="control">
             <option value="">全部环境</option>
-            <option v-for="e in options.environments" :key="e" :value="e">{{ e }}</option>
+            <option v-for="e in options.environments" :key="e" :value="e">{{ envLabel(e) }}</option>
           </select>
         </label>
         <label class="filter-field">
@@ -556,7 +559,7 @@ const OUTCOME_LABELS: Record<string, string> = {
                   <span class="policy-name">{{ row.name }}</span>
                   <span v-if="row.description" class="cell-sub">{{ row.description }}</span>
                   <span class="env-chip" :class="{ 'is-prod': row.environment === 'prod' }">
-                    {{ row.environment }}
+                    {{ envLabel(row.environment) }}
                   </span>
                 </td>
 
@@ -567,7 +570,7 @@ const OUTCOME_LABELS: Record<string, string> = {
                       :key="lv"
                       class="level-chip"
                       :class="{ 'is-critical': lv === 'P0' || lv === 'P1' }"
-                    >{{ lv }}</span>
+                    >{{ getAlertLevelLabel(lv) }}</span>
                   </div>
                   <span class="match-text">{{ describeMatch(row) }}</span>
                 </td>
@@ -705,7 +708,7 @@ const OUTCOME_LABELS: Record<string, string> = {
             <label class="field">
               <span class="field-label">生效环境</span>
               <select v-model="form.environment" class="control">
-                <option v-for="e in options.environments" :key="e" :value="e">{{ e }}</option>
+                <option v-for="e in options.environments" :key="e" :value="e">{{ envLabel(e) }}</option>
               </select>
             </label>
           </div>
@@ -737,7 +740,7 @@ const OUTCOME_LABELS: Record<string, string> = {
                   :checked="formLevels.includes(lv)"
                   @change="toggleFormLevel(lv)"
                 />
-                <span>{{ lv }}</span>
+                <span>{{ getAlertLevelLabel(lv) }}</span>
               </label>
             </div>
           </div>
@@ -792,10 +795,10 @@ const OUTCOME_LABELS: Record<string, string> = {
           </label>
           <div v-if="selectedAction" class="action-preview">
             <span class="preview-item">
-              风险等级：<strong>{{ selectedAction.riskLevel }}</strong>
+              风险等级：<strong>{{ riskLabel(selectedAction.riskLevel) }}</strong>
             </span>
             <span class="preview-item">
-              开放环境：<strong>{{ selectedAction.environments }}</strong>
+              开放环境：<strong>{{ envListLabel(selectedAction.environments) }}</strong>
             </span>
             <span class="preview-item">
               执行约束：<strong>
@@ -911,7 +914,7 @@ const OUTCOME_LABELS: Record<string, string> = {
         <label class="field">
           <span class="field-label">告警级别</span>
           <select v-model="simInput.level" class="control">
-            <option v-for="lv in ALERT_LEVELS" :key="lv" :value="lv">{{ lv }}</option>
+            <option v-for="lv in ALERT_LEVELS" :key="lv" :value="lv">{{ getAlertLevelLabel(lv) }}</option>
           </select>
         </label>
         <label class="field">
@@ -923,7 +926,7 @@ const OUTCOME_LABELS: Record<string, string> = {
         <label class="field">
           <span class="field-label">环境</span>
           <select v-model="simInput.environment" class="control">
-            <option v-for="e in options.environments" :key="e" :value="e">{{ e }}</option>
+            <option v-for="e in options.environments" :key="e" :value="e">{{ envLabel(e) }}</option>
           </select>
         </label>
       </div>

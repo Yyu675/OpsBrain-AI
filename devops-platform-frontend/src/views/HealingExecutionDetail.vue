@@ -14,6 +14,7 @@ import { ElMessageBox } from 'element-plus'
 import { ArrowLeft, RotateCcw } from 'lucide-vue-next'
 import { getHealingExecution, undoHealing, type HealingExecution, type HealingStep } from '@/api/healing'
 import RelativeTime from '@/components/common/RelativeTime.vue'
+import { envLabel } from '@/constants/environment'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 
 const STATUS_META: Record<string, { label: string; type: 'success' | 'warning' | 'danger' | 'info' | 'primary' }> = {
@@ -123,7 +124,7 @@ onMounted(load)
       <div v-if="row" class="detail-body">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="动作" :span="2">{{ row.actionKey }}</el-descriptions-item>
-          <el-descriptions-item label="环境">{{ row.environment }}</el-descriptions-item>
+          <el-descriptions-item label="环境">{{ envLabel(row.environment) }}</el-descriptions-item>
           <el-descriptions-item label="目标">{{ row.target || '—' }}</el-descriptions-item>
           <el-descriptions-item label="门裁决">{{ DECISION_LABELS[row.gateDecision] || row.gateDecision }}</el-descriptions-item>
           <el-descriptions-item label="状态">

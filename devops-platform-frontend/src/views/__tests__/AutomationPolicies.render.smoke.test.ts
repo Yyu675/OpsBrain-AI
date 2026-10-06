@@ -349,7 +349,8 @@ describe('列表：每一行把策略状态画对', () => {
 
     expect(tr.find('.pri-num').text()).toBe('20')
     expect(tr.find('.policy-name').text()).toBe('P3 Pod 崩溃自动重启')
-    expect(tr.find('.env-chip').text()).toBe('staging')
+    // 环境码经 envLabel 人话化（staging→预发；码值仍是筛选/提交参数）
+    expect(tr.find('.env-chip').text()).toBe('预发')
     expect(tr.find('.action-name').text()).toBe('优雅重启 Pod')
     // 展示名之外还要给出 actionKey：排查时人看的是 key，不是中文名
     expect(tr.find('.action-key').text()).toBe('k8s.pod.restart')
@@ -451,11 +452,11 @@ describe('列表：每一行把策略状态画对', () => {
       .toEqual([true, false])
   })
 
-  it('告警级别逐个渲染成 chip，P0 / P1 额外标危', async () => {
+  it('告警级别逐个渲染成 chip，紧急/严重 两级额外标危', async () => {
     const w = await mountPage([row({ matchAlertLevels: 'P0,P2,P1' })])
     const chips = rowsOf(w)[0].findAll('.level-chip')
 
-    expect(chips.map((c) => c.text())).toEqual(['P0', 'P2', 'P1'])
+    expect(chips.map((c) => c.text())).toEqual(['紧急', '警告', '严重'])
     expect(chips.map((c) => c.classes().includes('is-critical')))
       .toEqual([true, false, true])
   })

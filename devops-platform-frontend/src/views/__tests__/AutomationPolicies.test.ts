@@ -275,7 +275,8 @@ describe('AutomationPolicies — 匹配条件校验', () => {
     })
     await w.vm.$nextTick()
 
-    expect(vm.formError).toContain('prod')
+    // 文案经 envLabel 人话化（prod→生产）——断言就锁字典生效
+    expect(vm.formError).toContain('生产')
   })
 
   it('校验不通过时不发请求', async () => {

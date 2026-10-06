@@ -20,6 +20,7 @@ import {
   type HealingExecution,
 } from '@/api/healing'
 import RelativeTime from '@/components/common/RelativeTime.vue'
+import { envLabel } from '@/constants/environment'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 
 const STATUS_META: Record<string, { label: string; type: 'success' | 'warning' | 'danger' | 'info' | 'primary' }> = {
@@ -245,7 +246,7 @@ onMounted(reload)
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item label="台账 #">{{ detailRow.id }}</el-descriptions-item>
           <el-descriptions-item label="动作">{{ detailRow.actionKey }}</el-descriptions-item>
-          <el-descriptions-item label="环境 / 目标">{{ detailRow.environment }} / {{ detailRow.target || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="环境 / 目标">{{ envLabel(detailRow.environment) }} / {{ detailRow.target || '—' }}</el-descriptions-item>
           <el-descriptions-item label="门裁决">{{ DECISION_META[detailRow.gateDecision]?.label || detailRow.gateDecision }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ STATUS_META[detailRow.status]?.label || detailRow.status }}</el-descriptions-item>
           <el-descriptions-item label="执行器">{{ detailRow.executorKey || '—' }}</el-descriptions-item>

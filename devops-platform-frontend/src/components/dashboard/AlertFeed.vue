@@ -15,6 +15,7 @@
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { Bell, Radio } from 'lucide-vue-next'
 import RelativeTime from '@/components/common/RelativeTime.vue'
+import { getAlertLevelLabel } from '@/utils/alert'
 
 interface AlertPayload {
   id: number
@@ -135,7 +136,7 @@ const displayAlerts = computed(() => alerts.value.slice(0, MAX_DISPLAY))
         <div class="feed-body">
           <div class="feed-title">{{ ev.alert.title || ev.alert.alertName }}</div>
           <div class="feed-meta">
-            <span class="feed-badge" :style="{ color: levelColor(ev.alert.level) }">{{ ev.alert.level }}</span>
+            <span class="feed-badge" :style="{ color: levelColor(ev.alert.level) }">{{ getAlertLevelLabel(ev.alert.level) }}</span>
             <span class="feed-service">{{ ev.alert.service }}</span>
             <span class="feed-time"><RelativeTime :value="ev.timestamp" /></span>
           </div>

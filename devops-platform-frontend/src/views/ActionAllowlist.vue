@@ -57,6 +57,8 @@ import {
   useUrlFilters,
 } from '@/composables/useUrlFilters'
 import { notify } from '@/utils/notify'
+import { riskLabel } from '@/constants/risk'
+import { envLabel } from '@/constants/environment'
 
 defineOptions({ name: 'ActionAllowlist' })
 
@@ -177,14 +179,6 @@ const resetFilters = () => {
 
 // ==================== 展示辅助 ====================
 
-const RISK_LABELS: Record<RiskLevel, string> = {
-  READ_ONLY: '只读查询',
-  DRAFT: '草稿生成',
-  CONTROLLED_WRITE: '受控写操作',
-  HIGH_RISK_EXECUTION: '高风险执行',
-}
-
-const riskLabel = (level: string) => RISK_LABELS[level as RiskLevel] ?? level
 const isHighRisk = (level: string) => level === 'HIGH_RISK_EXECUTION'
 
 const envList = (envs: string | null) =>
@@ -528,7 +522,7 @@ const evaluating = useAsyncAction(
                       :key="env"
                       class="env-chip"
                       :class="{ 'is-prod': env === 'prod' }"
-                    >{{ env }}</span>
+                    >{{ envLabel(env) }}</span>
                   </div>
                   <code v-if="row.targetPattern" class="pattern">{{ row.targetPattern }}</code>
                   <span v-else class="cell-sub warn-text">未限制目标</span>
@@ -682,7 +676,7 @@ const evaluating = useAsyncAction(
                   :checked="formEnvList.includes(env)"
                   @change="toggleFormEnv(env)"
                 />
-                <span>{{ env }}</span>
+                <span>{{ envLabel(env) }}</span>
               </label>
             </div>
             <p class="field-hint">
@@ -796,7 +790,7 @@ const evaluating = useAsyncAction(
         <label class="field">
           <span class="field-label">环境</span>
           <select v-model="evalEnvironment" class="control">
-            <option v-for="env in options.environments" :key="env" :value="env">{{ env }}</option>
+            <option v-for="env in options.environments" :key="env" :value="env">{{ envLabel(env) }}</option>
           </select>
         </label>
       </div>

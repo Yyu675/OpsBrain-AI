@@ -35,20 +35,36 @@ export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {
   RESOLVED: '已恢复'
 }
 
+/**
+ * 级别中文标签（人话化，2026-10-06）。
+ *
+ * P0~P4 是内部归一化码：对值班同事它不传达任何含义，展示层一律走本表。
+ * 码值仍留在「筛选 value / API 参数 / 颜色归类」——中文只换展示，不动契约。
+ */
+const ALERT_LEVEL_LABELS: Record<AlertLevel, string> = {
+  P0: '紧急',
+  P1: '严重',
+  P2: '警告',
+  P3: '一般',
+  P4: '提示'
+}
+
+/** 取级别中文标签：未知码原样透出不吞（后端新增档位时先在页面上可见，再回来补表） */
+export const getAlertLevelLabel = (level: string | null | undefined): string => {
+  if (!level) return '—'
+  return ALERT_LEVEL_LABELS[level.toUpperCase() as AlertLevel] ?? level
+}
+
 export const ALERT_STATUS_OPTIONS: { value: AlertStatus | ''; label: string }[] = [
   { value: '', label: '全部状态' },
-  { value: 'FIRING', label: '触发中' },
-  { value: 'ACKNOWLEDGED', label: '已确认' },
-  { value: 'RESOLVED', label: '已恢复' }
+  ...(Object.entries(ALERT_STATUS_LABELS) as [AlertStatus, string][])
+    .map(([value, label]) => ({ value, label }))
 ]
 
 export const ALERT_LEVEL_OPTIONS: { value: AlertLevel | ''; label: string }[] = [
   { value: '', label: '全部级别' },
-  { value: 'P0', label: 'P0' },
-  { value: 'P1', label: 'P1' },
-  { value: 'P2', label: 'P2' },
-  { value: 'P3', label: 'P3' },
-  { value: 'P4', label: 'P4' }
+  ...(Object.entries(ALERT_LEVEL_LABELS) as [AlertLevel, string][])
+    .map(([value, label]) => ({ value, label }))
 ]
 
 export const getAlertStatusLabel = (s: string | null | undefined): string => {

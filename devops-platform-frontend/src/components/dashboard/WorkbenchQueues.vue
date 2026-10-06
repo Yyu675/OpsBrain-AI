@@ -22,6 +22,7 @@ import { listApprovals } from '@/api/approval'
 import { ticketKeys, approvalKeys } from '@/config/queryKeys'
 import { useAppStore } from '@/stores/app'
 import { getStatusLabel, getPriorityLabel } from '@/stores/tickets'
+import { riskLabel, riskToneClass } from '@/constants/risk'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 
 const router = useRouter()
@@ -57,12 +58,6 @@ const PRIORITY_TONE: Record<string, string> = {
   urgent: 'tone-danger', high: 'tone-warning', medium: 'tone-info', low: 'tone-muted',
 }
 const priorityTone = (p: string) => PRIORITY_TONE[p] ?? 'tone-muted'
-
-/** 审批风险级 → 徽章色调 */
-const RISK_TONE: Record<string, string> = {
-  HIGH: 'tone-danger', MEDIUM: 'tone-warning', LOW: 'tone-info',
-}
-const riskTone = (r: string) => RISK_TONE[r?.toUpperCase()] ?? 'tone-muted'
 
 const goTickets = () => router.push('/tickets?status=pending&sortBy=priority&sortAsc=true')
 const goTicket = (id: string) => router.push(`/tickets/${id}`)
@@ -143,7 +138,7 @@ const goDisposal = () => router.push('/disposal?tab=approvals')
           @click="goDisposal"
           @keydown.enter="goDisposal"
         >
-          <span class="badge" :class="riskTone(a.riskLevel)">{{ a.riskLevel }}</span>
+          <span class="badge" :class="riskToneClass(a.riskLevel)">{{ riskLabel(a.riskLevel) }}</span>
           <div class="row-main">
             <p class="row-title">{{ a.summary }}</p>
             <div class="row-topline">

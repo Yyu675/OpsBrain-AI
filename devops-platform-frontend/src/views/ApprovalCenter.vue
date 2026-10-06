@@ -18,6 +18,7 @@ import {
 } from '@/api/queries/approval.query'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
+import { riskLabel } from '@/constants/risk'
 
 const STATUS_TABS = [
   { value: 'PENDING', label: '待审批' },
@@ -27,12 +28,6 @@ const STATUS_TABS = [
   { value: 'ALL', label: '全部' }
 ]
 
-const RISK_LABELS: Record<string, string> = {
-  READ_ONLY: '只读',
-  DRAFT: '草稿',
-  CONTROLLED_WRITE: '受控写',
-  HIGH_RISK_EXECUTION: '高危执行'
-}
 const STATUS_LABELS: Record<string, string> = {
   PENDING: '待审批',
   APPROVED: '已批准',
@@ -208,7 +203,7 @@ const forbidden = computed(() => {
           <el-table-column label="风险" width="96" align="center">
             <template #default="{ row }">
               <el-tag :type="riskTagType(row.riskLevel)" size="small" effect="dark">
-                {{ RISK_LABELS[row.riskLevel] || row.riskLevel }}
+                {{ riskLabel(row.riskLevel) }}
               </el-tag>
             </template>
           </el-table-column>

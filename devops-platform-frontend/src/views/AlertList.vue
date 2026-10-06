@@ -27,6 +27,7 @@ import {
   levelTagType,
   statusTagType,
   getAlertStatusLabel,
+  getAlertLevelLabel,
   ALERT_STATUS_OPTIONS,
   ALERT_LEVEL_OPTIONS
 } from '@/utils/alert'
@@ -468,7 +469,7 @@ const offAlertEvents = subscribeAlertEvents(() => {
           <el-table-column label="级别" width="80" align="center">
             <template #default="{ row }">
               <el-tag :type="levelTagType(row.level)" size="small" effect="dark">
-                {{ row.level || '—' }}
+                {{ getAlertLevelLabel(row.level) }}
               </el-tag>
             </template>
           </el-table-column>

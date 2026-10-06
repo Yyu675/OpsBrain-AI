@@ -25,7 +25,7 @@ import {
 import { useAlertDetailQuery, useAlertMutations } from '@/api/queries/alerts.query'
 import { fetchRelatedAlerts } from '@/api/alerts'
 import { fetchTicketById } from '@/api/tickets'
-import { levelTagType, statusTagType, getAlertStatusLabel } from '@/utils/alert'
+import { levelTagType, statusTagType, getAlertStatusLabel, getAlertLevelLabel } from '@/utils/alert'
 import { formatAbsolute, parseDate } from '@/utils/time'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import ApiErrorState from '@/components/common/ApiErrorState.vue'
@@ -308,7 +308,7 @@ const goList = () => router.push('/alerts')
             <div class="header-title-block">
               <div class="title-row">
                 <el-tag :type="levelTagType(alert.level)" size="small" effect="dark">
-                  {{ alert.level || '—' }}
+                  {{ getAlertLevelLabel(alert.level) }}
                 </el-tag>
                 <h1 class="page-title">{{ alert.title || alert.alertName || '告警' }}</h1>
               </div>
@@ -405,7 +405,7 @@ const goList = () => router.push('/alerts')
               <ul v-else-if="relatedAlerts.length" class="related-list">
                 <li v-for="r in relatedAlerts" :key="r.id" class="related-item">
                   <RouterLink :to="`/alerts/${r.id}`" class="related-link">
-                    <el-tag :type="levelTagType(r.level)" size="small" effect="dark">{{ r.level || '—' }}</el-tag>
+                    <el-tag :type="levelTagType(r.level)" size="small" effect="dark">{{ getAlertLevelLabel(r.level) }}</el-tag>
                     <span class="related-name">{{ r.title || r.alertName || `告警 #${r.id}` }}</span>
                     <span v-if="r.observing" class="observing-badge">观察中</span>
                     <span class="related-time">

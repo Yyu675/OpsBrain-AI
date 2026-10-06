@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/vue-query'
 import { Telescope } from 'lucide-vue-next'
 import { fetchObservationStats } from '@/api/alerts'
 import { alertKeys } from '@/config/queryKeys'
+import { getAlertLevelLabel } from '@/utils/alert'
 
 defineOptions({ name: 'ObservationStatsPanel' })
 
@@ -43,7 +44,7 @@ const selfHealRateText = computed(() => {
       自愈观察窗
     </h2>
     <p class="panel-sub">
-      {{ stats.levels.join(' / ') }} 级告警先观察 {{ stats.windowMinutes }} 分钟再建单——自愈率越高，被消掉的抖动工单越多
+      {{ stats.levels.map(getAlertLevelLabel).join(' / ') }} 级告警先观察 {{ stats.windowMinutes }} 分钟再建单——自愈率越高，被消掉的抖动工单越多
     </p>
     <div class="obs-grid">
       <div class="obs-kpi">
