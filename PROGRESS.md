@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-06（批86：项3B + 人话化）
+> **最后更新**：2026-10-06（批87：契约升维+残影清扫+台账清欠）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -145,10 +145,10 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 前置 | 估期* | 状态 |
 |---|---|---|---|---|
-| S0-1 | ~~**Flyway 迁移版本化**~~（D-01 由代理按路线图推荐采纳方案 B；落地形态=基线搬家+托管接入，历史迁移文件早已不存在） | — | 3d | 🟡 **待验收**（收尾挂账见下方挂起区） |
+| S0-1 | ~~**Flyway 迁移版本化**~~（D-01 由代理按路线图推荐采纳方案 B；落地形态=基线搬家+托管接入，历史迁移文件早已不存在） | — | 3d | 🟡 **待验收**（收尾已清偿：批87 实证 ci.yml flyway migrate→validate→表数三步在岗、init.sql 桩已删——原挂起行随之删除） |
 | S0-2 | ~~**Testcontainers 集成测试**~~（0-2.6 评估：Redis/MinIO 均不做容器化；全量 docker-only 验收留 S0-2b） | — | 3d | 🟡 **待验收** |
 | S0-3 | ~~**Resilience4j 熔断降级**~~（0-3.5 范围缺口与恢复条件见待验收区 T14；logs/cmdb 槽随 S1 落地） | — | 3d | 🟡 **待验收** |
-| S0-4 | ~~**评测跑通与基线记录**~~（报告 102 已产；eval job/artifact/README 行三项随 workflows 权限挂账；语义覆盖率待首次 REAL 手动运行回填） | S0-2 | 2d | 🟡 **待验收** |
+| S0-4 | ~~**评测跑通与基线记录**~~（报告 102 已产；eval 门禁/artifact/README 行三项**已清偿**（批31 权限兑现，批87 逐条实证）；语义覆盖率待首次 REAL 手动运行回填） | S0-2 | 2d | 🟡 **待验收** |
 | S0-2b | 其余 13 个 `@SpringBootTest` 类迁入 Testcontainers 基座（验收 §4.2 #1 转 ✅ 的条件） | S0-2 | — | 📋 挂后续（阶段 1 前视时间择批迁；每类先查 Redis/调度器惰性） |
 
 \* 估期沿用路线图 §14（全职节奏）。**后续阶段（S1 取证 → S2 诊断 → S3 自愈 → S4 度量 → S5 加固）见路线图 §14，阶段内启动时再逐条登记。**
@@ -159,11 +159,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 | # | 任务 | 挂起原因 | 恢复条件 |
 |---|---|---|---|
-| S0-1 收尾 | ci.yml：删「初始化数据库 Schema」psql 步骤 + 增 `flyway validate` 步骤 + 删除 `sql/init.sql` 兼容桩（验收 #1 纯空库 Flyway、#3/#4 一并收口） | GitHub App 无 **workflows** 权限，推送含 workflow 变更被拒（历史 workflow 变更均由用户账号推送） | 用户在 Arena 重连 GitHub / 或按报告 100 §五手工应用（两处文案已备好） |
-| S0-4 收尾 | ci.yml：新增 `eval`（EVAL_RAG=true）/`eval-llm`（workflow_dispatch + secrets.ALIBABA_API_KEY）双 job + 评测报告 artifact 上传；README 补评测行（验收后） | 同上 workflows 权限缺口；README 更新有验收门 | 同上；diff 已备于报告 102 §五，可与 S0-1 收尾同批应用 |
-| S0-4b | 知识库文档补充：40 条正例话题（MySQL/Redis/Docker/JVM/Nginx/Prometheus/CI/CD 等，id 清单在报告 102 §四）无内置文档对应 | 内容工作、非代码；补齐前 REAL 覆盖率天然受限 | 与阶段 4 评测迭代（S4-1）或内容专项一起做 |
-| S0-4c | SLB 内置文档无评测正例（文档-评测不对齐） | 补 2~3 条 SLB 提问进 eval_dataset.json，或文档侧标注暂无覆盖 | 随下次评测集修订一并处理 |
-| P0-2b 剩余 | Map → record：工单余下 11 个端点 + 知识库余下（多为透传 service，需连带评估） | 路线图未排期；已完成工单/知识库/告警/治理四个模块的高价值端点，是 P1-4 TS 类型生成的最小够用面 | 阶段 0 做「自动生成 TS 类型」（路线图 §10.1 债项）时，按实际需要的端点逐个补 |
+| S0-4b | ~~40 条正例话题文档~~（批41 文档面 40/40 收口）——余两件环境型：摄取生效验证（随 S0-2b 首跑）+ expectedDocs 注记真窗回填 | 环境型（真窗/容器），非内容欠账 | S0-2b 首跑窗口 / EVAL_LLM 真窗 |
+| P0-2b 剩余 | Map → record：**78 弱契约端点**（批86 快照实测 52 Map + 26 Object，知识写端点/service-owners 为主） | 高价值端点已尽；**恢复条件已成立**（批86 gen 链落地） | 灰度中用到哪个补哪个（`api:refresh` 后 fieldContract 即纳管）——不盲目全改 |
 | — | ⚠️ **P0-2 的收益边界（前置调研已做，挂起后仍有效）** | 实测 70/130 端点返回 `Map`/`Object`，OpenAPI 只能生成 `additionalProperties: true`。恢复时按模块逐个改，**不要期待一次性全量** | — |
 
 ### 前端优化（方向已重新确认，按序推进）
@@ -174,8 +171,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | F-5 | ~~知识库写端点加角色校验~~ | 🟡 **待验收** | **已完成**：15 个写端点全部加分级守卫（可逆 ADMIN+OPS / 不可逆仅 ADMIN）。见「待验收」区 |
 | F-6 | ~~保存时统一转 Markdown 落库~~ | 🟡 **待验收** | **已完成**：`toMarkdownForStorage` + `handleSave` 接入。存量核查确认无 HTML 数据需迁移 |
 | ~~F-1~~ | ~~统一到 md-editor-v3~~ | ⛔ **已撤销** | 双模式服务真实用户分层（非技术人员要写），删除会伤到一类用户 |
-| F-4 | 构建体积预算 + CI 阈值 | 📋 待办 | 防体积回弹，可随 F-2 一起做 |
-| F-3 | knip 死代码清理 | 📋 阻塞 | knip 在本项目上崩溃（oxc-parser 段错误），需先修工具配置 |
+| F-4 | 构建体积预算 + CI 阈值 | ✅ 已办 | 批32 立闸 + 批86 按立法重锚（10-06: 4861/962） |
+| F-3 | knip 死代码清理 | ✅ 已办 | knip 5.88.1 已是六闸成员（批26 门禁转正；批87 今日 rc=0 + 7 条配置 hints 清零）——「oxc-parser 崩溃」系过时情报 |
 
 ### P1 — 规模化前
 
@@ -184,7 +181,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | P1-1 | 分布式追踪接 OTLP |
 | P1-2 | 消息队列（告警洪峰 + 异步执行） |
 | P1-3 | 多租户路线决策：PG RLS 或明确私有化定位 |
-| P1-4 | 前端 TS 类型由 OpenAPI 生成（依赖 P0-2） |
+| P1-4 | ~~前端 TS 类型由 OpenAPI 生成~~ ✅ 批86/87 落地（orval 生成 + fieldContract 29 对编译期对账；「生成物全 optional→不替换只对账」改道见批86 档） |
 
 ---
 
@@ -504,3 +501,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批84(2026-09-22):P2-P3 落地——热更新 + 主备降级 + 连通性测试 + 供应商模板,模型配置模块全段收官。**P3-1 热更新**:`RefreshableChatModel`/`RefreshableStreamingChatModel`/`RefreshableEmbeddingModel` 三个原子包装器(AtomicReference delegate,Bean 引用不变、内部可换),`AiModelConfig` 五个 REAL Bean 全部包 Refreshable + 暴露 build* 重建入口;`ChannelRefreshService`(仅 REAL 装配)编辑保存后从 DB 读最新配置重建模型→原子替换,embedding 渠道热更新后同步清语义缓存(防串库),失败包 IllegalStateException 由 Controller 降级 restartRequired=true(配置已落库不丢)。**P3-2 主备降级(方案 A)**:`FallbackChatModel`/`FallbackStreamingChatModel`——主模型挂→备用透明接管,失败计入 resilience4j 熔断器(llm-chat-turbo/llm-chat-reasoner 实例),熔断 OPEN 后直接走备用省一次超时;备用也挂→原样抛出不吞;**流式主备特别处理:已吐 token 后中断不可降级**(否则用户看到两段半截回答),仅首包前失败才切备用。V4 迁移加 sys_ai_channel fallback_* 四列,同存同空约束。**P2-3 连通性测试**:`POST /{channelKey}/test-connectivity`——chat 用独立探针(绕过 Fallback 装饰器,否则主挂了被备用兜住误报「正常」),主备分别 ping 分别报;embedding 真实向量化+维度校验(实测≠1536 明确报维度不符);异常消息截断 200 字符防详情外泄。**P2-4 模型列表下拉**:`POST /{channelKey}/available-models` 调上游 GET /models 拉真实模型 ID 列表,前端 datalist 一键选。**P3-2 供应商模板**:编辑对话框内置阿里云/DeepSeek/OpenAI/自定义四个端点模板一键填充。**前端**:ModelChannels.vue 全套交互(编辑/重置/连通性/模型列表/供应商模板),文案从「重启生效」更新为「即时生效,热更新失败才需重启」。**修复的装配坑**:①ChannelRefreshService 无条件 @Component 但注入 5 个仅 REAL 装配的 Refreshable Bean→MOCK 模式上下文必崩,加 @ConditionalOnProperty(REAL)+Controller 改 ObjectProvider 延迟解析;②五个 Refreshable Bean 同类型两个(turbo/reasoner)→NoUniqueBeanDefinitionException,五个参数全部加 @Qualifier;③静默 catch 契约抓到 3 处(ChannelRefreshService 清缓存/ping 探针、DevOpsIntentRouter 回落 yml)→全部补 WARN/DEBUG 留痕;④Fallback 测试用 lambda 当 ChatModel(非函数式接口)→改 Mockito mock;⑤熔断器滑动窗口 4 只留最近 4 次→断言从 5 改 4(窗口语义不是累计);⑥mockStatic 需 mockito-inline(项目无)→newProbe 抽成包级接缝,测试子类覆写(同 KnowledgeWriteGuardTest 决策)。**测试**:RefreshableModelsTest 8 例 + FallbackChatModelTest 5 例 + FallbackStreamingChatModelTest 5 例 + ChannelRefreshServiceTest 7 例 + ModelChannelControllerWebTest 10 例(新增 reset 热更新 3 例)+ LlmEndpointSpecTest 适配三参构造器,全量 1674 例绿(Windows 下 surefire 偶发 forked JVM 崩溃,加 -Djdk.net.URLClassPath.disableClassPathURLCheck=true 后稳定)。**真机验收**:REAL 模式起服(28.8s,SchemaGuard 过)→登录→GET 三渠道(qwen3.7-flash/deepseek-v5-custom 真实生效中)→PUT chat turboModel=qwen3.7-flash→code=0 + restartRequired=false + 日志「chat 渠道热更新完成」→POST /chat/test-connectivity 主模型 7312ms 连通正常→POST /embedding/test-connectivity 350ms 维度 1536 正常→POST /chat/reset 重置为 yml 默认+restartRequired=false(热更新同步生效)→GET 确认恢复 qwen3.7-flash/deepseek-v4-flash-0731。**「模型配置」模块 P0→P3 全段闭环**:只读展示→编辑落库→热更新即时生效→主备降级→连通性实测→模型列表→供应商模板,安全三道防线+静默 catch 契约+维度铁律全程在位。
 
 - 批86(2026-10-06):**项3B + 告警级别人话化双落地,六闸全绿**(进度档 `2026-10-06-项3B字段契约与告警级别人话化.md`)。①**项3B 方案 A 改道实证**:orval 生成物(199 文件)全 optional/无枚举/无 JSDoc=字段全集**下界**,直换手写必填类型=类型安全大倒退→「替换」改「**编译期字段集对账**」`fieldContract.ts`(三闸=path/method 之外锁字段名集合双向差集;vue-tsc 执行,零运行时零新测试类);**首轮 10 红即真漂移**:6 对补手写 16 字段(后端源码取证 JSDoc)+2 对映射层豁免;orval 本机双坑病历入仓(bin ESM 探测坏→generate() 编程入口;ajv hoist 错位→进程内 require-hook,零树手术)。②**人话化**:P0~P4→紧急/严重/警告/一般/提示、动作风险类型/环境码单源字典(消 ApprovalCenter/ActionAllowlist 已漂移双份)、10 页面 16 处裸码清扫、WorkbenchQueues 色键值域 bug 顺修;判定「原始标签区/配置键/severity 不展示」三面刻意不改。③**门禁清欠**:lint 29→0(22 个是 shot-ticket-detail.cjs 存量钉子,补 scripts/** node globals 块连带清偿)、knip 6 议题清、体积闸**按立法重锚**(9-08 锚后历史增量 4861KB,本批净增≈0 有 dist 实证;vendor-element 962KB 拆包候排)、2 处文案断言跟随。四工具版本零漂移实证(knip/eslint/vue-tsc/vitest 与 HEAD 锁文件同版)。
+
+- 批87(2026-10-06):**继续优化——契约升维+人话化残网+残影清扫+台账清欠,六闸全绿**(进度档 `2026-10-06-批87-契约升维与残影清扫.md`)。①**闸三升维**:字段对 +4(KnowledgeDocCreate/UpdateRequest、AiChannelHistoryView、ChannelProbeResult)+**值域对 +2**(ApprovalMode/EscalateTarget union↔const enum 双向 Exclude——Java enum 字段 springdoc 产 const enum,**修正批86「OpenAPI 产不出枚举」过宽断言**;String 字段承载的 RiskLevel 仍无孪生如实记),29 对 56 断言**第二轮零漂移**(对比首轮 10 红=手写这批维护良好,非没用)。②**人话化残网**:根因=首轮 grep 只扫 `{{}}` 模板渲染漏了 JS 模板字符串与部分页——审计动作码 36 个(`constants/audit.ts` 单源对后端 AuditActionRegistry)+审计表/Trace 时间线 2 渲染、3 处 `生效环境：${...}` 模板字符串、协议四值(OPENAI_COMPATIBLE→OpenAI 兼容等 4 处)、观察窗文案「警告、一般级」顿号化。③**残影清扫**:RC_LABELS/STAGE_LABELS 三处本地副本(Dashboard/TicketDetail/TicketActionSection)归零→utils/ticketPresentation 单源+STAGE_OPTIONS 派生(对象序=状态机推进序钉死注释,批26「同内容双实现」判例落地)。④**knip 7 条配置 hints 全清**(main.ts/test-setup entry redundant、auto-imports.d.ts 等 ignore、element-plus/sass ignoreDependencies——knip 5.88 自识别后冗余,删后 rc=0+hints 段消失)。⑤**台账清欠**:S0-1/S0-4 收尾两行**翻清偿删行**(实证:ci.yml 87-97 flyway migrate+validate+表数校验、220-224 eval-metrics artifact、README 134 评测行、190 eval_compare 门禁——workflows 权限批31 已兑现)、F-3 knip 翻✅(过时情报)、S0-4b 改余两件环境型、P0-2b 恢复条件成立注记(78 端点清单)、P1-4 翻指向批86;**PRD「对功能话」坏打字单行回滚**(非词,疑误触)。57 warnings 判定**不刷绿**(27 测试桩多组件/17 TS 项目已知误报/6 no-v-html 有意 warn——lint 立法「风格不阻塞」,为数字清零改规则=本末)。

@@ -16,7 +16,7 @@
 >
 > ---
 >
-> **最后更新**：2026-10-06（批86：项3B 字段契约三闸 + 告警级别人话化，六闸全绿）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成（待灰度 ACK），L5 未启动
+> **最后更新**：2026-10-06（批87：契约升维 29 对+人话化残网+残影清扫+台账清欠，六闸全绿）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成（待灰度 ACK），L5 未启动
 
 ---
  
@@ -285,6 +285,7 @@
 - ✅ **L1 问答评测集已建**（`eval_dataset.json` 152 条正/负例 + `AgentEvaluationTest` 契约/RAG/端到端三层评测 + `EvalMetricsWriter`/`RetrievalRankMetrics`；此前文档误写「待建（R4）」，实为 D3 已建）
 - ✅ **诊断→知识飞轮整环实证（Step 2 完成，2026-10-05）**：真告警（UTF-8 中文体）→ 知识证据 `SUCCESS`/0.74≥0.73 熔断线/三段 citation → LLM 假设被手册压住 → `feedback:HELPFUL` 兜底反查 `knowledgeBoosted:4` 落 `sys_knowledge_boost`——真机全环**零新代码**（计划栏陈旧），见 `docs/06-implementation-progress/2026-10-05-Step2-诊断知识飞轮整环实证.md`；同批按「简洁铁律」下线智能问答/知识运营两展示页（`440a04b`，nav 11→9 纯值班动线）
 - ✅ **项3B 字段契约三闸 + 告警级别人话化（2026-10-06）**：orval 快照→`src/api/fieldContract.ts` 编译期字段集对账（path/method/字段集三闸成体系；生成物全 optional 故「不替换、只对账」，首轮揪 16 处真漂移补手写类型）；P0~P4/动作风险类型/环境码全量人话字典（`constants/risk`·`environment`·`utils/alert` 单源，10 页面 16 处裸码清扫）；六闸全绿（lint 连带清偿 scripts/ 存量钉子、体积闸按立法重锚 10-06），见 `docs/06-implementation-progress/2026-10-06-项3B字段契约与告警级别人话化.md`
+- ✅ **批87 继续优化（2026-10-06）**：闸三升维 29 对（+4 字段对 +2 **枚举值域对**——Java enum 字段 springdoc 产 const enum，第二轮对账零漂移）；人话化残网（审计动作码 36 单源字典+3 处 env 模板字符串+协议四值）；RC/STAGE 三处本地字典归零收 utils 单源；knip 7 条配置 hints 清零；台账清欠（S0-1/S0-4 收尾翻清偿、F-3/P1-4 翻、S0-4b/P0-2b 重写、PRD 坏打字回滚），见 `docs/06-implementation-progress/2026-10-06-批87-契约升维与残影清扫.md`
 
 ### 7.2 下一步计划
 
