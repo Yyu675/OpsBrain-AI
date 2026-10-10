@@ -16,7 +16,7 @@
 >
 > ---
 >
-> **最后更新**：2026-10-06（批88 收官 + **灰度试运行正式起算（DoD 七关自 2026-10-06 计时）**）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day1**，L5 未启动
+> **最后更新**：2026-10-07（批89 通知渠道配置页 + 密钥全方位加固收官）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day2**，L5 未启动
 
 ---
  
@@ -287,6 +287,7 @@
 - ✅ **项3B 字段契约三闸 + 告警级别人话化（2026-10-06）**：orval 快照→`src/api/fieldContract.ts` 编译期字段集对账（path/method/字段集三闸成体系；生成物全 optional 故「不替换、只对账」，首轮揪 16 处真漂移补手写类型）；P0~P4/动作风险类型/环境码全量人话字典（`constants/risk`·`environment`·`utils/alert` 单源，10 页面 16 处裸码清扫）；六闸全绿（lint 连带清偿 scripts/ 存量钉子、体积闸按立法重锚 10-06），见 `docs/06-implementation-progress/2026-10-06-项3B字段契约与告警级别人话化.md`
 - ✅ **批87 继续优化（2026-10-06）**：闸三升维 29 对（+4 字段对 +2 **枚举值域对**——Java enum 字段 springdoc 产 const enum，第二轮对账零漂移）；人话化残网（审计动作码 36 单源字典+3 处 env 模板字符串+协议四值）；RC/STAGE 三处本地字典归零收 utils 单源；knip 7 条配置 hints 清零；台账清欠（S0-1/S0-4 收尾翻清偿、F-3/P1-4 翻、S0-4b/P0-2b 重写、PRD 坏打字回滚），见 `docs/06-implementation-progress/2026-10-06-批87-契约升维与残影清扫.md`
 - ✅ **批88 契约闭环双闸 + 残影机械清扫（2026-10-06）**：三闸的「底」（随库快照/生成物新鲜度）此前靠人肉纪律——新增 `check-openapi-freshness.js`（CI 后端：当次代码活体 vs 快照，path/method+全 145 schema 属性集双维）+ `npm run gen:check`（CI 前端：重产+diff 门禁）→ **四闸联防**，fakeBatch88 注入四层逐一点名+还原复正全链实证；残影扫描机械化（exact-hash+key-set）唯一命中 STATUS_META 两页双份收 `constants/healing` 单源；残网第四处（透传大写 status 裸渲染→小写桥字典）；st.status 值域多源未钉等三处判档不改，见 `docs/06-implementation-progress/2026-10-06-批88-契约闭环双闸与残影机械清扫.md`
+- ✅ **批89 通知渠道配置页 + 密钥全方位加固（2026-10-07）**：方案一 UI 落地（设置页「通知渠道」标签：钉钉/企微卡片启停/热改/测试发送/reveal + 告警接入 secret 卡）；密钥输入统一 `SecretInput` 眼睛切换（登录/模型渠道×2/通知卡片×2 共 5 处）；模型渠道补 reveal 端点与通知渠道对称 + `SecretRevealAuditor` 明文查看**落审计表**（GET 不进拦截器的显式补记）；`keyCryptConfigured` 字段上屏（主密钥未配=明文落库此前只躺日志），实测本机 `.env` 配钥后 false→true、库中 `enc:v1:` 密文闭环；`maskWebhook` 敏感参数只留尾 4 位 + 测试发送登记审计；行数红线净-1（diff/能力探测/供应商常量三处外移），六闸+四闸全绿（1813 前端测试 / 快照 183 端点 155 schema 双维一致）；**P0 收口**：compose 补透传主密钥（此前生产容器必明文）、轮换七步改正 Runbook/手册/.env 三处旧错（「Mirror 重写」已证伪）、REAL 守卫主密钥缺失 WARN、全库 24 行存量明文全转 `enc:v1:`（plaintext_residual=0）；**P1 收口**：解密失败报错点名渠道+三步恢复+Runbook 指路（`AiModelConfigDecryptTest` 3/3）、备用 Key 解密失败降级不拖死启动、testcontainers 根因钉死（Desktop 29.8 代理对 docker-java 一律 400，三管道实证，本机 SKIP=设计/CI 为真闸，修法两案待拍板），见 `docs/06-implementation-progress/2026-10-07-批89-通知渠道配置页与密钥全方位加固.md`
 
 ### 7.2 下一步计划
 
