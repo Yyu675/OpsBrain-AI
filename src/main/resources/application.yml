@@ -604,6 +604,14 @@ devops:
       webhook: ${DINGTALK_WEBHOOK:}
       # 加签密钥（钉钉安全设置选「加签」时提供）。为空则不加签（用于「关键词」或「IP 白名单」模式）。
       secret: ${DINGTALK_SECRET:}
+    wecom:
+      # 企业微信群机器人（批89·方案1：真送达钥匙——钉钉现网从未配真 key，
+      # configured:false 假发送态由企微渠道终结）。默认关；未配 webhook 时 MOCK 仅打印。
+      # DB 权威源语义：配置页保存过 sys_notify_channel 行即覆盖本段（热生效零重启，
+      # 与 DingTalkNotifier/WeComNotifier 每发送时 effective() 三层回落同链）。
+      # 安全设置按「自定义关键词/IP 白名单」交付（key 直连无签名）；加签模式待真实需求。
+      enabled: ${WECOM_NOTIFY_ENABLED:false}
+      webhook: ${WECOM_WEBHOOK:}
 
   # ==================== 工单闭环（B1 首响 SLA） ====================
   ticket:

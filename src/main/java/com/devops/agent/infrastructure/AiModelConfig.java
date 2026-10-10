@@ -158,7 +158,7 @@ public class AiModelConfig {
     public LlmEndpointSpec turboSpec() {
         AiChannel ch = chatChannel();
         String url = ch != null && notBlank(ch.baseUrl()) ? ch.baseUrl() : chatBaseUrl;
-        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc()) : chatApiKey;
+        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc(), "chat") : chatApiKey;
         String model = ch != null && notBlank(ch.turboModel()) ? ch.turboModel() : turboModel;
         return LlmEndpointSpec.chat(url, key, model, Duration.ofMillis(timeout), maxRetries);
     }
@@ -167,7 +167,7 @@ public class AiModelConfig {
     public LlmEndpointSpec reasonerSpec() {
         AiChannel ch = chatChannel();
         String url = ch != null && notBlank(ch.baseUrl()) ? ch.baseUrl() : chatBaseUrl;
-        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc()) : chatApiKey;
+        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc(), "chat") : chatApiKey;
         String model = ch != null && notBlank(ch.reasonerModel()) ? ch.reasonerModel() : reasonerModel;
         return LlmEndpointSpec.reasoner(url, key, model, Duration.ofMillis(timeout), maxRetries);
     }
@@ -187,7 +187,18 @@ public class AiModelConfig {
     private LlmEndpointSpec chatFallbackSpec(boolean reasoner) {
         AiChannel ch = chatChannel();
         if (ch == null || !ch.hasFallback()) return null;
-        String key = notBlank(ch.fallbackApiKeyEnc()) ? decrypt(ch.fallbackApiKeyEnc()) : null;
+        String key = null;
+        if (notBlank(ch.fallbackApiKeyEnc())) {
+            try {
+                key = decrypt(ch.fallbackApiKeyEnc(), "chat(备用)");
+            } catch (IllegalStateException ex) {
+                // 备用是可选项：主密钥轮换期备用先失效，绝不因此把整个应用拖死——
+                // 注释既定语义「不可解密→忽略备用」，此前 decrypt 直抛违背了它（批89 P1 修正）
+                log.warn("⚠️ [AiModelConfig] chat 备用 Key 解不开，本次装配忽略备用（降级不可用，主链不受影响）| {}",
+                        ex.getMessage());
+                return null;
+            }
+        }
         if (!notBlank(key)) {
             log.warn("⚠️ [AiModelConfig] chat 备用模型已配置但 key 缺失/不可解密——本次装配忽略备用（降级不可用）");
             return null;
@@ -203,7 +214,7 @@ public class AiModelConfig {
     public LlmEndpointSpec embeddingSpec() {
         AiChannel ch = embeddingChannel();
         String url = ch != null && notBlank(ch.baseUrl()) ? ch.baseUrl() : embeddingBaseUrl;
-        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc()) : embeddingApiKey;
+        String key = ch != null && notBlank(ch.apiKeyEnc()) ? decrypt(ch.apiKeyEnc(), "embedding") : embeddingApiKey;
         String model = ch != null && notBlank(ch.model()) ? ch.model() : embeddingModel;
         return LlmEndpointSpec.embedding(url, key, model,
                 Duration.ofMillis(embeddingTimeout), embeddingMaxRetries, vectorDimension);
@@ -233,9 +244,27 @@ public class AiModelConfig {
         return s != null && !s.isBlank();
     }
 
-    /** 解密 DB 里加密的 key；非 enc:v1: 前缀（明文/降级）原样返回。 */
-    private String decrypt(String enc) {
-        return ApiKeyCrypt.decrypt(enc, modelKeyCryptSecret);
+    /**
+     * 解密 DB 里加密的 key；非 enc:v1: 前缀（明文/降级）原样返回。
+     *
+     * <p>解不开（主密钥变更/密文损坏）→ 抛<b>自包含可执行</b>的异常：点名渠道 +
+     * 给出「先 MOCK 起、页面查清、重存、再恢复 REAL」的恢复路径——泛泛的
+     * [ApiKeyCrypt] 解密失败 藏在 bean 链栈底，新值班看不懂该干什么（批89 P1）。
+     * 完整七步见 docs/09-operations/上线放行Runbook-回滚-密钥-看板-HMAC-RBAC.md §2。</p>
+     */
+    private String decrypt(String enc, String channelKey) {
+        try {
+            return ApiKeyCrypt.decrypt(enc, modelKeyCryptSecret);
+        } catch (IllegalStateException e) {
+            throw new IllegalStateException(
+                    "[AiModelConfig] 「" + channelKey + "」渠道密文解不开（enc:v1:）——"
+                    + "主密钥 MODEL_KEY_CRYPT_SECRET 已变更或密文损坏，REAL 拒绝带病启动。"
+                    + "恢复：① AI_MODE=MOCK 启动（不建模型 Bean，应用可正常起来）；"
+                    + "② 「模型渠道配置」页逐渠道点「眼睛查看明文」——显示「解不开」的就是要重存的；"
+                    + "③ 把要保留的 Key 重新保存一次后切回 REAL。"
+                    + "（完整七步见 docs/09-operations/上线放行Runbook-回滚-密钥-看板-HMAC-RBAC.md §2）"
+                    + " 原始错误：" + e.getMessage(), e);
+        }
     }
 
     // ==================== Real 模式（生产模式）====================

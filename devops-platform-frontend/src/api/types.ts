@@ -551,6 +551,18 @@ export interface AiChannelListResponse {
   channels: AiChannelView[]
   /** 当前 AI 运行模式（MOCK=演示假数据 / REAL=真实调用大模型），前端据此给人性化提示 */
   aiMode?: string
+  /** false = MODEL_KEY_CRYPT_SECRET 未配，所有 API Key 以明文落库（页面挂警告横幅）。
+   *  可选是契约闸口径：快照未刷新时旧生成物不含此字段，缺省按已配处理不炸页面。 */
+  keyCryptConfigured?: boolean
+}
+
+/** 模型渠道 API Key 明文查看结果（reveal 端点专用，与通知渠道 Revealed 同构语义）。 */
+export interface AiChannelRevealed {
+  channelKey: string
+  /** 主 Key 明文；解不开（主密钥变更）或未配置为 null */
+  apiKey: string | null
+  /** 备用 Key 明文；同上 */
+  fallbackApiKey: string | null
 }
 
 /** AI 渠道配置模板（V13 多渠道一键切换）。模板不存 apiKey——应用时保留渠道现有密钥。 */

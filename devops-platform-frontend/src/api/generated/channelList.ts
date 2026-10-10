@@ -9,4 +9,5 @@ import type { ChannelView } from './channelView';
 export interface ChannelList {
   channels?: ChannelView[];
   aiMode?: string;
+  keyCryptConfigured?: boolean;
 }

@@ -14,13 +14,20 @@
  */
 
 import { ref, onMounted, computed } from 'vue'
-import { RefreshCw, Cpu, Layers, Search, History, FlaskConical } from 'lucide-vue-next'
+import { RefreshCw, Cpu, Layers, Search, History, FlaskConical, ShieldAlert } from 'lucide-vue-next'
 
-import { fetchModelChannels, updateModelChannel, resetModelChannel, testModelChannelConnectivity, fetchAvailableModels, fetchChannelHistory, rollbackModelChannel, probeChannelCapabilities, fetchChannelCapabilities, fetchChannelTemplates, applyChannelTemplate } from '@/api/modelChannels'
-import type { AiChannelHistoryView, AiChannelView, AiChannelUpdatePayload, CapabilityItem, CapabilityState, ChannelProbeResult, ChannelTemplate } from '@/api/types'
+import { fetchModelChannels, updateModelChannel, resetModelChannel, testModelChannelConnectivity, fetchAvailableModels, fetchChannelHistory, rollbackModelChannel, probeChannelCapabilities, fetchChannelCapabilities, fetchChannelTemplates, applyChannelTemplate, revealModelChannelKey } from '@/api/modelChannels'
+import type { AiChannelHistoryView, AiChannelView, AiChannelUpdatePayload, ChannelProbeResult, ChannelTemplate } from '@/api/types'
+import { diffRows as diffOf } from '@/composables/useChannelDiff'
+import { VENDOR_TEMPLATES } from '@/constants/modelVendors'
+import {
+  capabilityTagType, capabilityTagText, capabilitySummaryOf, staleReasonOf,
+} from '@/composables/useChannelCapability'
+import { copyText } from '@/utils/clipboard'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
+import SecretInput from '@/components/common/SecretInput.vue'
+import ChannelKeyRow from '@/components/ai/ChannelKeyRow.vue'
 import { notify, handleServerError } from '@/utils/notify'
-import { parseDate } from '@/utils/time'
 
 defineOptions({ name: 'ModelChannels' })
 
@@ -33,6 +40,9 @@ const loading = ref(false)
 const loadError = ref<unknown>(null)
 /** 当前 AI 运行模式（MOCK/REAL），用于顶部人性化模式横幅 */
 const aiMode = ref<string>('')
+/** MODEL_KEY_CRYPT_SECRET 是否已配。false = 所有 API Key 明文落库（顶部警告横幅）。
+ *  缺省 true：旧快照响应可能不含此字段，缺省不误报警。 */
+const keyCryptConfigured = ref(true)
 
 const loadChannels = async () => {
   loading.value = true
@@ -41,6 +51,7 @@ const loadChannels = async () => {
     const resp = await fetchModelChannels()
     channels.value = resp.channels ?? []
     aiMode.value = resp.aiMode ?? ''
+    keyCryptConfigured.value = resp.keyCryptConfigured ?? true
     // 能力探测结果一并拉取（GET 不触发实测，零成本）——探测过的渠道卡片直接显示三态摘要
     await loadAllCapabilities()
   } catch (e) {
@@ -306,38 +317,10 @@ const historyList = ref<AiChannelHistoryView[]>([])
 const historyLoading = ref(false)
 const rollingBackId = ref<number | null>(null)
 
-// ---- 建议2：当前 vs 目标版本 diff ----
+// ---- 建议2：当前 vs 目标版本 diff（字段定义与算法见 composables/useChannelDiff.ts）----
 /** 展开 diff 的历史行 id（null = 收起）。点击历史行切换，再点收起。 */
 const diffOpenId = ref<number | null>(null)
-
-/** 参与对比的字段定义：[标签, 取当前值的访问器, 取历史值的访问器] */
-const DIFF_FIELDS: Array<[string, (c: AiChannelView) => string | null, (h: AiChannelHistoryView) => string | null]> = [
-  ['Base URL', c => c.baseUrl, h => h.baseUrl],
-  ['API Key', c => c.maskedKey, h => h.maskedKey],
-  ['Turbo 模型', c => c.turboModel, h => h.turboModel],
-  ['Reasoner 模型', c => c.reasonerModel, h => h.reasonerModel],
-  ['模型', c => c.model, h => h.model],
-  ['向量维度', c => c.dimension?.toString() ?? null, h => h.dimension?.toString() ?? null],
-  ['状态', c => c.status, h => h.status],
-  ['备用 Base URL', c => c.fallbackBaseUrl ?? null, h => h.fallbackBaseUrl],
-  ['备用模型', c => c.fallbackModel ?? null, h => h.fallbackModel],
-  ['备用 Key', c => c.fallbackMaskedKey ?? null, h => h.fallbackMaskedKey],
-]
-
-interface DiffRow { label: string; current: string; target: string; changed: boolean }
-
-/** 逐字段对比当前配置与选中历史版本；只列两边至少一边有值的字段。 */
-const diffRows = (h: AiChannelHistoryView): DiffRow[] => {
-  const cur = historyTarget.value
-  if (!cur) return []
-  return DIFF_FIELDS
-    .map(([label, getCur, getHis]) => {
-      const current = getCur(cur) ?? '—'
-      const target = getHis(h) ?? '—'
-      return { label, current, target, changed: current !== target }
-    })
-    .filter(r => r.current !== '—' || r.target !== '—')
-}
+const diffRows = (h: AiChannelHistoryView) => diffOf(historyTarget.value, h)
 
 const toggleDiff = (h: AiChannelHistoryView) => {
   diffOpenId.value = diffOpenId.value === h.id ? null : h.id
@@ -433,58 +416,44 @@ const runProbe = async () => {
   }
 }
 
-/** 三态 → Element Plus tag type。UNKNOWN 是探测失败而非不支持——灰，不是红。 */
-const capabilityTagType = (state: CapabilityState | undefined) =>
-  state === 'SUPPORTED' ? 'success' : state === 'UNSUPPORTED' ? 'danger' : 'info'
-
-const capabilityTagText = (state: CapabilityState | undefined) =>
-  state === 'SUPPORTED' ? '支持' : state === 'UNSUPPORTED' ? '不支持' : '未测成'
-
-/** 渠道卡片上的三态摘要徽标 */
-const capabilitySummary = (channelKey: string) => {
-  const r = capabilityMap.value[channelKey]
-  if (!r) return { text: '未实测', type: 'info' as const }
-  const items = Object.values(r.capabilities)
-  const supported = items.filter((i: CapabilityItem) => i.state === 'SUPPORTED').length
-  const unsupported = items.filter((i: CapabilityItem) => i.state === 'UNSUPPORTED').length
-  if (unsupported > 0) return { text: `${supported}/${items.length} 项支持`, type: 'danger' as const }
-  const unknown = items.length - supported
-  if (unknown > 0) return { text: `${supported}/${items.length} 项支持`, type: 'warning' as const }
-  return { text: `全部 ${items.length} 项支持`, type: 'success' as const }
-}
-
-// ---- 建议3：探测结果过期提醒 ----
-/** 探测结果保鲜期：7 天。超期不代表结果错，但上游模型可能已变化。 */
-const PROBE_STALE_DAYS = 7
-
-/**
- * 探测结果是否可能过期。两种情形：
- * 1. probed_at 超过 7 天——上游模型能力可能已变化（如版本升级新增 function calling）；
- * 2. 渠道 updatedAt 晚于 probed_at——配置改过但没重探，旧结果描述的是旧配置。
- */
-const staleReason = (channelKey: string): string | null => {
-  const r = capabilityMap.value[channelKey]
-  if (!r?.probedAt) return null
-  // parseDate：后端 LocalDateTime 无时区后缀，new Date 会按浏览器时区解析（跨时区差 12h）
-  const probedAtDate = parseDate(r.probedAt)
-  if (!probedAtDate) return null
-  const probedAt = probedAtDate.getTime()
-  const ch = channels.value.find((c) => c.channelKey === channelKey)
-  if (ch?.updatedAt) {
-    const updatedAtDate = parseDate(ch.updatedAt)
-    if (updatedAtDate && updatedAtDate.getTime() > probedAt) {
-      return '配置在探测后已变更，结果描述的是旧配置'
-    }
-  }
-  const ageDays = (Date.now() - probedAt) / 86_400_000
-  if (ageDays > PROBE_STALE_DAYS) {
-    return `探测已过 ${Math.floor(ageDays)} 天，上游模型能力可能已变化`
-  }
-  return null
-}
+/** 三态呈现映射与过期判定在 composables/useChannelCapability.ts（批89 抽出偿行红线） */
+const capabilitySummary = (channelKey: string) =>
+  capabilitySummaryOf(capabilityMap.value[channelKey])
+const staleReason = (channelKey: string) =>
+  staleReasonOf(capabilityMap.value[channelKey], channels.value.find((c) => c.channelKey === channelKey)?.updatedAt)
 
 const isChatChannel = computed(() => editTarget.value?.channelKey === 'chat')
 const isEmbeddingChannel = computed(() => editTarget.value?.channelKey === 'embedding')
+
+// ==================== 明文查看（批89 与通知渠道 reveal 对称） ====================
+
+/** 展开明文的渠道 → 明文（undefined=收起；null=解不开；''=没配）。收起即删 key，明文不过夜。 */
+const revealedKeys = ref<Record<string, string | null | undefined>>({})
+const revealing = ref<ChannelKey | null>(null)
+
+const toggleReveal = async (ch: AiChannelView) => {
+  if (revealedKeys.value[ch.channelKey] !== undefined) {
+    delete revealedKeys.value[ch.channelKey]
+    return
+  }
+  if (revealing.value) return
+  revealing.value = ch.channelKey
+  try {
+    const r = await revealModelChannelKey(ch.channelKey)
+    revealedKeys.value = { ...revealedKeys.value, [ch.channelKey]: r.apiKey ?? null }
+  } catch (e) {
+    handleServerError(e, { action: '查看明文' })
+  } finally {
+    revealing.value = null
+  }
+}
+
+const copyPlainKey = async (ch: AiChannelView) => {
+  const plain = revealedKeys.value[ch.channelKey]
+  if (!plain) return
+  if (await copyText(plain)) notify.success('明文 Key 已复制到剪贴板')
+  else notify.warning('复制失败，请手动选中复制')
+}
 
 // ==================== P2-3 连通性测试 ====================
 
@@ -526,14 +495,7 @@ const loadModels = async () => {
   }
 }
 
-// ==================== P3-2 供应商模板 ====================
-
-const VENDOR_TEMPLATES: Record<string, { label: string; baseUrl: string }> = {
-  aliyun:  { label: '阿里云 DashScope', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-  deepseek:{ label: 'DeepSeek',         baseUrl: 'https://api.deepseek.com/v1' },
-  openai:  { label: 'OpenAI',           baseUrl: 'https://api.openai.com/v1' },
-  custom:  { label: '自定义',           baseUrl: '' },
-}
+// ==================== P3-2 供应商模板（数据见 constants/modelVendors.ts） ====================
 
 const applyVendorTemplate = (key: string) => {
   const t = VENDOR_TEMPLATES[key]
@@ -595,6 +557,15 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
       </span>
     </div>
 
+    <!-- 主密钥未配 → Key 明文落库（批89 清查 P0：这个事实从日志搬到脸上） -->
+    <div v-if="!keyCryptConfigured" class="crypt-banner">
+      <ShieldAlert :size="15" />
+      <span>
+        未配置环境变量 <code>MODEL_KEY_CRYPT_SECRET</code>——所有 API Key 正以<b>明文</b>存进数据库。
+        功能不受影响，但请配置主密钥并重启后，到各渠道重新保存一次 Key（旧明文行会被覆盖为密文）。
+      </span>
+    </div>
+
     <!-- 渠道卡片区 -->
     <DataStateBoundary
       :loading="loading"
@@ -641,7 +612,13 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </div>
             <div class="field-row">
               <span class="field-label">脱敏 Key</span>
-              <span class="field-value field-value--mono">{{ dash(chatChannel?.maskedKey) }}</span>
+              <ChannelKeyRow
+                :masked="chatChannel?.maskedKey ?? null"
+                :revealed="revealedKeys.chat"
+                :busy="revealing === 'chat'"
+                @toggle="chatChannel && toggleReveal(chatChannel)"
+                @copy="chatChannel && copyPlainKey(chatChannel)"
+              />
             </div>
             <div class="field-row">
               <span class="field-label">备用模型</span>
@@ -719,7 +696,13 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </div>
             <div class="field-row">
               <span class="field-label">脱敏 Key</span>
-              <span class="field-value field-value--mono">{{ dash(embeddingChannel?.maskedKey) }}</span>
+              <ChannelKeyRow
+                :masked="embeddingChannel?.maskedKey ?? null"
+                :revealed="revealedKeys.embedding"
+                :busy="revealing === 'embedding'"
+                @toggle="embeddingChannel && toggleReveal(embeddingChannel)"
+                @copy="embeddingChannel && copyPlainKey(embeddingChannel)"
+              />
             </div>
             <div class="field-row">
               <span class="field-label">更新时间</span>
@@ -779,7 +762,13 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             </div>
             <div class="field-row">
               <span class="field-label">脱敏 Key</span>
-              <span class="field-value field-value--mono">{{ dash(rerankerChannel?.maskedKey) }}</span>
+              <ChannelKeyRow
+                :masked="rerankerChannel?.maskedKey ?? null"
+                :revealed="revealedKeys.reranker"
+                :busy="revealing === 'reranker'"
+                @toggle="rerankerChannel && toggleReveal(rerankerChannel)"
+                @copy="rerankerChannel && copyPlainKey(rerankerChannel)"
+              />
             </div>
             <div class="field-row">
               <span class="field-label">更新时间</span>
@@ -890,11 +879,11 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
             API Key
             <span class="edit-label-hint">（留空 = 保留现有 Key）</span>
           </label>
-          <input
+          <SecretInput
             v-model="editForm.apiKey"
-            class="edit-input edit-input--key"
-            type="password"
-            placeholder="新 Key（留空不修改）"
+            class="secret-wrap--box"
+            autocomplete="off"
+            placeholder="新 Key（留空不修改，眼睛随时可核对）"
           />
 
           <label class="edit-label">状态</label>
@@ -932,10 +921,10 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
                   </span>
                   <span v-else class="edit-label-hint">（首次配置必填）</span>
                 </label>
-                <input
+                <SecretInput
                   v-model="editForm.fallbackApiKey"
-                  class="edit-input edit-input--key"
-                  type="password"
+                  class="secret-wrap--box"
+                  autocomplete="off"
                   placeholder="备用 Key（留空不修改现有）"
                 />
               </template>
@@ -1449,6 +1438,16 @@ const fmtTime = (t: string | null) => t ? t.replace('T', ' ').substring(0, 16) :
 .edit-input:disabled { background: #f3f4f6; color: #9ca3af; }
 
 .edit-input--key { font-family: monospace; }
+
+/* 主密钥未配的明文落库警告（批89）；编辑弹窗密钥框等宽字体 */
+.crypt-banner {
+  display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; padding: 10px 13px;
+  border-radius: 8px; font-size: 12px; line-height: 1.55; color: var(--warning, #d97706);
+  background: rgb(from var(--warning, #d97706) r g b / 0.08);
+  border: 1px solid rgb(from var(--warning, #d97706) r g b / 0.28);
+  code { font-family: monospace; } b { font-weight: 600; }
+}
+:deep(.secret-wrap--box) { font-family: monospace; }
 
 /* 备用模型区（方案 A） */
 .fallback-section {

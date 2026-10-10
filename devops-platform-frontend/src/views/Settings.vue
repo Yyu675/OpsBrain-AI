@@ -24,7 +24,7 @@
 import { computed, defineAsyncComponent, h, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Cpu, Gauge, History, Plug, Settings as SettingsIcon, ShieldCheck, Zap,
+  BellRing, Cpu, Gauge, History, Plug, Settings as SettingsIcon, ShieldCheck, Zap,
 } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
 import GeneralSettingsPanel from '@/components/settings/GeneralSettingsPanel.vue'
@@ -43,7 +43,7 @@ interface SettingsTab {
 }
 
 /**
- * 标签内容统一异步加载：设置页七个面板只会有一个在屏，没必要全打进首屏包。
+ * 标签内容统一异步加载：设置页八个面板只会有一个在屏，没必要全打进首屏包。
  *
  * 包装器**必须命名**（与目标组件同名）：一是 DevTools 里可读；
  * 二是测试能按名桩掉（VTU 按组件名匹配 stubs），否则桩会打在
@@ -70,6 +70,7 @@ const ADMIN: Role[] = ['admin']
 const TABS: SettingsTab[] = [
   { key: 'general', label: '常规', icon: SettingsIcon, component: GeneralSettingsPanel },
   { key: 'model-channels', label: '模型渠道', icon: Cpu, roles: ADMIN, component: asyncTab(() => import('@/views/ModelChannels.vue'), 'ModelChannels') },
+  { key: 'notify-channels', label: '通知渠道', icon: BellRing, roles: ADMIN, component: asyncTab(() => import('@/components/settings/NotifyChannelsPanel.vue'), 'NotifyChannelsPanel') },
   { key: 'automation-policies', label: '自动化策略', icon: Zap, roles: ADMIN, component: asyncTab(() => import('@/views/AutomationPolicies.vue'), 'AutomationPolicies') },
   { key: 'action-allowlist', label: '动作白名单', icon: ShieldCheck, roles: ADMIN, component: asyncTab(() => import('@/views/ActionAllowlist.vue'), 'ActionAllowlist') },
   { key: 'risk-levels', label: '风险等级', icon: Gauge, roles: ADMIN, component: asyncTab(() => import('@/views/RiskLevels.vue'), 'RiskLevels') },

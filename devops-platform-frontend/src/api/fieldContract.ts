@@ -38,6 +38,11 @@ import type { HealingExecution as GenHealingExecution } from './generated/healin
 import type { KnowledgeTag as GenKnowledgeTag } from './generated/knowledgeTag'
 import type { ListItem as GenListItem } from './generated/listItem'
 import type { DocPage as GenDocPage } from './generated/docPage'
+import type { NotifyChannelView as GenNotifyChannelView } from './generated/notifyChannelView'
+import type { NotifyChannelList as GenNotifyChannelList } from './generated/notifyChannelList'
+import type { IngestSecretView as GenIngestSecretView } from './generated/ingestSecretView'
+import type { Revealed as GenRevealed } from './generated/revealed'
+import type { TestResult as GenTestResult } from './generated/testResult'
 import type { CreateRequest as GenCreateRequest } from './generated/createRequest'
 import type { UpdateRequest as GenUpdateRequest } from './generated/updateRequest'
 import type { HistoryView as GenHistoryView } from './generated/historyView'
@@ -68,6 +73,10 @@ import type {
   SimulateResult
 } from './governance'
 import type { HealingExecution } from './healing'
+import type {
+  NotifyChannelView, NotifyChannelList, IngestSecretView,
+  NotifyTestResult, NotifySecretRevealed
+} from './types/notify'
 
 /** 生成有、手写无（后端加字段没跟） */
 type GenOnly<G, H> = Exclude<keyof G, keyof H>
@@ -139,6 +148,22 @@ export type ConnectivityResult_Missing = AssertDriftFree<GenOnly<GenConnectivity
 export type ConnectivityResult_Extra = AssertDriftFree<HandOnly<GenConnectivityResult, ConnectivityResult>>
 export type CapabilityItem_Missing = AssertDriftFree<GenOnly<GenCapabilityItem, CapabilityItem>>
 export type CapabilityItem_Extra = AssertDriftFree<HandOnly<GenCapabilityItem, CapabilityItem>>
+
+// ==================== 通知配置域（批89）====================
+// 边界记档：Controller @RequestBody record（UpdateChannelBody/UpdateIngestBody）
+// springdoc 产 {[key:string]:unknown} 弱字典——body 类不入对账；
+// Service 内嵌 record（视图五件）属性齐全，正常配。
+
+export type NotifyChannelView_Missing = AssertDriftFree<GenOnly<GenNotifyChannelView, NotifyChannelView>>
+export type NotifyChannelView_Extra = AssertDriftFree<HandOnly<GenNotifyChannelView, NotifyChannelView>>
+export type NotifyChannelList_Missing = AssertDriftFree<GenOnly<GenNotifyChannelList, NotifyChannelList>>
+export type NotifyChannelList_Extra = AssertDriftFree<HandOnly<GenNotifyChannelList, NotifyChannelList>>
+export type IngestSecretView_Missing = AssertDriftFree<GenOnly<GenIngestSecretView, IngestSecretView>>
+export type IngestSecretView_Extra = AssertDriftFree<HandOnly<GenIngestSecretView, IngestSecretView>>
+export type NotifyTestResult_Missing = AssertDriftFree<GenOnly<GenTestResult, NotifyTestResult>>
+export type NotifyTestResult_Extra = AssertDriftFree<HandOnly<GenTestResult, NotifyTestResult>>
+export type NotifySecretRevealed_Missing = AssertDriftFree<GenOnly<GenRevealed, NotifySecretRevealed>>
+export type NotifySecretRevealed_Extra = AssertDriftFree<HandOnly<GenRevealed, NotifySecretRevealed>>
 export type AiChannelHistoryView_Missing = AssertDriftFree<GenOnly<GenHistoryView, AiChannelHistoryView>>
 export type AiChannelHistoryView_Extra = AssertDriftFree<HandOnly<GenHistoryView, AiChannelHistoryView>>
 export type ChannelProbeResult_Missing = AssertDriftFree<GenOnly<GenProbeResult, ChannelProbeResult>>

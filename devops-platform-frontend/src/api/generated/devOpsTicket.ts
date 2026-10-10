@@ -47,8 +47,8 @@ export interface DevOpsTicket {
   slaRemainingMinutes?: number;
   firstResponseState?: string;
   mttrMinutes?: number;
-  slaBreached?: boolean;
-  terminalStatus?: boolean;
   slaProgress?: number;
+  terminalStatus?: boolean;
   firstResponded?: boolean;
+  slaBreached?: boolean;
 }

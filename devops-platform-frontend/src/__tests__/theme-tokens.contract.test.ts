@@ -47,6 +47,8 @@ const SRC = join(process.cwd(), 'src')
 const ALLOWED: Record<string, string> = {
   'components/settings/GeneralSettingsPanel.vue':
     '开关滑块：始终压在有色轨道上需固定对比，跟随主题会让暗色下的开关看起来消失（豁免自 SettingsDialog 迁入）',
+  'components/settings/NotifyChannelCard.vue':
+    '开关滑块：与 GeneralSettingsPanel 同款轨道+滑块结构（批89 通知渠道启停），白点压在 --border-2/--brand 轨道上，理由同上',
 }
 
 const collectVueFiles = (dir: string, out: string[] = []): string[] => {

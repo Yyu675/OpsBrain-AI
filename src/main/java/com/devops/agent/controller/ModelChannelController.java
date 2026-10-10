@@ -71,19 +71,27 @@ public class ModelChannelController {
             AiChannelHistoryRepository historyRepo,
             com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe,
             com.devops.agent.domain.ai.ChannelTemplateRepository templateRepo,
-            org.springframework.beans.factory.ObjectProvider<ChannelRefreshService> refreshServiceProvider) {
+            org.springframework.beans.factory.ObjectProvider<ChannelRefreshService> refreshServiceProvider,
+            com.devops.agent.common.audit.SecretRevealAuditor revealAuditor) {
         this.repo = repo;
         this.channelService = channelService;
         this.historyRepo = historyRepo;
         this.capabilityProbe = capabilityProbe;
         this.templateRepo = templateRepo;
         this.refreshServiceProvider = refreshServiceProvider;
+        this.revealAuditor = revealAuditor;
     }
+
+    private final com.devops.agent.common.audit.SecretRevealAuditor revealAuditor;
 
     @GetMapping
     public ApiResponse<ChannelList> listChannels() {
         List<ChannelView> views = repo.findAll().stream().map(ch -> toView(ch, false)).toList();
-        return ApiResponse.success(new ChannelList(views, aiMode));
+        // keyCryptConfigured：MODEL_KEY_CRYPT_SECRET 是否已配——false 时所有 Key
+        // 以明文落库（ApiKeyCrypt 刻意降级：宁可明文可用也不因缺密钥退化失败）。
+        // 这个事实此前只打后端日志，页面完全不露出（批89 清查 P0 项）——
+        // 前端据此在模型渠道页顶挂警告横幅。
+        return ApiResponse.success(new ChannelList(views, aiMode, ApiKeyCrypt.enabled(cryptSecret)));
     }
 
     /** 列出渠道配置模板（V13 多渠道一键切换）。可按 channelKey 过滤，不过滤返回全部。 */
@@ -155,6 +163,39 @@ public class ModelChannelController {
             return ApiResponse.error(ApiCode.BAD_REQUEST, "渠道配置未保存：" + e.getMessage());
         } catch (IllegalStateException e) {
             return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /**
+     * 查看渠道 API Key 明文（批89 清查补齐——通知渠道有 reveal、模型渠道没有，
+     * 同类配置两种体验；用户在配置页改完 Key 无从核对打码串对应什么）。
+     *
+     * <h3>与通知渠道同一安全三件套</h3>
+     * 类级 {@code @SaCheckRole("ADMIN")} + 访问即写审计（GET 不进拦截器，
+     * 显式走 {@link com.devops.agent.common.audit.SecretRevealAuditor}）+
+     * 列表/历史永远打码。备用 Key 一并返回（同属该渠道的凭据，分开 reveal
+     * 只会让人多记一个端点）。
+     */
+    @GetMapping("/{channelKey}/reveal")
+    public ApiResponse<Revealed> reveal(@PathVariable String channelKey,
+            jakarta.servlet.http.HttpServletRequest request) {
+        AiChannel ch = repo.findByKey(channelKey).orElse(null);
+        if (ch == null) return ApiResponse.error(ApiCode.NOT_FOUND, "渠道不存在: " + channelKey);
+        String apiKey = decryptKeySafe(ch.apiKeyEnc());
+        String fallbackKey = decryptKeySafe(ch.fallbackApiKeyEnc());
+        revealAuditor.record(com.devops.agent.common.audit.SecretRevealAuditor.ACTION_AI_CHANNEL_REVEAL,
+                channelKey, request.getRequestURI(), request);
+        return ApiResponse.success(new Revealed(channelKey, apiKey, fallbackKey));
+    }
+
+    /** 解密失败不炸整个端点——回 null 让前端显示「解不开（主密钥变更？）」而非 500。 */
+    private String decryptKeySafe(String enc) {
+        if (enc == null || enc.isBlank()) return null;
+        try {
+            return ApiKeyCrypt.decrypt(enc, cryptSecret);
+        } catch (Exception e) {
+            log.warn("[ModelChannel] Key 解密失败（主密钥可能已变更）| {}", e.getMessage());
+            return null;
         }
     }
 
@@ -378,7 +419,9 @@ public class ModelChannelController {
             boolean restartRequired,
             String fallbackBaseUrl, String fallbackModel, String fallbackMaskedKey,
             String provider, String protocol) {}
-    public record ChannelList(List<ChannelView> channels, String aiMode) {}
+    public record ChannelList(List<ChannelView> channels, String aiMode, boolean keyCryptConfigured) {}
+    /** reveal 明文结果（限 ADMIN + 审计留痕；解不开的字段回 null）。 */
+    public record Revealed(String channelKey, String apiKey, String fallbackApiKey) {}
     public record HistoryView(Long id, String channelKey, String baseUrl, String maskedKey, String turboModel,
             String reasonerModel, String model, Integer dimension, String status,
             String fallbackBaseUrl, String fallbackModel, String fallbackMaskedKey,

@@ -71,6 +71,21 @@ class AuditActionRegistryTest {
                 AuditActionRegistry.resolve("POST", "/api/v1/approvals/7/approve"));
         assertEquals("ticket.status.change",
                 AuditActionRegistry.resolve("PATCH", "/api/v1/tickets/12/status"));
+        // 批89：通知渠道/告警接入 secret 编辑必须留痕（谁把通知发去了哪是事故追查头号问题）
+        assertEquals("notify.channel.update",
+                AuditActionRegistry.resolve("PUT", "/api/v1/notify-channels/dingtalk"));
+        assertEquals("notify.ingest-secret.update",
+                AuditActionRegistry.resolve("PUT", "/api/v1/notify-channels/ingest-secret"));
+        // 测试发送也是外发行为——骚扰消息要能追到发起人
+        assertEquals("notify.channel.test",
+                AuditActionRegistry.resolve("POST", "/api/v1/notify-channels/dingtalk/test"));
+        // 批89 通配兜底：纯词末段经 /* 登记命中——ai-channel.update 此前形同虚设
+        // （isVariable 不认纯词 → 永落 generic → 按操作过滤失效，audit 红案实证）
+        assertEquals("ai-channel.update",
+                AuditActionRegistry.resolve("PUT", "/api/v1/model-channels/chat"));
+        // 兜底不误伤动作词：/docs/42/publish 第一步精确命中，落不到兜底
+        assertEquals("knowledge.doc.publish",
+                AuditActionRegistry.resolve("POST", "/api/v1/knowledge/docs/42/publish"));
     }
 
     @Test

@@ -7,17 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
@@ -69,6 +64,10 @@ public class DingTalkNotifier implements Notifier {
      */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.devops.agent.infrastructure.metrics.BusinessMetrics businessMetrics;
+
+    /** DB 权威源服务（批89）——字段注入：契约测试直接 new 单参实例时为 null，回落 @Value */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private NotifyChannelService channelService;
 
     /**
      * 发送专用线程池：单线程够用（通知量小）。
@@ -134,7 +133,16 @@ public class DingTalkNotifier implements Notifier {
      */
     @Override
     public boolean available() {
-        return enabled && webhook != null && !webhook.isBlank();
+        return resolve().configured();
+    }
+
+    /** 三层回落裁决（每发送时读——页面改完即生效，灰度期零重启）。 */
+    private NotifyChannelService.Effective resolve() {
+        if (channelService == null) {
+            // 直接 new 的场景（契约测试）：@Value 字段即真相，未配置=MOCK
+            return new NotifyChannelService.Effective(enabled, webhook, secret, "yml");
+        }
+        return channelService.effective(NotifyChannelService.KEY_DINGTALK, enabled, webhook, secret);
     }
 
     /**
@@ -155,16 +163,17 @@ public class DingTalkNotifier implements Notifier {
     }
 
     private void doSend(NotifyMessage msg) {
+        NotifyChannelService.Effective eff = resolve();
         // 未开启 / 未配 webhook：MOCK 语义，仅打印（便于开发期验证内容与触发时机）
-        if (!enabled || webhook == null || webhook.isBlank()) {
+        if (!eff.configured()) {
             log.info("🔕 [DingTalk-MOCK] {}{}\n{}",
                     msg.urgent() ? "【紧急】" : "", msg.title(), msg.markdown());
             return;
         }
 
         try {
-            String url = buildSignedUrl();
-            byte[] body = buildPayload(msg);
+            String url = NotifyPayloads.dingtalkSignedUrl(eff.webhook(), eff.secret());
+            byte[] body = NotifyPayloads.dingtalkPayload(msg, objectMapper);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -175,7 +184,7 @@ public class DingTalkNotifier implements Notifier {
 
             HttpResponse<String> resp = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             // 钉钉成功返回 {"errcode":0,...}；errcode!=0 记 WARN（如限流 130101、加签失败 310000）
-            if (resp.statusCode() == 200 && resp.body() != null && resp.body().contains("\"errcode\":0")) {
+            if (NotifyPayloads.accepted(resp.statusCode(), resp.body())) {
                 log.info("✅ [DingTalk] 通知已推送 | {}", msg.title());
                 // ROI#1 送达回执：受理(success)≠送达——这里才是渠道亲口确认
                 if (businessMetrics != null) businessMetrics.notifyDelivery(true);
@@ -190,38 +199,6 @@ public class DingTalkNotifier implements Notifier {
         }
     }
 
-    /** 构造 markdown 卡片 JSON；urgent=true 时 @所有人 */
-    private byte[] buildPayload(NotifyMessage msg) throws Exception {
-        Map<String, Object> markdown = new LinkedHashMap<>();
-        markdown.put("title", msg.title());
-        // urgent 时正文追加 @所有人 提示（钉钉 markdown 内 @all 需配合 at.isAtAll）
-        markdown.put("text", msg.urgent() ? msg.markdown() + "\n\n@所有人" : msg.markdown());
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("msgtype", "markdown");
-        payload.put("markdown", markdown);
-
-        if (msg.urgent()) {
-            Map<String, Object> at = new LinkedHashMap<>();
-            at.put("isAtAll", true);
-            payload.put("at", at);
-        }
-        return objectMapper.writeValueAsBytes(payload);
-    }
-
-    /** 加签：未配 secret 则原样返回 webhook */
-    private String buildSignedUrl() throws Exception {
-        if (secret == null || secret.isBlank()) {
-            return webhook;
-        }
-        long timestamp = System.currentTimeMillis();
-        String stringToSign = timestamp + "\n" + secret;
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        byte[] signData = mac.doFinal(stringToSign.getBytes(StandardCharsets.UTF_8));
-        String sign = URLEncoder.encode(
-                java.util.Base64.getEncoder().encodeToString(signData), StandardCharsets.UTF_8);
-        String sep = webhook.contains("?") ? "&" : "?";
-        return webhook + sep + "timestamp=" + timestamp + "&sign=" + sign;
-    }
+    // buildPayload/buildSignedUrl 已抽至 NotifyPayloads（批89 单源：配置页测试探针
+    // 与真实发送共用同一套 payload 构造，两套实现必然漂移——单源字典判例同理）
 }

@@ -71,6 +71,8 @@ export const API_ENDPOINTS = {
 
   // AI 模型渠道配置（阶段A-P0 只读展示，后端 ModelChannelController，ADMIN）
   MODEL_CHANNELS: `${API_BASE}/model-channels`,
+  // 通知渠道配置（批89：钉钉/企微 webhook 热改 + 测试发送 + 明文查看，ADMIN）
+  NOTIFY_CHANNELS: `${API_BASE}/notify-channels`,
 } as const
 
 // 超时配置（统一来源，http.ts 引用此值）

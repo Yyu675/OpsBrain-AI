@@ -55,9 +55,11 @@ class NotifierContractTest {
      */
     private static List<Notifier> implementations() {
         List<Notifier> list = new ArrayList<>();
-        // DingTalkNotifier 需要 ObjectMapper（构造注入）。这里直接给真实实例——
+        // DingTalkNotifier/WeComNotifier 需要 ObjectMapper（构造注入）。这里直接给真实实例——
         // 它无外部依赖、无状态，比 mock 更接近生产行为
-        list.add(new DingTalkNotifier(new com.fasterxml.jackson.databind.ObjectMapper()));
+        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+        list.add(new DingTalkNotifier(om));
+        list.add(new WeComNotifier(om));
         return list;
     }
 
@@ -133,7 +135,7 @@ class NotifierContractTest {
                 .map(n -> n.getClass().getSimpleName()).toList();
 
         // 已知实现：新增时同步更新此列表与 implementations()
-        List<String> expected = List.of("DingTalkNotifier");
+        List<String> expected = List.of("DingTalkNotifier", "WeComNotifier");
 
         assertEquals(expected.size(), registered.size(),
                 "实现数量与登记不符，请同步更新 implementations() 与 expected");

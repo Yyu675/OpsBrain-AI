@@ -22,7 +22,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 // 此前试过 vi.mock 各视图模块——VTU 给异步组件建桩时会持续探测模块
 // 命名空间上的 Vue 内部字段（__v_isVNode 等），桩不胜桩，故放弃该路线。
 const TAB_STUBS = Object.fromEntries(
-  ['ModelChannels', 'AutomationPolicies', 'ActionAllowlist', 'RiskLevels', 'Integrations', 'AuditLogs']
+  ['ModelChannels', 'NotifyChannelsPanel', 'AutomationPolicies', 'ActionAllowlist', 'RiskLevels', 'Integrations', 'AuditLogs']
     .map((name) => [name, { template: `<div class="tab-stub">${name}</div>` }]),
 )
 
@@ -79,10 +79,10 @@ describe('Settings — 标签轨与角色过滤', () => {
     expect(w.find('.tab-stub').text()).toBe('常规')
   })
 
-  it('管理员看到全部七个标签', async () => {
+  it('管理员看到全部八个标签', async () => {
     const w = await mountPage('/settings', 'admin')
     expect(railLabels(w)).toEqual([
-      '常规', '模型渠道', '自动化策略', '动作白名单', '风险等级', '接入管理', '审计日志',
+      '常规', '模型渠道', '通知渠道', '自动化策略', '动作白名单', '风险等级', '接入管理', '审计日志',
     ])
   })
 

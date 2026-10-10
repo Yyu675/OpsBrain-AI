@@ -123,3 +123,9 @@ export const userKeys = {
   all: ['users'] as const,
   teamMembers: () => [...userKeys.all, 'team-members'] as const,
 }
+
+/** 通知渠道配置（批89）：整屏一份视图，任何保存后整体失效重拉 */
+export const notifyKeys = {
+  all: ['notify-channels'] as const,
+  list: () => [...notifyKeys.all, 'list'] as const,
+}

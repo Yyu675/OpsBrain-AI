@@ -44,6 +44,11 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   'governance.policy.delete': '删除自动化策略',
   'governance.policy.dry-run': '演练自动化策略',
   'ai-channel.update': '更新模型渠道',
+  'ai-channel.key.reveal': '查看模型渠道密钥明文',
+  'notify.channel.update': '更新通知渠道',
+  'notify.channel.test': '发送通知测试消息',
+  'notify.ingest-secret.update': '更新告警接入密钥',
+  'notify.secret.reveal': '查看通知密钥明文',
   generic: '其他操作'
 }
 

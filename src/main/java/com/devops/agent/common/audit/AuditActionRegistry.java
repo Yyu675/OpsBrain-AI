@@ -97,6 +97,17 @@ public final class AuditActionRegistry {
 
         // ── 模型渠道配置（P1：渠道编辑留痕）─────────────────────
         put("PUT",    "/api/v1/model-channels/*",            "ai-channel.update");
+
+        // ── 通知渠道配置（批89：页面改 webhook/密钥热生效——必须留痕谁把
+        // 通知发去了哪）。精确键而非 /*：normalize 只把数字/UUID/TKT 变量段
+        // 变 *（isVariable 实证），dingtalk/wecom/ingest-secret 是纯词段
+        // 不变——本批测试红抓出「通配登记落 generic」后改精确（audit 红案）。
+        put("PUT",    "/api/v1/notify-channels/dingtalk",   "notify.channel.update");
+        put("PUT",    "/api/v1/notify-channels/wecom",      "notify.channel.update");
+        put("PUT",    "/api/v1/notify-channels/ingest-secret", "notify.ingest-secret.update");
+        // 测试发送=向外部渠道真发一条消息，同样要能回答「这条骚扰消息是谁发的」
+        put("POST",   "/api/v1/notify-channels/dingtalk/test", "notify.channel.test");
+        put("POST",   "/api/v1/notify-channels/wecom/test",    "notify.channel.test");
     }
 
     private AuditActionRegistry() {
@@ -118,7 +129,23 @@ public final class AuditActionRegistry {
             return GENERIC;
         }
         String key = method.toUpperCase() + " " + normalize(path);
-        return ACTIONS.getOrDefault(key, GENERIC);
+        String hit = ACTIONS.get(key);
+        if (hit != null) {
+            return hit;
+        }
+        // 批89 通配兜底：isVariable 只认数字/UUID/TKT（防吞 /docs/42/publish 的
+        // 动作词末段），纯词末段（chat/wecom/dingtalk）永不变 * → 「/*」登记此前
+        // 永远落 generic（ai-channel.update 形同虚设，本批 audit 红案实证）。
+        // 精确与 normalize 全落空后把末段强制变 * 再查一次——动作词场景第一步
+        // 已命中（如 /docs/*/publish），到不了兜底，无误伤。
+        int cut = key.lastIndexOf('/');
+        if (cut > 0) {
+            hit = ACTIONS.get(key.substring(0, cut + 1) + "*");
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return GENERIC;
     }
 
     /**

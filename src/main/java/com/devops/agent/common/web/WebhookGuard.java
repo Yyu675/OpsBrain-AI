@@ -58,6 +58,26 @@ public class WebhookGuard {
     private String secret;
 
     /**
+     * 批89 热生效持有者：页面改 secret 后 holder 即时更新，本 guard 下一个请求即生效。
+     * 字段注入（契约测试直接 new 时为 null）→ {@link #effectiveSecret()} 回落上方 @Value
+     * 字段——既有测试零改，@Value 字段语义转为「holder 未初始化兜底」。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private IngestSecretHolder ingestSecrets;
+
+    /** token 通道有效值：holder 已初始化（启动 @PostConstruct 必设）优先，否则 @Value。 */
+    private String effectiveSecret() {
+        String h = ingestSecrets != null ? ingestSecrets.token() : null;
+        return h != null ? h : secret;
+    }
+
+    /** HMAC 通道有效值：同上。 */
+    private String effectiveHmacSecret() {
+        String h = ingestSecrets != null ? ingestSecrets.hmac() : null;
+        return h != null ? h : hmacSecret;
+    }
+
+    /**
      * 方案⑤ HMAC-SHA256 签名密钥（可选，与 token/Bearer 通道并存互不排斥）。
      * 未配置 → 签名头被忽略走原 token 链（Alertmanager 兼容，现网零破坏）；
      * 配置后 → 带签名头的请求按 {@code ts + "." + rawBody} 常量时间校验 + ±5min 防重放。
@@ -119,13 +139,13 @@ public class WebhookGuard {
         //      直接放行（验过 body 完整性 + 时间戳新鲜度）；二者任缺则回落到
         //      下方 token/Bearer 通道——两条通道同强度、互为兜底。
         String sig = request.getHeader(HMAC_SIG_HEADER);
-        if (sig != null && !sig.isBlank() && hmacSecret != null && !hmacSecret.isBlank()) {
+        if (sig != null && !sig.isBlank() && !effectiveHmacSecret().isBlank()) {
             verifyHmac(request, sig, clientIp);
             return;
         }
 
         // 2) 共享密钥
-        if (secret == null || secret.isBlank()) {
+        if (effectiveSecret().isBlank()) {
             // 批 75 / P1-2：prod 无密钥=拒绝处理而非 WARN 放行。
             // 拒的是这一条告警写入，不是整个平台——密钥补上后链路即恢复，
             // 比起「裸奔接收伪造告警直至有人发现配置缺失」，损失面小一个量级。
@@ -154,7 +174,7 @@ public class WebhookGuard {
                 provided = auth.substring("Bearer ".length()).trim();
             }
         }
-        if (provided == null || !constantTimeEquals(provided, secret)) {
+        if (provided == null || !constantTimeEquals(provided, effectiveSecret())) {
             log.warn("🚫 [WebhookGuard] 密钥校验失败 | ip={} | hasHeader={}", clientIp, provided != null);
             throw WebhookRejectedException.unauthorized();
         }
@@ -205,7 +225,7 @@ public class WebhookGuard {
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
             mac.init(new javax.crypto.spec.SecretKeySpec(
-                    hmacSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+                    effectiveHmacSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] digest = mac.doFinal(canonical.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(digest.length * 2);
             for (byte b : digest) {

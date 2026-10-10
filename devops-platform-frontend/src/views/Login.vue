@@ -12,6 +12,7 @@ import { Bot, User, Lock, Loader2 } from 'lucide-vue-next'
 import { useAppStore } from '@/stores/app'
 import { notify, handleServerError } from '@/utils/notify'
 import { safeInternalPath } from '@/utils/safeRedirect'
+import SecretInput from '@/components/common/SecretInput.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -87,14 +88,12 @@ onMounted(() => {
         </div>
         <div class="field">
           <Lock :size="16" class="field-icon" />
-          <input
+          <SecretInput
             v-model="password"
-            type="password"
-            class="field-input"
+            class="login-secret"
             placeholder="密码"
             autocomplete="current-password"
             :disabled="submitting"
-            @keydown.enter="doLogin"
           />
         </div>
         <button type="submit" class="login-btn" :disabled="submitting">
@@ -194,6 +193,19 @@ onMounted(() => {
 
   &::placeholder {
     color: #b0b7c3;
+  }
+}
+
+/* 密码框内嵌眼睛后的行内适配：wrap 撑满 .field，输入区与用户名框同高。
+   @keydown.enter 落在 wrap 根上冒泡自内层 input——回车登录不丢。 */
+.login-secret {
+  flex: 1;
+
+  :deep(.secret-wrap__input) {
+    padding: 12px 26px 12px 0;
+    font-size: 14px;
+
+    &::placeholder { color: #b0b7c3; }
   }
 }
 

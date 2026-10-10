@@ -52,7 +52,7 @@ APP_PORT=18088 AI_MODE=MOCK docker compose -f docker-compose.yml --env-file .env
 | 密钥 | 注入链 | 轮换动作 | 回归验证 |
 |---|---|---|---|
 | 模型/渠道 Key（百炼等） | `.env` → `API-Key轮换SOP.md` 全流程 | 照 SOP（含通知/CI/验证段） | `/ai/api/v1/health/ai-model` 正常 |
-| `MODEL_KEY_CRYPT_SECRET`（AES-GCM） | `.env` → `部署运维手册 §3` | `openssl rand -hex 32` 换 → **重启**让 `AiChannelMirror` 重写 `enc:v1:` 密文（旧密文失效） | 渠道列表读出非明文、对话可用 |
+| `MODEL_KEY_CRYPT_SECRET`（AES-GCM） | `.env` → compose `app.environment` 透传（批89 补上，此前漏传=容器必明文） → `部署运维手册 §3` | **批89 实证七步**（旧说法「重启让 `AiChannelMirror` 重写密文」已证伪：镜像不重写，REAL 重启直接 `AEADBadTagException` 拒启）：① 旧钥运行时配置页「查看明文」备份全渠道密钥 → ② 停服 → ③ `openssl rand -hex 32` 换值 → ④ `AI_MODE=MOCK` 起（MOCK 不建 embedding bean 不解密）→ ⑤ 配置页逐页重存 → ⑥ 恢复 REAL 重启 → ⑦ 回归 | 各渠道「查看明文」全解得开 + `keyCryptConfigured=true` + 无 needsReEntry 黄标；**换代验证以 reveal 成功反证——health=200 不算数（可能还是旧进程，批89 实测踩过）** |
 | **Webhook Token 通道**（本页新补） | `.env:ALERT_WEBHOOK_SECRET` → yml `devops.alert.webhook.secret: ${ALERT_WEBHOOK_SECRET:}` | **两处成对改**：① `.env`；② `monitoring/alertmanager.yml` `authorization.credentials` → `docker compose … up -d alertmanager` | 见下方「轮换三连」 |
 | **Webhook HMAC 通道**（本页新补，dev 现未配=token 通道在岗） | `.env:ALERT_WEBHOOK_HMAC_SECRET` → yml `hmac-secret`（空=不验签） | 换 `.env` → `up -d app`；自定义源侧同步 secret | 签名探针 200 / 伪签名 40101 |
 

@@ -58,6 +58,15 @@ public class RealModeStartupGuard {
 
     @EventListener(ApplicationReadyEvent.class)
     public void verifyOnStartup() {
+        // ---- -1) 主密钥在位性（批89 P0 可见性）：REAL=库里是真 Key，没主密钥
+        // 就是明文落库——这个事实必须在启动日志里可见，不能等 DB dump 才发现。
+        // 只 WARN 不拒启：拒启与否留给占位 key/维度/指纹三条既有硬闸裁量。
+        if (cryptSecret == null || cryptSecret.isBlank()) {
+            log.warn("⚠️ [RealModeStartupGuard] MODEL_KEY_CRYPT_SECRET 未配置——REAL 模式下 API Key 正以明文落库"
+                    + "（DB dump/备份=Key 泄露）。生产必配：openssl rand -hex 32 写入 .env 后重启"
+                    + "，存量明文行在「模型渠道配置」页重新保存一次即转 enc:v1: 密文。");
+        }
+
         // ---- 0) 占位 key 检测（P1：DB 优先，yml 回落） ----
         String chatKey = effectiveKey(AiChannel.KEY_CHAT, ymlChatKey);
         String embKey = effectiveKey(AiChannel.KEY_EMBEDDING, ymlEmbeddingKey);

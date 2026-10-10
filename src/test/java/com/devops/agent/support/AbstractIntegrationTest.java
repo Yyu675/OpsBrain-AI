@@ -62,6 +62,14 @@ public abstract class AbstractIntegrationTest {
      * <p>
      * Windows 本机的 Docker Desktop npipe 有时对 Testcontainers 不可见
      * （Docker CLI 走自己的 context 能连，Testcontainers 的 npipe 探测却失败）。
+     * 批89 把该「有时失败」钉到根因（2026-10-07 实测）：Docker Desktop 29.8 的
+     * 管道 API 代理对 docker-java（testcontainers 经 Spring Boot BOM 管控）的
+     * {@code /info} 握手一律回 <b>400 + 空 Info + Labels=[docker_cli 管道指针]</b>——
+     * docker_engine / dockerDesktopLinuxEngine / docker_cli 三条管道、指定 DOCKER_HOST
+     * 均同一 400（docker CLI 自身协商无恙，API 1.56 正常），本机又未开 2375 TCP 暴露。
+     * 两个修法（均超出单测改动范畴，待拍板）：Docker Desktop 设置开
+     * 「Expose daemon on tcp://localhost:2375 without TLS」后指 DOCKER_HOST；
+     * 或升 testcontainers 版本（重大依赖变更按铁律列方案）。修好前本机照旧 SKIP。
      * 原实现里 {@code POSTGRES.start()} 抛出的 IllegalStateException 会包装成
      * {@code ExceptionInInitializerError}，把整批测试打成 ERROR 而非 SKIP——
      * 「环境不可用」被误读成「代码坏了」。这里改为：探测失败时记录标志，

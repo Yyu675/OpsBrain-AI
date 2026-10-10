@@ -100,6 +100,10 @@ class ModelChannelControllerWebTest {
     @MockitoBean
     private ChannelRefreshService refreshService;
 
+    /** 批89 reveal 端点的审计留痕器——切片里真实性无关，mock 掉即可（同其余协作方口径）。 */
+    @MockitoBean
+    private com.devops.agent.common.audit.SecretRevealAuditor revealAuditor;
+
     @MockitoBean
     private com.devops.agent.infrastructure.ai.ChannelCapabilityProbe capabilityProbe;
 

@@ -46,16 +46,17 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
 
     /**
      * sys_ 前缀业务表数量：
-     * 批 69 迁移收敛后 V1 单基线即 33 表（原 V1 27 表 + V2~V7 各 1 表 + 折叠内联）。
-     * 改迁移需同步更新，见类注释。
+     * 批 69 迁移收敛后 V1 单基线 33 表 + V16 notify_channel = 34 表。
+     * 批89：V2 起号批77~V15 已重入历史（git 史实证 33=V1..V15 时代口径），
+     * 改迁移需同步更新本值——这是「刻意摩擦」，别删。
      */
-    private static final int EXPECTED_BASELINE_TABLE_COUNT = 33;
+    private static final int EXPECTED_BASELINE_TABLE_COUNT = 34;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("空库启动即建出全部 33 张业务表（V1 单基线完备性，Flyway 亲自执行）")
+    @DisplayName("空库启动即建出全部 34 张业务表（V1+V2~V16 全量，Flyway 亲自执行）")
     void emptyDatabaseShouldBeFullyMigratedByFlyway() {
         Integer tableCount = jdbcTemplate.queryForObject(
                 """
@@ -74,7 +75,7 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("flyway_schema_history 恰好 1 条（V1 单基线，批 69 折叠后托管生效证据）")
+    @DisplayName("flyway_schema_history 恰好 16 条（V1 基线 + V2~V16 增量全部成功）")
     void schemaHistoryShouldRecordBaselinePlusFirstIncrement() {
         var rows = jdbcTemplate.queryForList(
                 """
@@ -84,10 +85,11 @@ class FlywayMigrationIntegrationTest extends AbstractIntegrationTest {
                  ORDER BY installed_rank
                 """);
         assertThat(rows)
-                .as("批 69 迁移收敛后空库应只执行 V1 单基线（原 V2~V11 已折叠进 V1）。"
-                        + "多出记录说明混入了未折叠的迁移文件或后续新增 V{n} 未更新本断言")
-                .hasSize(1);
-        assertThat(rows.get(0).get("version")).as("唯一一条 = V1 单基线").isEqualTo("1");
+                .as("批89：V1 单基线 + V2~V16 共 16 条（批77 起 V2 重新起号，"
+                        + "批69「只 V1」口径已过时）。多出记录=混入未登记迁移，"
+                        + "少记录=迁移没跑全——改迁移必须同步更新本断言（刻意摩擦别删）")
+                .hasSize(16);
+        assertThat(rows.get(0).get("version")).as("首条 = V1 单基线").isEqualTo("1");
         assertThat(rows).allSatisfy(r ->
                 assertThat(r.get("success")).as("所有迁移必须成功").isEqualTo(Boolean.TRUE));
     }

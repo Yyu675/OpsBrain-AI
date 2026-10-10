@@ -2,15 +2,16 @@
  * AI 模型渠道配置 API（P0~P3：只读展示 → 编辑 → 热更新即时生效）。
  *
  * 对应后端 {@code ModelChannelController}（ADMIN-only）。
- * 安全边界：后端只回脱敏 key（maskedKey），明文/密文 key 永不流出——
- * 前端不存在任何「解密/还原 key」的能力。编辑时可提交新 key（后端加密落库）。
+ * 安全边界：列表/历史只回脱敏 key（maskedKey）；明文只在显式调用
+ * {@link revealModelChannelKey}（reveal 端点）时返回——限 ADMIN 且后端写审计，
+ * 与通知渠道 reveal 同一三件套（限角色 / 默认打码 / 访问留痕）。
  * P3-1 热更新：保存成功后模型 Bean 即时原子替换生效（response.restartRequired=false）；
  * 仅热更新失败时回退为「重启后端生效」（restartRequired=true，保存动作始终落地）。
  */
 
 import { API_ENDPOINTS } from '../config/api'
 import { http, unwrapBiz } from '../utils/http'
-import type { AiChannelHistoryListResponse, AiChannelListResponse, AiChannelUpdatePayload, AiChannelView, ChannelProbeResult, ChannelTemplate, ConnectivityResult } from './types'
+import type { AiChannelHistoryListResponse, AiChannelListResponse, AiChannelRevealed, AiChannelUpdatePayload, AiChannelView, ChannelProbeResult, ChannelTemplate, ConnectivityResult } from './types'
 
 /**
  * 拉取全部生效的模型渠道配置（chat/embedding/reranker）。
@@ -18,6 +19,19 @@ import type { AiChannelHistoryListResponse, AiChannelListResponse, AiChannelUpda
 export async function fetchModelChannels(): Promise<AiChannelListResponse> {
   const payload = await http.get<unknown>(API_ENDPOINTS.MODEL_CHANNELS)
   return unwrapBiz<AiChannelListResponse>(payload, '查询模型渠道配置失败')
+}
+
+/**
+ * 查看渠道 API Key 明文（批89 清查补齐——与通知渠道 reveal 对称）。
+ * 调用即在后端写审计（谁/何时/看了哪个渠道）；解不开（主密钥变更）字段为 null。
+ */
+export async function revealModelChannelKey(
+  channelKey: 'chat' | 'embedding' | 'reranker',
+): Promise<AiChannelRevealed> {
+  const payload = await http.get<unknown>(
+    `${API_ENDPOINTS.MODEL_CHANNELS}/${channelKey}/reveal`,
+  )
+  return unwrapBiz<AiChannelRevealed>(payload, '查看明文失败')
 }
 
 /**
