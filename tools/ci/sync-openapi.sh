@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ⚠ 已退役（批90，2026-10-12）：请用 node tools/ci/sync-openapi.mjs。
+# 退役原因：Windows/WSL interop 损坏时本脚本**静默空跑**（实测）——快照同步
+# 这类契约闸门绝不能静默失败；node 版逐字保留三重硬拒口径且全平台一致。
+# 保留本文件仅因历史文档引用可达；不再维护。
+#
 # 项3（2026-10-03）：OpenAPI 快照同步——把 springdoc 反射出的契约（含每个 path 的
 # HTTP 方法）固化成仓内工件，供前端 apiContract 测试做「方法级」交叉验证。
 #

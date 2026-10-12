@@ -1,7 +1,7 @@
 /**
  * orval 配置：项3 Phase B —— OpenAPI 快照 → TS 类型生成（只生成 types）。
  *
- * - input 指仓内快照工件（tools/ci/sync-openapi.sh 从活体 /ai/v3/api-docs 拉取），
+ * - input 指仓内快照工件（tools/ci/sync-openapi.mjs 从活体 /ai/v3/api-docs 拉取），
  *   生成不依赖活体后端：sync（改契约后）→ gen（随时）两步解耦；
  * - 真产物 = output.schemas → src/api/generated/（传输边界 DTO 类型唯一真相）；
  * - output.target 指向仓库根 tools/orval-out/（弃件，gitignore 豁免）：

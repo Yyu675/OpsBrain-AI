@@ -14,7 +14,7 @@
  *      正是 fieldContract 29 对之外的盲区补面）。
  *
  * 触发场景：后端改了契约（加端点/加字段）没跑 `npm run api:refresh` → 红。
- * 修法：bash tools/ci/sync-openapi.sh（或手动同步快照）→ npm run gen:api →
+ * 修法：node tools/ci/sync-openapi.mjs（或手动同步快照）→ npm run gen:api →
  * 提交快照+生成物；手写类型若有漂移，typecheck 的 fieldContract 会点名。
  *
  * A 缺失 = 硬失败（测试没导出 = 链路坏，宁红不静默跳过）。
@@ -33,7 +33,7 @@ function load(p, name) {
     console.error(`✗ ${name} 不存在：${p}`);
     console.error(name.startsWith('LIVE')
       ? '  上一步 OpenApiSchemaIntegrationTest 未导出——测试被跳过或 mvn verify 没跑全量。'
-      : '  快照缺失——先 bash tools/ci/sync-openapi.sh（需 dev 后端 8088 活着）。');
+      : '  快照缺失——先 node tools/ci/sync-openapi.mjs（需 dev 后端 8088 活着）。');
     process.exit(1);
   }
   return JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -97,7 +97,7 @@ if (propDrift) console.error('  （字段增删=fieldContract 会同步点名手
 if (failed) {
   console.error('');
   console.error('✗ 快照过期：后端契约已变，随库快照没跟。修法（仓库根）：');
-  console.error('    bash tools/ci/sync-openapi.sh   # 需 dev 后端 8088 活着');
+  console.error('    node tools/ci/sync-openapi.mjs  # 需 dev 后端 8088 活着');
   console.error('    npm run gen:api                 # 刷新生成物');
   console.error('    # typecheck 红=手写类型漂移（fieldContract 点名字段），补/修后一并提交');
   process.exit(1);

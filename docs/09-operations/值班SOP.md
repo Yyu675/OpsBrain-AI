@@ -55,3 +55,21 @@
 | 日志全是 JSON 看不懂 | `jq -c 'select(.traceId=="…")'`(prod 是 ECS 格式，批 48)——手册 §7 |
 | 工单/审批积压告警响 | 业务告警组（批 50）起步阈值，先拆构成再定增员/排班，阈值别随手调大——手册 §8 |
 | 「指标能不能推到公司监控」 | OTLP:`OTLP_EXPORT_ENABLED=true`+URL(60s 推；告警仍看 prom 抓）——手册 §9 |
+
+## 7. E2E 测试账号处置纪律（批90 立，灰度/生产必查）
+
+`e2e_operator`(OPS) / `e2e_viewer`(VIEWER) 是角色 E2E 矩阵（`e2e/role-matrix.spec.ts`）
+依赖的真实可登录账号，**口令在仓库内**——本机 dev 库常驻，灰度/生产库若同构复制即成后门。
+
+- 每次向灰度/生产库发布后核验并禁用（幂等，可重复执行）：
+
+  ```sql
+  UPDATE sys_user SET status = 'DISABLED' WHERE username LIKE 'e2e\_%';
+  -- 复核：应为 0 行 ACTIVE
+  SELECT username, status FROM sys_user WHERE username LIKE 'e2e\_%';
+  ```
+
+- 判据：`sys_user` 中 `e2e_%` 前缀账号在非本机环境**必须全部 DISABLED**；
+  发现 ACTIVE 按密钥泄漏同级处置（禁用 + 查审计该账号近期行为）。
+- 命名约定即防线：测试账号只允许 `e2e_` 前缀，禁止用真实姓名/岗位名造测试号。
+

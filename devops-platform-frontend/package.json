@@ -18,7 +18,7 @@
     "knip": "knip",
     "gen:api": "node scripts/gen-api.mjs",
     "gen:check": "npm run gen:api && git diff --exit-code -- src/api/generated/ || (echo [gen-check] 生成物与快照不同步:契约改了没跑gen或生成物被手改,修法 npm run gen:api 后提交 && exit 1)",
-    "api:refresh": "bash ../tools/ci/sync-openapi.sh && npm run gen:api",
+    "api:refresh": "node ../tools/ci/sync-openapi.mjs && npm run gen:api",
     "verify": "npm run typecheck && npm run lint && npm run audit:tokens && npm run test",
     "audit:tokens": "node tools/audit/check_tokens.cjs",
     "size:gate": "npm run build && node ../tools/audit/check_bundle_budget.js"

@@ -12,7 +12,7 @@
  *   javadoc 里常引用 @RequestMapping("/api/...") 示例，不剥会把示例当真映射；
  *   正则容忍 FQN 注解（@org...PostMapping）与命名参数（path=/value="/stream")）；
  * - API_ENDPOINTS 的值是纯路径/取 id 函数，不带 method → path 段级校验分两道：
- *   源码扫描（下述）× springdoc 快照交叉（快照由 tools/ci/sync-openapi.sh 从活体
+ *   源码扫描（下述）× springdoc 快照交叉（快照由 tools/ci/sync-openapi.mjs 从活体
  *   /ai/v3/api-docs 拉取固化，自带每个 path 的 HTTP 方法——⑦ 的 method 级数据在此
  *   入场，orval 类型生成接续）；行为语义由各端点行为测试兜底；
  * - 用法定性：src 中常量每次出现的下一字符全是 '/' → 纯前缀拼接
@@ -131,12 +131,12 @@ describe('前后端接口契约（config/api.ts ↔ Controller 映射）', () =>
   })
 
   it('方法级（⑦ 收口）：API_ENDPOINTS 全量命中 springdoc 快照，快照方法数据齐全', () => {
-    // 快照 = 活体 /ai/v3/api-docs 固化件（tools/ci/sync-openapi.sh 生成、随库提交）。
+    // 快照 = 活体 /ai/v3/api-docs 固化件（tools/ci/sync-openapi.mjs 生成、随库提交）。
     // springdoc 反射 Controller 与上方源码正则是两个独立解析器——双向交叉后
     // 漂移无处藏；每条 path 自带 HTTP 方法 = ⑦ 缺的 method 数据在此入场。
     const SNAP = path.resolve(process.cwd(), '../openapi/api-docs.snapshot.json')
     expect(fs.existsSync(SNAP),
-      '快照缺失——跑 bash tools/ci/sync-openapi.sh（需 dev 后端 8088 活着）后提交').toBe(true)
+      '快照缺失——跑 node ../tools/ci/sync-openapi.mjs（需 dev 后端 8088 活着）后提交').toBe(true)
     const snap = JSON.parse(fs.readFileSync(SNAP, 'utf8')) as {
       paths: Record<string, Record<string, unknown>>
     }
