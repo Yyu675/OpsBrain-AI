@@ -14,8 +14,9 @@
  */
 import { notify } from '@/utils/notify'
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Bell, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-vue-next'
+import { AlertTriangle, RefreshCw, X } from 'lucide-vue-next'
 import type { Alert, AlertStatus } from '@/api/types'
 import { useAlertListQuery, useAlertMutations } from '@/api/queries/alerts.query'
 import {
@@ -146,16 +147,28 @@ const listError = listQuery.error
 /** 处置动作（确认/恢复）。成功后自动失效告警领域全部查询 */
 const { acknowledge: ackMutation, resolve: resolveMutation } = useAlertMutations()
 
+const router = useRouter()
+
+/** 带告警上下文跳 AI 助手预提问（R0-2 上下文入口） */
+const askAi = (row: Alert) => {
+  const brief = [row.title || row.alertName, row.level && `级别 ${row.level}`, row.service && `服务 ${row.service}`]
+    .filter(Boolean)
+    .join('，')
+  router.push({ path: '/assistant', query: { ask: `收到告警「${brief}」，应该怎么排查处置？` } })
+}
+
 /** 当前行正在执行确认/恢复的告警 id（防重复点击 + 行内 loading） */
 const actionLoadingId = ref<number | null>(null)
 
 const hasFilters = computed(() => statusFilter.value !== '' || levelFilter.value !== ''
   || systemFilter.value !== '' || observingOnly.value)
 
-/** 触发中的活跃告警数（当前筛选下由后端 total 提供，非全库口径） */
-const firingCount = computed(
-  () => alerts.value.filter(a => a.status === 'FIRING').length
-)
+/**
+ * 触发中口径计数（R1-1）：由后端在同筛选 SQL 里数出，不再前端数当前页数组。
+ * 此前「当前页触发中」只反映本页 10 条，页码不同读数不同，值班人容易
+ * 把「本页可见的 firing」误读成「现在总共在烧」。
+ */
+const { firingFiltered, firingTotal } = listQuery
 
 // ==================== 数据操作 ====================
 
@@ -364,11 +377,8 @@ const offAlertEvents = subscribeAlertEvents(() => {
           </div>
         </div>
         <div class="page-summary">
-          <div class="summary-item">
-            <span class="summary-dot summary-dot--firing" />
-            <span class="summary-text">当前页触发中</span>
-            <span class="summary-value">{{ firingCount }}</span>
-          </div>
+          <!-- 触发中口径（R1-1）：后端计数，展示逻辑拆到子组件（行数红线纪律） -->
+          <AlertFiringSummary :filtered="firingFiltered" :total="firingTotal" />
           <div class="summary-item">
             <AlertTriangle :size="14" class="summary-icon" />
             <span class="summary-text">共告警</span>
@@ -567,26 +577,15 @@ const offAlertEvents = subscribeAlertEvents(() => {
           </el-table-column>
 
           <!-- 操作 -->
-          <el-table-column label="操作" width="170" fixed="right">
+          <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
-              <div class="actions" @click.stop>
-                <button
-                  class="action-btn action-btn-primary"
-                  :disabled="row.status === 'ACKNOWLEDGED' || row.status === 'RESOLVED' || actionLoadingId === row.id"
-                  @click="acknowledge(row)"
-                >
-                  <CheckCircle :size="14" />
-                  {{ row.status === 'ACKNOWLEDGED' ? '已确认' : '确认' }}
-                </button>
-                <button
-                  class="action-btn action-btn-success"
-                  :disabled="row.status === 'RESOLVED' || actionLoadingId === row.id"
-                  @click="resolve(row)"
-                >
-                  <Bell :size="14" />
-                  {{ row.status === 'RESOLVED' ? '已恢复' : '标记恢复' }}
-                </button>
-              </div>
+              <AlertRowActions
+                :row="row"
+                :loading="actionLoadingId === row.id"
+                @acknowledge="acknowledge(row)"
+                @resolve="resolve(row)"
+                @ask="askAi(row)"
+              />
             </template>
           </el-table-column>
         </el-table>

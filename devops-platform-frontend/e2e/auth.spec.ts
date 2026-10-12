@@ -12,9 +12,9 @@ import { test, expect, type Page } from '@playwright/test'
  * - 错误凭据 → handleServerError 提示，停留登录页且不写 token
  * - 直接落地登录页（非重定向）登录 → 跳首页 '/'
  *
- * 已知实现行为（如实断言，非缺陷掩盖）：/login 是 public 路由，守卫直接放行、
- * 不做 restoreSession，Login.vue onMounted 只看内存态 isAuthenticated——
- * 因此「带 token 直达 /login」不会自动跳走（只有经守卫的非公开路由才恢复会话）。
+ * 已知实现行为（如实断言，非缺陷掩盖）：/login 是 public 路由，守卫直接放行；
+ * 登录页 onMounted 现会主动 restoreSession（带有效 token 直达 /login 自动恢复并
+ * 跳回目标页）——token 失效时 restoreSession 清 token 停留本页，不闪跳。
  *
  * 账号：admin/admin123（Login.vue 登录提示中明示的默认账号）。
  */
@@ -93,5 +93,38 @@ test.describe('鉴权与路由守卫', () => {
     await expect
       .poll(async () => page.evaluate((k) => localStorage.getItem(k), TOKEN_KEY))
       .not.toBeNull()
+  })
+
+  test('带有效 token 直达 /login：自动恢复会话并跳走，不停留输密码', async ({ page }) => {
+    // 先正常登录拿 token
+    await page.goto('/login')
+    await loginViaForm(page)
+    await expect(page).toHaveURL(/localhost:5173\/$/, { timeout: 15_000 })
+    const token = await page.evaluate((k) => localStorage.getItem(k), TOKEN_KEY)
+    expect(token).not.toBeNull()
+
+    // beforeEach 的 init script 每次导航都会清 token——
+    // 再注册一个后执行的 init script 把有效 token 注回去（模拟"带着登录态回来"），
+    // 然后重开 /login（书签/后退场景）：onMounted restoreSession → 自动跳走
+    await page.addInitScript(([k, v]) => localStorage.setItem(k, v!), [TOKEN_KEY, token] as const)
+    await page.goto('/login')
+    await expect(page).toHaveURL(/localhost:5173\/$/, { timeout: 15_000 })
+    await expect(page.locator('input[placeholder="用户名"]')).toHaveCount(0)
+  })
+
+  test('带失效 token 直达 /login：清 token 停留本页，可正常重新登录', async ({ page }) => {
+    // 同上：after-delete init script 注入失效 token
+    await page.addInitScript((k) => localStorage.setItem(k, 'invalid-token-e2e'), TOKEN_KEY)
+    await page.goto('/login')
+
+    // 无效 token：restoreSession 判凭证失效 → 清 token、停留登录页
+    await expect(page.locator('input[placeholder="用户名"]')).toBeVisible()
+    await expect
+      .poll(async () => page.evaluate((k) => localStorage.getItem(k), TOKEN_KEY))
+      .toBeNull()
+
+    // 停留后可正常登录
+    await loginViaForm(page)
+    await expect(page).toHaveURL(/localhost:5173\/$/, { timeout: 15_000 })
   })
 })

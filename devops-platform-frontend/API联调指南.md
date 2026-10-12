@@ -216,57 +216,25 @@ onMounted(() => {
 </template>
 ```
 
-### 示例 2：创建智能问答聊天组件
+### 示例 2：SSE 流式问答（AI 助手）
 
-```vue
-<script setup lang="ts">
-import { ref } from 'vue'
-import { useCancelableChat } from '@/api/chat'
+> ⚠️ 历史示例中的 `useCancelableChat` 已随 6.28 死代码清场删除；当前唯一的
+> SSE 编排入口是 `src/composables/useAiAssistant.ts`（折叠五事件为消息列表，
+> 含 onClose 兜底与 sessionId 多轮记忆），页面用法直接看
+> `src/views/AiAssistant.vue`（路由 `/assistant`）。
 
-const query = ref('')
-const answer = ref('')
-const isStreaming = ref(false)
-const { startChat, cancel } = useCancelableChat()
+```ts
+import { useAiAssistant } from '@/composables/useAiAssistant'
 
-async function ask() {
-  if (!query.value.trim()) return
-
-  answer.value = ''
-  isStreaming.value = true
-
-  await startChat(query.value, {
-    onStart: (data) => {
-      console.log('使用模型:', data.routerModel)
-    },
-    onToken: (data) => {
-      answer.value += data.text
-    },
-    onComplete: (data) => {
-      console.log('成本:', data.costRmb, '元')
-      isStreaming.value = false
-    },
-    onError: (data) => {
-      console.error('错误:', data.message)
-      isStreaming.value = false
-    }
-  })
-}
-
-function stop() {
-  cancel()
-  isStreaming.value = false
-}
-</script>
-
-<template>
-  <div>
-    <input v-model="query" placeholder="输入问题" />
-    <button @click="ask" :disabled="isStreaming">提问</button>
-    <button @click="stop" v-if="isStreaming">停止</button>
-    <div>{{ answer }}</div>
-  </div>
-</template>
+const { messages, streaming, ask, stop, newSession } = useAiAssistant()
+ask('什么是K8s')          // 流式追加进 messages，模板渲染 messages 即可
+stop()                    // 中断在途生成（AbortController）
+newSession()              // 换新 sessionId（三层记忆开新会话）
 ```
+
+直接裸用底层 `chatStream`（工单分析/知识沉淀等场景）时，**必须处理 `onClose`**：
+服务端可能不发 `complete` 就关流（超时/网关截断），漏掉它「生成中」会永久卡死——
+`src/api/chat.ts` 的契约注释有完整说明。
 
 ---
 

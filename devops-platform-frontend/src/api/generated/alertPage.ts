@@ -12,4 +12,6 @@ export interface AlertPage {
   page?: number;
   size?: number;
   totalPages?: number;
+  firingFiltered?: number;
+  firingTotal?: number;
 }

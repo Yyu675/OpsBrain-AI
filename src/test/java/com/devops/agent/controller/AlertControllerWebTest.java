@@ -117,12 +117,19 @@ class AlertControllerWebTest {
      * 桩住「列表 + 计数」两个调用——P0-2b 后控制器把它们拆开调用，
      * 再组装成 AlertPage（见 AlertDto 的说明：装配在控制器层）。
      * any() 匹配含 null 的任意筛选值，入参透传由调用处的 verify 钉住。
+     *
+     * <p>R1-1 起同族追加两个 FIRING 桩：firingFiltered（筛选内）与 firingTotal（全库）。
+     * 默认给可区分的假值（3/17），哪个用例在意哪个数就在响应里断言哪个——
+     * 两数不相等时若后端把口径接反，响应断言会当场翻红而不是继续绿着骗人。</p>
      */
     private void stubAlerts(List<Alert> alerts, long total) {
         when(alertQueryService.findAlerts(any(), any(), any(), anyBoolean(), anyInt(), anyInt()))
                 .thenReturn(alerts);
         when(alertQueryService.countAlerts(any(), any(), any(), anyBoolean()))
                 .thenReturn(total);
+        when(alertQueryService.countFiringAlerts(any(), any(), any(), anyBoolean()))
+                .thenReturn(3L);
+        when(alertQueryService.countFiringTotal()).thenReturn(17L);
     }
 
     // ==================================================================
@@ -144,11 +151,19 @@ class AlertControllerWebTest {
                     .andExpect(jsonPath("$.data.size").value(10))
                     .andExpect(jsonPath("$.data.totalPages").value(1))
                     .andExpect(jsonPath("$.data.alerts[0].alertName").value("HighCpuUsage"))
+                    // R1-1：两个 FIRING 口径必须同屏下发。桩值刻意给 3≠17，
+                    // 后端若把「筛选内」与「全库」接反或漏发，这里立即翻红——
+                    // 这正是本次改动的动机：值班人不再拿一个数猜两种含义
+                    .andExpect(jsonPath("$.data.firingFiltered").value(3))
+                    .andExpect(jsonPath("$.data.firingTotal").value(17))
                     .andExpect(jsonPath("$.traceId").exists());
 
             verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(10));
             // 总数必须与列表同条件统计，否则页码与实际数据矛盾
             verify(alertQueryService).countAlerts(isNull(), isNull(), isNull(), eq(false));
+            // firingFiltered 也必须吃同一组筛选参数；firingTotal 无筛选（全库）
+            verify(alertQueryService).countFiringAlerts(isNull(), isNull(), isNull(), eq(false));
+            verify(alertQueryService).countFiringTotal();
         }
 
         @Test
@@ -164,6 +179,9 @@ class AlertControllerWebTest {
 
             verify(alertQueryService).findAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false), eq(1), eq(10));
             verify(alertQueryService).countAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false));
+            // firingFiltered 与列表同条件（R1-1）：漏传筛选参数会把它退化成全库数，
+            // 正是这次要消灭的误读源头
+            verify(alertQueryService).countFiringAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false));
         }
 
         @Test

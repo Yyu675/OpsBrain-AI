@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 
 import {
@@ -22,11 +22,23 @@ import { handleServerError } from '@/utils/notify'
  * 现在角标与列表共用 approvalKeys 前缀，决策后 invalidate 一次两者都更新。
  */
 
-export function useApprovalListQuery(status: Ref<string>, page = 1, size = 50) {
+/**
+ * 审批列表查询。
+ *
+ * page/size 由调用方持有 ref 并传入（默认 1/50）——必须进 queryKey 才能
+ * 翻页重查；AlertList 同款教训：页码在 Query 与分页条各存一份必然漂移，
+ * 全局只留调用方那一份。
+ */
+export function useApprovalListQuery(
+  status: Ref<string>,
+  page: Ref<number> = ref(1),
+  size: Ref<number> = ref(50)
+) {
   const query = useQuery({
-    // status 进 key：切 tab 自动重拉，不需要在 switchTab 里手调 fetchList
-    queryKey: computed(() => approvalKeys.list(status.value, page, size)),
-    queryFn: () => listApprovals(status.value, page, size),
+    // status/页码/每页数都进 key：切 tab、翻页自动重拉，不需要在
+    // switchTab / 分页回调里手调 fetchList
+    queryKey: computed(() => approvalKeys.list(status.value, page.value, size.value)),
+    queryFn: () => listApprovals(status.value, page.value, size.value),
     staleTime: 20_000, // 20 秒缓存：审批列表变化较频繁，但可短暂缓存
     gcTime: 5 * 60_000,
   })
@@ -35,6 +47,7 @@ export function useApprovalListQuery(status: Ref<string>, page = 1, size = 50) {
     ...query,
     items: computed<ApprovalRequest[]>(() => query.data.value?.items ?? []),
     total: computed(() => query.data.value?.total ?? 0),
+    totalPages: computed(() => query.data.value?.totalPages ?? 0),
   }
 }
 

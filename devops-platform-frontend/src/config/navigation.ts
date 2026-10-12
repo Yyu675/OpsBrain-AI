@@ -42,6 +42,9 @@ interface NavigationItem {
 /** @public knip 假阳存证：%s */
 export const navigationItems: NavigationItem[] = [
   { key: 'home', label: '首页', path: '/', stage: 'L1', visible: true },
+  // AI 助手（R0-2）：SSE 问答底座的独立门面——此前 AI 只藏在工单表单/
+  // 分析卡片深处，「AI 平台看不见 AI」。放在首页后第一位：提问是最高频入口。
+  { key: 'assistant', label: 'AI 助手', path: '/assistant', stage: 'L1', visible: true },
   // 告警是值班人每天要用的入口
   { key: 'alerts', label: '告警事件', path: '/alerts', stage: 'L2', visible: true },
   { key: 'tickets', label: '智能工单', path: '/tickets', stage: 'L1', visible: true },

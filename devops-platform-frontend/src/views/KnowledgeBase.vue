@@ -370,11 +370,11 @@ onMounted(() => {
           <Settings2 :size="16" />
           知识库管理
         </button>
-        <button class="btn-plain" type="button" @click="uploadOpen = true">
+        <button class="btn-plain" type="button" v-permission.disable="{ codes: ['knowledge:edit'] }" @click="uploadOpen = true">
           <Upload :size="16" />
           上传文档
         </button>
-        <button class="btn-new" @click="openCreate">
+        <button class="btn-new" v-permission.disable="{ codes: ['knowledge:edit'] }" @click="openCreate">
           <Plus :size="16" />
           新建文档
         </button>

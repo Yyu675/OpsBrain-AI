@@ -41,7 +41,10 @@ export async function fetchAlerts(query: AlertQuery = {}): Promise<AlertsRespons
     total: data?.total ?? 0,
     page: data?.page ?? 1,
     size: data?.size ?? 10,
-    totalPages: data?.totalPages ?? 0
+    totalPages: data?.totalPages ?? 0,
+    // 后端未升级时兜底 0（字段缺失显示 0 而非 undefined 崩模板）
+    firingFiltered: data?.firingFiltered ?? 0,
+    firingTotal: data?.firingTotal ?? 0
   }
 }
 

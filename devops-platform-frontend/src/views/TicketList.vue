@@ -529,7 +529,7 @@ const getPriorityClass = (p: TicketPriority) => `priority-${p}`
             <p class="page-subtitle">AI 驱动工单路由与自动化处理</p>
           </div>
           <div class="page-actions">
-            <button class="btn-create" @click="openCreateDialog">
+            <button class="btn-create" v-permission.disable="{ codes: ['ticket:write'] }" @click="openCreateDialog">
               <Plus :size="16" />
               创建工单
             </button>

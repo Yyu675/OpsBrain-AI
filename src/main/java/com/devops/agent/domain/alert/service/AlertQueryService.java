@@ -114,6 +114,34 @@ public class AlertQueryService {
         return alertRepository.countByQuery(status, level, system, obs.levels(), obs.windowMinutes());
     }
 
+    /**
+     * 「筛选内 FIRING」计数（R1-1：与 {@link #findAlerts} 同一筛选口径的火情数）。
+     *
+     * <p>动机：值班人把「全库 FIRING」误读成「当前筛选内的 FIRING」——筛了 mes 系统
+     * 却看着全库火情数判断「这一屏还剩多少火在烧」。本方法与列表/总数走完全相同的
+     * where（含 observing 派生条件），只是再 AND status='FIRING'。</p>
+     *
+     * <p>筛选若指定了 status=ACKNOWLEDGED/RESOLVED，结果自然为 0——这是同口径的
+     * 必然推论（那一屏确实没有正在烧的告警），不是查询失败。</p>
+     */
+    public long countFiringAlerts(String status, String level, String system, boolean observing) {
+        ObservationFilter obs = observationFilter(observing);
+        return alertRepository.countFiringByQuery(status, level, system, obs.levels(), obs.windowMinutes());
+    }
+
+    /**
+     * 全库 FIRING 数（R1-1：与筛选无关的总量，供 firingTotal 字段）。
+     *
+     * <p>与 {@link #countFiringAlerts} 成对下发：前者回答「这一屏有多少火」，
+     * 后者回答「全厂有多少火」。两个数分开命名，值班人不会再拿其一当另一。</p>
+     *
+     * <p>直接复用 {@code countByStatus("FIRING")}——其语义（全表按 status 计数、
+     * 无任何附加条件）与「全库 FIRING」完全一致，无需新写 SQL。</p>
+     */
+    public long countFiringTotal() {
+        return alertRepository.countByStatus("FIRING");
+    }
+
     /** 全部来源系统去重列表（告警列表的 system 筛选下拉数据源） */
     public List<String> listSystems() {
         return alertRepository.findDistinctSystems();

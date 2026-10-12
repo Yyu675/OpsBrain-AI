@@ -70,6 +70,30 @@ describe('useApprovalListQuery', () => {
     expect(mocks.listApprovals).toHaveBeenLastCalledWith('REJECTED', 1, 50)
   })
 
+  it('翻页（page ref 变化）自动重拉 —— 分页维度已进 queryKey（R1-3）', async () => {
+    // 此前 page/size 是普通标量默认值，改了也不会重拉；
+    // 转成 ref 后翻页只改 ref 值即可，视图层不需要手调 refetch
+    const page = ref(1)
+    withQueryClient(() => useApprovalListQuery(ref('PENDING'), page))
+    await flushQuery()
+
+    page.value = 2
+    await flushQuery()
+
+    expect(mocks.listApprovals).toHaveBeenLastCalledWith('PENDING', 2, 50)
+  })
+
+  it('调用方传入的 size ref 生效并随变化重拉', async () => {
+    const size = ref(20)
+    withQueryClient(() => useApprovalListQuery(ref('PENDING'), ref(1), size))
+    await flushQuery()
+    expect(mocks.listApprovals).toHaveBeenLastCalledWith('PENDING', 1, 20)
+
+    size.value = 100
+    await flushQuery()
+    expect(mocks.listApprovals).toHaveBeenLastCalledWith('PENDING', 1, 100)
+  })
+
   it('加载中 items 为空数组而非 undefined', () => {
     const { result } = withQueryClient(() => useApprovalListQuery(ref('PENDING')))
     expect(result.items.value).toEqual([])

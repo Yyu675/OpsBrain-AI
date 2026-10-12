@@ -41,14 +41,14 @@ export interface DevOpsTicket {
   version?: number;
   createTime?: string;
   updateTime?: string;
+  immutableStatus?: boolean;
   responseRemainingMinutes?: number;
   firstResponseMinutes?: number;
-  immutableStatus?: boolean;
-  slaRemainingMinutes?: number;
-  firstResponseState?: string;
-  mttrMinutes?: number;
   slaProgress?: number;
-  terminalStatus?: boolean;
-  firstResponded?: boolean;
   slaBreached?: boolean;
+  mttrMinutes?: number;
+  firstResponded?: boolean;
+  terminalStatus?: boolean;
+  firstResponseState?: string;
+  slaRemainingMinutes?: number;
 }

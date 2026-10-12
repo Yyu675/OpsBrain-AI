@@ -351,6 +351,27 @@ public class AlertRepository {
         return count != null ? count : 0;
     }
 
+    /**
+     * 「筛选内 FIRING」计数（R1-1 summary 后端口径，供告警列表页 firingFiltered 字段）。
+     *
+     * <p><b>为什么要有这一条</b>：值班人此前只能拿全库 FIRING 数，把「筛选内 firing」
+     * 误读成「全库 firing」——筛了 mes 却盯着全库火情数，对「这一屏还剩多少火在烧」
+     * 的判断直接失真。本方法与 {@link #findPage}/{@link #countByQuery} 共用
+     * {@link #buildWhere}（同一条筛选口径），再强制 {@code status='FIRING'}。</p>
+     *
+     * <p>若筛选本身选了 status=ACKNOWLEDGED 之类，结果自然为 0——这不是缺陷，
+     * 而是「与列表同 where」口径的必然推论（前端据此如实显示「筛选内 0 条在烧」）。</p>
+     */
+    public long countFiringByQuery(String status, String level, String system,
+                                   List<String> observingLevels, int observingWindowMin) {
+        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin);
+        // buildWhere 恒以 "WHERE 1=1" 开头，直接 AND 挂 FIRING 即可；
+        // FIRING 是服务端常量而非用户输入，按 buildWhere 对受控枚举的同款风格写死在 SQL 里
+        String sql = "SELECT COUNT(*) FROM sys_alert " + where.sql() + " AND status = 'FIRING'";
+        Long count = jdbcTemplate.queryForObject(sql, Long.class, where.params().toArray());
+        return count != null ? count : 0L;
+    }
+
     /** 全部来源系统去重列表（告警列表的 system 筛选下拉数据源） */
     public List<String> findDistinctSystems() {
         return jdbcTemplate.query("SELECT DISTINCT system FROM sys_alert ORDER BY system",

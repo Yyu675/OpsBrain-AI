@@ -500,7 +500,12 @@ export interface Alert {
 }
 
 /**
- * 告警列表分页响应（与 AlertController.listAlerts 返回的 Map 对齐）
+ * 告警列表分页响应（与后端 AlertDto.AlertPage record 对齐）。
+ *
+ * firingFiltered/firingTotal 是 R1-1 的口径修正：
+ * 此前「触发中」由前端数当前页数组，页 1 只显示前 10 条里的 FIRING——
+ * 值班人把它读成全局数会低估火势。现由后端两个计数直给：
+ * firingFiltered=同筛选口径 FIRING 数，firingTotal=全库 FIRING 数。
  */
 export interface AlertsResponse {
   alerts: Alert[]
@@ -508,6 +513,8 @@ export interface AlertsResponse {
   page: number
   size: number
   totalPages: number
+  firingFiltered: number
+  firingTotal: number
 }
 
 // ==================== AI 模型渠道配置（P1：可编辑 + 重启生效）====================

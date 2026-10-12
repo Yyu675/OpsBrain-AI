@@ -333,8 +333,7 @@ const goList = () => router.push('/alerts')
                 刷新
               </button>
               <button
-                class="btn-outline"
-                type="button"
+                class="btn-outline" type="button" v-permission.disable="{ codes: ['alert:write'] }"
                 :disabled="!canAcknowledge || acting"
                 @click="doAcknowledge"
               >
@@ -342,8 +341,7 @@ const goList = () => router.push('/alerts')
                 {{ alert.status === 'ACKNOWLEDGED' ? '已确认' : '确认告警' }}
               </button>
               <button
-                class="btn-primary"
-                type="button"
+                class="btn-primary" type="button" v-permission.disable="{ codes: ['alert:write'] }"
                 :disabled="!canResolve || acting"
                 @click="doResolve"
               >

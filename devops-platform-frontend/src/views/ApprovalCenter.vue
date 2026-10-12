@@ -18,6 +18,8 @@ import {
 } from '@/api/queries/approval.query'
 import RelativeTime from '@/components/common/RelativeTime.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
+import ServerPagination from '@/components/common/ServerPagination.vue'
+import { useServerPaginationFrom } from '@/composables/useServerPagination'
 import { riskLabel } from '@/constants/risk'
 
 const STATUS_TABS = [
@@ -29,32 +31,24 @@ const STATUS_TABS = [
 ]
 
 const STATUS_LABELS: Record<string, string> = {
-  PENDING: '待审批',
-  APPROVED: '已批准',
-  EXECUTED: '已执行',
-  EXECUTE_FAILED: '执行失败',
-  REJECTED: '已驳回',
-  EXPIRED: '已过期'
+  PENDING: '待审批', APPROVED: '已批准', EXECUTED: '已执行',
+  EXECUTE_FAILED: '执行失败', REJECTED: '已驳回', EXPIRED: '已过期'
 }
 
 const activeTab = ref('PENDING')
 const actingId = ref<number | null>(null)
-
-/**
- * 列表与决策由 TanStack Query 驱动。
- *
- * activeTab 进 queryKey，切 tab 自动重拉（不需在 switchTab 里手调 fetchList）；
- * 决策成功后 invalidateQueries 一次，列表与导航栏待审角标同时更新——
- * 替掉了此前「emit('approval-decided') → 导航栏订阅」的手工事件通路。
- */
-const listQuery = useApprovalListQuery(activeTab)
+// page/size 全局只此一份 ref，Query 与分页条共用（同 AlertList 教训：两处各存必漂移）；
+// activeTab 与页码都进 queryKey：切 tab / 翻页自动重拉，决策后 invalidate 刷新列表与角标
+const page = ref(1)
+const size = ref(50)
+const listQuery = useApprovalListQuery(activeTab, page, size)
 const { approve: approveMutation, reject: rejectMutation } = useApprovalMutations()
 
 const items = listQuery.items
 const loading = listQuery.isLoading
 const loadError = listQuery.error
-// listQuery.total 未在模板渲染（迁移前也是如此，属既有情况）——
-// 本页无分页控件，审批量小时逐条看完即可。若将来加分页再接上
+const pagination = useServerPaginationFrom({ total: () => listQuery.total.value, totalPages: () => listQuery.totalPages.value }, { page, size })
+const { currentPage, total, totalPages, pageNumbers, pageStart, pageEnd, goToPage } = pagination
 
 const riskTagType = (risk: string): 'danger' | 'warning' | 'info' => {
   if (risk === 'HIGH_RISK_EXECUTION') return 'danger'
@@ -73,8 +67,9 @@ const fetchList = () => listQuery.refetch()
 
 const switchTab = (tab: string) => {
   if (tab === activeTab.value) return
-  // tab 已在 queryKey 中，改值即触发重拉
+  // tab 已在 queryKey 中，改值即触发重拉；换状态是换了数据视图，页码必须回 1
   activeTab.value = tab
+  pagination.resetPage()
 }
 
 /**
@@ -273,6 +268,10 @@ const forbidden = computed(() => {
         </el-table>
       </div>
       </DataStateBoundary>
+
+      <!-- 分页：仅多页时渲染；页码已在 queryKey，点页码即重拉 -->
+      <ServerPagination v-if="totalPages > 1" :current-page="currentPage" :total-pages="totalPages" :total="total"
+        :page-start="pageStart" :page-end="pageEnd" :page-numbers="pageNumbers" margin-top="16px" @page-change="goToPage" />
     </main>
   </div>
 </template>

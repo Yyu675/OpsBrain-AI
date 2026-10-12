@@ -44,9 +44,14 @@ class AlertDtoContractTest {
          * <p>来源：{@code devops-platform-frontend/src/api/alerts.ts}
          * 里 {@code fetchAlerts} 的 {@code data.alerts} / {@code data.totalPages}
          * 等直接访问。</p>
+         *
+         * <p>R1-1 追加 firingFiltered / firingTotal：值班人把「筛选内 FIRING」
+         * 误读成「全库 FIRING」是这次改动的动机——两个口径必须各自有名字，
+         * 这里把名字钉死，改名照旧「即红」。</p>
          */
         private static final List<String> FROZEN_FIELDS =
-                List.of("alerts", "total", "page", "size", "totalPages");
+                List.of("alerts", "total", "page", "size", "totalPages",
+                        "firingFiltered", "firingTotal");
 
         @Test
         @DisplayName("字段名与顺序都不得改动 —— 它们是 JSON 的键")
@@ -68,7 +73,7 @@ class AlertDtoContractTest {
             // 21 条 / 每页 10 → 3 页。用整数除法会得 2，最后 1 条永远翻不到。
             // 这是原 Map 实现就用的公式，换 record 时不得顺手「优化」成整除
             AlertDto.AlertPage page =
-                    AlertDto.AlertPage.of(List.of(), 21, 1, 10);
+                    AlertDto.AlertPage.of(List.of(), 21, 1, 10, 0, 0);
             assertThat(page.totalPages())
                     .as("21 条数据每页 10 条应为 3 页。整数除法会得 2，"
                             + "第 21 条告警值班工程师永远看不到")
@@ -79,7 +84,7 @@ class AlertDtoContractTest {
         @DisplayName("整除时不多出空页")
         void exactDivisionHasNoExtraPage() {
             // 与上一条构成分叉：无脑 +1 的实现会在这里得 3
-            assertThat(AlertDto.AlertPage.of(List.of(), 20, 1, 10).totalPages())
+            assertThat(AlertDto.AlertPage.of(List.of(), 20, 1, 10, 0, 0).totalPages())
                     .isEqualTo(2);
         }
 
@@ -88,7 +93,7 @@ class AlertDtoContractTest {
         void emptyResultHasZeroPages() {
             // 返回 1 会让前端分页器显示「第 1/1 页」，
             // 而列表是空的——用户以为数据加载失败
-            assertThat(AlertDto.AlertPage.of(List.of(), 0, 1, 10).totalPages())
+            assertThat(AlertDto.AlertPage.of(List.of(), 0, 1, 10, 0, 0).totalPages())
                     .isEqualTo(0);
         }
 
@@ -97,10 +102,14 @@ class AlertDtoContractTest {
         void preservesEffectivePaging() {
             // controller 已把越界值钳制过（page≥1，size≤200），
             // DTO 不得再做二次调整，否则响应里回报的值与实际查询用的不一致
-            AlertDto.AlertPage p = AlertDto.AlertPage.of(List.of(), 100, 3, 25);
+            AlertDto.AlertPage p = AlertDto.AlertPage.of(List.of(), 100, 3, 25, 7, 42);
             assertThat(p.page()).isEqualTo(3);
             assertThat(p.size()).isEqualTo(25);
             assertThat(p.total()).isEqualTo(100);
+            // R1-1：两个 FIRING 口径也必须原样透传——若 DTO 层把它们互换或清零，
+            // 值班人看到的「这一屏的火」与「全厂的火」就再次混在一起
+            assertThat(p.firingFiltered()).isEqualTo(7);
+            assertThat(p.firingTotal()).isEqualTo(42);
         }
 
         @Test
@@ -112,7 +121,7 @@ class AlertDtoContractTest {
             Alert a2 = new Alert();
             a2.setId(2L);
 
-            AlertDto.AlertPage p = AlertDto.AlertPage.of(List.of(a1, a2), 2, 1, 10);
+            AlertDto.AlertPage p = AlertDto.AlertPage.of(List.of(a1, a2), 2, 1, 10, 0, 0);
             assertThat(p.alerts()).extracting(Alert::getId)
                     .containsExactly(1L, 2L);
         }

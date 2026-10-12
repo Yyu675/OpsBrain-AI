@@ -122,6 +122,20 @@ export ALIBABA_API_KEY=your_key
 cd devops-platform-frontend && npm ci && npm run dev
 ```
 
+Windows 本地开发可使用 `run-dev.cmd` 启动后端。该脚本默认将 Maven/JVM 堆限制为 768MB，避免页面文件不足导致 JVM 启动失败：
+
+```powershell
+# 先启动 PostgreSQL / Redis / MinIO 等依赖
+docker compose -f docker-compose.dev.yml up -d
+
+# 后端（项目根目录）
+.\run-dev.cmd
+
+# 前端（另一个终端）
+cd devops-platform-frontend
+npm run dev -- --host 0.0.0.0
+```
+
 ---
 
 ## 六、工程质量

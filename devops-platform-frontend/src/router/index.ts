@@ -92,6 +92,17 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'home', component: lazy(() => import('../views/Home.vue'), 'Home', 'dashboard'), meta: { title: '首页', public: true } },
+    {
+      // AI 助手（R0-2 方案 A）：chatStream SSE 底座的独立门面页。
+      // 支持 ?ask=<预置问题> 从告警/工单上下文带问题直达并自动提问。
+      path: '/assistant', name: 'assistant',
+      component: lazy(() => import('../views/AiAssistant.vue'), 'AiAssistant', 'detail'),
+      meta: {
+        title: 'AI 助手', stage: 'L1',
+        description: '知识库问答、故障排查指引、一句话建单（SSE 流式，RAG 引用回链）。',
+        capabilities: ['流式问答', '工具进度', '引用出处', '多轮记忆']
+      }
+    },
     { path: '/knowledge', name: 'knowledge', component: lazy(() => import('../views/KnowledgeBase.vue'), 'KnowledgeBase', 'list'), meta: { title: '知识库' } },
     { path: '/knowledge/editor/:id', name: 'knowledge-editor', component: lazy(() => import('../views/KnowledgeEditor.vue'), 'KnowledgeEditor', 'detail'), meta: { title: '编辑文章' } },
     { path: '/knowledge/:id', name: 'knowledge-detail', component: lazy(() => import('../views/KnowledgeDetail.vue'), 'KnowledgeDetail', 'detail'), meta: { title: '文章详情' } },

@@ -54,6 +54,10 @@ export function useAlertListQuery(filters: AlertListFilters) {
     alerts: computed<Alert[]>(() => query.data.value?.alerts ?? []),
     total: computed(() => query.data.value?.total ?? 0),
     totalPages: computed(() => query.data.value?.totalPages ?? 0),
+    /** 同筛选口径的 FIRING 数（后端计数，非当前页数组长度） */
+    firingFiltered: computed(() => query.data.value?.firingFiltered ?? 0),
+    /** 全库 FIRING 数（与筛选无关） */
+    firingTotal: computed(() => query.data.value?.firingTotal ?? 0),
   }
 }
 

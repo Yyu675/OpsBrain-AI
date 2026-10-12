@@ -29,6 +29,13 @@ const config: KnipConfig = {
      * Dashboard / TicketInsights 模板均在用。
      */
     'src/components/common/PanelErrorBoundary.vue',
+    /**
+     * 误报（同 PanelErrorBoundary 先例）：仅经 unplugin-vue-components
+     * 模板自动注册（components.d.ts 已登记 AlertFiringSummary/AlertRowActions），
+     * 宿主 AlertList.vue 模板真实在用，AlertList.pagination.test.ts 有 props 断言。
+     */
+    'src/components/alert/AlertFiringSummary.vue',
+    'src/components/alert/AlertRowActions.vue',
   ],
   vue: true,
 }

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { loadPersisted, savePersisted, clearPersisted, type Migrator } from '@/utils/persist'
 import { getAuthToken, setAuthToken, clearAuthToken, HttpError } from '@/utils/http'
 import { login as apiLogin, getMe as apiGetMe, logout as apiLogout, type AuthUser } from '@/api/auth'
+import { OPERATOR_PERMISSIONS, VIEWER_PERMISSIONS } from '@/constants/permissions'
 
 export type Role = 'admin' | 'operator' | 'viewer' | 'guest'
 
@@ -59,15 +60,24 @@ const roleLabels: Record<Role, string> = {
   guest: '访客'
 }
 
-/** 后端角色（ADMIN/OPS）→ 前端 Role + 权限。ADMIN 全权限，OPS 常规运维权限。 */
+/**
+ * 后端角色（ADMIN/OPS/其它）→ 前端 Role + 权限码。
+ *
+ * 后端 /auth/me 不下发权限码，码表在前端 constants/permissions 单源生成。
+ * OPS 此前是空集合——导致 v-permission 无法区分"能干活的运维"与"只读"，
+ * 写操作按钮对 operator 也禁用或全部裸放行（点完吃 403），两头都不对。
+ * 现在按后端真实守卫发码：见 constants/permissions.ts 的逐端点核查注释。
+ * 未知角色折成 viewer（fail-closed，与后端守卫的 fail-closed 语义一致）。
+ */
 const mapBackendRole = (backendRole: string | null | undefined): { role: Role; permissions: string[] } => {
   switch ((backendRole || '').toUpperCase()) {
     case 'ADMIN':
       return { role: 'admin', permissions: ['*'] }
     case 'OPS':
-      return { role: 'operator', permissions: [] }
+      return { role: 'operator', permissions: [...OPERATOR_PERMISSIONS] }
     default:
-      return { role: 'viewer', permissions: [] }
+      // 空集合 = 只读：viewer 全部写按钮由 v-permission disable 拦（唯一防线）
+      return { role: 'viewer', permissions: [...VIEWER_PERMISSIONS] }
   }
 }
 

@@ -107,12 +107,12 @@ const row = (over: Partial<Row> = {}): Row => ({
   ...over,
 })
 
-const mountPage = async (rows: Row[] = [row()], listError: unknown = null) => {
+const mountPage = async (rows: Row[] = [row()], listError: unknown = null, totalPages = 1) => {
   if (listError) {
     api.listApprovals.mockRejectedValue(listError)
   } else {
     api.listApprovals.mockResolvedValue({
-      items: rows, total: rows.length, page: 1, size: 50, totalPages: 1,
+      items: rows, total: rows.length * totalPages || 1, page: 1, size: 50, totalPages,
     })
   }
 
@@ -147,6 +147,18 @@ const mountPage = async (rows: Row[] = [row()], listError: unknown = null) => {
           template: '<td><slot :row="$parent.$parent.row ?? {}" /></td>',
         },
         'el-tag': { template: '<span class="tag"><slot /></span>' },
+        // 登记 ServerPagination 替身（同 AlertList.pagination.test.ts 的做法），
+        // 但保留可点击的页码按钮——用例从用户视角点「第 2 页」，
+        // 而不是 $emit 内部事件；data-current 暴露当前高亮页供断言指示一致
+        ServerPagination: {
+          name: 'ServerPagination',
+          props: ['currentPage', 'totalPages', 'total', 'pageStart', 'pageEnd', 'pageNumbers'],
+          emits: ['page-change'],
+          template: `<div class="pagination-stub" :data-current="currentPage">
+            <button v-for="p in pageNumbers.filter((x) => x !== 'ellipsis')" :key="p"
+              class="pagination-page" @click="$emit('page-change', p)">{{ p }}</button>
+          </div>`,
+        },
       },
     },
   })
@@ -220,6 +232,42 @@ describe('页面骨架与标签页', () => {
     await flushPromises()
 
     expect(api.listApprovals).not.toHaveBeenCalled()
+  })
+})
+
+describe('分页（R1-3：后端真分页 + 本页控件）', () => {
+  it('单页数据不渲染分页条——只有一页时翻页控件是噪音', async () => {
+    const w = await mountPage()
+
+    expect(w.find('.pagination-stub').exists()).toBe(false)
+  })
+
+  it('点第 2 页 → 按 page=2 重拉，分页条同步指到第 2 页', async () => {
+    // 用户视角：底部出现「2」可点，点下去数据层必须换页请求；
+    // 分页条高亮与数据层页码必须一致（两处各存一份必漂移，AlertList 已证）
+    const w = await mountPage([row()], null, 2)
+    api.listApprovals.mockClear()
+
+    const second = w.findAll('.pagination-page').find((b) => b.text() === '2')
+    expect(second, '多页数据应渲染出「2」页码按钮').toBeTruthy()
+    await second!.trigger('click')
+    await flushPromises()
+
+    expect(api.listApprovals).toHaveBeenCalledWith('PENDING', 2, 50)
+    expect(Number(w.find('.pagination-stub').attributes('data-current'))).toBe(2)
+  })
+
+  it('翻到第 2 页后切 tab 必须回第 1 页——否则会停在按新状态不存在的页上', async () => {
+    const w = await mountPage([row()], null, 2)
+    const second = w.findAll('.pagination-page').find((b) => b.text() === '2')
+    await second!.trigger('click')
+    await flushPromises()
+    api.listApprovals.mockClear()
+
+    await w.findAll('.tab')[1].trigger('click') // 已批准
+    await flushPromises()
+
+    expect(api.listApprovals).toHaveBeenCalledWith('APPROVED', 1, 50)
   })
 })
 

@@ -69,10 +69,17 @@ public class AlertController {
         // 总数必须按同一条件统计，否则页码与实际数据矛盾
         long total = alertQueryService.countAlerts(status, level, system, observing);
 
+        // R1-1：两个 FIRING 口径分开放进响应。动机是值班人会拿单一火情数把
+        // 「筛选内 firing」误读成「全库 firing」——筛了 mes 却按全库数判断这一屏的火势。
+        // firingFiltered 与列表同筛选（同 where 再 AND FIRING）；firingTotal 与筛选无关。
+        long firingFiltered = alertQueryService.countFiringAlerts(status, level, system, observing);
+        long firingTotal = alertQueryService.countFiringTotal();
+
         // 用 record 而非 Map（P0-2b 第三步）：Map 让 OpenAPI 只能生成
         // additionalProperties:true，前端拿不到类型；且 map.put("totalPages", ...)
         // 改个键名不会有编译信号，只是前端悄悄拿到 undefined。
-        return ApiResponse.success(AlertDto.AlertPage.of(alerts, total, safePage, safeSize));
+        return ApiResponse.success(
+                AlertDto.AlertPage.of(alerts, total, safePage, safeSize, firingFiltered, firingTotal));
     }
 
     /**

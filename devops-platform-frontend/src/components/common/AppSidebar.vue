@@ -13,7 +13,7 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   LayoutDashboard, BookOpen, Ticket, Bell, Activity, ListChecks, Gauge,
-  ClipboardCheck, Monitor, Settings, ChevronRight, ChevronsLeft, ChevronsRight, X,
+  ClipboardCheck, Monitor, Settings, ChevronRight, ChevronsLeft, ChevronsRight, X, Sparkles,
 } from 'lucide-vue-next'
 import { useAppStore, type Role } from '@/stores/app'
 import { primaryNavigationItems } from '@/config/navigation'
@@ -44,6 +44,7 @@ const toggleCollapse = () => {
 /** 导航图标：key → lucide 组件（navigation.ts 管清单与顺序，这里只管视觉映射） */
 const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
   home: LayoutDashboard,
+  assistant: Sparkles,
   knowledge: BookOpen,
   tickets: Ticket,
   alerts: Bell,
@@ -57,6 +58,7 @@ const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
 const activeKey = computed(() => {
   const path = route.path
   if (path === '/') return 'home'
+  if (path.startsWith('/assistant')) return 'assistant'
   if (path.startsWith('/knowledge')) return 'knowledge'
   if (path.startsWith('/tickets')) return 'tickets'
   if (path.startsWith('/alerts')) return 'alerts'
@@ -75,6 +77,7 @@ const activeKey = computed(() => {
 
 const prefetchers: Record<string, () => Promise<unknown>> = {
   home: () => import('@/views/Home.vue'),
+  assistant: () => import('@/views/AiAssistant.vue'),
   knowledge: () => import('@/views/KnowledgeBase.vue'),
   tickets: () => import('@/views/TicketList.vue'),
   disposal: () => import('@/views/DisposalCenter.vue'),

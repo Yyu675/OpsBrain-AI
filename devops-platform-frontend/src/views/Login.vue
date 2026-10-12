@@ -53,8 +53,14 @@ const doLogin = async () => {
   }
 }
 
-onMounted(() => {
-  // 已登录用户直接跳走，不停留在登录页
+onMounted(async () => {
+  // 已登录用户直接跳走，不停留在登录页。
+  // 带 token 直达 /login（书签/后退/分享链接）时内存态还是初始 false——
+  // 本路由是 public，守卫不跑 restoreSession，故这里主动恢复一次。
+  // 历史缺陷：此页此前只看内存态，"明明登录了又见登录页、被迫重新输密码"。
+  if (!app.isAuthenticated) {
+    await app.restoreSession()
+  }
   if (app.isAuthenticated) {
     router.replace(redirectTarget())
     return

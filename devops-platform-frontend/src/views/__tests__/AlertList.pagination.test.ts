@@ -100,6 +100,10 @@ const mountPage = async (url = '/alerts', total = 35) => {
       total,
       totalPages: Math.ceil(total / size),
       currentPage: params.page,
+      // R1-1 后端口径字段：刻意与「本页条数」（2）不同的假值，
+      // 若前端回退成数当前页数组，展示断言当场翻红
+      firingFiltered: 7,
+      firingTotal: 42,
     })
   })
 
@@ -144,7 +148,17 @@ const mountPage = async (url = '/alerts', total = 35) => {
           props: ['currentPage', 'totalPages', 'total', 'pageStart', 'pageEnd', 'pageNumbers'],
           template: '<div class="pagination-stub" :data-current="currentPage" />',
         },
+        // 触发中口径子组件桩成 props 可见壳：断言"页面把后端口径原样交下去"，
+        // 子组件自身的渲染归它自己的展示职责
+        AlertFiringSummary: {
+          name: 'AlertFiringSummary',
+          props: ['filtered', 'total'],
+          template: '<div class="firing-stub" :data-filtered="filtered" :data-total="total" />',
+        },
       },
+      // v-permission 全局指令在 main.ts 注册，测试环境补空实现消解析警告；
+      // 真实行为由 permission.test.ts + role-matrix E2E 覆盖
+      directives: { permission: {} },
     },
   })
   await flushPromises()
@@ -353,6 +367,18 @@ describe('来源系统与观察中筛选（V9 / FR-3.1）', () => {
 
     const vm = w.vm as unknown as { observingOnly: boolean }
     expect(vm.observingOnly).toBe(true)
+  })
+})
+
+describe('触发中口径摘要（R1-1）', () => {
+  it('展示后端 firingFiltered/firingTotal，而不是数当前页数组', async () => {
+    // 桩数据每页 2 条（若前端仍数本页 FIRING 数组会得 2），
+    // 后端口径桩值 7/42——读到 7/42 才证明换的是后端计数
+    const w = await mountPage()
+
+    const summary = w.findComponent({ name: 'AlertFiringSummary' })
+    expect(summary.props('filtered')).toBe(7)
+    expect(summary.props('total')).toBe(42)
   })
 })
 
