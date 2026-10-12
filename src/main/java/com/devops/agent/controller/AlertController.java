@@ -1,6 +1,7 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.common.guard.OpsWriteGuard;
 import com.devops.agent.controller.dto.AlertDto;
 import com.devops.agent.domain.alert.entity.Alert;
 import com.devops.agent.domain.alert.service.AlertQueryService;
@@ -35,8 +36,16 @@ public class AlertController {
 
     private final AlertQueryService alertQueryService;
 
-    public AlertController(AlertQueryService alertQueryService) {
+    /**
+     * 写权限守卫（T3，2026-10-12）：确认/恢复是处置动作，会改告警状态并
+     * 影响值班看板与统计口径，此前任何登录账号可直调 API 改写。
+     * 只读账号仍照旧可读全部查询端点。
+     */
+    private final OpsWriteGuard writeGuard;
+
+    public AlertController(AlertQueryService alertQueryService, OpsWriteGuard writeGuard) {
         this.alertQueryService = alertQueryService;
+        this.writeGuard = writeGuard;
     }
 
     /**
@@ -193,6 +202,7 @@ public class AlertController {
      */
     @PostMapping("/{id}/acknowledge")
     public ApiResponse<Alert> acknowledge(@PathVariable Long id) {
+        writeGuard.requireWrite();
         log.info("[AlertController] 确认告警: id={}", id);
         return ApiResponse.success(alertQueryService.acknowledge(id), "已确认");
     }
@@ -202,6 +212,7 @@ public class AlertController {
      */
     @PostMapping("/{id}/resolve")
     public ApiResponse<Alert> resolve(@PathVariable Long id) {
+        writeGuard.requireWrite();
         log.info("[AlertController] 标记告警恢复: id={}", id);
         return ApiResponse.success(alertQueryService.resolve(id), "已标记恢复");
     }

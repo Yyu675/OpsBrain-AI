@@ -3,6 +3,7 @@ package com.devops.agent.controller;
 import com.devops.agent.controller.dto.TicketDto;
 import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.common.guard.OpsWriteGuard;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
 import com.devops.agent.domain.biz.entity.TicketAction;
 import com.devops.agent.domain.biz.entity.TicketActivity;
@@ -51,12 +52,20 @@ public class TicketController {
 
     private final TicketAiAnalysisService aiAnalysisService;
 
+    /**
+     * 工单写权限守卫（T3，2026-10-12）：写端点此前仅校验登录，
+     * 只读账号可绕开前端按钮直调 API 改单。分级口径见 {@link OpsWriteGuard}。
+     */
+    private final OpsWriteGuard writeGuard;
+
     public TicketController(TicketService ticketService,
                             TicketAttachmentService attachmentService,
-                            TicketAiAnalysisService aiAnalysisService) {
+                            TicketAiAnalysisService aiAnalysisService,
+                            OpsWriteGuard writeGuard) {
         this.ticketService = ticketService;
         this.attachmentService = attachmentService;
         this.aiAnalysisService = aiAnalysisService;
+        this.writeGuard = writeGuard;
     }
 
     /**
@@ -156,6 +165,7 @@ public class TicketController {
      */
     @PostMapping
     public ApiResponse<DevOpsTicket> createTicket(@Valid @RequestBody CreateTicketRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 创建工单: title={}, priority={}, module={}",
                 req.title(), req.priority(), req.module());
         DevOpsTicket created = ticketService.createTicket(
@@ -175,6 +185,7 @@ public class TicketController {
     @PutMapping("/{id}")
     public ApiResponse<DevOpsTicket> updateTicket(@PathVariable String id,
                                                   @RequestBody UpdateTicketRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 更新工单: id={}, version={}", id, req.version());
         DevOpsTicket patch = new DevOpsTicket();
         patch.setTitle(req.title());
@@ -203,6 +214,7 @@ public class TicketController {
     @PatchMapping("/{id}/status")
     public ApiResponse<DevOpsTicket> updateStatus(@PathVariable String id,
                                                   @RequestBody StatusRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 变更工单状态: id={}, status={}", id, req.status());
         DevOpsTicket updated = ticketService.updateStatus(id, req.status());
         return ApiResponse.success(updated);
@@ -217,6 +229,7 @@ public class TicketController {
     @PostMapping("/{id}/acknowledge")
     public ApiResponse<DevOpsTicket> acknowledge(@PathVariable String id,
                                                  @RequestBody(required = false) AcknowledgeRequest req) {
+        writeGuard.requireWrite();
         String responder = req != null ? req.responder() : null;
         String assignee = req != null ? req.assignee() : null;
         log.info("[TicketController] 确认接单: id={}, responder={}, assignee={}", id, responder, assignee);
@@ -230,6 +243,7 @@ public class TicketController {
     @PostMapping("/{id}/escalate")
     public ApiResponse<DevOpsTicket> escalate(@PathVariable String id,
                                               @RequestBody EscalateRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 升级工单: id={}, reason={}", id, req == null ? null : req.reason());
         String reason = req != null ? req.reason() : null;
         String operator = req != null ? req.operator() : null;
@@ -271,6 +285,7 @@ public class TicketController {
     @PostMapping("/{id}/actions")
     public ApiResponse<Map<String, Object>> addAction(@PathVariable String id,
                                                      @RequestBody ActionRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 记录处置动作: id={}, type={}", id, req.actionType());
         var action = ticketService.addAction(id, req.actionType(), req.summary(),
                 req.detail(), req.operator(), req.effective());
@@ -293,6 +308,7 @@ public class TicketController {
     @PatchMapping("/{id}/stage")
     public ApiResponse<DevOpsTicket> updateStage(@PathVariable String id,
                                                   @RequestBody StageRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 切换处置阶段: id={}, stage={}", id, req.stage());
         return ApiResponse.success(ticketService.updateStage(id, req.stage(), req.operator()));
     }
@@ -304,6 +320,7 @@ public class TicketController {
     @PostMapping("/{id}/mitigate")
     public ApiResponse<DevOpsTicket> markMitigated(@PathVariable String id,
                                                     @RequestBody(required = false) OperatorRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 标记止损: id={}", id);
         String operator = req != null ? req.operator() : null;
         return ApiResponse.success(ticketService.markMitigated(id, operator));
@@ -318,6 +335,7 @@ public class TicketController {
     @PutMapping("/{id}/root-cause")
     public ApiResponse<DevOpsTicket> confirmRootCause(@PathVariable String id,
                                                       @RequestBody RootCauseRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 确认根因: id={}, category={}", id, req.category());
         return ApiResponse.success(ticketService.confirmRootCause(
                 id, req.rootCause(), req.category(), req.operator()));
@@ -338,6 +356,7 @@ public class TicketController {
     @PostMapping("/{id}/verify")
     public ApiResponse<DevOpsTicket> submitVerification(@PathVariable String id,
                                                          @RequestBody VerifyRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 提交验证: id={}, method={}", id, req.method());
         return ApiResponse.success(ticketService.submitVerification(
                 id, req.method(), req.conclusion(), req.verifier()));
@@ -351,6 +370,7 @@ public class TicketController {
     @PostMapping("/{id}/verify/skip")
     public ApiResponse<DevOpsTicket> skipVerification(@PathVariable String id,
                                                      @RequestBody VerifySkipRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 跳过验证: id={}", id);
         return ApiResponse.success(ticketService.skipVerification(
                 id, req.reason(), req.operator()));
@@ -386,6 +406,7 @@ public class TicketController {
     @PatchMapping("/{id}/assignee")
     public ApiResponse<DevOpsTicket> transferTicket(@PathVariable String id,
                                                     @RequestBody AssigneeRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 转派工单: id={}, assignee={}", id, req.assignee());
         DevOpsTicket updated = ticketService.transferTicket(id, req.assignee());
         return ApiResponse.success(updated);
@@ -423,6 +444,7 @@ public class TicketController {
     @PostMapping("/{id}/void")
     public ApiResponse<Map<String, Object>> voidTicket(@PathVariable String id,
                                                        @RequestBody(required = false) VoidRequest req) {
+        writeGuard.requireWrite();
         String reason = (req != null && req.reason() != null && !req.reason().isBlank())
                 ? req.reason() : "人工作废";
         log.warn("[TicketController] 作废工单: id={}, reason={}", id, reason);
@@ -513,6 +535,7 @@ public class TicketController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) String uploader) {
 
+        writeGuard.requireWrite();
         log.info("[TicketController] 上传附件 | id={} | name={} | size={}",
                 id, file != null ? file.getOriginalFilename() : null,
                 file != null ? file.getSize() : 0);
@@ -548,6 +571,7 @@ public class TicketController {
      */
     @DeleteMapping("/attachments/{attachmentId}")
     public ApiResponse<TicketAttachment> deleteAttachment(@PathVariable Long attachmentId) {
+        writeGuard.requireAdmin();   // 物理删 MinIO 对象，与工单物理删除同级限 ADMIN
         log.info("[TicketController] 删除附件 | id={}", attachmentId);
         return ApiResponse.success(attachmentService.delete(attachmentId));
     }
@@ -561,6 +585,7 @@ public class TicketController {
     @PutMapping("/{id}/tags")
     public ApiResponse<List<String>> replaceTags(@PathVariable String id,
                                                  @RequestBody TagsRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 替换标签 | id={} | tags={}", id, req.tags());
         return ApiResponse.success(ticketService.replaceTags(id, req.tags()));
     }
@@ -606,6 +631,7 @@ public class TicketController {
     @PostMapping("/{id}/replies")
     public ApiResponse<TicketReply> addReply(@PathVariable String id,
                                              @RequestBody AddReplyRequest req) {
+        writeGuard.requireWrite();
         log.info("[TicketController] 新增回复 | id={} | role={} | author={}", id, req.role(), req.author());
         TicketReply reply = ticketService.addReply(
                 id, req.role(), req.author(), req.authorColor(), req.content());
@@ -632,6 +658,10 @@ public class TicketController {
     @PostMapping("/{id}/ai-analysis")
     public ApiResponse<TicketAiAnalysis> saveAiAnalysis(@PathVariable String id,
                                                         @RequestBody SaveAnalysisRequest req) {
+        // 存档是工单写（入档可被后续查看复用）。只读账号触发的存档失败
+        // 不伤主流程——前端 archiveAnalysis 本就 catch 后仅 console.warn。
+        // 对比：下方 feedback 端点有意豁免（阅读反馈人人可点，见 OpsWriteGuard javadoc）。
+        writeGuard.requireWrite();
         TicketAiAnalysis saved = aiAnalysisService.save(
                 id, req.content(), req.reasons(), req.commands(),
                 req.citations(), req.confidence(), req.costRmb());

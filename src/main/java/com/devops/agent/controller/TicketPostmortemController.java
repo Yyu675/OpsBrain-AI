@@ -1,6 +1,7 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.common.guard.OpsWriteGuard;
 import com.devops.agent.domain.biz.entity.TicketActionItem;
 import com.devops.agent.domain.biz.entity.TicketPostmortem;
 import com.devops.agent.domain.biz.service.TicketPostmortemService;
@@ -26,10 +27,15 @@ public class TicketPostmortemController {
     private final TicketPostmortemService pmService;
     private final com.devops.agent.application.runtime.PostmortemDraftOrchestrator draftOrchestrator;
 
+    /** 写权限守卫（T3，2026-10-12）：复盘与改进项属工单写，口径见 {@link OpsWriteGuard} */
+    private final OpsWriteGuard writeGuard;
+
     public TicketPostmortemController(TicketPostmortemService pmService,
-                                      com.devops.agent.application.runtime.PostmortemDraftOrchestrator draftOrchestrator) {
+                                      com.devops.agent.application.runtime.PostmortemDraftOrchestrator draftOrchestrator,
+                                      OpsWriteGuard writeGuard) {
         this.pmService = pmService;
         this.draftOrchestrator = draftOrchestrator;
+        this.writeGuard = writeGuard;
     }
 
     /**
@@ -52,6 +58,7 @@ public class TicketPostmortemController {
     @PutMapping("/{id}/postmortem")
     public ApiResponse<TicketPostmortem> savePostmortem(@PathVariable String id,
                                                         @RequestBody PostmortemRequest req) {
+        writeGuard.requireWrite();
         log.info("[PostmortemController] 保存复盘: id={}", id);
         TicketPostmortem pm = new TicketPostmortem();
         pm.setTicketId(id);
@@ -71,6 +78,7 @@ public class TicketPostmortemController {
      */
     @PostMapping("/{id}/postmortem/draft")
     public ApiResponse<Map<String, Object>> generateDraft(@PathVariable String id) {
+        writeGuard.requireWrite();   // 纯拼接无副作用，但入口语义是复盘编辑流，与保存同闸口
         String timeline = pmService.generateTimelineDraft(id);
         return ApiResponse.success(Map.of("timeline", timeline));
     }
@@ -98,6 +106,7 @@ public class TicketPostmortemController {
     @PostMapping("/{id}/postmortem/action-items")
     public ApiResponse<TicketActionItem> addActionItem(@PathVariable String id,
                                                        @RequestBody ActionItemRequest req) {
+        writeGuard.requireWrite();
         log.info("[PostmortemController] 新建改进项: id={}", id);
         TicketActionItem item = new TicketActionItem();
         item.setTicketId(id);
@@ -114,6 +123,7 @@ public class TicketPostmortemController {
     @PatchMapping("/postmortem/action-items/{itemId}")
     public ApiResponse<TicketActionItem> updateActionItem(@PathVariable long itemId,
                                                           @RequestBody ActionItemStatusRequest req) {
+        writeGuard.requireWrite();
         log.info("[PostmortemController] 更新改进项状态: itemId={}, status={}", itemId, req.status());
         return ApiResponse.success(pmService.updateActionItemStatus(itemId, req.status()));
     }

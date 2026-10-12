@@ -130,6 +130,14 @@ class TicketControllerWebTest {
     @MockitoBean
     private TicketAiAnalysisService aiAnalysisService;
 
+    /**
+     * 写权限守卫（T3）mock：契约测试关心的是路由/响应结构，
+     * 权限分级本身由 OpsWriteGuardTest 与 OpsWriteGuardCoverageTest 覆盖。
+     * mock 的 requireWrite/requireAdmin 默认不抛 = 放行，既有用例语义不变。
+     */
+    @MockitoBean
+    private com.devops.agent.common.guard.OpsWriteGuard writeGuard;
+
     private static DevOpsTicket sampleTicket() {
         DevOpsTicket t = new DevOpsTicket();
         t.setId("TKT-20260824-0001");

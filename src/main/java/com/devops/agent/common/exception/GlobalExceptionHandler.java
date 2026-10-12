@@ -7,6 +7,7 @@ import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.common.error.BizError;
 import com.devops.agent.common.guard.KnowledgeWriteGuard;
+import com.devops.agent.common.guard.OpsWriteGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -78,6 +79,20 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleKnowledgeWriteForbidden(
             KnowledgeWriteGuard.KnowledgeWriteForbiddenException ex) {
         log.warn("🚫 [GlobalException] 知识库写权限不足: {}", ex.getMessage());
+        return ApiResponse.error(ex.code(), ex.getMessage());
+    }
+
+    /**
+     * 工单/告警写权限不足（T3，2026-10-12）。
+     *
+     * <p>与知识库守卫同款分开处理：拒绝原因要说清「需要 ADMIN 或 OPS」，
+     * 而不是框架生成的「无此角色：X」。码与状态沿用 40103 / 403，
+     * 前端 bizCode.ts 已有「权限不足 · 如需访问请联系管理员开通」文案。</p>
+     */
+    @ExceptionHandler(OpsWriteGuard.OpsWriteForbiddenException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleOpsWriteForbidden(OpsWriteGuard.OpsWriteForbiddenException ex) {
+        log.warn("🚫 [GlobalException] 工单/告警写权限不足: {}", ex.getMessage());
         return ApiResponse.error(ex.code(), ex.getMessage());
     }
 

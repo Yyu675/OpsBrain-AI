@@ -87,6 +87,10 @@ class AlertControllerWebTest {
     @MockitoBean
     private AlertQueryService alertQueryService;
 
+    /** 写权限守卫（T3）mock：默认放行，分级契约由 OpsWriteGuardTest 覆盖 */
+    @MockitoBean
+    private com.devops.agent.common.guard.OpsWriteGuard writeGuard;
+
     @BeforeEach
     void setUpMockMvc() {
         mockMvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
