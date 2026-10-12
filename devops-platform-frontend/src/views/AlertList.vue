@@ -49,6 +49,8 @@ const levelFilter = ref<string | ''>('')
 const systemFilter = ref<string>('')
 /** 只看观察中（FR-3.1：观察级告警窗口内暂不建单，这个开关让「还没单的」可见） */
 const observingOnly = ref(false)
+/** 只看误报（V17 Feedback 回流：阈值调优时把被值班判过误报的拉到一屏看分布） */
+const fpOnly = ref(false)
 /** 来源系统选项（挂载时拉一次；失败降级为空 = 不出该筛选器） */
 const systemOptions = ref<string[]>([])
 
@@ -74,7 +76,7 @@ const sizeRef = ref(10)
  * 恰恰是值班交接时最高频的动作。
  */
 registerAlertListUrlFilters({
-  statusFilter, levelFilter, systemFilter, observingOnly, pageRef, sizeRef,
+  statusFilter, levelFilter, systemFilter, observingOnly, fpOnly, pageRef, sizeRef,
 })
 
 const listQuery = useAlertListQuery({
@@ -84,6 +86,7 @@ const listQuery = useAlertListQuery({
   level: levelFilter,
   system: systemFilter,
   observing: observingOnly,
+  falsePositive: fpOnly,
 })
 
 const pagination = useServerPaginationFrom(
@@ -131,7 +134,7 @@ const askAi = (row: Alert) => {
 const actionLoadingId = ref<number | null>(null)
 
 const hasFilters = computed(() => statusFilter.value !== '' || levelFilter.value !== ''
-  || systemFilter.value !== '' || observingOnly.value)
+  || systemFilter.value !== '' || observingOnly.value || fpOnly.value)
 
 /**
  * 触发中口径计数（R1-1）：由后端在同筛选 SQL 里数出，不再前端数当前页数组。
@@ -179,6 +182,7 @@ const clearFilters = () => {
   levelFilter.value = ''
   systemFilter.value = ''
   observingOnly.value = false
+  fpOnly.value = false
   pagination.resetPage()
 }
 
@@ -440,6 +444,13 @@ const offAlertEvents = subscribeAlertEvents(() => {
             label="只看观察中"
             @change="resetPageOnFilterChange"
           />
+          <!-- 只看误报（V17）：阈值调优的抽检视图——被值班判过误报的拉到一屏看分布 -->
+          <el-checkbox
+            v-model="fpOnly"
+            class="filter-observing"
+            label="只看误报"
+            @change="resetPageOnFilterChange"
+          />
           <button v-if="hasFilters" class="btn-clear-filters" type="button" @click="clearFilters">
             <X :size="14" />
             清除
@@ -498,16 +509,7 @@ const offAlertEvents = subscribeAlertEvents(() => {
                   <RouterLink :to="`/alerts/${row.id}`" class="alert-title-link" @click.stop>
                     <span class="alert-title">{{ row.title || row.alertName || '—' }}</span>
                   </RouterLink>
-                  <!-- 自愈观察窗（FR-3.1）：观察级告警先观察再建单——
-                       没挂工单不是漏单，是系统在等它自己好 -->
-                  <el-tooltip
-                    v-if="row.observing"
-                    content="自愈观察中：该级别告警在观察窗内暂不建单，窗口内自愈则只留统计"
-                    placement="top"
-                    :show-after="200"
-                  >
-                    <span class="observing-badge">观察中</span>
-                  </el-tooltip>
+                  <AlertRowBadges :observing="row.observing" :false-positive="row.falsePositive" />
                 </div>
               </el-tooltip>
             </template>
@@ -563,7 +565,7 @@ const offAlertEvents = subscribeAlertEvents(() => {
           </el-table-column>
 
           <!-- 操作 -->
-          <el-table-column label="操作" width="290" fixed="right">
+          <el-table-column label="操作" width="250" fixed="right">
             <template #default="{ row }">
               <AlertRowActions
                 :row="row"
@@ -797,19 +799,6 @@ const offAlertEvents = subscribeAlertEvents(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 自愈观察窗（FR-3.1）标识：观察级告警在窗口内暂不建单 */
-.observing-badge {
-  flex-shrink: 0;
-  margin-left: var(--space-2, 8px);
-  padding: 1px 7px;
-  border-radius: 9px;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--info);
-  background: var(--info-subtle);
-  border: 1px solid color-mix(in oklch, var(--info) 35%, transparent);
 }
 
 .filter-observing {

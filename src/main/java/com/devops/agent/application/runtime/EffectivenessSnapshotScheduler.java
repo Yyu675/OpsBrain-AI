@@ -85,6 +85,10 @@ public class EffectivenessSnapshotScheduler {
             long postmortems = postmortemRepository.countAll();
             long alertSourced = ticketRepository.countByCreator("alert-bot");
             long alertsTotal = alertRepository.countSince(LocalDate.of(2000, 1, 1).atStartOfDay());
+            // 累计被标误报数（V17 标注列）：与 alertsTotal 同「累计」口径，周报算误报率。
+            // 不走 AlertRepository 的按标记时刻查询——那是「本周做了几次质量判断」
+            // 的活动量口径，与误报率（占告警比例）不是一回事。
+            long alertsFalsePositive = alertRepository.countFalsePositive();
             // 建议4 / Incident 方案 C：派生事件数（同 system+service+10分钟窗归并），累计口径与告警一致
             long eventsTotal = alertRepository.countDerivedIncidents(LocalDate.of(2000, 1, 1).atStartOfDay());
             Map<String, Long> healing = healingRepository.stats();
@@ -102,8 +106,9 @@ public class EffectivenessSnapshotScheduler {
                     INSERT INTO sys_effectiveness_snapshot
                         (snapshot_date, total_tickets, finished_tickets, postmortem_count,
                          alert_sourced_tickets, alerts_total, events_total, diagnosis_total, diagnosis_sufficient,
-                         knowledge_evidence, knowledge_hits, healing_total, healing_succeeded)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         knowledge_evidence, knowledge_hits, healing_total, healing_succeeded,
+                         alerts_false_positive)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT (snapshot_date) DO UPDATE SET
                         total_tickets = EXCLUDED.total_tickets,
                         finished_tickets = EXCLUDED.finished_tickets,
@@ -116,13 +121,15 @@ public class EffectivenessSnapshotScheduler {
                         knowledge_evidence = EXCLUDED.knowledge_evidence,
                         knowledge_hits = EXCLUDED.knowledge_hits,
                         healing_total = EXCLUDED.healing_total,
-                        healing_succeeded = EXCLUDED.healing_succeeded
+                        healing_succeeded = EXCLUDED.healing_succeeded,
+                        alerts_false_positive = EXCLUDED.alerts_false_positive
                     """,
                     day, totalTickets, finished, postmortems, alertSourced, alertsTotal, eventsTotal,
                     diagnosisTotal, diagnosisSufficient, knowledgeEvidence, knowledgeHits,
-                    healing.getOrDefault("total", 0L), healing.getOrDefault("succeeded", 0L));
-            log.info("📊 [EffectivenessSnapshot] 快照已落 | {} | 工单={} 复盘={} 告警={} 事件={}",
-                    day, totalTickets, postmortems, alertsTotal, eventsTotal);
+                    healing.getOrDefault("total", 0L), healing.getOrDefault("succeeded", 0L),
+                    alertsFalsePositive);
+            log.info("📊 [EffectivenessSnapshot] 快照已落 | {} | 工单={} 复盘={} 告警={} 事件={} 误报={}",
+                    day, totalTickets, postmortems, alertsTotal, eventsTotal, alertsFalsePositive);
             // 保留策略：只留近 400 天——趋势图与周报的窗口远小于此，
             // 更老的行只是占地方（与审计表治理同族）
             int pruned = jdbcTemplate.update(

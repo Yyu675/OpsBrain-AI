@@ -902,13 +902,11 @@ public class AlertService {
             }
             if (alert.isHighRisk()) {
                 try {
-                    StringBuilder md = new StringBuilder();
-                    md.append("### ").append(title).append("\n\n")
-                      .append("- **级别**：").append(prevLevel).append(" → ").append(newLevel).append("\n")
-                      .append("- **服务**：").append(alert.getService() != null ? alert.getService() : "—").append("\n")
-                      .append("- **工单**：").append(alert.getTicketId()).append("\n")
-                      .append("- **时间**：").append(alert.getLastOccurredAt()).append("\n");
-                    notifier.send(com.devops.agent.domain.notify.NotifyMessage.urgent(title, md.toString()));
+                    // A1（2026-10-12）：升级卡接 AlertNotifyTemplate 单源——升级时值班人
+                    // 同样需要影响/指标/首步动作，不是「⬆️ 升级了」四个字；级别变化作首行
+                    notifier.send(AlertNotifyTemplate.escalated(alert,
+                            parseJsonMap(alert.getLabelsJson()),
+                            parseJsonMap(alert.getAnnotationsJson()), prevLevel));
                 } catch (Exception ne) {
                     log.warn("⚠️ [AlertService] 升级通知失败（不影响主链）| {}", ne.getMessage());
                 }

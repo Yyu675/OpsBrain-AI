@@ -333,8 +333,18 @@ public class AlertRepository {
      */
     public List<Alert> findPage(String status, String level, String system,
                                 List<String> observingLevels, int observingWindowMin, int page, int size) {
+        return findPage(status, level, system, observingLevels, observingWindowMin, false, page, size);
+    }
+
+    /**
+     * 分页查询（含「只看误报」维，V17 标注列）。列表/计数/筛选内 FIRING 三查询
+     * 共用 {@link #buildWhere}，total 与实际行数恒一致。
+     */
+    public List<Alert> findPage(String status, String level, String system,
+                                List<String> observingLevels, int observingWindowMin,
+                                boolean falsePositiveOnly, int page, int size) {
         int offset = (page - 1) * size;
-        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin);
+        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin, falsePositiveOnly);
         String sql = "SELECT * FROM sys_alert " + where.sql()
                 + " ORDER BY last_occurred_at DESC LIMIT ? OFFSET ?";
         List<Object> params = new java.util.ArrayList<>(where.params());
@@ -348,7 +358,13 @@ public class AlertRepository {
      */
     public int countByQuery(String status, String level, String system,
                             List<String> observingLevels, int observingWindowMin) {
-        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin);
+        return countByQuery(status, level, system, observingLevels, observingWindowMin, false);
+    }
+
+    /** 含「只看误报」维的计数（与 findPage 同 where）。 */
+    public int countByQuery(String status, String level, String system,
+                            List<String> observingLevels, int observingWindowMin, boolean falsePositiveOnly) {
+        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin, falsePositiveOnly);
         String sql = "SELECT COUNT(*) FROM sys_alert " + where.sql();
         Integer count = jdbcTemplate.queryForObject(sql, Integer.class, where.params().toArray());
         return count != null ? count : 0;
@@ -367,7 +383,14 @@ public class AlertRepository {
      */
     public long countFiringByQuery(String status, String level, String system,
                                    List<String> observingLevels, int observingWindowMin) {
-        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin);
+        return countFiringByQuery(status, level, system, observingLevels, observingWindowMin, false);
+    }
+
+    /** 含「只看误报」维的筛选内 FIRING 计数（与 findPage 同 where）。 */
+    public long countFiringByQuery(String status, String level, String system,
+                                   List<String> observingLevels, int observingWindowMin,
+                                   boolean falsePositiveOnly) {
+        WhereClause where = buildWhere(status, level, system, observingLevels, observingWindowMin, falsePositiveOnly);
         // buildWhere 恒以 "WHERE 1=1" 开头，直接 AND 挂 FIRING 即可；
         // FIRING 是服务端常量而非用户输入，按 buildWhere 对受控枚举的同款风格写死在 SQL 里
         String sql = "SELECT COUNT(*) FROM sys_alert " + where.sql() + " AND status = 'FIRING'";
@@ -388,6 +411,12 @@ public class AlertRepository {
      */
     private WhereClause buildWhere(String status, String level, String system,
                                    List<String> observingLevels, int observingWindowMin) {
+        return buildWhere(status, level, system, observingLevels, observingWindowMin, false);
+    }
+
+    private WhereClause buildWhere(String status, String level, String system,
+                                   List<String> observingLevels, int observingWindowMin,
+                                   boolean falsePositiveOnly) {
         StringBuilder sql = new StringBuilder("WHERE 1=1");
         List<Object> params = new java.util.ArrayList<>();
         if (status != null && !status.isBlank()) {
@@ -401,6 +430,11 @@ public class AlertRepository {
         if (system != null && !system.isBlank()) {
             sql.append(" AND system = ?");
             params.add(system.trim());
+        }
+        // 「只看误报」（V17 标注列）：质量复盘视图——阈值调优时要把所有被值班
+        // 判过误报的告警拉到一屏里看分布，与状态筛选正交（状态可叠加）
+        if (falsePositiveOnly) {
+            sql.append(" AND false_positive");
         }
         if (observingLevels != null && !observingLevels.isEmpty()) {
             // 「观察中」= 活跃 + 未建单 + 观察级 + 未超窗（与 AlertService.isObserving 同口径）
@@ -673,38 +707,16 @@ public class AlertRepository {
         return rows;
     }
 
-    /** 周窗口内被标误报的告警数（「本周做了几次质量判断」活动量）。 */
-    public long countFalsePositiveMarkedSince(LocalDateTime since) {
-        Long n = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM sys_alert WHERE false_positive AND false_positive_marked_at >= ?",
-                Long.class, since);
-        return n == null ? 0 : n;
-    }
-
     /**
-     * 到达口径误报对（周报「本周到达误报率」同窗分/分子）：以<b>到达时间</b>划窗，
-     * 分子=该批中已被标误报者（标记可发生在任意时刻）。分子分母同批告警，
-     * 比值不可能 >100%——若按「本周标记/本周到达」两套窗口会出假象。
-     *
-     * @return long[]{到达数, 其中误报数}
+     * 累计被标误报数（快照器每日落 alerts_false_positive 列用，与 alerts_total
+     * 同「累计」口径 → 周报误报率）。
+     * <p>「本周做了几次质检判断」的活动量口径刻意不做——周报走快照累计对累计
+     * （口径唯一），活动量等真有消费方再加，不留预购死代码。</p>
      */
-    public long[] arrivedVsFalsePositiveSince(LocalDateTime since) {
-        return jdbcTemplate.queryForObject(
-                "SELECT count(*) AS arrived, "
-                        + "COUNT(*) FILTER (WHERE false_positive) AS false_positives "
-                        + "FROM sys_alert WHERE create_time >= ?",
-                (rs, i) -> new long[]{rs.getLong("arrived"), rs.getLong("false_positives")},
-                since);
-    }
-
-    /** 同上的任意时间窗版本（周报「上周期」列用 [from, to) 半开区间，避免边界日双计）。 */
-    public long[] arrivedVsFalsePositiveBetween(LocalDateTime from, LocalDateTime to) {
-        return jdbcTemplate.queryForObject(
-                "SELECT count(*) AS arrived, "
-                        + "COUNT(*) FILTER (WHERE false_positive) AS false_positives "
-                        + "FROM sys_alert WHERE create_time >= ? AND create_time < ?",
-                (rs, i) -> new long[]{rs.getLong("arrived"), rs.getLong("false_positives")},
-                from, to);
+    public long countFalsePositive() {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM sys_alert WHERE false_positive", Long.class);
+        return n == null ? 0 : n;
     }
 
     /**

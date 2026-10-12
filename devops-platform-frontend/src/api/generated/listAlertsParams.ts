@@ -12,4 +12,5 @@ status?: string;
 level?: string;
 system?: string;
 observing?: boolean;
+falsePositiveOnly?: boolean;
 };

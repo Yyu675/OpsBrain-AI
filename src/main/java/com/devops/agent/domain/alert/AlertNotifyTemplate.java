@@ -144,6 +144,25 @@ public final class AlertNotifyTemplate {
         return NotifyMessage.normal(title.toString(), clamp(md.toString()));
     }
 
+    /**
+     * 升级卡：触发卡的全部上下文 + 首行「级别 prev → new」。
+     * <p>升级是「必须触达的新事实」（建单通知对老单早已发过），信息设计同触发卡——
+     * 值班人同样需要影响/指标/首步动作，而不是只有「⬆️ 升级了」四个字。
+     * urgent 判定仍走 {@link Alert#isHighRisk()}（调用方只在升级进 P0/P1 时发）。</p>
+     */
+    public static NotifyMessage escalated(Alert alert, Map<String, String> labels,
+                                          Map<String, String> annotations, String prevLevel) {
+        NotifyMessage base = firing(alert, labels, annotations, alert.getTicketId());
+        String title = "⬆️ " + base.title();
+        // 级别变化行插在标题之后、摘要之前——它是这条卡与触发卡唯一的差异事实
+        int firstBlank = base.markdown().indexOf("\n\n");
+        String change = "- **级别**：" + nz(prevLevel, "?") + " → " + nz(alert.getLevel(), "?") + "\n";
+        String md = firstBlank < 0
+                ? base.markdown() + change
+                : base.markdown().substring(0, firstBlank + 2) + change + base.markdown().substring(firstBlank + 2);
+        return alert.isHighRisk() ? NotifyMessage.urgent(title, md) : NotifyMessage.normal(title, md);
+    }
+
     // ==================== 渲染原语 ====================
 
     /** 一行「- **键**：值」；值为 null/空白整行省略（缺料不撒谎） */

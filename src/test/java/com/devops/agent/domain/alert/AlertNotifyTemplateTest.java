@@ -147,6 +147,32 @@ class AlertNotifyTemplateTest {
     }
 
     @Nested
+    @DisplayName("升级卡")
+    class Escalated {
+
+        @Test
+        @DisplayName("升级卡=触发卡全部上下文+级别变化首行——不是「⬆️ 升级了」四个字")
+        void carriesFullContextWithChangeLine() {
+            Alert a = baseAlert();
+            a.setTicketId("TK-3");
+            a.setAnnotationsJson(null);
+
+            NotifyMessage msg = AlertNotifyTemplate.escalated(a, Map.of(),
+                    ann(AlertAnnotationKeys.SUMMARY, "订单服务 5xx 错误率过高"), "P2");
+            String md = msg.markdown();
+
+            assertThat(msg.urgent()).isTrue();
+            assertThat(msg.title()).startsWith("⬆️ [P1]");
+            assertThat(md).contains("**级别**：P2 → P1")
+                    // 升级场景值班更需要动作信息——触发卡的段全保留
+                    .contains("**摘要**", "**详情**", "TK-3");
+            // 级别行紧跟标题之后（第一屏第一条差异事实）
+            assertThat(md.indexOf("### ")).isLessThan(md.indexOf("**级别**：P2 → P1"));
+            assertThat(md.indexOf("**级别**：P2 → P1")).isLessThan(md.indexOf("**摘要**"));
+        }
+    }
+
+    @Nested
     @DisplayName("恢复卡")
     class Resolved {
 

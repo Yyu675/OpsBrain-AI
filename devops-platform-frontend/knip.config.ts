@@ -36,6 +36,12 @@ const config: KnipConfig = {
      */
     'src/components/alert/AlertFiringSummary.vue',
     'src/components/alert/AlertRowActions.vue',
+    /**
+     * 误报（同上先例，批91）：AlertList 徽标组 / AlertDetail 头部动作条，
+     * 均模板自动注册（components.d.ts 已登记），宿主视图真实在用。
+     */
+    'src/components/alert/AlertRowBadges.vue',
+    'src/components/alert/AlertDetailActionBar.vue',
   ],
   vue: true,
 }

@@ -115,36 +115,48 @@ onMounted(async () => {
 </template>
 
 <style scoped lang="scss">
+/* 全页令牌化（批91）：登录页此前是全站色值孤岛——深蓝渐变/#fff/#b0b7c3
+   硬编码，暗色与配色轴切过去整页不变。现由 --brand 派生，四轴（明暗/配色/
+   圆角/密度）自动跟随主题；bare 页无壳，更要跟着主题走。 */
 .login-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
-  padding: 20px;
+  background:
+    radial-gradient(100% 80% at 18% 8%,
+      color-mix(in oklch, var(--brand) 30%, var(--surface-2)) 0%, transparent 62%),
+    linear-gradient(150deg,
+      color-mix(in oklch, var(--brand) 16%, var(--surface-2)) 0%,
+      var(--surface-2) 58%,
+      color-mix(in oklch, var(--brand) 12%, var(--surface-3)) 100%);
+  padding: var(--space-5);
 }
 
 .login-card {
   width: 100%;
   max-width: 380px;
-  background: var(--surface-1, var(--surface-1));
-  border-radius: 16px;
-  padding: 40px 32px 28px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  padding: var(--space-10) var(--space-8) var(--space-8);
+  box-shadow: var(--shadow-lg);
 }
 
 .login-brand {
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: var(--space-6);
 }
 
 .brand-icon {
   width: 56px;
   height: 56px;
-  margin: 0 auto 12px;
-  border-radius: 14px;
-  background: var(--brand, var(--brand));
-  color: #fff;
+  margin: 0 auto var(--space-3);
+  border-radius: var(--radius-lg);
+  /* 品牌渐变块：--brand 与 --info 掺面明暗都成立；投影带品牌色让块「浮」起来 */
+  background: linear-gradient(135deg, var(--brand) 0%, var(--info) 100%);
+  color: var(--text-inverse);
+  box-shadow: 0 6px 18px color-mix(in oklch, var(--brand) 40%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -152,34 +164,39 @@ onMounted(async () => {
 
 .brand-title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
   color: var(--text-1);
+  letter-spacing: 0.5px;
 }
 
 .brand-sub {
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
   color: var(--text-3);
+  letter-spacing: 2px;
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 .field {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-1);
-  border-radius: 10px;
-  transition: border-color 0.15s;
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
 
   &:focus-within {
-    border-color: var(--brand, var(--brand));
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-subtle);
   }
 }
 
@@ -192,13 +209,14 @@ onMounted(async () => {
   flex: 1;
   border: none;
   outline: none;
-  padding: 12px 0;
-  font-size: 14px;
+  padding: var(--space-3) 0;
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
   background: transparent;
   color: var(--text-1);
 
   &::placeholder {
-    color: #b0b7c3;
+    color: var(--text-3);
   }
 }
 
@@ -208,29 +226,30 @@ onMounted(async () => {
   flex: 1;
 
   :deep(.secret-wrap__input) {
-    padding: 12px 26px 12px 0;
-    font-size: 14px;
+    padding: var(--space-3) 26px var(--space-3) 0;
+    font-size: var(--text-sm);
 
-    &::placeholder { color: #b0b7c3; }
+    &::placeholder { color: var(--text-3); }
   }
 }
 
 .login-btn {
-  margin-top: 6px;
+  margin-top: var(--space-2);
   height: 44px;
   border: none;
-  border-radius: 10px;
-  background: var(--brand, var(--brand));
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
+  border-radius: var(--radius);
+  background: var(--brand);
+  color: var(--text-inverse);
+  font-size: var(--text-base);
+  font-family: var(--font-body);
+  font-weight: var(--weight-semibold);
   letter-spacing: 4px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  transition: filter 0.15s;
+  gap: var(--space-2);
+  transition: filter var(--duration-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     filter: brightness(1.08);
@@ -243,14 +262,17 @@ onMounted(async () => {
 }
 
 .login-hint {
-  margin: 18px 0 0;
+  margin: var(--space-5) 0 0;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-3);
 }
 
 .spin {
   animation: spin 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
 }
 @keyframes spin {
   from { transform: rotate(0deg); }

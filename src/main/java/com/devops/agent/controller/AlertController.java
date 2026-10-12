@@ -57,6 +57,7 @@ public class AlertController {
      * @param level     级别筛选（P0~P4，可选）
      * @param system    来源系统筛选（V9 起；mes/erp/wms/qms…，可选）
      * @param observing 只看观察中（FR-3.1 派生：活跃+未建单+观察级+未超窗）
+     * @param falsePositiveOnly 只看误报（V17 标注列，质量复盘视图：阈值调优看分布）
      */
     @GetMapping
     public ApiResponse<AlertDto.AlertPage> listAlerts(
@@ -65,23 +66,26 @@ public class AlertController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String level,
             @RequestParam(required = false) String system,
-            @RequestParam(defaultValue = "false") boolean observing) {
+            @RequestParam(defaultValue = "false") boolean observing,
+            @RequestParam(defaultValue = "false") boolean falsePositiveOnly) {
 
         // 分页参数兜底：page < 1 会让 OFFSET 变负，size 越界会一次拉爆
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, size), 200);
 
-        log.info("[AlertController] 查询告警列表: page={}, size={}, status={}, level={}, system={}, observing={}",
-                safePage, safeSize, status, level, system, observing);
+        log.info("[AlertController] 查询告警列表: page={}, size={}, status={}, level={}, system={}, observing={}, fp={}",
+                safePage, safeSize, status, level, system, observing, falsePositiveOnly);
 
-        List<Alert> alerts = alertQueryService.findAlerts(status, level, system, observing, safePage, safeSize);
+        List<Alert> alerts = alertQueryService.findAlerts(status, level, system, observing,
+                falsePositiveOnly, safePage, safeSize);
         // 总数必须按同一条件统计，否则页码与实际数据矛盾
-        long total = alertQueryService.countAlerts(status, level, system, observing);
+        long total = alertQueryService.countAlerts(status, level, system, observing, falsePositiveOnly);
 
         // R1-1：两个 FIRING 口径分开放进响应。动机是值班人会拿单一火情数把
         // 「筛选内 firing」误读成「全库 firing」——筛了 mes 却按全库数判断这一屏的火势。
         // firingFiltered 与列表同筛选（同 where 再 AND FIRING）；firingTotal 与筛选无关。
-        long firingFiltered = alertQueryService.countFiringAlerts(status, level, system, observing);
+        long firingFiltered = alertQueryService.countFiringAlerts(status, level, system, observing,
+                falsePositiveOnly);
         long firingTotal = alertQueryService.countFiringTotal();
 
         // 用 record 而非 Map（P0-2b 第三步）：Map 让 OpenAPI 只能生成

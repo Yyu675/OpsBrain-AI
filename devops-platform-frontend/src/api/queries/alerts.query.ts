@@ -25,6 +25,8 @@ interface AlertListFilters {
   level: Ref<string | ''>
   system: Ref<string | ''>
   observing: Ref<boolean>
+  /** 只看误报（V17 质量复盘视图） */
+  falsePositive: Ref<boolean>
 }
 
 /** 空串转 undefined：后端把空串当作有效筛选值会导致查不到数据 */
@@ -38,6 +40,7 @@ export function useAlertListQuery(filters: AlertListFilters) {
     level: asParam(filters.level.value),
     system: asParam(filters.system.value),
     observing: filters.observing.value || undefined,
+    falsePositive: filters.falsePositive.value || undefined,
   }))
 
   const query = useQuery({

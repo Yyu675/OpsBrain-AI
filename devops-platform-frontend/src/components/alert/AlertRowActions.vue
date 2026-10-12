@@ -39,22 +39,25 @@ const emit = defineEmits<{
       @click="emit('resolve')"
     >
       <Bell :size="14" />
-      {{ row.status === 'RESOLVED' ? '已恢复' : '标记恢复' }}
+      {{ row.status === 'RESOLVED' ? '已恢复' : '恢复' }}
     </button>
-    <!-- 误报标记：质量标注与状态机正交，任何状态可标；再点一次取消 -->
+    <!-- 误报标记：质量标注与状态机正交，任何状态可标；再点一次取消。
+         图标钮省宽（290 列放 4 个文字按钮会换行），title 就是说明书 -->
     <button
-      class="action-btn" :class="{ 'action-btn-flagged': row.falsePositive }"
+      class="action-btn action-btn-icon" :class="{ 'action-btn-flagged': row.falsePositive }"
       v-permission.disable="{ codes: ['alert:write'] }"
       :disabled="loading"
-      :title="row.falsePositive ? '取消误报标记' : '标记为误报（反哺阈值优化）'"
+      :aria-label="row.falsePositive ? '取消误报标记' : '标记为误报（反哺阈值优化）'"
+      :title="row.falsePositive ? '已标误报：点击取消' : '标记为误报（反哺阈值优化）'"
       @click="emit('falsePositive')"
     >
       <ShieldAlert :size="14" />
-      {{ row.falsePositive ? '已标误报' : '误报' }}
     </button>
-    <button class="action-btn" type="button" title="带着这条告警去问 AI" @click="emit('ask')">
+    <button
+      class="action-btn action-btn-icon" type="button" aria-label="带着这条告警去问 AI"
+      title="带着这条告警去问 AI" @click="emit('ask')"
+    >
       <Sparkles :size="14" />
-      问 AI
     </button>
   </div>
 </template>
@@ -81,6 +84,9 @@ const emit = defineEmits<{
   white-space: nowrap;
 
   &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* 纯图标钮：靠 title/aria-label 达意，宽度只占图标+内衬 */
+  &-icon { padding: 4px 8px; }
 
   &-primary:hover:not(:disabled) {
     border-color: var(--brand);

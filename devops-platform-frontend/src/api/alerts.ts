@@ -20,6 +20,8 @@ interface AlertQuery {
   system?: string
   /** 只看观察中（FR-3.1：活跃+未建单+观察级+未超窗） */
   observing?: boolean
+  /** 只看误报（V17 标注列，质量复盘视图：阈值调优看误报分布） */
+  falsePositive?: boolean
 }
 
 /**
@@ -33,6 +35,7 @@ export async function fetchAlerts(query: AlertQuery = {}): Promise<AlertsRespons
   if (query.level) params.set('level', query.level)
   if (query.system) params.set('system', query.system)
   if (query.observing) params.set('observing', 'true')
+  if (query.falsePositive) params.set('falsePositiveOnly', 'true')
 
   const payload = await http.get<unknown>(`${API_ENDPOINTS.ALERTS}?${params.toString()}`)
   const data = unwrapBiz<AlertsResponse>(payload, '查询告警列表失败')

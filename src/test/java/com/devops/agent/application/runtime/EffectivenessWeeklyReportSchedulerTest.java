@@ -52,6 +52,8 @@ class EffectivenessWeeklyReportSchedulerTest {
         m.put("knowledge_hits", kbHits);
         m.put("healing_total", 5L);
         m.put("healing_succeeded", 4L);
+        // 误报计数刻意不放进通用 fixture：分母缺失（null→0）时该指标应整行消失，
+        // 由专门用例覆盖「无数据不渲染 0% 假数字」
         return m;
     }
 
@@ -81,6 +83,28 @@ class EffectivenessWeeklyReportSchedulerTest {
                 row("2026-09-25", 20, 40, 5, 50, 8, 20, 10, 20)
         ));
         assertThat(scheduler.build()).isNull();
+    }
+
+    @Test
+    @DisplayName("误报率：累计误报/累计告警（Feedback 回流口径），有数据才渲染")
+    void reportsFalsePositiveRate() {
+        Map<String, Object> latest = row("2026-09-25", 20, 40, 5, 50, 8, 20, 10, 20);
+        latest.put("alerts_false_positive", 5L);   // 5/50 = 10%
+        Map<String, Object> before = row("2026-09-18", 10, 30, 3, 30, 4, 20, 4, 20);
+        before.put("alerts_false_positive", 3L);   // 3/30 = 10%
+        when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of(latest, before));
+
+        assertThat(scheduler.build()).contains("告警误报率", "10.0%");
+    }
+
+    @Test
+    @DisplayName("误报列缺数据时整行消失——灰度初期没标注是常态，不渲染 0% 假健康")
+    void omitsFalsePositiveWhenNoData() {
+        when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of(
+                row("2026-09-25", 20, 40, 5, 50, 8, 20, 10, 20),
+                row("2026-09-18", 10, 30, 3, 30, 4, 20, 4, 20)
+        ));
+        assertThat(scheduler.build()).doesNotContain("告警误报率");
     }
 
     @Test

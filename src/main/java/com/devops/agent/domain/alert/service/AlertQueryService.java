@@ -95,9 +95,18 @@ public class AlertQueryService {
      */
     public List<Alert> findAlerts(String status, String level, String system, boolean observing,
                                   int page, int size) {
+        return findAlerts(status, level, system, observing, false, page, size);
+    }
+
+    /**
+     * 列表查询（含「只看误报」维，V17 Feedback 回流）：阈值调优时把被值班判过
+     * 误报的告警拉到一屏看分布；与状态/级别/系统筛选正交可叠加。
+     */
+    public List<Alert> findAlerts(String status, String level, String system, boolean observing,
+                                  boolean falsePositiveOnly, int page, int size) {
         ObservationFilter obs = observationFilter(observing);
         List<Alert> alerts = alertRepository.findPage(status, level, system,
-                obs.levels(), obs.windowMinutes(), page, size);
+                obs.levels(), obs.windowMinutes(), falsePositiveOnly, page, size);
         // 读路径派生「观察中」标识：观察级别/窗口是可调配置，落库会随配置变更腐烂
         alerts.forEach(a -> a.setObserving(alertService.isObserving(a)));
         return alerts;
@@ -110,8 +119,15 @@ public class AlertQueryService {
      * （用户看到「共 3 页」翻到第 2 页却是空的）。</p>
      */
     public long countAlerts(String status, String level, String system, boolean observing) {
+        return countAlerts(status, level, system, observing, false);
+    }
+
+    /** 与 findAlerts 全参版同条件的总数（含「只看误报」维）。 */
+    public long countAlerts(String status, String level, String system, boolean observing,
+                            boolean falsePositiveOnly) {
         ObservationFilter obs = observationFilter(observing);
-        return alertRepository.countByQuery(status, level, system, obs.levels(), obs.windowMinutes());
+        return alertRepository.countByQuery(status, level, system, obs.levels(), obs.windowMinutes(),
+                falsePositiveOnly);
     }
 
     /**
@@ -125,8 +141,15 @@ public class AlertQueryService {
      * 必然推论（那一屏确实没有正在烧的告警），不是查询失败。</p>
      */
     public long countFiringAlerts(String status, String level, String system, boolean observing) {
+        return countFiringAlerts(status, level, system, observing, false);
+    }
+
+    /** 含「只看误报」维的同口径 FIRING 计数（与 findAlerts 全参版同 where）。 */
+    public long countFiringAlerts(String status, String level, String system, boolean observing,
+                                  boolean falsePositiveOnly) {
         ObservationFilter obs = observationFilter(observing);
-        return alertRepository.countFiringByQuery(status, level, system, obs.levels(), obs.windowMinutes());
+        return alertRepository.countFiringByQuery(status, level, system, obs.levels(),
+                obs.windowMinutes(), falsePositiveOnly);
     }
 
     /**

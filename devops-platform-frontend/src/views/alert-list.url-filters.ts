@@ -21,11 +21,13 @@ interface AlertListFilterRefs {
   levelFilter: Ref<string | ''>
   systemFilter: Ref<string>
   observingOnly: Ref<boolean>
+  /** 只看误报（V17 抽检视图，URL 键 fp——质量复盘名单也要能甩链接） */
+  fpOnly: Ref<boolean>
   pageRef: Ref<number>
   sizeRef: Ref<number>
 }
 
-/** 在 setup 内调用：六个筛选/分页 ref 与 URL query 双向绑定 */
+/** 在 setup 内调用：七个筛选/分页 ref 与 URL query 双向绑定 */
 export function registerAlertListUrlFilters(refs: AlertListFilterRefs) {
   useUrlFilters([
     defineUrlFilter({
@@ -45,6 +47,9 @@ export function registerAlertListUrlFilters(refs: AlertListFilterRefs) {
     }),
     defineUrlFilter({
       ref: refs.observingOnly, key: 'observing', defaultValue: false, parse: flagParser(),
+    }),
+    defineUrlFilter({
+      ref: refs.fpOnly, key: 'fp', defaultValue: false, parse: flagParser(),
     }),
     defineUrlFilter({
       ref: refs.pageRef, key: 'page', defaultValue: 1, parse: positiveIntParser(10000),

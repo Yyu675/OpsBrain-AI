@@ -16,7 +16,7 @@
 >
 > ---
 >
-> **最后更新**：2026-10-12（批90补充二 告警信息设计收口）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day2**，L5 未启动
+> **最后更新**：2026-10-13（批91 ROI 改进清单落地）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day2**，L5 未启动
 
 ---
  
@@ -291,6 +291,8 @@
 - ✅ **批90 R0/R1 改进清单 + T3 写守卫收口（2026-10-12）**：R1-4 `run-dev.cmd` JDK21 版本闸｜R1-2 登录态恢复｜R0-1 前端权限码表单源（逐码注后端守卫实况）｜R0-3 `e2e_*` 角色测试账号 + role-matrix E2E｜R1-1 告警 summary 双口径上服务端（AlertPage +firingFiltered/firingTotal）｜R1-3 审批列表接服务端分页｜R0-2 **AI 助手独立页 `/assistant`**（useAiAssistant SSE 五事件编排 + 告警行「问 AI」上下文直达；与简洁铁律关系见 `docs/09-decisions/AI助手独立页与简洁铁律-2026-10-12.md`）｜**T3 `OpsWriteGuard` fail-closed**：工单/告警/复盘 26 写端点从「仅登录⚪」收口 ADMIN+OPS（删附件/删单限 ADMIN，AI 反馈遥测豁免），机械闸 `OpsWriteGuardCoverageTest` 防新增端点漏防；T4 `sync-openapi.mjs` node 化（WSL 损坏下 bash 静默空跑实证）。`mvn verify` 1864 全绿 + 前端 1829 全绿 + 四闸全绿，见 `docs/06-implementation-progress/2026-10-12-批90-R0R1改进清单-RBAC门控与AI助手独立页.md`
 
 - ✅ **批90补充二 告警信息设计收口（2026-10-12）**：元宝告警信息方法论落地三件套——**annotation 键字典** `AlertAnnotationKeys`（9 键单源，labels 给机器/annotations 给人）｜**通知卡模板单源** `AlertNotifyTemplate`（八段式：影响先于指标、缺料整段省略、时长人话化、1500 字符砍尾留回链、恢复卡只对 P0/P1 发且恒 normal「恢复也要发，但别吵」）｜**误报标记 V17**（`false_positive`+marked_at 增量列与状态机正交、`POST /{id}/false-positive`、行内按钮再点即撤）；接入方契约 `docs/09-operations/告警接入命名规范.md`、六项裁决与灰度期取舍见决策件。渠道矩阵/routing/silence 按裁决排后（等灰度数据）。`mvn verify` 1875 全绿 + 前端 1829 全绿 + 四闸全绿（184 端点/155 schema），见 `docs/06-implementation-progress/2026-10-12-批90补充二-告警信息设计收口-卡片模板恢复卡误报标记.md`
+
+- ✅ **批91 ROI 改进清单落地（2026-10-13）**：双路只读审计定盘 ROI 序，七项全落——**R0-4 升级卡接模板单源**（`escalated()`：⬆️ 前缀+级别迁移行，手写卡清零）｜**R0-5 误报率进周报 V18**（快照累计列 `alerts_false_positive`，守「快照唯一口径」纪律不走现算；列缺席整行不渲染不当 0% 骗人）｜**R0-6 只看误报服务端筛选**（`falsePositiveOnly` 与状态/级别/系统正交，三口径同 where；顺手清 3 个批90 预购死查询）｜**R0-3 操作列溢出根治**（审计实测 294>266 可用宽，误报/问 AI 收图标钮，列 290→250）｜**R0-1 列表误报徽标**（`AlertRowBadges` 拆出，AlertList 净减 −11）｜**R0-2 详情页误报闭环**（`AlertDetailActionBar` 拆出净减 −1：误报钮+meta 时刻+**runbook/大盘直链**——annotations 从可读变可用）｜**R1 登录页令牌化**（色值孤岛清零，`--brand` color-mix 派生四轴跟随）。`mvn verify` 1884 全绿（AI_MODE=MOCK 绕外部额度漂移，见台账§五）+ 前端 102/1830 + knip 0 + 四闸全绿（184/155；V18 已落库），见 `docs/06-implementation-progress/2026-10-13-批91-ROI清单-升级卡单源误报进周报只看误报视图登录页令牌化.md`
 
 ### 7.2 下一步计划
 

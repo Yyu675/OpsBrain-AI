@@ -68,7 +68,8 @@ public class EffectivenessWeeklyReportScheduler {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT snapshot_date, total_tickets, finished_tickets, postmortem_count,
                        alert_sourced_tickets, alerts_total, diagnosis_total, diagnosis_sufficient,
-                       knowledge_evidence, knowledge_hits, healing_total, healing_succeeded
+                       knowledge_evidence, knowledge_hits, healing_total, healing_succeeded,
+                       alerts_false_positive
                   FROM sys_effectiveness_snapshot
                  ORDER BY snapshot_date DESC
                  LIMIT 14
@@ -97,6 +98,14 @@ public class EffectivenessWeeklyReportScheduler {
         reportRate(md, "诊断充分率",
                 ratio(latest, "diagnosis_sufficient", "diagnosis_total"),
                 ratio(weekAgo, "diagnosis_sufficient", "diagnosis_total"), "%");
+        // 误报率（A1 Feedback 回流闭环，V18 快照列）：累计误报/累计告警。
+        // 它不追求当下好看——灰度初期样本小，看的是趋势：该数往上走=阈值有问题，
+        // 值班在用标注投票。列缺失（迁移前的旧快照行）整行不渲染。
+        Double fpNow = fpRatio(latest);
+        Double fpBefore = fpRatio(weekAgo);
+        if (fpNow != null || fpBefore != null) {
+            reportRate(md, "告警误报率", fpNow, fpBefore, "%");
+        }
 
         md.append("\n**存量**：工单 ").append(num(latest, "total_tickets"))
                 .append(" ｜ 完结 ").append(num(latest, "finished_tickets"))
@@ -139,6 +148,13 @@ public class EffectivenessWeeklyReportScheduler {
     private Double ratio(Map<String, Object> row, String num, String den) {
         long d = num(row, den);
         return d == 0 ? null : num(row, num) / (double) d;
+    }
+
+    /** 误报率：列缺席（V18 前的旧快照行）返回 null 交给上层整行省略，不当 0% 渲染 */
+    private Double fpRatio(Map<String, Object> row) {
+        return row.containsKey("alerts_false_positive")
+                ? ratio(row, "alerts_false_positive", "alerts_total")
+                : null;
     }
 
     private long num(Map<String, Object> row, String key) {

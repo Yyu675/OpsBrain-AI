@@ -127,11 +127,11 @@ class AlertControllerWebTest {
      * 两数不相等时若后端把口径接反，响应断言会当场翻红而不是继续绿着骗人。</p>
      */
     private void stubAlerts(List<Alert> alerts, long total) {
-        when(alertQueryService.findAlerts(any(), any(), any(), anyBoolean(), anyInt(), anyInt()))
+        when(alertQueryService.findAlerts(any(), any(), any(), anyBoolean(), anyBoolean(), anyInt(), anyInt()))
                 .thenReturn(alerts);
-        when(alertQueryService.countAlerts(any(), any(), any(), anyBoolean()))
+        when(alertQueryService.countAlerts(any(), any(), any(), anyBoolean(), anyBoolean()))
                 .thenReturn(total);
-        when(alertQueryService.countFiringAlerts(any(), any(), any(), anyBoolean()))
+        when(alertQueryService.countFiringAlerts(any(), any(), any(), anyBoolean(), anyBoolean()))
                 .thenReturn(3L);
         when(alertQueryService.countFiringTotal()).thenReturn(17L);
     }
@@ -162,11 +162,11 @@ class AlertControllerWebTest {
                     .andExpect(jsonPath("$.data.firingTotal").value(17))
                     .andExpect(jsonPath("$.traceId").exists());
 
-            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(10));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(false), eq(1), eq(10));
             // 总数必须与列表同条件统计，否则页码与实际数据矛盾
-            verify(alertQueryService).countAlerts(isNull(), isNull(), isNull(), eq(false));
+            verify(alertQueryService).countAlerts(isNull(), isNull(), isNull(), eq(false), eq(false));
             // firingFiltered 也必须吃同一组筛选参数；firingTotal 无筛选（全库）
-            verify(alertQueryService).countFiringAlerts(isNull(), isNull(), isNull(), eq(false));
+            verify(alertQueryService).countFiringAlerts(isNull(), isNull(), isNull(), eq(false), eq(false));
             verify(alertQueryService).countFiringTotal();
         }
 
@@ -181,11 +181,11 @@ class AlertControllerWebTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.alerts").isEmpty());
 
-            verify(alertQueryService).findAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false), eq(1), eq(10));
-            verify(alertQueryService).countAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false));
+            verify(alertQueryService).findAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false), eq(false), eq(1), eq(10));
+            verify(alertQueryService).countAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false), eq(false));
             // firingFiltered 与列表同条件（R1-1）：漏传筛选参数会把它退化成全库数，
             // 正是这次要消灭的误读源头
-            verify(alertQueryService).countFiringAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false));
+            verify(alertQueryService).countFiringAlerts(eq("FIRING"), eq("P0"), isNull(), eq(false), eq(false));
         }
 
         @Test
@@ -199,7 +199,7 @@ class AlertControllerWebTest {
                     .andExpect(status().isOk());
 
             verify(alertQueryService, org.mockito.Mockito.times(2))
-                    .findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(10));
+                    .findAlerts(isNull(), isNull(), isNull(), eq(false), eq(false), eq(1), eq(10));
         }
 
         @Test
@@ -209,11 +209,11 @@ class AlertControllerWebTest {
 
             mockMvc.perform(get("/api/v1/alerts").param("size", "100000"))
                     .andExpect(status().isOk());
-            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(200));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(false), eq(1), eq(200));
 
             mockMvc.perform(get("/api/v1/alerts").param("size", "0"))
                     .andExpect(status().isOk());
-            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(1), eq(1));
+            verify(alertQueryService).findAlerts(isNull(), isNull(), isNull(), eq(false), eq(false), eq(1), eq(1));
         }
 
         @Test

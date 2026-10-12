@@ -19,8 +19,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useQuery } from '@tanstack/vue-query'
 import {
-  Bell, CheckCircle, AlertTriangle, Clock, Loader2,
-  RefreshCw, Hash, Server, Boxes, Radio, Ticket, Network, ChevronDown, ChevronRight
+  AlertTriangle, Clock, Loader2,
+  Hash, Server, Boxes, Radio, Ticket, Network, ChevronDown, ChevronRight,
+  CheckCircle
 } from 'lucide-vue-next'
 import { useAlertDetailQuery, useAlertMutations } from '@/api/queries/alerts.query'
 import { fetchRelatedAlerts } from '@/api/alerts'
@@ -51,7 +52,7 @@ const alertId = computed(() => String(route.params.id ?? ''))
  * - data === null        → 确实不存在（api 层对 40004 返回 null 而非抛错）
  */
 const detailQuery = useAlertDetailQuery(alertId)
-const { acknowledge: ackMutation, resolve: resolveMutation } = useAlertMutations()
+const { acknowledge: ackMutation, resolve: resolveMutation, falsePositive: fpMutation } = useAlertMutations()
 
 /**
  * 同事件告警联动（建议3）：同 system + service ±10 分钟窗内。
@@ -74,7 +75,8 @@ const notFound = computed(() =>
 )
 
 /** 处置中：两个 mutation 任一进行中都算 */
-const acting = computed(() => ackMutation.isPending.value || resolveMutation.isPending.value)
+const acting = computed(() =>
+  ackMutation.isPending.value || resolveMutation.isPending.value || fpMutation.isPending.value)
 
 /** 手动刷新（加载失败时的重试入口） */
 const loadDetail = () => detailQuery.refetch()
@@ -132,6 +134,18 @@ const doResolve = async () => {
   try {
     await resolveMutation.mutateAsync(cur.id)
     notify.success('已标记恢复')
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
+  }
+}
+
+/** 误报标记接线（V17）：按钮在 AlertDetailActionBar，动作与提示留在本页 */
+const doToggleFalsePositive = async () => {
+  const cur = alert.value
+  if (!cur || acting.value) return
+  try {
+    await fpMutation.mutateAsync([cur.id, !cur.falsePositive])
+    notify.success(cur.falsePositive ? '已取消误报标记' : '已标记误报，将计入周报误报率')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   }
@@ -233,8 +247,14 @@ const alertLabels = computed(() =>
   parseJsonEntries(alert.value?.labelsJson).filter(e => !LABEL_KEYS_SHOWN_ELSEWHERE.has(e.key))
 )
 
-/** 告警注解（summary/description/runbook_url/当前值/阈值），全量展示 */
-const alertAnnotations = computed(() => parseJsonEntries(alert.value?.annotationsJson))
+// URL 族键（runbook_url/dashboard_url）已由头部 AlertDetailActionBar 提为直达
+// 按钮，注解区跳过不重复渲染为纯文本
+const URL_ANNOTATION_KEYS = new Set(['runbook_url', 'dashboard_url'])
+
+/** 告警注解（summary/description/当前值/阈值…），全量展示；URL 族已上头部故跳过 */
+const alertAnnotations = computed(() =>
+  parseJsonEntries(alert.value?.annotationsJson).filter(e => !URL_ANNOTATION_KEYS.has(e.key))
+)
 
 // ==================== 原始负载（结构化 JSON 全量） ====================
 
@@ -325,30 +345,23 @@ const goList = () => router.push('/alerts')
                 <span class="meta-item">
                   最近 <RelativeTime :value="alert.lastOccurredAt" />
                 </span>
+                <!-- 误报徽标（V17）：复盘进详情第一眼就该看到「这条已被值班判定为误报」 -->
+                <template v-if="alert.falsePositive">
+                  <span class="meta-sep">·</span>
+                  <span class="meta-item fp-flag">
+                    已标误报<template v-if="alert.falsePositiveMarkedAt">（{{ formatAbsolute(alert.falsePositiveMarkedAt) }}）</template>
+                  </span>
+                </template>
               </div>
             </div>
-            <div class="header-actions">
-              <button class="btn-outline" type="button" :disabled="loading" @click="loadDetail">
-                <RefreshCw :size="15" :class="{ spin: loading }" />
-                刷新
-              </button>
-              <button
-                class="btn-outline" type="button" v-permission.disable="{ codes: ['alert:write'] }"
-                :disabled="!canAcknowledge || acting"
-                @click="doAcknowledge"
-              >
-                <CheckCircle :size="15" />
-                {{ alert.status === 'ACKNOWLEDGED' ? '已确认' : '确认告警' }}
-              </button>
-              <button
-                class="btn-primary" type="button" v-permission.disable="{ codes: ['alert:write'] }"
-                :disabled="!canResolve || acting"
-                @click="doResolve"
-              >
-                <Bell :size="15" />
-                {{ alert.status === 'RESOLVED' ? '已恢复' : '标记恢复' }}
-              </button>
-            </div>
+            <AlertDetailActionBar
+              :alert="alert" :loading="loading" :acting="acting"
+              :can-acknowledge="canAcknowledge" :can-resolve="canResolve"
+              @refresh="loadDetail"
+              @acknowledge="doAcknowledge"
+              @resolve="doResolve"
+              @toggle-false-positive="doToggleFalsePositive"
+            />
           </div>
         </div>
 
@@ -616,13 +629,6 @@ const goList = () => router.push('/alerts')
 
 .meta-sep { color: var(--text-3); }
 
-.header-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.btn-outline,
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -636,17 +642,7 @@ const goList = () => router.push('/alerts')
   white-space: nowrap;
 
   &:disabled { opacity: 0.55; cursor: not-allowed; }
-}
 
-.btn-outline {
-  border: 1px solid var(--border-1);
-  background: var(--surface-1);
-  color: var(--text-1);
-
-  &:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
-}
-
-.btn-primary {
   border: 1px solid var(--brand);
   background: var(--brand);
   color: var(--text-inverse, #fff);
@@ -970,6 +966,9 @@ const goList = () => router.push('/alerts')
   color: var(--warning, var(--warning));
   font-weight: var(--weight-semibold);
 }
+
+/* 误报标注徽记（V17），warning 语义——「规则在被投票」而非危险 */
+.fp-flag { color: var(--warning); font-weight: var(--weight-semibold); }
 
 /* ===== 关联工单 ===== */
 .ticket-aggregate-note {
