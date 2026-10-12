@@ -16,7 +16,7 @@
 >
 > ---
 >
-> **最后更新**：2026-10-07（批89 通知渠道配置页 + 密钥全方位加固收官）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day2**，L5 未启动
+> **最后更新**：2026-10-12（批90 R0/R1 改进清单 + T3 写守卫收口）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day2**，L5 未启动
 
 ---
  
@@ -288,6 +288,7 @@
 - ✅ **批87 继续优化（2026-10-06）**：闸三升维 29 对（+4 字段对 +2 **枚举值域对**——Java enum 字段 springdoc 产 const enum，第二轮对账零漂移）；人话化残网（审计动作码 36 单源字典+3 处 env 模板字符串+协议四值）；RC/STAGE 三处本地字典归零收 utils 单源；knip 7 条配置 hints 清零；台账清欠（S0-1/S0-4 收尾翻清偿、F-3/P1-4 翻、S0-4b/P0-2b 重写、PRD 坏打字回滚），见 `docs/06-implementation-progress/2026-10-06-批87-契约升维与残影清扫.md`
 - ✅ **批88 契约闭环双闸 + 残影机械清扫（2026-10-06）**：三闸的「底」（随库快照/生成物新鲜度）此前靠人肉纪律——新增 `check-openapi-freshness.js`（CI 后端：当次代码活体 vs 快照，path/method+全 145 schema 属性集双维）+ `npm run gen:check`（CI 前端：重产+diff 门禁）→ **四闸联防**，fakeBatch88 注入四层逐一点名+还原复正全链实证；残影扫描机械化（exact-hash+key-set）唯一命中 STATUS_META 两页双份收 `constants/healing` 单源；残网第四处（透传大写 status 裸渲染→小写桥字典）；st.status 值域多源未钉等三处判档不改，见 `docs/06-implementation-progress/2026-10-06-批88-契约闭环双闸与残影机械清扫.md`
 - ✅ **批89 通知渠道配置页 + 密钥全方位加固（2026-10-07）**：方案一 UI 落地（设置页「通知渠道」标签：钉钉/企微卡片启停/热改/测试发送/reveal + 告警接入 secret 卡）；密钥输入统一 `SecretInput` 眼睛切换（登录/模型渠道×2/通知卡片×2 共 5 处）；模型渠道补 reveal 端点与通知渠道对称 + `SecretRevealAuditor` 明文查看**落审计表**（GET 不进拦截器的显式补记）；`keyCryptConfigured` 字段上屏（主密钥未配=明文落库此前只躺日志），实测本机 `.env` 配钥后 false→true、库中 `enc:v1:` 密文闭环；`maskWebhook` 敏感参数只留尾 4 位 + 测试发送登记审计；行数红线净-1（diff/能力探测/供应商常量三处外移），六闸+四闸全绿（1813 前端测试 / 快照 183 端点 155 schema 双维一致）；**P0 收口**：compose 补透传主密钥（此前生产容器必明文）、轮换七步改正 Runbook/手册/.env 三处旧错（「Mirror 重写」已证伪）、REAL 守卫主密钥缺失 WARN、全库 24 行存量明文全转 `enc:v1:`（plaintext_residual=0）；**P1 收口**：解密失败报错点名渠道+三步恢复+Runbook 指路（`AiModelConfigDecryptTest` 3/3）、备用 Key 解密失败降级不拖死启动、testcontainers 根因钉死（Desktop 29.8 代理对 docker-java 一律 400，三管道实证，本机 SKIP=设计/CI 为真闸，修法两案待拍板），见 `docs/06-implementation-progress/2026-10-07-批89-通知渠道配置页与密钥全方位加固.md`
+- ✅ **批90 R0/R1 改进清单 + T3 写守卫收口（2026-10-12）**：R1-4 `run-dev.cmd` JDK21 版本闸｜R1-2 登录态恢复｜R0-1 前端权限码表单源（逐码注后端守卫实况）｜R0-3 `e2e_*` 角色测试账号 + role-matrix E2E｜R1-1 告警 summary 双口径上服务端（AlertPage +firingFiltered/firingTotal）｜R1-3 审批列表接服务端分页｜R0-2 **AI 助手独立页 `/assistant`**（useAiAssistant SSE 五事件编排 + 告警行「问 AI」上下文直达；与简洁铁律关系见 `docs/09-decisions/AI助手独立页与简洁铁律-2026-10-12.md`）｜**T3 `OpsWriteGuard` fail-closed**：工单/告警/复盘 26 写端点从「仅登录⚪」收口 ADMIN+OPS（删附件/删单限 ADMIN，AI 反馈遥测豁免），机械闸 `OpsWriteGuardCoverageTest` 防新增端点漏防；T4 `sync-openapi.mjs` node 化（WSL 损坏下 bash 静默空跑实证）。`mvn verify` 1864 全绿 + 前端 1829 全绿 + 四闸全绿，见 `docs/06-implementation-progress/2026-10-12-批90-R0R1改进清单-RBAC门控与AI助手独立页.md`
 
 ### 7.2 下一步计划
 
