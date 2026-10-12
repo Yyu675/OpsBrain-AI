@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -342,6 +343,57 @@ class AlertServiceTest {
 
             verify(alertRepository, never()).resolve(anyLong());
             verify(alertRepository, never()).insertOrIncrement(any());
+        }
+
+        @Test
+        @DisplayName("高危告警恢复补推 IM 恢复卡——触发炸过群的，火灭要有回音")
+        void highRiskResolvePushesImCard() {
+            Alert active = new Alert();
+            active.setId(7L);
+            active.setLevel("P1");
+            active.setAlertName("HighCpu");
+            active.setService("api");
+            active.setFirstOccurredAt(java.time.LocalDateTime.now().minusMinutes(10));
+            active.setAnnotationsJson("{\"summary\":\"CPU 持续越限\"}");
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
+
+            service.processWebhook(webhook(incoming("resolved",
+                    labels("alertname", "HighCpu", "service", "api"))));
+
+            ArgumentCaptor<com.devops.agent.domain.notify.NotifyMessage> msg =
+                    ArgumentCaptor.forClass(com.devops.agent.domain.notify.NotifyMessage.class);
+            verify(dingTalk).send(msg.capture());
+            assertTrue(msg.getValue().markdown().contains("[已恢复]"), "恢复卡缺恢复语义: " + msg.getValue());
+            assertFalse(msg.getValue().urgent(), "恢复卡不得再 @所有人");
+        }
+
+        @Test
+        @DisplayName("低级别告警恢复不推 IM——触发本就静默入库，恢复再推是噪音")
+        void lowLevelResolveStaysSilent() {
+            Alert active = new Alert();
+            active.setId(7L);
+            active.setLevel("P3");
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
+
+            service.processWebhook(webhook(incoming("resolved",
+                    labels("alertname", "HighCpu", "service", "api"))));
+
+            verify(dingTalk, never()).send(any());
+        }
+
+        @Test
+        @DisplayName("恢复卡推送失败只 WARN——通知旁路绝不反噬 resolve 主流程")
+        void resolveCardFailureDoesNotBreakResolve() {
+            Alert active = new Alert();
+            active.setId(7L);
+            active.setLevel("P0");
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
+            doThrow(new RuntimeException("钉钉挂了")).when(dingTalk).send(any());
+
+            assertDoesNotThrow(() -> service.processWebhook(webhook(incoming("resolved",
+                    labels("alertname", "HighCpu", "service", "api")))));
+
+            verify(alertRepository).resolve(eq(7L), any());
         }
     }
 

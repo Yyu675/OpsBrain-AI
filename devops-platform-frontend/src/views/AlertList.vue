@@ -36,14 +36,7 @@ import RelativeTime from '@/components/common/RelativeTime.vue'
 import ServerPagination from '@/components/common/ServerPagination.vue'
 import DataStateBoundary from '@/components/common/DataStateBoundary.vue'
 import { useServerPaginationFrom } from '@/composables/useServerPagination'
-import {
-  useUrlFilters,
-  defineUrlFilter,
-  enumParser,
-  positiveIntParser,
-  textParser,
-  flagParser,
-} from '@/composables/useUrlFilters'
+import { registerAlertListUrlFilters } from './alert-list.url-filters'
 
 /** 风暴摘要事件名（与后端 ReservedAlertNames.STORM_SUMMARY 对齐）——风暴行给专属视觉 */
 const STORM_SUMMARY_ALERT_NAME = 'OpsBrainAlertStormSummary'
@@ -74,38 +67,15 @@ const pageRef = ref(1)
 const sizeRef = ref(10)
 
 /**
- * 筛选与页码同步到 URL。
+ * 筛选与页码同步到 URL（声明见 alert-list.url-filters.ts，行数红线拆出）。
  *
  * 告警页此前完全没有 URL 状态：值班同事筛出「FIRING + P0」后
  * 没法把结果甩给同事，刷新也会丢——而「把这个告警列表发给你看」
  * 恰恰是值班交接时最高频的动作。
  */
-useUrlFilters([
-  defineUrlFilter({
-    ref: statusFilter,
-    key: 'status',
-    defaultValue: '' as AlertStatus | '',
-    parse: enumParser(['FIRING', 'ACKNOWLEDGED', 'RESOLVED'] as const),
-  }),
-  defineUrlFilter({
-    ref: levelFilter,
-    key: 'level',
-    defaultValue: '' as string,
-    parse: textParser(32),
-  }),
-  defineUrlFilter({
-    ref: systemFilter, key: 'system', defaultValue: '' as string, parse: textParser(64),
-  }),
-  defineUrlFilter({
-    ref: observingOnly, key: 'observing', defaultValue: false, parse: flagParser(),
-  }),
-  defineUrlFilter({
-    ref: pageRef, key: 'page', defaultValue: 1, parse: positiveIntParser(10000),
-  }),
-  defineUrlFilter({
-    ref: sizeRef, key: 'size', defaultValue: 10, parse: positiveIntParser(200),
-  }),
-])
+registerAlertListUrlFilters({
+  statusFilter, levelFilter, systemFilter, observingOnly, pageRef, sizeRef,
+})
 
 const listQuery = useAlertListQuery({
   page: pageRef,
@@ -144,8 +114,8 @@ const alerts = listQuery.alerts
 const listLoading = listQuery.isLoading
 const listError = listQuery.error
 
-/** 处置动作（确认/恢复）。成功后自动失效告警领域全部查询 */
-const { acknowledge: ackMutation, resolve: resolveMutation } = useAlertMutations()
+/** 处置动作（确认/恢复/误报）。成功后自动失效告警领域全部查询 */
+const { acknowledge: ackMutation, resolve: resolveMutation, falsePositive: fpMutation } = useAlertMutations()
 
 const router = useRouter()
 
@@ -251,6 +221,22 @@ const resolve = async (row: Alert) => {
   try {
     await resolveMutation.mutateAsync(row.id)
     notify.success('已标记恢复')
+  } catch {
+    // 错误提示已由 mutation 的 onError 统一处理
+  } finally {
+    actionLoadingId.value = null
+  }
+}
+
+/**
+ * 标记/取消误报（V17 Feedback 回流）。轻操作不弹确认——误标可当场再点一次撤销，
+ * 数据只影响周报误报率，不碰状态机。
+ */
+const toggleFalsePositive = async (row: Alert) => {
+  actionLoadingId.value = row.id
+  try {
+    await fpMutation.mutateAsync([row.id, !row.falsePositive])
+    notify.success(row.falsePositive ? '已取消误报标记' : '已标记误报，将计入周报误报率')
   } catch {
     // 错误提示已由 mutation 的 onError 统一处理
   } finally {
@@ -577,13 +563,14 @@ const offAlertEvents = subscribeAlertEvents(() => {
           </el-table-column>
 
           <!-- 操作 -->
-          <el-table-column label="操作" width="230" fixed="right">
+          <el-table-column label="操作" width="290" fixed="right">
             <template #default="{ row }">
               <AlertRowActions
                 :row="row"
                 :loading="actionLoadingId === row.id"
                 @acknowledge="acknowledge(row)"
                 @resolve="resolve(row)"
+                @false-positive="toggleFalsePositive(row)"
                 @ask="askAi(row)"
               />
             </template>

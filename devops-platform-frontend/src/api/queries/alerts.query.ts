@@ -1,7 +1,7 @@
 import { computed, type Ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 
-import { acknowledgeAlert, fetchAlertById, fetchAlerts, resolveAlert } from '@/api/alerts'
+import { acknowledgeAlert, fetchAlertById, fetchAlerts, markAlertFalsePositive, resolveAlert } from '@/api/alerts'
 import type { Alert, AlertStatus, AlertsResponse } from '@/api/types'
 import { alertKeys } from '@/config/queryKeys'
 import { handleServerError } from '@/utils/notify'
@@ -100,7 +100,14 @@ export function useAlertMutations() {
     onError: (e) => handleServerError(e, { action: '标记恢复' }),
   })
 
-  return { acknowledge, resolve, invalidateAll }
+  /** 误报标记（V17 Feedback 回流）：入参 [id, 目标值]，取消也走同一 mutation */
+  const falsePositive = useMutation({
+    mutationFn: ([id, value]: [number, boolean]) => markAlertFalsePositive(id, value),
+    onSuccess: invalidateAll,
+    onError: (e) => handleServerError(e, { action: '误报标记' }),
+  })
+
+  return { acknowledge, resolve, falsePositive, invalidateAll }
 }
 
 /** @public knip 假阳存证：re-export 给视图直接 import type 用（5.88.1 对该形态解析盲区，报告 128 §三）——版本收敛后删行复查 */

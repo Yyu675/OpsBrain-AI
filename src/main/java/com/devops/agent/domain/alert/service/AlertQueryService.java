@@ -204,6 +204,30 @@ public class AlertQueryService {
     }
 
     /**
+     * 标记/取消误报（A1 Feedback 回流，2026-10-12）。
+     * <p>质量标注与状态机正交（V17 设计约束）：任何状态都可标——已恢复的告警
+     * 恰恰常在复盘时才发现是误报。数据流向效能周报「到达误报率」，反推规则阈值。
+     * 广播 UPDATE 让列表徽标即时响应（旁路，失败不影响标注主流程）。</p>
+     *
+     * @param id            告警 ID
+     * @param falsePositive true=标误报，false=取消
+     * @return 处置后的告警
+     */
+    public Alert markFalsePositive(Long id, boolean falsePositive) {
+        Alert alert = requireExisting(id);
+        alertRepository.markFalsePositive(id, falsePositive);
+        // 对齐内存态供响应与广播（行更新已在库中生效）
+        alert.setFalsePositive(falsePositive);
+        if (falsePositive) {
+            alert.setFalsePositiveMarkedAt(java.time.LocalDateTime.now());
+        }
+        alertNotifier.broadcastUpdate(alert);
+        log.info("🏷️ [AlertQuery] 告警误报标记 | id={} | alertName={} | falsePositive={}",
+                id, alert.getAlertName(), falsePositive);
+        return alert;
+    }
+
+    /**
      * 查询告警，不存在则抛 {@link IllegalStateException}（映射 40004）
      */
     private Alert requireExisting(Long id) {

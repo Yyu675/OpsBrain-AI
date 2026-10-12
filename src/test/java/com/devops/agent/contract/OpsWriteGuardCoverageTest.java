@@ -55,9 +55,10 @@ class OpsWriteGuardCoverageTest {
             // @SaCheckRole("ADMIN")（方向 F）+ deleteAttachment 用 requireAdmin
             // + ai-analysis feedback 豁免（EXEMPT_MARKERS）
             "TicketController.java", 20,
-            // AlertController：acknowledge + resolve（POST /webhook 在
-            // AlertWebhookController，机器回调面，由 AlertWebhookChainIntegrationTest 覆盖）
-            "AlertController.java", 2,
+            // AlertController：acknowledge + resolve + false-positive（A1 Feedback 回流）
+            //（POST /webhook 在 AlertWebhookController，机器回调面，
+            // 由 AlertWebhookChainIntegrationTest 覆盖）
+            "AlertController.java", 3,
             // TicketPostmortemController：savePostmortem / draft / action-items 建改 = 4
             // （本文件 3 个 POST/PUT/PATCH + 1 PATCH，注意 draft-postmortem 也算写面）
             "TicketPostmortemController.java", 4

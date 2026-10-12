@@ -216,4 +216,21 @@ public class AlertController {
         log.info("[AlertController] 标记告警恢复: id={}", id);
         return ApiResponse.success(alertQueryService.resolve(id), "已标记恢复");
     }
+
+    /**
+     * 标记/取消误报（A1 Feedback 回流，2026-10-12）。
+     * <p>质量标注与状态机正交——任何状态的告警都可标（已恢复的常在复盘时才发现是误报）。
+     * 数据流向效能周报「到达误报率」，是让阈值调整有数可依的最小反馈闭环。</p>
+     *
+     * @param value true=标误报（默认），false=取消
+     */
+    @PostMapping("/{id}/false-positive")
+    public ApiResponse<Alert> markFalsePositive(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "true") boolean value) {
+        writeGuard.requireWrite();
+        log.info("[AlertController] 告警误报标记: id={}, value={}", id, value);
+        return ApiResponse.success(alertQueryService.markFalsePositive(id, value),
+                value ? "已标记误报" : "已取消误报标记");
+    }
 }

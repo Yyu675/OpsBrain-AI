@@ -84,6 +84,15 @@ public class Alert implements Serializable {
     /** webhook 原始 annotations 的 JSON 串（V11）：runbook_url/当前值/阈值等 */
     private String annotationsJson;
 
+    /**
+     * 人工误报标记（V17，A1 Feedback 回流）：质量标注而非生命周期状态——
+     * 误报的告警同样要被确认；重复告警推送不得抹掉（upsert 冲突更新不含此列）。
+     */
+    private boolean falsePositive;
+
+    /** 最近一次标为误报的时刻（周报按此取周窗口；取消标记不清空，留审计痕迹） */
+    private LocalDateTime falsePositiveMarkedAt;
+
     /** 记录创建时间 */
     private LocalDateTime createTime;
 
@@ -171,6 +180,10 @@ public class Alert implements Serializable {
 
     public String getAnnotationsJson() { return annotationsJson; }
     public void setAnnotationsJson(String annotationsJson) { this.annotationsJson = annotationsJson; }
+    public boolean isFalsePositive() { return falsePositive; }
+    public void setFalsePositive(boolean falsePositive) { this.falsePositive = falsePositive; }
+    public LocalDateTime getFalsePositiveMarkedAt() { return falsePositiveMarkedAt; }
+    public void setFalsePositiveMarkedAt(LocalDateTime falsePositiveMarkedAt) { this.falsePositiveMarkedAt = falsePositiveMarkedAt; }
 
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }

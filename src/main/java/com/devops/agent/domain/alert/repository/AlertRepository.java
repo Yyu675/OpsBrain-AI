@@ -59,6 +59,9 @@ public class AlertRepository {
         // V11 原始标签/注解：PG 的 jsonb 列经 getString 得到 JSON 文本
         alert.setLabelsJson(rs.getString("labels_json"));
         alert.setAnnotationsJson(rs.getString("annotations_json"));
+        // V17 误报标记：质量标注（非状态机的一部分）
+        alert.setFalsePositive(rs.getBoolean("false_positive"));
+        alert.setFalsePositiveMarkedAt(rs.getObject("false_positive_marked_at", LocalDateTime.class));
         alert.setCreateTime(rs.getObject("create_time", LocalDateTime.class));
         alert.setUpdateTime(rs.getObject("update_time", LocalDateTime.class));
         return alert;
@@ -645,6 +648,63 @@ public class AlertRepository {
                         + "AND status IN ('FIRING','ACKNOWLEDGED')",
                 Long.class, ticketId, excludeAlertId);
         return n == null ? 0 : n;
+    }
+
+    /**
+     * 标记/取消误报（V17，A1 Feedback 回流）。
+     * <p>与状态机正交：任何状态的告警都可标——已恢复的告警恰恰常在复盘时才发现是误报。
+     * 取消标记不清 false_positive_marked_at：那是「何时做过质量判断」的审计时刻。</p>
+     *
+     * @return 受影响行数（0 表示告警不存在）
+     */
+    public int markFalsePositive(Long id, boolean falsePositive) {
+        String sql = falsePositive
+                ? "UPDATE sys_alert SET false_positive = TRUE, false_positive_marked_at = ?, update_time = ? WHERE id = ?"
+                : "UPDATE sys_alert SET false_positive = FALSE, update_time = ? WHERE id = ?";
+        LocalDateTime now = LocalDateTime.now();
+        int rows = falsePositive
+                ? jdbcTemplate.update(sql, now, now, id)
+                : jdbcTemplate.update(sql, now, id);
+        if (rows > 0) {
+            log.info("✅ 告警误报标记 | id={} falsePositive={}", id, falsePositive);
+        } else {
+            log.warn("⚠️ 告警误报标记无影响 | id={}（可能已不存在）", id);
+        }
+        return rows;
+    }
+
+    /** 周窗口内被标误报的告警数（「本周做了几次质量判断」活动量）。 */
+    public long countFalsePositiveMarkedSince(LocalDateTime since) {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM sys_alert WHERE false_positive AND false_positive_marked_at >= ?",
+                Long.class, since);
+        return n == null ? 0 : n;
+    }
+
+    /**
+     * 到达口径误报对（周报「本周到达误报率」同窗分/分子）：以<b>到达时间</b>划窗，
+     * 分子=该批中已被标误报者（标记可发生在任意时刻）。分子分母同批告警，
+     * 比值不可能 >100%——若按「本周标记/本周到达」两套窗口会出假象。
+     *
+     * @return long[]{到达数, 其中误报数}
+     */
+    public long[] arrivedVsFalsePositiveSince(LocalDateTime since) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) AS arrived, "
+                        + "COUNT(*) FILTER (WHERE false_positive) AS false_positives "
+                        + "FROM sys_alert WHERE create_time >= ?",
+                (rs, i) -> new long[]{rs.getLong("arrived"), rs.getLong("false_positives")},
+                since);
+    }
+
+    /** 同上的任意时间窗版本（周报「上周期」列用 [from, to) 半开区间，避免边界日双计）。 */
+    public long[] arrivedVsFalsePositiveBetween(LocalDateTime from, LocalDateTime to) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) AS arrived, "
+                        + "COUNT(*) FILTER (WHERE false_positive) AS false_positives "
+                        + "FROM sys_alert WHERE create_time >= ? AND create_time < ?",
+                (rs, i) -> new long[]{rs.getLong("arrived"), rs.getLong("false_positives")},
+                from, to);
     }
 
     /**

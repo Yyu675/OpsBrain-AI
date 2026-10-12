@@ -491,6 +491,10 @@ export interface Alert {
   labelsJson?: string | null
   /** webhook 原始 annotations 的 JSON 串（V11）：runbook_url/当前值/阈值等 */
   annotationsJson?: string | null
+  /** 人工误报标记（V17，A1 Feedback 回流）：质量标注，与状态机正交 */
+  falsePositive?: boolean
+  /** 最近一次标为误报的时刻（周报按此取窗口；取消标记不清空） */
+  falsePositiveMarkedAt?: string | null
   createTime: string | null
   updateTime: string | null
   /** 高危派生：P0/P1（后端 isHighRisk）——前端强标识与筛选用 */

@@ -102,6 +102,16 @@ export async function acknowledgeAlert(id: number): Promise<Alert> {
   return unwrapBiz<Alert>(payload, '确认告警失败')
 }
 
+/**
+ * 标记/取消误报（V17，A1 Feedback 回流）。
+ * 与状态机正交：任何状态的告警都可标（已恢复的常在复盘时才发现是误报）。
+ */
+export async function markAlertFalsePositive(id: number, value = true): Promise<Alert> {
+  const payload = await http.post<unknown>(
+    `${API_ENDPOINTS.ALERTS_BY_ID(id)}/false-positive?value=${value}`)
+  return unwrapBiz<Alert>(payload, '误报标记失败')
+}
+
 /** 管道心跳状态（看门狗告警的可视面） */
 export interface PipelineHeartbeat {
   /** 看门狗最近一次送达时间（ISO 本地时间）；从未收到为 null */

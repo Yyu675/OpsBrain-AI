@@ -24,7 +24,7 @@ export interface ApprovalRequest {
   executeResult?: string;
   createTime?: string;
   updateTime?: string;
-  overdue?: boolean;
-  decidable?: boolean;
   highRisk?: boolean;
+  decidable?: boolean;
+  overdue?: boolean;
 }

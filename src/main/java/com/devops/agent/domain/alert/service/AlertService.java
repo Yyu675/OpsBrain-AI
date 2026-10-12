@@ -1,6 +1,8 @@
 package com.devops.agent.domain.alert.service;
 
+import com.devops.agent.domain.alert.AlertAnnotationKeys;
 import com.devops.agent.domain.alert.AlertmanagerSourceAdapter;
+import com.devops.agent.domain.alert.AlertNotifyTemplate;
 import com.devops.agent.domain.alert.AlertSignal;
 import com.devops.agent.domain.alert.DTO.AlertmanagerWebhook;
 import com.devops.agent.domain.alert.ReservedAlertNames;
@@ -805,6 +807,9 @@ public class AlertService {
                     alert.getId(), dedupKey, resolvedAt);
             // WebSocket 广播恢复（非阻塞旁路——推送失败不影响主流程）
             alertNotifier.broadcastResolved(alert);
+            // A1（2026-10-12）：高危告警恢复推 IM 恢复卡——触发时发过强提醒的，
+            // 火灭了要有回音；低级别本就静默，不吵
+            notifyResolve(alert);
             // 方案②：恢复 → 关联工单联动（hint 提示 / auto 自动关 / off 跳过）
             applyResolveClosePolicy(alert, resolvedAt);
         } else {
@@ -1205,29 +1210,43 @@ public class AlertService {
     }
 
     /**
-     * 推送告警通知到钉钉
-     * <p>P0/P1 高危 → @所有人强提醒；P2~P4 → 普通通知。旁路，不阻塞建单。</p>
+     * 推送告警通知到钉钉/企微（A1 改造，2026-10-12：模板收进 {@link AlertNotifyTemplate} 单源）。
+     * <p>P0/P1 高危 → @所有人强提醒；P2~P4 → 普通通知。卡片承载 annotations 里的
+     * 排查上下文（影响/当前值/阈值/持续/首步动作/runbook），值班人不用再点开平台
+     * 才知道先干什么。旁路，不阻塞建单。</p>
      */
     private void notifyAlert(Alert alert, String alertName, String service,
                              String priority, String description, String ticketId) {
         try {
-            String title = (alert.isHighRisk() ? "🚨 高危告警 " : "⚠️ 告警 ") + priority + " · " + alertName;
-            StringBuilder md = new StringBuilder();
-            md.append("### ").append(title).append("\n\n")
-              .append("- **级别**：").append(priority).append(alert.isHighRisk() ? "（需人工介入）" : "").append("\n")
-              .append("- **服务**：").append(service != null && !service.isBlank() ? service : "—").append("\n")
-              .append("- **模块**：").append(alert.getModule() != null ? alert.getModule() : "—").append("\n")
-              .append("- **详情**：").append(description != null ? description : "—").append("\n");
-            if (ticketId != null) {
-                md.append("- **关联工单**：").append(ticketId).append("\n");
+            // 老调用点的 description 汇聚值兜底：annotations 缺 summary 时卡片仍有核心描述
+            Map<String, String> annotations = parseJsonMap(alert.getAnnotationsJson());
+            if (AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.SUMMARY) == null
+                    && description != null && !description.isBlank()) {
+                annotations = new java.util.LinkedHashMap<>(annotations);
+                annotations.put(AlertAnnotationKeys.SUMMARY, description);
             }
-            NotifyMessage msg = alert.isHighRisk()
-                    ? NotifyMessage.urgent(title, md.toString())
-                    : NotifyMessage.normal(title, md.toString());
-            notifier.send(msg);
+            notifier.send(AlertNotifyTemplate.firing(alert,
+                    parseJsonMap(alert.getLabelsJson()), annotations, ticketId));
         } catch (Exception e) {
             // 通知构造异常也不影响建单主流程
             log.warn("⚠️ [AlertService] 告警通知构造失败（已忽略）| alertId={} | {}", alert.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 高危告警恢复 → 推恢复卡（A1「恢复也要发，但别吵」，2026-10-12）。
+     * <p>只给触发时发过强提醒的告警（isHighRisk）发恢复卡——P2~P4 触发本就静默
+     * 入库，恢复再推送纯属刷屏。旁路：失败仅 WARN。</p>
+     */
+    private void notifyResolve(Alert alert) {
+        if (!alert.isHighRisk()) {
+            return;
+        }
+        try {
+            notifier.send(AlertNotifyTemplate.resolved(alert,
+                    parseJsonMap(alert.getLabelsJson()), parseJsonMap(alert.getAnnotationsJson())));
+        } catch (Exception e) {
+            log.warn("⚠️ [AlertService] 恢复通知失败（不影响告警链）| alertId={} | {}", alert.getId(), e.getMessage());
         }
     }
 

@@ -25,6 +25,8 @@ export interface Alert {
   ticketId?: string;
   labelsJson?: string;
   annotationsJson?: string;
+  falsePositive?: boolean;
+  falsePositiveMarkedAt?: string;
   createTime?: string;
   updateTime?: string;
   observing?: boolean;

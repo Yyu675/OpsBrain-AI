@@ -348,5 +348,41 @@ class AlertControllerWebTest {
                     .andExpect(status().isMethodNotAllowed())
                     .andExpect(jsonPath("$.code").value(40001));
         }
+
+        @Test
+        @DisplayName("标误报成功：返回带 falsePositive 的实体供前端就地更新")
+        void falsePositiveMarkReturnsUpdatedAlert() throws Exception {
+            Alert a = alert(1L, "P2", "RESOLVED");
+            a.setFalsePositive(true);
+            when(alertQueryService.markFalsePositive(1L, true)).thenReturn(a);
+
+            mockMvc.perform(post("/api/v1/alerts/1/false-positive"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("已标记误报"))
+                    .andExpect(jsonPath("$.data.falsePositive").value(true));
+        }
+
+        @Test
+        @DisplayName("value=false 走取消分支——误标当场可撤，不必找管理员")
+        void falsePositiveCancelPassesValueThrough() throws Exception {
+            when(alertQueryService.markFalsePositive(1L, false)).thenReturn(alert(1L, "P2", "FIRING"));
+
+            mockMvc.perform(post("/api/v1/alerts/1/false-positive").param("value", "false"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("已取消误报标记"));
+
+            verify(alertQueryService).markFalsePositive(1L, false);
+        }
+
+        @Test
+        @DisplayName("告警不存在 → 40004/409（与其它处置动作同一映射）")
+        void falsePositiveOnMissingAlertMapsTo409() throws Exception {
+            when(alertQueryService.markFalsePositive(anyLong(), eq(true)))
+                    .thenThrow(new IllegalStateException("告警不存在"));
+
+            mockMvc.perform(post("/api/v1/alerts/999/false-positive"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value(40004));
+        }
     }
 }
