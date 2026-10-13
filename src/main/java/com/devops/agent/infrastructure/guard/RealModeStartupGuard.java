@@ -15,6 +15,8 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
+
 /**
  * REAL 模式启动期 AI 渠道契约自检（方案 C 第一道防线，批 74；P1 适配 DB 权威源，批 82）。
  *
@@ -83,6 +85,17 @@ public class RealModeStartupGuard {
         try {
             probe = embeddingModel.embed("维度契约自检：opsbrain startup guard").content();
         } catch (Exception e) {
+            // 批91 §五欠账销账（批93）：把「额度枯竭」从「配置不可达」里分出来。
+            // 上游配额耗尽回 400 + AllocationQuota.FreeTierOnly（2026-10-13 探针实测），
+            // 修法是充值/关免费档，跟 base-url/api-key 打错毫无关系——混成一句
+            // 「检查配置」会把值班人往错方向指。硬闸照旧拒启，只是把话说对。
+            if (isQuotaExhausted(e)) {
+                throw new IllegalStateException(
+                        "[RealModeStartupGuard] embedding 配额已耗尽——REAL 模式拒绝启动（配置无误，是上游额度问题）。"
+                        + "修法：厂商控制台充值，或关闭「仅免费额度」档位（上游回执 code=AllocationQuota.FreeTierOnly）；"
+                        + "额度恢复后重启即可，无需改 base-url / api-key / model。"
+                        + "最近一次错误：" + e.getMessage(), e);
+            }
             throw new IllegalStateException(
                     "[RealModeStartupGuard] embedding 渠道不可达——REAL 模式拒绝启动。"
                     + "检查 devops.ai.embedding.base-url / api-key / model 配置。"
@@ -116,6 +129,31 @@ public class RealModeStartupGuard {
                     stale, fingerprintGuard.currentFingerprint()));
         }
         log.info("✅ [RealModeStartupGuard] 模型指纹锁校验通过");
+    }
+
+    /**
+     * 配额枯竭识别（批93；回执形态按 2026-10-13 本机 /embeddings 直连探针实测）：
+     * 上游 400 回执体 {@code {"error":{"type":"AllocationQuota.FreeTierOnly",...}}}，
+     * 各传输层把码文挂 message / cause 链上，逐层拼起来做不区分大小写匹配；
+     * 前缀「Error: 400 - {json}」这类噪音把 JSON 原样带进来，contains 逐层命中即可。
+     * 词面刻意收窄（quota/free tier/insufficient_quota/中文欠费词），
+     * 不拿通用词兜底——误报会把网络故障说成额度问题，指错方向比含糊更糟。
+     */
+    private static boolean isQuotaExhausted(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        Throwable t = e;
+        for (int hop = 0; t != null && hop < 8; hop++) {
+            if (t.getMessage() != null) {
+                sb.append(t.getMessage()).append('\n');
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+            t = t.getCause();
+        }
+        String s = sb.toString().toLowerCase(Locale.ROOT);
+        return s.contains("quota") || s.contains("free tier")
+                || s.contains("insufficient_quota") || s.contains("欠费") || s.contains("余额不足");
     }
 
     /** DB 优先取加密 key 并解密，缺失/异常回落 yml。 */

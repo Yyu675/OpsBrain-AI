@@ -8,18 +8,25 @@
  *
  * 数据源不变：导航项仍来自 config/navigation.ts（RBAC 过滤），
  * 待审角标仍由 usePendingApprovalCountQuery 驱动。
+ *
+ * 批93 拆分：桌面导航行 → SidebarDesktopNav，移动抽屉 → SidebarMobileDrawer
+ * （滚动锁随块迁移），悬停预取 → composables/useNavPrefetch；本组件保留
+ * 导航状态/折叠/高亮/图标映射，折叠态的行级排版经 :deep() 下发给子组件
+ * ——AppSidebar.test 对宿主 vm 的断言因此原样成立。
  */
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   LayoutDashboard, BookOpen, Ticket, Bell, Activity, ListChecks, Gauge,
-  ClipboardCheck, Monitor, Settings, ChevronRight, ChevronsLeft, ChevronsRight, X, Sparkles,
+  ClipboardCheck, Monitor, Settings, ChevronsLeft, ChevronsRight, Sparkles,
 } from 'lucide-vue-next'
 import { useAppStore, type Role } from '@/stores/app'
 import { primaryNavigationItems } from '@/config/navigation'
 import { usePendingApprovalCountQuery } from '@/api/queries/approval.query'
-import { useMobileNavState } from '@/composables/useMobileNavState'
+import { useNavPrefetch } from '@/composables/useNavPrefetch'
 import { loadPersisted, savePersisted } from '@/utils/persist'
+import SidebarDesktopNav from '@/components/common/SidebarDesktopNav.vue'
+import SidebarMobileDrawer from '@/components/common/SidebarMobileDrawer.vue'
 
 const route = useRoute()
 const app = useAppStore()
@@ -73,58 +80,8 @@ const activeKey = computed(() => {
   return ''
 })
 
-// ==================== 悬停预取（从 AppNavbar 原样迁移） ====================
-
-const prefetchers: Record<string, () => Promise<unknown>> = {
-  home: () => import('@/views/Home.vue'),
-  assistant: () => import('@/views/AiAssistant.vue'),
-  knowledge: () => import('@/views/KnowledgeBase.vue'),
-  tickets: () => import('@/views/TicketList.vue'),
-  disposal: () => import('@/views/DisposalCenter.vue'),
-  help: () => import('@/views/HelpCenter.vue')
-}
-const prefetched = new Set<string>()
-const hoverTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-const doPrefetch = (key: string) => {
-  if (prefetched.has(key)) return
-  prefetched.add(key)
-  prefetchers[key]?.().catch(() => prefetched.delete(key))
-}
-
-const prefetchWithIntent = (key: string) => {
-  if (prefetched.has(key) || hoverTimers.has(key)) return
-  const t = setTimeout(() => {
-    hoverTimers.delete(key)
-    doPrefetch(key)
-  }, 150)
-  hoverTimers.set(key, t)
-}
-
-const cancelPrefetch = (key: string) => {
-  const t = hoverTimers.get(key)
-  if (t) {
-    clearTimeout(t)
-    hoverTimers.delete(key)
-  }
-}
-
-// ==================== 移动端抽屉 ====================
-
-const { open: mobileNavOpen, close: closeMobileNav } = useMobileNavState()
-
-/** 抽屉打开时锁 body 滚动；卸载时无条件恢复（登出跳转后整页滚不动的教训） */
-watch(mobileNavOpen, (open) => {
-  document.body.style.overflow = open ? 'hidden' : ''
-})
-
-// 用户菜单已迁到 AppTopBar 右上角（2026-09-27 布局调整）
-
-onBeforeUnmount(() => {
-  hoverTimers.forEach(t => clearTimeout(t))
-  hoverTimers.clear()
-  document.body.style.overflow = ''
-})
+// 悬停预取（批93 下沉 useNavPrefetch，去重/定时器/卸载清理行为不变）
+const prefetch = useNavPrefetch()
 </script>
 
 <template>
@@ -153,73 +110,26 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <nav class="sidebar-nav" aria-label="主导航">
-      <RouterLink
-        v-for="item in navItems"
-        :key="item.key"
-        :to="item.path"
-        class="nav-item"
-        :class="{ active: activeKey === item.key }"
-        :title="collapsed ? item.label : undefined"
-        @mouseenter="prefetchWithIntent(item.key)"
-        @mouseleave="cancelPrefetch(item.key)"
-        @focus="doPrefetch(item.key)"
-        @touchstart.passive="doPrefetch(item.key)"
-      >
-        <component :is="NAV_ICONS[item.key] ?? Monitor" :size="16" class="nav-icon" />
-        <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
-        <span
-          v-if="item.key === 'disposal' && approvalPending > 0"
-          class="nav-badge"
-          :class="{ 'nav-badge--dot': collapsed }"
-          :title="`${approvalPending} 项待审批`"
-        >{{ collapsed ? '' : (approvalPending > 99 ? '99+' : approvalPending) }}</span>
-        <ChevronRight v-else-if="!collapsed && activeKey === item.key" :size="14" class="nav-chevron" />
-      </RouterLink>
-    </nav>
+    <SidebarDesktopNav
+      :nav-items="navItems"
+      :collapsed="collapsed"
+      :active-key="activeKey"
+      :approval-pending="approvalPending"
+      :icons="NAV_ICONS"
+      :prefetch="prefetch"
+    />
   </aside>
 
-  <!-- 移动端抽屉（≤768px，由 AppTopBar 的汉堡触发） -->
-  <Teleport to="body">
-    <div
-      v-if="mobileNavOpen"
-      class="mobile-nav-backdrop"
-      @click="closeMobileNav"
-    ></div>
-    <div
-      id="mobile-nav-drawer"
-      class="mobile-nav-drawer"
-      :class="{ open: mobileNavOpen }"
-      :aria-hidden="!mobileNavOpen"
-    >
-      <div class="mobile-nav-head">
-        <span class="mobile-nav-title">导航</span>
-        <button class="mobile-nav-close" aria-label="关闭导航" @click="closeMobileNav">
-          <X :size="18" />
-        </button>
-      </div>
-      <nav class="mobile-nav-list">
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.key"
-          :to="item.path"
-          class="mobile-nav-item"
-          :class="{ active: activeKey === item.key }"
-        >
-          <component :is="NAV_ICONS[item.key] ?? Monitor" :size="16" />
-          <span>{{ item.label }}</span>
-          <span
-            v-if="item.key === 'disposal' && approvalPending > 0"
-            class="nav-badge"
-          >{{ approvalPending > 99 ? '99+' : approvalPending }}</span>
-        </RouterLink>
-      </nav>
-    </div>
-  </Teleport>
+  <SidebarMobileDrawer
+    :nav-items="navItems"
+    :active-key="activeKey"
+    :approval-pending="approvalPending"
+    :icons="NAV_ICONS"
+  />
 </template>
 
 <style scoped lang="scss">
-/* ===== 桌面侧栏 ===== */
+/* ===== 桌面侧栏壳（导航行样式在 SidebarDesktopNav，折叠态排版 :deep 下发） ===== */
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -281,74 +191,6 @@ onBeforeUnmount(() => {
   color: var(--text-3);
 }
 
-.sidebar-nav {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--radius);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-2);
-  text-decoration: none;
-  white-space: nowrap;
-  transition: background var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-
-  &:hover {
-    background: var(--surface-hover);
-    color: var(--text-1);
-  }
-
-  &.active {
-    background: var(--brand-subtle);
-    color: var(--brand);
-    font-weight: 600;
-  }
-}
-
-.nav-icon {
-  flex-shrink: 0;
-  color: var(--text-3);
-  transition: color var(--duration-fast) var(--ease-out);
-
-  .nav-item:hover & { color: var(--text-2); }
-  .nav-item.active & { color: var(--brand); }
-}
-
-.nav-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.nav-chevron {
-  color: var(--brand);
-  opacity: 0.7;
-}
-
-/* 待审角标：行内跟随，不绝对定位（导航项宽度随文案变） */
-.nav-badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-}
-
 /* ===== 顶部折叠开关（图标钮） ===== */
 .collapse-btn {
   display: inline-flex;
@@ -372,7 +214,9 @@ onBeforeUnmount(() => {
   }
 }
 
-/* ===== 折叠态（纯图标轨，56px） ===== */
+/* ===== 折叠态（纯图标轨，56px） =====
+   作用域属性只打在最后一个选择器上：子组件后代不带父 scope，
+   行级/图标/角标样式必须 :deep 下发，否则静默失样式（测试查 class 查不出）。 */
 .sidebar.collapsed {
   width: 56px;
 
@@ -390,131 +234,22 @@ onBeforeUnmount(() => {
 
   .logo-text { display: none; }
 
-  .nav-item {
+  :deep(.nav-item) {
     justify-content: center;
     padding: 10px 0;
     gap: 0;
   }
 
-  .nav-chevron { display: none; }
+  :deep(.nav-chevron) { display: none; }
 
   /* 折叠时角标退化为圆点（数字放不下，有就是有） */
-  .nav-badge--dot {
+  :deep(.nav-badge--dot) {
     min-width: 8px;
     width: 8px;
     height: 8px;
     padding: 0;
     border-radius: 50%;
     margin-left: 4px;
-  }
-}
-
-/* ===== 移动端抽屉 ===== */
-.mobile-nav-backdrop,
-.mobile-nav-drawer {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  .sidebar {
-    display: none;
-  }
-
-  .mobile-nav-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    background: oklch(0 0 0 / 0.45);
-  }
-
-  .mobile-nav-drawer {
-    display: flex;
-    flex-direction: column;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: min(76vw, 300px);
-    height: 100vh;
-    z-index: 45;
-    padding: 8px 0;
-    background: var(--surface-1);
-    border-right: 1px solid var(--border-1);
-    box-shadow: var(--shadow-lg);
-    overflow-y: auto;
-    /* 关闭态 translateX + visibility 双管：抽屉里的链接不该留在 tab 顺序里 */
-    transform: translateX(-100%);
-    visibility: hidden;
-    transition: transform var(--duration-normal) var(--ease-out),
-      visibility var(--duration-normal) var(--ease-out);
-
-    &.open {
-      transform: translateX(0);
-      visibility: visible;
-    }
-  }
-
-  .mobile-nav-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px 10px 16px;
-    border-bottom: 1px solid var(--border-1);
-  }
-
-  .mobile-nav-title {
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--text-3);
-  }
-
-  .mobile-nav-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: none;
-    border-radius: var(--radius);
-    background: transparent;
-    color: var(--text-2);
-    cursor: pointer;
-
-    &:hover {
-      background: var(--surface-hover);
-      color: var(--text-1);
-    }
-  }
-
-  .mobile-nav-list {
-    display: flex;
-    flex-direction: column;
-    padding: 8px;
-    gap: 2px;
-  }
-
-  .mobile-nav-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 44px;
-    padding: 0 12px;
-    border-radius: var(--radius);
-    color: var(--text-2);
-    font-size: var(--text-sm);
-    text-decoration: none;
-
-    &:hover {
-      background: var(--surface-hover);
-      color: var(--text-1);
-    }
-
-    &.active {
-      background: var(--brand-subtle);
-      color: var(--brand);
-      font-weight: 600;
-    }
   }
 }
 </style>

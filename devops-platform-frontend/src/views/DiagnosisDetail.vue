@@ -151,43 +151,43 @@ void notify
 <style scoped>
 .diagnosis-detail { padding: 20px; max-width: 1080px; margin: 0 auto; }
 .diag-header { display: flex; align-items: center; gap: 12px; }
-.trace-id { background: #f2f4f7; padding: 2px 10px; border-radius: 4px; font-size: 12px; }
+.trace-id { background: var(--surface-2); padding: 2px 10px; border-radius: 4px; font-size: 12px; }
 .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-.suff-ok { background: #e6f6e6; color: #237804; }
-.suff-weak { background: #fff7e0; color: #ad6800; }
-.suff-bad { background: #ffe1e1; color: #a8071a; }
-.summary { background: #fafafa; padding: 12px; border-left: 3px solid #3b82f6; margin: 12px 0; }
+.suff-ok { background: var(--success-subtle); color: var(--success); }
+.suff-weak { background: var(--warning-subtle); color: var(--warning); }
+.suff-bad { background: var(--danger-subtle); color: var(--danger); }
+.summary { background: var(--surface-2); padding: 12px; border-left: 3px solid var(--brand); margin: 12px 0; }
 .mock-banner {
-  background: var(--warning-subtle, #fff7e0);
-  color: var(--warning, #ad6800);
-  border: 1px solid var(--border-1, #f5deb3);
+  background: var(--warning-subtle);
+  color: var(--warning);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 13px;
   margin: 12px 0;
 }
 .evidence-list, .hypo-list { list-style: none; padding: 0; display: grid; gap: 10px; }
-.evidence-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; }
+.evidence-card { border: 1px solid var(--border-1); border-radius: 8px; padding: 10px 12px; }
 .ev-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
-.ev-type { font-weight: 600; text-transform: uppercase; color: #475569; }
-.st-SUCCESS .ev-status { color: #237804; }
-.st-FAILED .ev-status { color: #a8071a; }
-.st-NO_DATA .ev-status { color: #64748b; }
-.st-UNAVAILABLE .ev-status { color: #94a3b8; }
+.ev-type { font-weight: 600; text-transform: uppercase; color: var(--text-2); }
+.st-SUCCESS .ev-status { color: var(--success); }
+.st-FAILED .ev-status { color: var(--danger); }
+.st-NO_DATA .ev-status { color: var(--text-2); }
+.st-UNAVAILABLE .ev-status { color: var(--text-3); }
 .ev-title { font-size: 13px; }
-.ev-ref { font-size: 11px; color: #64748b; display: block; margin-top: 6px; white-space: pre-wrap; }
-.hypo-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; }
+.ev-ref { font-size: 11px; color: var(--text-2); display: block; margin-top: 6px; white-space: pre-wrap; }
+.hypo-card { border: 1px solid var(--border-1); border-radius: 10px; padding: 14px; }
 .hypo-head { display: flex; gap: 10px; align-items: baseline; }
-.rank { font-weight: 700; color: #3b82f6; }
+.rank { font-weight: 700; color: var(--brand); }
 .statement { font-weight: 600; }
-.conf-bar { position: relative; height: 18px; background: #eef2f6; border-radius: 9px; margin: 10px 0; overflow: hidden; }
-.conf-fill { height: 100%; background: linear-gradient(90deg, #60a5fa, #3b82f6); }
+.conf-bar { position: relative; height: 18px; background: var(--surface-active); border-radius: 9px; margin: 10px 0; overflow: hidden; }
+.conf-fill { height: 100%; background: linear-gradient(90deg, color-mix(in oklch, var(--brand) 55%, var(--surface-1)), var(--brand)); }
 .conf-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
-.reasoning, .action { font-size: 13px; color: #475569; margin: 6px 0; }
-.evlink { font-family: monospace; font-size: 11px; color: #94a3b8; }
+.reasoning, .action { font-size: 13px; color: var(--text-2); margin: 6px 0; }
+.evlink { font-family: monospace; font-size: 11px; color: var(--text-3); }
 .feedback-row { display: flex; gap: 8px; margin-top: 10px; }
-.fb-btn { border: 1px solid #dbe2ea; background: var(--surface-1, var(--surface-1)); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
-.fb-btn.active { border-color: #3b82f6; color: #1d4ed8; background: #eff6ff; }
+.fb-btn { border: 1px solid var(--border-2); background: var(--surface-1); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.fb-btn.active { border-color: var(--brand); color: var(--brand); background: var(--brand-subtle); }
 .fb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.empty-hint { color: #94a3b8; font-size: 13px; }
+.empty-hint { color: var(--text-3); font-size: 13px; }
 </style>

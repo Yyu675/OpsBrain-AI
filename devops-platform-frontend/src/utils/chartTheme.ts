@@ -57,14 +57,28 @@ function cssTokenValue(name: string): string {
  * @param value 颜色表达式，例如 `var(--brand)`、`oklch(0.42 0.13 258)`
  * @param fallback 解析失败时的返回值（建议给同语义的十六进制，保证图表永不黑块）
  */
+/**
+ * 哨兵是黑色；value 恰为黑色写法时「读回 == 哨兵」属正常生效，不算拒收。
+ * 以 #000/#000000/black/rgb(0,0,0) 四种常见写法为限（令牌值极少是裸黑，
+ * 且即使漏网也会在 getImageData 处被 a===0 或归一结果兜住，不会更糟）。
+ */
+function isBlackLike(v: string): boolean {
+  return /^(#0{3,6}|black|rgb\(0,\s*0,\s*0\))$/i.test(v.trim())
+}
+
 function resolveCssColor(value: string, fallback: string): string {
   const c = ctx()
   if (!c || !value) return fallback
   try {
-    // 先看浏览器是否认这个颜色：非法值会被忽略、fillStyle 保持上一次的值
+    // 检测浏览器是否认这个颜色：非法赋值被**静默忽略**、fillStyle 保持旧值。
+    // 哨兵比较必须「读回值 vs 读回值」——Chrome/Firefox 会把 '#000' 序列化成
+    // '#000000'，拿原始字面量比较判不出拒收，非法色混过去就是 rgb(0,0,0)
+    // 黑块喂给 ECharts（批93 回归锚：chartTheme.spec.ts「浏览器拒收非法色」例）。
     c.fillStyle = '#000'
+    const sentinel = c.fillStyle
     c.fillStyle = value
-    if (c.fillStyle === '#000' || !c.fillStyle) return fallback
+    const applied = c.fillStyle
+    if (!applied || (applied === sentinel && !isBlackLike(value))) return fallback
     c.clearRect(0, 0, 1, 1)
     c.fillRect(0, 0, 1, 1)
     const [r, g, b, a] = c.getImageData(0, 0, 1, 1).data

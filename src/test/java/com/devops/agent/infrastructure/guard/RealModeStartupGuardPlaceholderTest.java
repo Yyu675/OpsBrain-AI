@@ -97,6 +97,47 @@ class RealModeStartupGuardPlaceholderTest {
         }
     }
 
+    @Nested
+    @DisplayName("配额耗尽分类（批93：上游 FreeTierOnly 400 ≠ 配置不可达）")
+    class QuotaExhaustedClassified {
+
+        @Test
+        @DisplayName("上游回执 AllocationQuota.FreeTierOnly → 拒启且报「配额」修法（充值/关免费档），不误导去查配置")
+        void classifiesQuotaExhaustion() {
+            keys("sk-ws-H.realkey123456", "sk-real-embedding-x123");
+            when(embeddingModel.embed(anyString())).thenThrow(new RuntimeException(
+                    "java.lang.RuntimeException: Error: 400 - "
+                    + "{\"error\":{\"message\":\"Free quota exhausted. To continue accessing the model on a paid basis, "
+                    + "please add funds or disable the \\\"use free tier only\\\" mode in the management console.\","
+                    + "\"type\":\"AllocationQuota.FreeTierOnly\",\"param\":null,"
+                    + "\"code\":\"AllocationQuota.FreeTierOnly\"},"
+                    + "\"id\":\"481cbb29-1a72-9df1-ae97-ef06052969b6\"}"));
+
+            // 断言即批93 台账口径：报「配额」、给充值修法、保留上游回执原文、不冒充配置错误
+            assertThatThrownBy(guard::verifyOnStartup)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("配额已耗尽")
+                    .hasMessageContaining("FreeTierOnly")
+                    .hasMessageContaining("无需改 base-url")
+                    .hasMessageContaining("Free quota exhausted")
+                    .hasMessageNotContaining("渠道不可达");
+        }
+
+        @Test
+        @DisplayName("非配额故障（网络/鉴权）仍走「渠道不可达」旧口径——分类不能反向误伤")
+        void keepsUnreachableMessageOtherwise() {
+            keys("sk-ws-H.realkey123456", "sk-real-embedding-x123");
+            when(embeddingModel.embed(anyString()))
+                    .thenThrow(new RuntimeException("Connection refused: dashscope.aliyuncs.com:443"));
+
+            assertThatThrownBy(guard::verifyOnStartup)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("渠道不可达")
+                    .hasMessageContaining("base-url")
+                    .hasMessageNotContaining("配额已耗尽");
+        }
+    }
+
     @Test
     @DisplayName("P1 DB 权威源：yml 是占位 key 但 DB 有真 key → 不误拦（利用 DB 有效值通过占位检测）")
     void dbKeyOverridesPlaceholderPreventsFalseRejection() {

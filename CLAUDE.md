@@ -16,7 +16,7 @@
 >
 > ---
 >
-> **最后更新**：2026-10-13（批92 硬编码色令牌化收口）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day2**，L5 未启动
+> **最后更新**：2026-10-13（批93 拆分红线销账+配额探针收口）| **当前阶段**：L1~L3 已闭环，L4 机器面实证完成，**灰度 Day2**，L5 未启动
 
 ---
  
@@ -295,6 +295,8 @@
 - ✅ **批91 ROI 改进清单落地（2026-10-13）**：双路只读审计定盘 ROI 序，七项全落——**R0-4 升级卡接模板单源**（`escalated()`：⬆️ 前缀+级别迁移行，手写卡清零）｜**R0-5 误报率进周报 V18**（快照累计列 `alerts_false_positive`，守「快照唯一口径」纪律不走现算；列缺席整行不渲染不当 0% 骗人）｜**R0-6 只看误报服务端筛选**（`falsePositiveOnly` 与状态/级别/系统正交，三口径同 where；顺手清 3 个批90 预购死查询）｜**R0-3 操作列溢出根治**（审计实测 294>266 可用宽，误报/问 AI 收图标钮，列 290→250）｜**R0-1 列表误报徽标**（`AlertRowBadges` 拆出，AlertList 净减 −11）｜**R0-2 详情页误报闭环**（`AlertDetailActionBar` 拆出净减 −1：误报钮+meta 时刻+**runbook/大盘直链**——annotations 从可读变可用）｜**R1 登录页令牌化**（色值孤岛清零，`--brand` color-mix 派生四轴跟随）。`mvn verify` 1884 全绿（AI_MODE=MOCK 绕外部额度漂移，见台账§五）+ 前端 102/1830 + knip 0 + 四闸全绿（184/155；V18 已落库），见 `docs/06-implementation-progress/2026-10-13-批91-ROI清单-升级卡单源误报进周报只看误报视图登录页令牌化.md`
 
 - ✅ **批92 硬编码色令牌化收口（2026-10-13）**：批91 审计遗留三件全落——**ModelChannels 色值清零**（实测 95 命中/裸色 71 处全令牌化，脚本按属性上下文三路映射 + 逐行 diff 复核，var 兜底 24 处合规保留，1807 行 ±0）｜**ECharts 主题桥 `utils/chartTheme.ts`**（canvas round-trip 把 --chart-*/--text/--border/--surface 令牌归一成 ECharts 吃的 rgb；`TrendSeries.color` 改收**令牌名**并由 TrendChart 单点解析，Dashboard/Effectiveness/TicketInsights 消费方零样板；MutationObserver 主题版本触发重绘——暗色下 tooltip #303133 深字瞎掉等「卡片变了图不变」根治）｜**行数红线实清账**（AGENTS.md 豁免清单对账磁盘现实：37 个 >300 行文件、旧清单 6 个数字全错重写为 22 个重灾文件实测数；五之二存量口径 639→128 处）。前端六闸全绿（typecheck 0 / lint 0 err / **103 文件 1836 测试**含 chartTheme 降级路径 6 例 / knip 0——首跑抓到 2 个未用导出按闸建议收窄私有）+ 五改动文件行数全部 ±0 中性；后端零改动四闸不适用，见 `docs/06-implementation-progress/2026-10-13-批92-硬编码色令牌化-ECharts主题桥-行数实清账.md`
+
+- ✅ **批93 拆分红线销账 + 配额探针收口（2026-10-13）**：批92 收官 R1 清单四件全落——**AppTopBar/AppSidebar 拆分红线销账**（TopBarNotifications/TopBarUserMenu/SidebarDesktopNav/SidebarMobileDrawer 四个纯展示子组件 + `useNavPrefetch` composable 下沉；父组件保留状态与跳转语义，两份测试 vm 断言零改动、30/30 原样过；571→250、520→255 双双跌破 300 摘牌出超账面清单；`:deep()` 下发折叠态行级排版防 scoped 静默失样式）｜**DiagnosisDetail 裸色清零**（20 处全令牌化，193 行 ±0，全站存量 128→108）｜**chartTheme canvas 归一路径补测**（spy 假 canvas 模拟真浏览器：归一 rgb/rgba + **先写失败用例再修真 bug**——Chrome 把 `#000` 序列化成 `#000000`，旧哨兵 `=== '#000'` 判不出非法色拒收、黑块会喂给 ECharts；改「读回值 vs 读回值」+ 黑色豁免；主题属性 MutationObserver 递增也补了断言，11 例）｜**Embedding 配额探针销账批91 §五欠账**（`.env` 直连 `POST /embeddings` 探针实证上游仍回 400 `AllocationQuota.FreeTierOnly`「Free quota exhausted」——REAL `mvn verify` 被外部额度卡死非本仓问题；`RealModeStartupGuard` 配额/配置错误分类：`isQuotaExhausted` 沿 cause 链匹配词面，报「充值/关免费档」而非误导查 base-url，硬闸照拒启，双向断言 7/7）；后端 `mvn verify`（MOCK）**1886 全绿**（1884+2 新测试对账）+ 前端六闸全绿（typecheck 0 / lint 0 err / **103 文件 1841 测试** / knip 0 / 行数全 ≤300 / 裸色 108）+ AGENTS.md 摘牌 2 件与存量数复锚，见 `docs/06-implementation-progress/2026-10-13-批93-拆分红线销账-裸色清零-canvas补测-配额探针.md`
 
 ### 7.2 下一步计划
 

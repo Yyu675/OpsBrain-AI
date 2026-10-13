@@ -55,7 +55,7 @@ src/
 ### 硬约束
 
 - **单个 `.vue` 文件不得超过 300 行。**
-  **超账面清单（2026-10-13 批92 按磁盘实况重锚，替换 2026-08 版过期数字）**——
+  **超账面清单（2026-10-13 批92 按磁盘实况重锚；批93 摘牌 2 件）**——
   下列文件已超标，**修改时不得让行数净增长**，应顺路拆出子组件/composable 逐步收敛：
   `TicketList.vue` 1899、`ModelChannels.vue` 1807、`KnowledgeDetail.vue` 1746、
   `AutomationPolicies.vue` 1724、`KnowledgeEditor.vue` 1679、`TicketDetail.vue` 1529、
@@ -63,8 +63,10 @@ src/
   `TicketFormDialog.vue` 1186、`RiskLevels.vue` 1035、`KnowledgeSinkDrawer.vue` 1033、
   `AlertDetail.vue` 991、`AlertList.vue` 912、`Integrations.vue` 705、
   `Effectiveness.vue` 702、`HelpCenter.vue` 646、`Dashboard.vue` 615、
-  `Monitoring.vue` 589、`AppTopBar.vue` 571、`TrendExplorer.vue` 568、`AppSidebar.vue` 520
-  （300~520 之间还有 14 个中段文件，完整排序跑 `Get-ChildItem src -Recurse -Filter *.vue`
+  `Monitoring.vue` 589、`TrendExplorer.vue` 568
+  （**批93 摘牌**：`AppTopBar.vue` 571→250、`AppSidebar.vue` 520→255——通知/用户菜单/
+  桌面导航/移动抽屉四件下沉子组件 + 预取下沉 `useNavPrefetch`，双双跌破 300 合规；
+  300~568 之间还有中段文件，完整排序跑 `Get-ChildItem src -Recurse -Filter *.vue`
   按行统计即可复现；中段小改动允许 ±0 净增，触碰即欠拆分债。）
 - 页面组件只做**布局装配与数据编排**，业务逻辑下沉到 composable，展示逻辑下沉到子组件。
 - 表格的列定义抽成**纯 TS 数据**（`xxx-columns.ts`），不要写在模板里。
@@ -133,8 +135,9 @@ src/
   （`--surface-*` / `--text-*` / `--border-*` / `--brand*` / `--success|warning|danger|info`
   / `--sev-p0..p3` / `--chart-1..6`）。
   硬编码的颜色在暗色下**不会变**，会造成「卡片变暗了但里面的标签还是浅色」的破碎感。
-  > 存量清理进度（2026-10-13 批92 复扫）：裸色值（不含 `var(--x, #hex)` 兜底）全站剩约 128 处，
-  > 大头在 DiagnosisDetail/KnowledgeDetail 等 view。改到相关文件时请顺手替换，不得新增。
+  > 存量清理进度（2026-10-13 批93 复扫）：裸色值（不含 `var(--x, #hex)` 兜底）全站剩约 108 处
+  > （批92 时 128；批93 清掉 DiagnosisDetail 全部 20 处后归零该文件），
+  > 大头在 KnowledgeDetail/TicketDetail 等 view。改到相关文件时请顺手替换，不得新增。
 - **间距/圆角/字号也走令牌**（`--space-*` / `--radius*` / `--text-*`）。
   它们受密度轴与圆角轴控制，写死会让主题切换在该处失效。
 - **动效必须用 `--duration-*` 与 `--ease-*`**。
