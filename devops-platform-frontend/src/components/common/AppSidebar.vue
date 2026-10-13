@@ -142,6 +142,17 @@ const prefetch = useNavPrefetch()
   border-right: 1px solid var(--border-1);
 }
 
+/* ===== 窄屏（≤768px）：桌面侧栏整体退场 =====
+   导航改由 AppTopBar 汉堡 + SidebarMobileDrawer 承担（移动端抽屉）。
+   此前只有汉堡与抽屉、没有这条退场规则：390px 下 200px 的桌面侧栏与抽屉并存，
+   mobile-nav.spec「窄屏下显示汉堡、隐藏桌面侧栏」必红（e2e 腿 2026-10-14 实测 1 failed）。
+   放这里而不是 App.vue：.sidebar 是本组件的根类，scoped 就近；子组件样式不受影响。 */
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+}
+
 /* 顶部行：logo（左，可点首页）+ 折叠开关（右） */
 .sidebar-head {
   display: flex;

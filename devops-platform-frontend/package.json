@@ -63,7 +63,6 @@
     "@vue/test-utils": "^2.4.11",
     "@vue/tsconfig": "^0.9.1",
     "echarts": "^6.1.0",
-    "@element-plus/icons-vue": "^2.3.2",
     "element-plus": "^2.14.3",
     "eslint": "^10.9.0",
     "eslint-plugin-vue": "^10.10.0",
