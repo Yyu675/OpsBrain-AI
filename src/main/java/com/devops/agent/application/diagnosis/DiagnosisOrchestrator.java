@@ -91,9 +91,6 @@ public class DiagnosisOrchestrator {
     private final com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier;
     /** 可选群诊断补充；完整取证仍通过 WS/工单留痕，不将证据不足视为紧急故障。 */
     private final com.devops.agent.domain.notify.Notifier notifier;
-    private final com.devops.agent.domain.notify.AlertNotificationRenderer notificationRenderer =
-            new com.devops.agent.domain.notify.AlertNotificationRenderer();
-
     @org.springframework.beans.factory.annotation.Value("${devops.notify.diagnosis-completion-enabled:false}")
     private boolean diagnosisNotificationEnabled;
 
@@ -613,7 +610,10 @@ public class DiagnosisOrchestrator {
                         new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
                 if (labels == null) labels = Map.of();
             }
-            notifier.send(notificationRenderer.diagnosis(alert, labels, aggregated, ticketId, notificationBaseUrl));
+            // 卡片单源：诊断卡同样收在 AlertNotifyTemplate（恒 normal——证据不足是
+            // 「需要人看」，不是「需要把所有人群呼起来」，触发卡已承担强提醒职责）
+            notifier.send(com.devops.agent.domain.alert.AlertNotifyTemplate.diagnosis(
+                    alert, labels, aggregated, ticketId, notificationBaseUrl));
         } catch (Exception ex) {
             log.warn("⚠️ [Diagnosis] 钉钉通知失败 | traceId={} why={}", traceId, ex.getMessage());
         }

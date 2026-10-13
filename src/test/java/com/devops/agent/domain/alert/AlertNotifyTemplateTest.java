@@ -1,13 +1,17 @@
 package com.devops.agent.domain.alert;
 
 import com.devops.agent.domain.alert.entity.Alert;
+import com.devops.agent.domain.evidence.Evidence;
+import com.devops.agent.domain.evidence.EvidenceAggregator;
 import com.devops.agent.domain.notify.NotifyMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +27,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>与 NotifierContractTest 分工：那边管 NotifyMessage 的渠道中性，
  * 本类管「同一条告警在卡片上呈现成什么样」。</p>
+ *
+ * <p><b>2026-10-14 合并说明</b>：分支侧第一批的独立渲染器（AlertNotificationRenderer）已并入本模板，
+ * 其行为契约随之迁移到本类（恢复卡三态收尾、负责人/工单状态/平台直达链接的地址白名单、
+ * 外源文本转义脱敏、开始时间为兜底时标「（估算）」、诊断卡恒 normal）。</p>
  */
 @DisplayName("告警通知卡片模板")
 class AlertNotifyTemplateTest {
@@ -94,7 +102,9 @@ class AlertNotifyTemplateTest {
             String md = msg.markdown();
 
             assertThat(md).contains("**摘要**", "**影响**", "**指标**", "12.3%（阈值 5%）",
-                    "**持续**", "**可能原因**", "**首步动作**", "**Runbook**",
+                    // 未标 START_TIME_ESTIMATED 的实体（非入库路径构造）按「估算」保守渲染：
+                    // 宁可多一个字，不能让接收时刻兜底的时间冒充精确时长
+                    "**接收后持续（估算）**", "**可能原因**", "**首步动作**", "**Runbook**",
                     "**监控大盘**", "TK-2026-0001");
         }
 
@@ -108,8 +118,8 @@ class AlertNotifyTemplateTest {
                     .doesNotContain("null")
                     .doesNotContain("**影响**")
                     .doesNotContain("**Runbook**")
-                    // 恒有段不受影响：详情取实体字段，认领去处恒打印
-                    .contains("**详情**", "/alerts");
+                    // 恒有段不受影响：详情取实体字段；无可信平台地址时给可执行指引（相对链接在群里点不开）
+                    .contains("**详情**", "未配置可信的 HTTPS 平台地址");
         }
 
         @Test
@@ -122,14 +132,37 @@ class AlertNotifyTemplateTest {
         }
 
         @Test
-        @DisplayName("超长砍尾留回链——截断有预案，不让钉钉在不可控处截")
-        void overlongClampedWithBacklink() {
-            Map<String, String> big = ann(AlertAnnotationKeys.FIRST_ACTION, "查".repeat(2000));
+        @DisplayName("单行超长按行截断——一个话痨字段不能把 runbook/首步动作挤出卡片")
+        void overlongSingleValueIsCutBeforeItEatsTheCard() {
+            Map<String, String> big = ann(AlertAnnotationKeys.FIRST_ACTION, "查".repeat(2000),
+                    AlertAnnotationKeys.RUNBOOK_URL, "https://runbooks.internal/x");
 
             String md = AlertNotifyTemplate.firing(baseAlert(), Map.of(), big, null).markdown();
 
-            assertThat(md).hasSizeLessThanOrEqualTo(
-                            AlertNotifyTemplate.MAX_MARKDOWN_CHARS + 40)
+            // 行级限量（600 字）+ 明说被截断，而不是让它吃满整卡把后面的链接顶掉
+            assertThat(md).contains("…（完整内容见详情）", "**Runbook**", "https://runbooks.internal/x")
+                    .hasSizeLessThanOrEqualTo(AlertNotifyTemplate.MAX_MARKDOWN_CHARS);
+        }
+
+        @Test
+        @DisplayName("整卡超长才砍尾留回链——截断有预案，不让钉钉在不可控处截")
+        void wholeCardClampedWithBacklink() {
+            StringBuilder blob = new StringBuilder();
+            for (int i = 0; i < 6; i++) {
+                blob.append("第").append(i).append("段").append("字".repeat(150)).append(' ');
+            }
+            String chunk = blob.toString();
+            // 五段各 900+ 字：单行限量之后整卡仍超 1500，走砍尾留回链
+            Map<String, String> big = new LinkedHashMap<>(ann(
+                    AlertAnnotationKeys.SUMMARY, chunk,
+                    AlertAnnotationKeys.IMPACT, chunk,
+                    AlertAnnotationKeys.LIKELY_CAUSE, chunk,
+                    AlertAnnotationKeys.FIRST_ACTION, chunk,
+                    AlertAnnotationKeys.RUNBOOK_URL, "https://runbooks.internal/" + "x".repeat(900)));
+
+            String md = AlertNotifyTemplate.firing(baseAlert(), Map.of(), big, null).markdown();
+
+            assertThat(md).hasSizeLessThanOrEqualTo(AlertNotifyTemplate.MAX_MARKDOWN_CHARS + 40)
                     .endsWith("全文见 OpsBrain 告警详情页）");
         }
 
@@ -187,8 +220,8 @@ class AlertNotifyTemplateTest {
         }
 
         @Test
-        @DisplayName("带回落值/持续/工单收尾提示，读完知道下一步只剩关单")
-        void carriesClosureInfo() {
+        @DisplayName("触发时取值不冒充恢复取值——没有回落值就明说「未提供」")
+        void originalValueNeverMasqueradesAsRecovery() {
             Alert a = baseAlert();
             a.setStatus("RESOLVED");
             a.setResolvedAt(LocalDateTime.now());
@@ -198,8 +231,76 @@ class AlertNotifyTemplateTest {
                     ann(AlertAnnotationKeys.CURRENT_VALUE, "3.1%",
                             AlertAnnotationKeys.THRESHOLD, "5%")).markdown();
 
-            assertThat(md).contains("[已恢复] P1", "3.1%（阈值 5%）",
-                    "TK-9（处置完成后请确认关单）", "留痕归档");
+            assertThat(md).contains("[已恢复] P1", "TK-9", "恢复取值**：未提供（触发时取值 3.1%）")
+                    .doesNotContain("恢复取值**：3.1%");
+        }
+
+        @Test
+        @DisplayName("恢复推送带回落值就用真回落值（0 = 真的回到 0）")
+        void recoveryValueWinsOverOriginal() {
+            Alert a = baseAlert();
+            a.setResolvedAt(LocalDateTime.now());
+            a.setTicketId("TK-9");
+
+            String md = AlertNotifyTemplate.resolved(a, Map.of(),
+                    ann(AlertAnnotationKeys.CURRENT_VALUE, "12.3%"), Map.of("value", "0"), false,
+                    "PROCESSING", 0L, null).markdown();
+
+            assertThat(md).contains("恢复取值**：0");
+        }
+
+        @Test
+        @DisplayName("收尾话术按事实三态——工单在途只请核查，不说「无需处理」")
+        void openTicketAskForVerification() {
+            Alert a = baseAlert();
+            a.setResolvedAt(LocalDateTime.now());
+            a.setTicketId("TK-9");
+
+            String md = AlertNotifyTemplate.resolved(a, Map.of(), Map.of(), Map.of(), false,
+                    "PROCESSING", 0L, null).markdown();
+
+            assertThat(md).contains("请到工单核查其他关联告警、业务验证与处置记录")
+                    .doesNotContain("留痕归档");
+        }
+
+        @Test
+        @DisplayName("同工单仍有活跃告警时明说别关整张单（群恢复 ≠ 工单可关）")
+        void siblingActiveAlertsBlockClosure() {
+            Alert a = baseAlert();
+            a.setResolvedAt(LocalDateTime.now());
+            a.setTicketId("TK-9");
+
+            String md = AlertNotifyTemplate.resolved(a, Map.of(), Map.of(), Map.of(), false,
+                    "PROCESSING", 2L, null).markdown();
+
+            assertThat(md).contains("仍有 2 条活跃告警", "不要据此关闭整张工单");
+        }
+
+        @Test
+        @DisplayName("工单已结束才说留痕归档，绝不与「请核查」并列出现")
+        void closedTicketNeverContradicts() {
+            Alert a = baseAlert();
+            a.setResolvedAt(LocalDateTime.now());
+            a.setTicketId("TK-9");
+
+            String md = AlertNotifyTemplate.resolved(a, Map.of(), Map.of(), Map.of(), false,
+                    "CLOSED", 0L, null).markdown();
+
+            assertThat(md).contains("工单已结束", "留痕归档")
+                    .doesNotContain("请到工单核查");
+        }
+
+        @Test
+        @DisplayName("未建单的恢复卡只说留痕归档，不虚构工单")
+        void noTicketMeansNoAction() {
+            Alert a = baseAlert();
+            a.setResolvedAt(LocalDateTime.now());
+
+            String md = AlertNotifyTemplate.resolved(a, Map.of(), Map.of(), Map.of(), false,
+                    null, null, null).markdown();
+
+            assertThat(md).contains("未建单", "无需处理，留痕归档")
+                    .doesNotContain("**关联工单**");
         }
     }
 
@@ -228,6 +329,142 @@ class AlertNotifyTemplateTest {
             LocalDateTime now = LocalDateTime.now();
             assertThat(AlertNotifyTemplate.humanDuration(now, now.minusMinutes(1))).isNull();
             assertThat(AlertNotifyTemplate.humanDuration(null, now)).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("分支增量（2026-10-13 批次并入单源模板）")
+    class MergedIncrements {
+
+        private static final String BASE = "https://ops.example.com/opsbrain/";
+
+        @Test
+        @DisplayName("负责人/工单状态随卡下发——「谁在管、卡在哪」不用回平台才知道")
+        void assigneeAndTicketStatusOnCard() {
+            Alert a = baseAlert();
+            a.setTicketId("TK-2026-0001");
+
+            String md = AlertNotifyTemplate.firing(a, Map.of(), Map.of(), a.getTicketId(),
+                    "sre-oncall", "PROCESSING", BASE, null).markdown();
+
+            assertThat(md).contains("**关联工单**：TK-2026-0001", "**负责人**：sre-oncall",
+                    "**工单状态**：PROCESSING");
+        }
+
+        @Test
+        @DisplayName("无人认领就明说「待分配」——留白会让人以为已有人看")
+        void unassignedIsExplicit() {
+            Alert a = baseAlert();
+            a.setTicketId("TK-2026-0002");
+
+            String md = AlertNotifyTemplate.firing(a, Map.of(), Map.of(), a.getTicketId(),
+                    null, null, BASE, null).markdown();
+
+            assertThat(md).contains("**负责人**：待分配，请值班人员认领");
+        }
+
+        @Test
+        @DisplayName("建单提示走「建单状态」行，不占「关联工单」槽位（否则会去找不存在的单）")
+        void ticketHintNeverLooksLikeTicketId() {
+            String md = AlertNotifyTemplate.firing(baseAlert(), Map.of(), Map.of(), null,
+                    null, null, BASE, "自动建单已关闭；请到告警页处理").markdown();
+
+            assertThat(md).contains("**建单状态**：自动建单已关闭；请到告警页处理")
+                    .doesNotContain("**关联工单**");
+        }
+
+        @Test
+        @DisplayName("平台直达链接只由可信 HTTPS 地址 + 真实 ID 构造（真实 ID 一律转义）")
+        void linksBuiltOnlyFromTrustedBase() {
+            Alert a = baseAlert();
+            a.setTicketId("TK/../x) [evil]");
+
+            String md = AlertNotifyTemplate.firing(a, Map.of(), Map.of(), a.getTicketId(),
+                    null, null, BASE, null).markdown();
+
+            assertThat(md).contains("(https://ops.example.com/opsbrain/alerts/1)",
+                    "(https://ops.example.com/opsbrain/tickets/TK%2F..%2Fx%29%20%5Bevil%5D)");
+        }
+
+        @Test
+        @DisplayName("不可信地址（http/伪协议/带凭据/带 query）不给链接，改给查询指引")
+        void untrustedBaseYieldsGuidance() {
+            for (String base : new String[]{"http://ops.example.com", "javascript:alert(1)",
+                    "https://user:password@ops.example.com", "https://ops.example.com?q=token"}) {
+                String md = AlertNotifyTemplate.firing(baseAlert(), Map.of(), Map.of(), "TK-1",
+                        null, null, base, null).markdown();
+                assertThat(md).as("不可信地址：%s", base)
+                        .doesNotContain("](")
+                        .contains("未配置可信的 HTTPS 平台地址");
+            }
+        }
+
+        @Test
+        @DisplayName("外源文本不得制造链接/HTML/@提醒，凭据一律脱敏")
+        void externalTextIsEscapedRedactedAndAtNeutralised() {
+            Alert a = baseAlert();
+            a.setDescription("[evil](https://evil.example) <script> @所有人 password=secret123 bearer abc.def");
+
+            String md = AlertNotifyTemplate.firing(a, Map.of(), Map.of(), null).markdown();
+
+            assertThat(md).doesNotContain("[evil](", "<script>", "@所有人", "secret123", "abc.def")
+                    .contains("＠所有人", "已脱敏");
+        }
+
+        @Test
+        @DisplayName("开始时间是接收兜底时必须标「（估算）」；来源明确才报精确时长")
+        void estimatedStartIsLabelled() {
+            Alert a = baseAlert();
+            String estimated = AlertNotifyTemplate.firing(a, Map.of(),
+                    ann(AlertNotifyTemplate.START_TIME_ESTIMATED, "true"), null).markdown();
+            String precise = AlertNotifyTemplate.firing(a, Map.of(),
+                    ann(AlertNotifyTemplate.START_TIME_ESTIMATED, "false"), null).markdown();
+
+            assertThat(estimated).contains("**接收后持续（估算）**");
+            assertThat(precise).contains("**持续**：8 分钟").doesNotContain("（估算）");
+        }
+
+        @Test
+        @DisplayName("诊断补充卡恒 normal——证据不足是「需要人看」，不是全员紧急")
+        void diagnosisIsNeverUrgent() {
+            Alert a = baseAlert();
+
+            assertThat(AlertNotifyTemplate.diagnosis(a, Map.of(), null, "TK-9", BASE).urgent())
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("诊断卡逐方向给结论状态，不转发取证原文（群摘要与审计明细分离）")
+        void diagnosisSummarisesDirectionsWithoutRawEvidence() {
+            List<Evidence> collected = List.of(
+                    evidence(Evidence.EvidenceStatus.NO_DATA, Evidence.Type.METRICS),
+                    evidence(Evidence.EvidenceStatus.FAILED, Evidence.Type.CHANGES),
+                    evidence(Evidence.EvidenceStatus.UNAVAILABLE, Evidence.Type.LOGS),
+                    evidence(Evidence.EvidenceStatus.SUCCESS, Evidence.Type.KNOWLEDGE));
+
+            String md = AlertNotifyTemplate.diagnosis(baseAlert(), Map.of(),
+                    EvidenceAggregator.aggregate(collected), "TK-DIAG", BASE).markdown();
+
+            assertThat(md).contains("无匹配数据（不能据此排除）", "查询失败", "数据源未启用/不可用",
+                            "查询成功", "TK-DIAG", "/tickets/TK-DIAG", "OrderServiceHttp5xxHigh")
+                    .doesNotContain("secret-raw-evidence");
+        }
+
+        @Test
+        @DisplayName("标题里的外源字段不能造链接，结构性 [级别] 标记不被转义")
+        void titleEscapesForeignPartsOnly() {
+            Alert a = baseAlert();
+            a.setAlertName("[evil](https://evil.example)");
+
+            String title = AlertNotifyTemplate.firing(a, Map.of(), Map.of(), null).title();
+
+            assertThat(title).doesNotContain("[evil](")
+                    .startsWith("[P1] order-service ");
+        }
+
+        private static Evidence evidence(Evidence.EvidenceStatus status, String type) {
+            return new Evidence(status, type, "secret-raw-evidence", Map.of(), "ref", null,
+                    Instant.parse("2026-10-14T01:00:00Z"));
         }
     }
 }

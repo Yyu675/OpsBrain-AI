@@ -335,7 +335,7 @@ class AlertServiceTest {
             verify(alertRepository).resolve(eq(7L), any());
             verify(notifier).broadcastResolved(active);
             verify(dingTalk).send(argThat(msg -> !msg.urgent()
-                    && msg.markdown().contains("收到监控源 resolved 事件")));
+                    && msg.markdown().contains("[已恢复]")));
             // 恢复不该建单，也不该新增告警记录
             verify(alertRepository, never()).insertOrIncrement(any());
         }
@@ -1311,12 +1311,15 @@ class AlertServiceTest {
             when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
                     any(), anyString(), anyString(), anyString(), anyString()))
                     .thenThrow(new IllegalStateException("database unavailable"));
+            // 平台地址显式配置后，卡片给的是可点直达链接（事件 ID 由实体带出，不靠外部数据）
+            ReflectionTestUtils.setField(service, "notificationBaseUrl",
+                    "https://ops.example.com/opsbrain");
             service.processWebhook(webhook(incoming("firing", labels("alertname", "NodeDown",
                     "service", "infra", "severity", "critical", "instance", "node-1:9100"))));
             verify(dingTalk).send(argThat(msg -> msg.urgent()
                     && msg.markdown().contains("自动建单失败")
                     && msg.markdown().contains("node-1:9100")
-                    && msg.markdown().contains("平台事件 ID")));
+                    && msg.markdown().contains("(https://ops.example.com/opsbrain/alerts/")));
         }
 
         @Test
@@ -1341,8 +1344,7 @@ class AlertServiceTest {
             Alert saved = savedAlert();
             assertFalse(saved.getFirstOccurredAt().isBefore(before));
             assertTrue(saved.getAnnotationsJson().contains("\"_opsbrain_starts_at_estimated\":\"true\""));
-            verify(dingTalk).send(argThat(msg -> msg.markdown().contains("首次接收时间")
-                    && msg.markdown().contains("估算")));
+            verify(dingTalk).send(argThat(msg -> msg.markdown().contains("接收后持续（估算）")));
         }
 
         @Test
@@ -1359,6 +1361,8 @@ class AlertServiceTest {
         @Test
         void recoveryUsesFreshValueNotOriginalFailureAndDoesNotCloseGroup() {
             Alert active = activeAlert("P0", "TK-1");
+            // 首次发生时间必须有值，否则「持续」整行按缺料省略（那是模板的缺料纪律，不是本用例要测的）
+            active.setFirstOccurredAt(java.time.LocalDateTime.now().minusMinutes(3));
             active.setAnnotationsJson("{\"value\":\"Timeout\",\"_opsbrain_starts_at_estimated\":\"false\"}");
             when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
             when(alertRepository.countOtherActiveByTicket("TK-1", 42L)).thenReturn(2L);
@@ -1372,7 +1376,7 @@ class AlertServiceTest {
                     && msg.markdown().contains("**恢复取值**：0")
                     && !msg.markdown().contains("**恢复取值**：Timeout")
                     && msg.markdown().contains("仍有 2 条活跃告警")
-                    && msg.markdown().contains("恢复接收时间")));
+                    && msg.markdown().contains("本次持续")));
         }
 
         @Test

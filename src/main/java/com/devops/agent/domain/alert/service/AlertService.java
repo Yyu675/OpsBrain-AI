@@ -68,6 +68,13 @@ public class AlertService {
     /** 通知渠道：依赖接口而非具体厂商实现（可插拔） */
     private final com.devops.agent.domain.notify.Notifier notifier;
 
+    /**
+     * 平台部署地址：通知卡里的直达链接只由它 + 真实 ID 构造（仅接受受信任 HTTPS）。
+     * 未配置时卡片明说「请登录平台按事件 ID/工单号查询」，不给点不开或指向外站的地址。
+     */
+    @Value("${devops.notify.public-base-url:}")
+    private String notificationBaseUrl;
+
     /** 告警源适配器（L2 跨源接缝）：把具体源负载归一化为 AlertSignal */
     private final AlertmanagerSourceAdapter alertSourceAdapter;
 
@@ -738,7 +745,7 @@ public class AlertService {
 
         // 已恢复告警：标记活跃告警为 RESOLVED（endsAt 穿透——真实恢复时刻）
         if (signal.resolved()) {
-            handleResolvedAlert(dedupKey, signal.endsAt());
+            handleResolvedAlert(dedupKey, signal.endsAt(), signal.annotations());
             return;
         }
 
@@ -787,7 +794,8 @@ public class AlertService {
      * （可能已在超时窗口内自动恢复）。
      * </p>
      */
-    private void handleResolvedAlert(String dedupKey, java.time.OffsetDateTime endsAt) {
+    private void handleResolvedAlert(String dedupKey, java.time.OffsetDateTime endsAt,
+                                     Map<String, String> recoveryAnnotations) {
         Optional<Alert> existing = alertRepository.findActiveByDedupKey(dedupKey);
         if (existing.isPresent()) {
             Alert alert = existing.get();
@@ -800,7 +808,13 @@ public class AlertService {
                 if (businessMetrics != null) businessMetrics.incAlertTimeFallback("endsAt");
             }
             java.time.LocalDateTime resolvedAt = toLocalDateTime(sane);
-            alertRepository.resolve(alert.getId(), resolvedAt);
+            // 原子状态更新胜者才发送恢复通知/联动：webhook 重试或多副本同时收包时，
+            // 只有命中 UPDATE 的那一个会走到下面——否则同一场火熄灭会推 N 张恢复卡，
+            // 并重复触发关单联动（此前 resolve 的返回值被直接丢掉）。
+            if (alertRepository.resolve(alert.getId(), resolvedAt) == 0) {
+                log.debug("ℹ️ [AlertService] 该告警已被其它实例标记恢复，跳过恢复通知与联动 | id={}", alert.getId());
+                return;
+            }
             alert.setStatus("RESOLVED");
             alert.setResolvedAt(resolvedAt);
             log.info("✅ [AlertService] 告警已恢复 | id={} | dedupKey={} | resolvedAt={}",
@@ -809,7 +823,7 @@ public class AlertService {
             alertNotifier.broadcastResolved(alert);
             // A1（2026-10-12）：高危告警恢复推 IM 恢复卡——触发时发过强提醒的，
             // 火灭了要有回音；低级别本就静默，不吵
-            notifyResolve(alert);
+            notifyResolve(alert, recoveryAnnotations, sane == null);
             // 方案②：恢复 → 关联工单联动（hint 提示 / auto 自动关 / off 跳过）
             applyResolveClosePolicy(alert, resolvedAt);
         } else {
@@ -946,14 +960,24 @@ public class AlertService {
         alert.setService(signal.service());
         alert.setModule(signal.module());
         alert.setOccurrenceCount(1);
-        alert.setFirstOccurredAt(toLocalDateTime(signal.startsAt()));
+        // 起始时间健全性：源给了零值/上古时间（0001 年）时必须当作「没有有效开始时间」，
+        // 否则「持续 49 天 2 小时」这类荒谬时长会原样进卡片（旧模板被投诉的点之一）。
+        // 是否兜底要落成 annotation，卡片据此把时长标成「估算」而不是报精确秒数。
+        java.time.OffsetDateTime saneStart = signal.startsAt() != null && signal.startsAt().getYear() >= 2000
+                ? signal.startsAt() : null;
+        alert.setFirstOccurredAt(toLocalDateTime(saneStart));
         alert.setLastOccurredAt(LocalDateTime.now());
         alert.setCreateTime(LocalDateTime.now());
         alert.setUpdateTime(LocalDateTime.now());
         // V11：原始标签/注解全量落库——instance/pod/阈值/runbook 是诊断下钻与
         // 日志取证 keyword 的数据源，此前蒸馏后即丢
         alert.setLabelsJson(toJson(signal.labels()));
-        alert.setAnnotationsJson(toJson(signal.annotations()));
+        Map<String, String> annotations = new java.util.LinkedHashMap<>();
+        if (signal.annotations() != null) {
+            annotations.putAll(signal.annotations());
+        }
+        annotations.put(AlertNotifyTemplate.START_TIME_ESTIMATED, Boolean.toString(saneStart == null));
+        alert.setAnnotationsJson(toJson(annotations));
         return alert;
     }
 
@@ -1000,7 +1024,12 @@ public class AlertService {
         }
 
         // 自动建单（Single Writer 契约 6.10：通过 TicketService 写入，不直写 Repository）
-        createAutoTicket(saved, alertName, service, saved.getModule());
+        String ticketHint = createAutoTicket(saved, alertName, service, saved.getModule());
+        // 故障触达不依赖建单成功：建单关闭/失败/未达门槛时也要让值班人看到高危告警
+        // （卡片会明说未建单与原因），降噪门禁（聚合/风暴/观察窗）在上方分支已生效。
+        if (isTicketLevel(saved.getLevel())) {
+            notifyAlert(saved, ticketHint);
+        }
 
         // S2-1：新告警 → 自动诊断（异步、不阻塞；工单号可能为空由会话表回填设计承载）。
         // 去重与聚合抑制分支在上方已 return——两条旁路天然不重复触发诊断。
@@ -1052,7 +1081,10 @@ public class AlertService {
                         continue;
                     }
                 }
-                createAutoTicket(alert, alert.getAlertName(), alert.getService(), alert.getModule());
+                String hint = createAutoTicket(alert, alert.getAlertName(), alert.getService(), alert.getModule());
+                // 触达同样不依赖建单成功（与即时路径同一条原则）：补建失败也要让人知道
+                // 这条告警熬过了观察窗，只是没进工单
+                notifyAlert(alert, hint);
                 // 建单成功后才补诊断（ticketId 已由 createAutoTicket 回填到实体）
                 if (alert.getTicketId() != null) {
                     recordObservationEscalation(alert);
@@ -1119,11 +1151,11 @@ public class AlertService {
      * 使用 9 参重载（含 sourceTraceId）。
      * </p>
      */
-    private void createAutoTicket(Alert alert, String alertName, String service, String module) {
+    private String createAutoTicket(Alert alert, String alertName, String service, String module) {
         // 自动建单开关关闭时跳过（devops.alert.auto-ticket-enabled），告警仍入库供列表查看
         if (!autoTicketEnabled) {
             log.info("⏸️ [AlertService] 自动建单已关闭，跳过 | alertId={} | alertName={}", alert.getId(), alertName);
-            return;
+            return "自动建单已关闭；请到告警页处理";
         }
 
         // 分级建单：低于门槛级别的告警只入库统计——工单是「要人处理」的信号，
@@ -1131,7 +1163,7 @@ public class AlertService {
         if (!isTicketLevel(alert.getLevel())) {
             log.info("📉 [AlertService] 低于建单门槛，仅入库统计 | alertId={} | level={} | 门槛={}",
                     alert.getId(), alert.getLevel(), autoTicketMinLevel);
-            return;
+            return "未达到自动建单级别";
         }
 
         long t0 = System.nanoTime();
@@ -1141,11 +1173,6 @@ public class AlertService {
             String sla = mapPriorityToSla(priority);
             String title = "【告警】" + alertName + (service != null && !service.isBlank() ? " - " + service : "");
             String description = buildTicketDescription(alert, title);
-            // 钉钉通知只带核心描述（一两句话），不带完整结构化描述——
-            // 后者含 JSON 块与全部标签，塞进通知卡片只会把关键信息淹掉
-            String notifyCore = alert.getDescription() != null && !alert.getDescription().isBlank()
-                    ? alert.getDescription() : title;
-
             // 服务路由：命中的服务直接把工单派给值班负责人，不再一律「待分配」
             String assignee = null;
             if (serviceOwnerRepository != null) {
@@ -1178,16 +1205,16 @@ public class AlertService {
                 businessMetrics.recordTicketAutoCreate((System.nanoTime() - t0) / 1_000_000, true);
             }
 
-            // L2 通知（方向二）：高危告警强提醒值班 SRE（蓝图 §二 P0/P1 一键弹窗强提醒）。
-            // 旁路——DingTalkNotifier 内部异步 + 失败仅 WARN，不影响建单主流程。
+            // 通知已上移到调用点（触达不依赖建单成功）：这里只回传工单号作为卡片里的关联提示
             String ticketId = ticket != null ? ticket.getId() : null;
-            notifyAlert(alert, alertName, service, priority, notifyCore, ticketId);
+            return ticketId != null ? ticketId : "建单未返回工单号；请到告警页处理";
         } catch (Exception e) {
             log.error("❌ [AlertService] 告警自动建单失败 | alertId={} | alertName={} | error={}",
                     alert.getId(), alertName, e.getMessage(), e);
             if (businessMetrics != null) {
                 businessMetrics.recordTicketAutoCreate((System.nanoTime() - t0) / 1_000_000, false);
             }
+            return "自动建单失败；请到告警页处理";
         }
     }
 
@@ -1213,36 +1240,71 @@ public class AlertService {
      * 排查上下文（影响/当前值/阈值/持续/首步动作/runbook），值班人不用再点开平台
      * 才知道先干什么。旁路，不阻塞建单。</p>
      */
-    private void notifyAlert(Alert alert, String alertName, String service,
-                             String priority, String description, String ticketId) {
+    private void notifyAlert(Alert alert, String ticketHint) {
+        // 工单上下文（负责人/状态）是「谁在管、卡在哪」的答案，读不到就不编造——
+        // 读失败仍发告警事实（卡片会显示「待分配」与无状态），因为火是真的
+        String assignee = null;
+        String ticketStatus = null;
+        if (alert.getTicketId() != null && !alert.getTicketId().isBlank()) {
+            try {
+                DevOpsTicket ticket = ticketService.getTicketWithTags(alert.getTicketId());
+                if (ticket != null) {
+                    assignee = ticket.getAssignee();
+                    ticketStatus = ticket.getStatus();
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ [AlertService] 告警通知工单上下文读取失败 | alertId={} | {}", alert.getId(), e.getMessage());
+            }
+        }
         try {
             // 老调用点的 description 汇聚值兜底：annotations 缺 summary 时卡片仍有核心描述
             Map<String, String> annotations = parseJsonMap(alert.getAnnotationsJson());
             if (AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.SUMMARY) == null
-                    && description != null && !description.isBlank()) {
+                    && alert.getDescription() != null && !alert.getDescription().isBlank()) {
                 annotations = new java.util.LinkedHashMap<>(annotations);
-                annotations.put(AlertAnnotationKeys.SUMMARY, description);
+                annotations.put(AlertAnnotationKeys.SUMMARY, alert.getDescription());
             }
-            notifier.send(AlertNotifyTemplate.firing(alert,
-                    parseJsonMap(alert.getLabelsJson()), annotations, ticketId));
+            notifier.send(AlertNotifyTemplate.firing(alert, parseJsonMap(alert.getLabelsJson()), annotations,
+                    alert.getTicketId(), assignee, ticketStatus, notificationBaseUrl, ticketHint));
         } catch (Exception e) {
             // 通知构造异常也不影响建单主流程
             log.warn("⚠️ [AlertService] 告警通知构造失败（已忽略）| alertId={} | {}", alert.getId(), e.getMessage());
         }
     }
 
+
     /**
      * 高危告警恢复 → 推恢复卡（A1「恢复也要发，但别吵」，2026-10-12）。
      * <p>只给触发时发过强提醒的告警（isHighRisk）发恢复卡——P2~P4 触发本就静默
      * 入库，恢复再推送纯属刷屏。旁路：失败仅 WARN。</p>
      */
-    private void notifyResolve(Alert alert) {
+    private void notifyResolve(Alert alert, Map<String, String> recoveryAnnotations, boolean estimatedEnd) {
         if (!alert.isHighRisk()) {
             return;
         }
+        boolean hasTicket = alert.getTicketId() != null && !alert.getTicketId().isBlank();
+        // 观察窗内自愈、且从未建单的事件不发恢复卡：触发卡都没发过，
+        // 恢复卡就是凭空多出来的噪声（「恢复也要发，但别吵」的反面）。
+        if (!hasTicket && isObservationPending(alert)) {
+            return;
+        }
+        String ticketStatus = null;
+        Long others = null;
+        if (hasTicket) {
+            try {
+                DevOpsTicket ticket = ticketService.getTicketWithTags(alert.getTicketId());
+                ticketStatus = ticket != null ? ticket.getStatus() : null;
+                others = alertRepository.countOtherActiveByTicket(alert.getTicketId(), alert.getId());
+            } catch (Exception e) {
+                // 读不到工单元信息也要把「监控已恢复」这个事实发出去，只是不编造关单建议
+                log.warn("⚠️ [AlertService] 恢复通知工单上下文读取失败 | alertId={} | {}", alert.getId(), e.getMessage());
+            }
+        }
         try {
             notifier.send(AlertNotifyTemplate.resolved(alert,
-                    parseJsonMap(alert.getLabelsJson()), parseJsonMap(alert.getAnnotationsJson())));
+                    parseJsonMap(alert.getLabelsJson()), parseJsonMap(alert.getAnnotationsJson()),
+                    recoveryAnnotations != null ? recoveryAnnotations : Map.of(), estimatedEnd,
+                    ticketStatus, others, notificationBaseUrl));
         } catch (Exception e) {
             log.warn("⚠️ [AlertService] 恢复通知失败（不影响告警链）| alertId={} | {}", alert.getId(), e.getMessage());
         }
