@@ -103,6 +103,7 @@ class AlertServiceTest {
 
         // 默认：无活跃告警、无可聚合的组工单、保存后回填 ID
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
+        org.mockito.Mockito.lenient().when(alertRepository.resolve(any(), any())).thenReturn(1);
         when(alertRepository.findActiveGroupTicket(any(), any(), anyInt())).thenReturn(Optional.empty());
         // 批 76 / P2-1:去重原子化后 save 退役,改 mock insertOrIncrement。
         // 默认语义 = 无冲突新插入(返回 true 并回填 id,与产品代码一致)
@@ -324,6 +325,8 @@ class AlertServiceTest {
         void resolvedMarksAlert() {
             Alert active = new Alert();
             active.setId(7L);
+            active.setLevel("P0");
+            active.setAlertName("HighCpu");
             when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
 
             service.processWebhook(webhook(incoming("resolved",
@@ -331,6 +334,8 @@ class AlertServiceTest {
 
             verify(alertRepository).resolve(eq(7L), any());
             verify(notifier).broadcastResolved(active);
+            verify(dingTalk).send(argThat(msg -> !msg.urgent()
+                    && msg.markdown().contains("收到监控源 resolved 事件")));
             // 恢复不该建单，也不该新增告警记录
             verify(alertRepository, never()).insertOrIncrement(any());
         }
@@ -1295,6 +1300,90 @@ class AlertServiceTest {
 
             verify(ticketService, never()).recordActivity(any(), any(), any(), any(), any(), anyBoolean());
             verify(ticketService, never()).updateStatus(anyString(), anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("企业通知：故障触达、时间质量与恢复去重")
+    class EnterpriseNotifications {
+        @Test
+        void ticketFailureStillNotifiesHighRisk() {
+            when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString()))
+                    .thenThrow(new IllegalStateException("database unavailable"));
+            service.processWebhook(webhook(incoming("firing", labels("alertname", "NodeDown",
+                    "service", "infra", "severity", "critical", "instance", "node-1:9100"))));
+            verify(dingTalk).send(argThat(msg -> msg.urgent()
+                    && msg.markdown().contains("自动建单失败")
+                    && msg.markdown().contains("node-1:9100")
+                    && msg.markdown().contains("平台事件 ID")));
+        }
+
+        @Test
+        void disabledAutoTicketStillNotifiesHighRisk() {
+            ReflectionTestUtils.setField(service, "autoTicketEnabled", false);
+            service.processWebhook(webhook(incoming("firing", labels("alertname", "NodeDown",
+                    "service", "infra", "severity", "critical"))));
+            verify(dingTalk).send(argThat(msg -> msg.urgent()
+                    && msg.markdown().contains("自动建单已关闭")));
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void invalidStartIsSanitizedAndCannotSpoofQuality() {
+            AlertmanagerWebhook.Alert input = incoming("firing", labels("alertname", "NodeDown",
+                    "service", "infra", "severity", "critical"));
+            input.setStartsAt(OffsetDateTime.parse("0001-01-01T00:00:00Z"));
+            input.setAnnotations(Map.of("_opsbrain_starts_at_estimated", "false"));
+            java.time.LocalDateTime before = java.time.LocalDateTime.now();
+            service.processWebhook(webhook(input));
+            Alert saved = savedAlert();
+            assertFalse(saved.getFirstOccurredAt().isBefore(before));
+            assertTrue(saved.getAnnotationsJson().contains("\"_opsbrain_starts_at_estimated\":\"true\""));
+            verify(dingTalk).send(argThat(msg -> msg.markdown().contains("首次接收时间")
+                    && msg.markdown().contains("估算")));
+        }
+
+        @Test
+        void concurrentRecoveryLoserDoesNotNotifyOrCloseTicket() {
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P0", "TK-1")));
+            when(alertRepository.resolve(any(), any())).thenReturn(0);
+            service.processWebhook(webhook(incoming("resolved", labels("alertname", "NodeDown", "service", "infra"))));
+            verify(dingTalk, never()).send(any());
+            verify(notifier, never()).broadcastResolved(any());
+            verify(ticketService, never()).recordActivity(any(), any(), any(), any(), any(), anyBoolean());
+        }
+
+        @Test
+        void recoveryUsesFreshValueNotOriginalFailureAndDoesNotCloseGroup() {
+            Alert active = activeAlert("P0", "TK-1");
+            active.setAnnotationsJson("{\"value\":\"Timeout\",\"_opsbrain_starts_at_estimated\":\"false\"}");
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
+            when(alertRepository.countOtherActiveByTicket("TK-1", 42L)).thenReturn(2L);
+            DevOpsTicket ticket = new DevOpsTicket();
+            ticket.setStatus("PROCESSING");
+            when(ticketService.getTicketWithTags("TK-1")).thenReturn(ticket);
+            AlertmanagerWebhook.Alert input = incoming("resolved", labels("alertname", "NodeDown", "service", "infra"));
+            input.setAnnotations(Map.of("value", "0"));
+            service.processWebhook(webhook(input));
+            verify(dingTalk).send(argThat(msg -> !msg.urgent()
+                    && msg.markdown().contains("**恢复取值**：0")
+                    && !msg.markdown().contains("**恢复取值**：Timeout")
+                    && msg.markdown().contains("仍有 2 条活跃告警")
+                    && msg.markdown().contains("恢复接收时间")));
+        }
+
+        @Test
+        void observationSelfRecoveryDoesNotCreateGroupNoise() {
+            ReflectionTestUtils.setField(service, "observationEnabled", true);
+            ReflectionTestUtils.setField(service, "observationLevels", "P2,P3");
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P2", null)));
+            service.processWebhook(webhook(incoming("resolved", labels("alertname", "NodeDown", "service", "infra"))));
+            verify(notifier).broadcastResolved(any());
+            verify(dingTalk, never()).send(any());
         }
     }
 

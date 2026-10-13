@@ -596,6 +596,12 @@ devops:
 
   # ==================== L2 通知渠道（钉钉自定义机器人） ====================
   notify:
+    # 平台可从通知群访问的 HTTPS 前端地址；空值不生成假链接，仅提示按事件/工单号查询。
+    # 支持部署路径前缀；不会使用外部 annotations 中未经验证的 URL。
+    public-base-url: ${OPSBRAIN_NOTIFY_PUBLIC_BASE_URL:}
+    # 默认只在工单/详情留诊断证据，避免一次故障告警后又因 NO_DATA 刷屏。
+    # 开启仅发送仍活跃事件的普通摘要，不 @所有人；生产故障首报强提醒保持现状。
+    diagnosis-completion-enabled: ${DIAGNOSIS_COMPLETION_NOTIFY_ENABLED:false}
     dingtalk:
       # 通知总开关。默认关闭——需运维填 webhook 后显式开启（改为 true 或设环境变量）。
       # 关闭/未配 webhook 时 DingTalkNotifier 以 MOCK 方式仅打印日志，不阻塞主流程。
