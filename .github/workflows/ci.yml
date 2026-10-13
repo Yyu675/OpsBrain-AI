@@ -125,10 +125,52 @@ jobs:
       - name: Redis 密码配置
         # dev profile 期望 Redis 有密码，而官方镜像默认无密码。
         # 用 CONFIG SET 在运行时设上，避免为此单独构建镜像。
+        #
+        # 2026-10-13 修复（本步曾让后端腿与端到端腿双双停在 exit 127）：
+        # 原实现 `apt-get install redis-tools || true` + `redis-cli ...`，
+        # 镜像上 apt 装不上时 `|| true` 把失败吞成静默，随后 redis-cli 不存在 →
+        # command not found(127)，编译与测试步被整体跳过（main 38399771034 同款）。
+        # 改为 python3 直连 RESP：runner 恒有 python3，零 apt、零外部网络依赖。
         run: |
-          sudo apt-get install -y --no-install-recommends redis-tools >/dev/null 2>&1 || true
-          redis-cli -h localhost -p 26379 CONFIG SET requirepass devops_redis_pwd
-          redis-cli -h localhost -p 26379 -a devops_redis_pwd PING
+          python3 - <<'PY'
+          import socket, sys
+
+
+          def read_reply(sock):
+              """读到回复行结束（RESP 简单字符串/错误都以一个 \r\n 收尾）。
+
+              不能单次 recv 就判定成败：TCP 分段时 `+OK` 可能只到达 `+O`，
+              于是「密码已生效」被误报为未生效（本地 mock 验证时实测撞到）。
+              """
+              buf = b''
+              while not buf.endswith(b'\r\n'):
+                  chunk = sock.recv(256)
+                  if not chunk:
+                      break
+                  buf += chunk
+              return buf
+
+
+          def cmd(sock, *parts):
+              payload = ('*%d\r\n' % len(parts)).encode()
+              for part in parts:
+                  raw = part.encode()
+                  payload += b'$%d\r\n%s\r\n' % (len(raw), raw)
+              sock.sendall(payload)
+              return read_reply(sock)
+
+
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              print('CONFIG SET requirepass ->', cmd(s, 'CONFIG', 'SET', 'requirepass', 'devops_redis_pwd').strip())
+          # 新连接必须真正 AUTH 才通——「密码已生效」的可证伪检查（而非只看退出码）
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              auth = cmd(s, 'AUTH', 'devops_redis_pwd')
+              ping = cmd(s, 'PING')
+              print('AUTH ->', auth.strip(), '| PING ->', ping.strip())
+              if b'+OK' not in auth or b'+PONG' not in ping:
+                  print('::error::Redis 密码未生效，dev profile 后端会连不上')
+                  sys.exit(1)
+          PY
 
       - name: 编译与测试
         # AI_MODE=MOCK：不调真实模型，CI 不烧额度也不依赖外网
@@ -360,8 +402,45 @@ jobs:
 
       - name: Redis 密码配置
         run: |
-          sudo apt-get install -y --no-install-recommends redis-tools >/dev/null 2>&1 || true
-          redis-cli -h localhost -p 26379 CONFIG SET requirepass devops_redis_pwd
+          python3 - <<'PY'
+          import socket, sys
+
+
+          def read_reply(sock):
+              """读到回复行结束（RESP 简单字符串/错误都以一个 \r\n 收尾）。
+
+              不能单次 recv 就判定成败：TCP 分段时 `+OK` 可能只到达 `+O`，
+              于是「密码已生效」被误报为未生效（本地 mock 验证时实测撞到）。
+              """
+              buf = b''
+              while not buf.endswith(b'\r\n'):
+                  chunk = sock.recv(256)
+                  if not chunk:
+                      break
+                  buf += chunk
+              return buf
+
+
+          def cmd(sock, *parts):
+              payload = ('*%d\r\n' % len(parts)).encode()
+              for part in parts:
+                  raw = part.encode()
+                  payload += b'$%d\r\n%s\r\n' % (len(raw), raw)
+              sock.sendall(payload)
+              return read_reply(sock)
+
+
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              print('CONFIG SET requirepass ->', cmd(s, 'CONFIG', 'SET', 'requirepass', 'devops_redis_pwd').strip())
+          # 新连接必须真正 AUTH 才通——「密码已生效」的可证伪检查（而非只看退出码）
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              auth = cmd(s, 'AUTH', 'devops_redis_pwd')
+              ping = cmd(s, 'PING')
+              print('AUTH ->', auth.strip(), '| PING ->', ping.strip())
+              if b'+OK' not in auth or b'+PONG' not in ping:
+                  print('::error::Redis 密码未生效，dev profile 后端会连不上')
+                  sys.exit(1)
+          PY
 
       - name: 后端打包（跳过测试——测试在 backend 腿已跑）
         run: ./mvnw -B -ntp -DskipTests package
