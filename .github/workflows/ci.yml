@@ -456,7 +456,29 @@ jobs:
           PY
 
       - name: 后端打包（跳过测试——测试在 backend 腿已跑）
-        run: ./mvnw -B -ntp -DskipTests package
+        id: e2epackage
+        # tee 留档：失败时由下一「打包失败取证」步回帖 commit comment 取材。
+        # GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉。
+        run: ./mvnw -B -ntp -DskipTests package 2>&1 | tee /tmp/e2e-package.log
+
+      - name: 打包失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道）
+        # 与「Flyway 步失败时回 commit 取证帖」同款：托管 runner 的作业日志归档在
+        # azure blob，开发沙箱 egress 不通该域（gh run view --log 与 artifact 下载
+        # 在沙箱里都是 EOF），这条 commit comment 是唯一能读到真实报错的通道。
+        # 只有本步失败时执行，绿案零开销零噪声。
+        if: failure() && steps.e2epackage.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-e2e-package-diag -->"
+            echo "### 🔴 端到端腿「后端打包」步骤取证（批 64 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -100 /tmp/e2e-package.log 2>/dev/null || echo "(日志文件缺失——步骤在 tee 前即炸，如 wrapper 下载失败)"
+            echo '```'
+          } > /tmp/e2e-package-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/e2e-package-diag.md --silent || true
 
       - name: 启动后端（dev + MOCK AI，不烧额度不依赖外网）
         env:
