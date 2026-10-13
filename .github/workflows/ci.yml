@@ -232,6 +232,47 @@ jobs:
             gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md || true
           fi
 
+      - name: 临时：测试报告清单取证（验证 CI 是否真的执行测试）
+        # 背景：两处注入缺陷 + 两个无条件 fail() 探针推上去，后端腿仍绿（88edd4e）。
+        # 若测试真在跑，构建必须红。此步把 surefire 报告清单与 Tests run 汇总行
+        # 回帖 commit comment，用最少一轮 CI 判明「测试到底跑没跑、跑了哪些类」。
+        # 判明后即删除本步。
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-test-inventory -->"
+            echo "### 🧪 测试报告清单取证（临时）"
+            echo "SHA: $GITHUB_SHA"
+            echo
+            echo "**surefire .txt 报告数**："
+            echo '```'
+            ls target/surefire-reports/*.txt 2>/dev/null | wc -l
+            echo '```'
+            echo "**AlertServiceTest 报告存在与否**："
+            echo '```'
+            ls -1 target/surefire-reports/ 2>/dev/null | grep -i 'alertservice' || echo "(无)"
+            echo '```'
+            echo "**AlertServiceTest 报告首 30 行**："
+            echo '```'
+            sed -n '1,30p' target/surefire-reports/*AlertServiceTest.txt 2>/dev/null || echo "(报告不存在)"
+            echo '```'
+            echo "**mvn 日志 Tests run 汇总行（尾 8 条）**："
+            echo '```'
+            grep -E "Tests run:" /tmp/mvn-verify.log 2>/dev/null | tail -8 || echo "(无)"
+            echo '```'
+            echo "**日志是否出现 PROBE 字样**："
+            echo '```'
+            grep -c "PROBE" /tmp/mvn-verify.log 2>/dev/null || echo 0
+            echo '```'
+            echo "**报告目录体积**："
+            echo '```'
+            du -sh target/surefire-reports 2>/dev/null || echo "(无目录)"
+            echo '```'
+          } > /tmp/test-inventory.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/test-inventory.md --silent || true
+
       - name: 评测指标基线对比（S4-3 CI 回归门禁）
         # 接线批次 18（报告 121）。契约层指标由 AgentEvaluationTest 常驻落盘
         # （MOCK 下同样覆盖）；RAG/LLM 层指标在 EVAL_RAG/EVAL_LLM 门内——
