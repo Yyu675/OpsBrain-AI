@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * 引用 → chunk 解析回查的 DB 集成测试（Testcontainers pgvector）。
@@ -181,7 +181,13 @@ class KnowledgeBoostResolveIntegrationTest extends AbstractIntegrationTest {
                 "UPDATE sys_knowledge_chunk SET expired_at = CURRENT_TIMESTAMP - INTERVAL '1 day' WHERE id = ?",
                 expired);
 
-        assertThat(resolve("【来源：" + DOC_B + " - 过期章节】")).isEmpty();
+        // 断言口径：容器是 JVM 内共享的（AbstractIntegrationTest 的静态单例），
+        // 别的用例可能在同一 doc_title 下留下活跃切片，而第三级「文档级回退」会把
+        // 它们正常查出来——所以这里断言的是「过期切片本身绝不出现」，
+        // 而不是「结果必须为空」（后者会依赖兄弟用例的残留数据，属假约束）。
+        assertThat(resolve("【来源：" + DOC_B + " - 过期章节】"))
+                .as("过期切片不得参与回退（检索读不到的不记账）")
+                .doesNotContain(expired);
     }
 
     // ==================== verdict 写入语义（同仓储的另一侧） ====================
@@ -222,7 +228,26 @@ class KnowledgeBoostResolveIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("未知判定值拒绝而非静默写 (0,0)——静默空行会让回流假成功")
     void unknownVerdictRejected() {
-        assertThatThrownBy(() -> repository.recordFeedback(sectionInvestigate, "MAYBE"))
+        // 生产调用方（KnowledgeDocController.normalizeCitationVerdict）在进仓库前
+        // 已把非法判定挡成 400：本用例守的是仓储层自身的兜底（谁都可能绕过控制器直调）。
+        Throwable thrown = catchThrowable(() -> repository.recordFeedback(sectionInvestigate, "MAYBE"));
+
+        assertThat(thrown)
+                .as("未知判定必须拒绝：此前会静默写入 (0,0) 空行，调用方以为回流成功")
+                .isNotNull();
+
+        // 断言绑定在「最深原因」上，而不是外层异常类型：仓库层抛的是
+        // IllegalArgumentException，但 @Repository bean 挂有 Spring 的持久层异常翻译，
+        // 实测外层会变成 InvalidDataAccessApiUsageException（2026-10-13 CI 红因）。
+        // 断言外层类型 = 把测试绑在框架实现细节上；断言最深原因则无论翻译层
+        // 包装成什么（或将来干脆不包装）都成立，且「非法值原样带出」这条
+        // 对调用方定位真正重要的信息仍然被守住。
+        Throwable root = thrown;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        assertThat(root)
+                .as("非法判定值必须原样带出，便于调用方定位")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("MAYBE");
     }
