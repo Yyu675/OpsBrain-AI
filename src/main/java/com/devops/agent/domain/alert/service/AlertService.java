@@ -805,8 +805,10 @@ public class AlertService {
                 if (businessMetrics != null) businessMetrics.incAlertTimeFallback("endsAt");
             }
             java.time.LocalDateTime resolvedAt = toLocalDateTime(sane);
-            // 【临时注入】去掉「原子胜者」守卫——验证新增用例 concurrentRecoveryLoserDoesNotNotifyOrCloseTicket 会红
-            alertRepository.resolve(alert.getId(), resolvedAt);
+            // 原子状态更新胜者才发送恢复通知/联动，重复或并发恢复不再重复推送。
+            if (alertRepository.resolve(alert.getId(), resolvedAt) == 0) {
+                return;
+            }
             alert.setStatus("RESOLVED");
             alert.setResolvedAt(resolvedAt);
             log.info("✅ [AlertService] 告警已恢复 | id={} | dedupKey={} | resolvedAt={}",

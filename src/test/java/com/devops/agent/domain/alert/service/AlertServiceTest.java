@@ -1238,11 +1238,6 @@ class AlertServiceTest {
         }
 
         @Test
-        void probeExistingNestedClassRuns() {
-            org.junit.jupiter.api.Assertions.fail("PROBE-B: EscalationAndResolvePolicy 在 CI 执行了");
-        }
-
-        @Test
         @DisplayName("off：恢复完全不碰工单")
         void offDoesNothing() {
             ReflectionTestUtils.setField(service, "resolveClosePolicy", "off");
@@ -1259,11 +1254,6 @@ class AlertServiceTest {
     @Nested
     @DisplayName("企业通知：故障触达、时间质量与恢复去重")
     class EnterpriseNotifications {
-        @Test
-        void probeEnterpriseNotificationsRuns() {
-            org.junit.jupiter.api.Assertions.fail("PROBE-A: EnterpriseNotifications 在 CI 执行了");
-        }
-
         @Test
         void ticketFailureStillNotifiesHighRisk() {
             when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),

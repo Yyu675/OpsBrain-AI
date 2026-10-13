@@ -605,7 +605,8 @@ public class DiagnosisOrchestrator {
             var current = alertRepository.findById(alertId);
             if (current.isEmpty()) return;
             var alert = current.get();
-            // 【临时注入】去掉「发送前复查告警仍活跃」——验证新增用例 recoveredAlertSuppressesLateDiagnosis 会红
+            // 发送前复查真实状态；恢复/抑制/删除的事件只留痕，不补发过期人工介入。
+            if (!"FIRING".equals(alert.getStatus()) && !"ACKNOWLEDGED".equals(alert.getStatus())) return;
             Map<String, String> labels = Map.of();
             if (objectMapper != null && alert.getLabelsJson() != null) {
                 labels = objectMapper.readValue(alert.getLabelsJson(),
