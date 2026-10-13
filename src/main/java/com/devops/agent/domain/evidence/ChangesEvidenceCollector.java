@@ -18,7 +18,7 @@ import java.util.Map;
  * 变更取证装配（S1-2）：查库 → 时间相关性分档 → {@link Evidence}。
  * <p>
  * NO_DATA 与 FAILED 语义边界（路线图 §5.3 📌）：
- * 空结果 = NO_DATA（是<b>有效排除证据</b>，可提升其他方向置信度）；
+ * 空结果 = NO_DATA（查询无匹配，须确认覆盖度与时间窗，不能自动排除）；
  * 只有查询本身抛异常才 = FAILED（证据缺口）。二者在推理层权重不同。
  * </p>
  * <p>
@@ -75,7 +75,7 @@ public class ChangesEvidenceCollector {
                 + "' and change_time>=now()-" + minutes + "m (limit " + MAX_ROWS + ")";
         if (rows.isEmpty()) {
             return new Evidence(Evidence.EvidenceStatus.NO_DATA, Evidence.Type.CHANGES,
-                    "时间窗内无变更记录（有效排除：可暂排变更因素，但注意上报源覆盖度）",
+                    "时间窗内未查到匹配变更（需核查对象、窗口和上报覆盖，不能据此排除变更因素）",
                     Map.of("service", service, "rangeMinutes", minutes),
                     ref, null, Instant.now());
         }
