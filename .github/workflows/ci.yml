@@ -519,8 +519,11 @@ jobs:
           echo "::error::vite 40s 未起来"; tail -40 /tmp/e2e-vite.log; exit 1
 
       - name: 跑 e2e（登录 + 导航 + 重定向 + 搜索 + 工单流）
+        id: e2erun
         working-directory: devops-platform-frontend
-        run: npx playwright test
+        # tee 留档：失败时由下一「e2e 失败取证」步回帖 commit comment 取材
+        # （GitHub 默认 bash 带 pipefail，playwright 退出码不被 tee 吞掉）
+        run: npx playwright test 2>&1 | tee /tmp/e2e-run.log
 
       - name: 失败时上传 Playwright 报告取证
         if: failure()
@@ -529,3 +532,33 @@ jobs:
           name: playwright-report
           path: devops-platform-frontend/playwright-report/
           retention-days: 7
+
+      - name: e2e 失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道）
+        # artifact（playwright-report）落在 azure blob，沙箱 egress 不通该域，
+        # 下载是 EOF——回帖带 e2e 输出尾段 + 后端启动日志尾段，
+        # 让「是应用没起来还是断言不过」在沙箱侧可直接判读。
+        if: failure() && steps.e2erun.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-e2e-run-diag -->"
+            echo "### 🔴 端到端腿「跑 e2e」步骤取证（批 64 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo
+            echo "**playwright 输出尾段**："
+            echo '```'
+            tail -60 /tmp/e2e-run.log 2>/dev/null || echo "(日志缺失)"
+            echo '```'
+            echo
+            echo "**后端启动/运行日志尾段**："
+            echo '```'
+            tail -40 /tmp/e2e-backend.log 2>/dev/null || echo "(后端日志缺失)"
+            echo '```'
+            echo
+            echo "**失败用例名（report 摘要）**："
+            echo '```'
+            (grep -aE "✘|✓|failed|passed|Error:|expect\(" /tmp/e2e-run.log 2>/dev/null | tail -30) || true
+            echo '```'
+          } > /tmp/e2e-run-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/e2e-run-diag.md --silent || true
