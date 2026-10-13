@@ -8,7 +8,10 @@
 --   - tickets.spec        需要库里常驻 ≥1 张工单（列表行/搜索框/详情链接）
 --   - knowledge-v2.spec   需要第二个知识库「故障FAQ库」（1200/300/50）
 --     与其库内文档 `faq-test-doc`
--- 结果是 6 例在 CI 上必红（2026-10-13 实测：38422954784 / 721fff5）。
+--   - role-matrix.spec    需要可登录的角色账号 e2e_operator(OPS) / e2e_viewer(VIEWER)，
+--     批90 R0-3 只在 dev 库用 SQL upsert 过，仓库里无可复现种子
+-- 结果是 6 例（2026-10-13 实测：38422954784 / 721fff5）+ 角色矩阵 6 例
+-- （2026-10-14 实测：38430788677 / 3604862，7 failed 中占 6）在 CI 上必红。
 -- 本文件把这批前置数据从「人脑记得的联调产物」变成**可复现的脚本**。
 --
 -- ── 为什么不做成 Flyway 迁移 ─────────────────────────────────────────
@@ -26,7 +29,7 @@
 -- 1) 全部语句幂等：靠 INSERT ... SELECT ... WHERE NOT EXISTS，重跑不重复插。
 -- 2) 工单标题**不**用 E2E_PW_ 前缀：那是 tickets.spec 自建自清用例的标记，
 --    其 afterEach 会按前缀删库，常驻种子若同名会被清理掉（自断数据源）。
--- 3) 文件尾部自带校验：三样种子缺任何一样即 RAISE，psql 非零退出 →
+-- 3) 文件尾部自带校验：种子缺任何一样即 RAISE，psql 非零退出 →
 --    CI 在「种子未生效」处快速失败，而不是让 6 个用例各红一次再靠人猜。
 -- 4) 已知边界：若 dev 库里已存在**同名但参数不同**的「故障FAQ库」，
 --    knowledge-v2.spec 的 `1200 / 300 / 50` 断言会红（种子不覆盖已有数据，
@@ -89,13 +92,36 @@ SELECT 'TKT-E2E-SEED-0001',
  WHERE NOT EXISTS (SELECT 1 FROM sys_devops_ticket WHERE id = 'TKT-E2E-SEED-0001');
 
 -- ---------------------------------------------------------------------
--- 4) 自校验：种子三件套逐一回读，缺任何一样立即失败（ON_ERROR_STOP 生效）
+-- 4) RBAC 角色矩阵账号：e2e_operator(OPS) / e2e_viewer(VIEWER)
+--    为什么必须进种子：后端没有用户管理端点（角色账号只能 SQL 入库），而批90 R0-3
+--    的账号只存在于当时那台 dev 库里——CI 全新库上 role-matrix.spec 的 6 例全部
+--    停在 /login（2026-10-14 实测）。口令与 spec 一致（明文在 spec 与值班SOP 里），
+--    这里只存哈希。
+--    哈希为什么必须是 $2a$：后端用 jBCrypt（org.mindrot）——它只认 $2a$，
+--    喂 $2b$ 会抛 IllegalArgumentException: Invalid salt revision（本地用
+--    jBCrypt 真源码编译实证；Python bcrypt 产出的 $2b$ 换前缀即等价）。
+--    安全纪律见 docs/09-operations/值班SOP.md §7：e2e_ 前缀账号在非本机环境必须 DISABLED。
+--    与前面几节同样幂等：已存在同名账号不动它（不去改人手工建的库）。
+-- ---------------------------------------------------------------------
+INSERT INTO sys_user (username, password, display_name, role, dept, status)
+SELECT 'e2e_operator', '$2a$10$XLNjWHM/J5kfcXiFNw9rZOAvojKVLBYnIHMmD3T1D7wiJGQf2abTW',
+       'E2E 运维（OPS）', 'OPS', 'SRE', 'ACTIVE'
+ WHERE NOT EXISTS (SELECT 1 FROM sys_user WHERE username = 'e2e_operator');
+
+INSERT INTO sys_user (username, password, display_name, role, dept, status)
+SELECT 'e2e_viewer', '$2a$10$2uioDh72AxUcrc7wDbcXm.q6mmpf4JQV4.iExdaBOD5mA5BBvRaOC',
+       'E2E 只读（VIEWER）', 'VIEWER', 'SRE', 'ACTIVE'
+ WHERE NOT EXISTS (SELECT 1 FROM sys_user WHERE username = 'e2e_viewer');
+
+-- ---------------------------------------------------------------------
+-- 5) 自校验：种子四件套逐一回读，缺任何一样立即失败（ON_ERROR_STOP 生效）
 -- ---------------------------------------------------------------------
 DO $$
 DECLARE
     n_kb     INT;
     n_doc    INT;
     n_ticket INT;
+    n_role   INT;
 BEGIN
     SELECT COUNT(*) INTO n_kb FROM sys_knowledge_base
      WHERE LOWER(code) = 'faq' OR name = '故障FAQ库';
@@ -104,11 +130,17 @@ BEGIN
       JOIN sys_knowledge_base b ON d.kb_id = b.id
      WHERE (LOWER(b.code) = 'faq' OR b.name = '故障FAQ库') AND d.title = 'faq-test-doc';
     SELECT COUNT(*) INTO n_ticket FROM sys_devops_ticket;
+    -- 两个角色账号都必须在且 ACTIVE：停用账号登录会明确报「账号已停用」，
+    -- 与「密码错」同属登不进，但排查方向完全不同，故分开计数
+    SELECT COUNT(*) INTO n_role FROM sys_user
+     WHERE username IN ('e2e_operator', 'e2e_viewer') AND status = 'ACTIVE';
 
-    IF n_kb < 1 OR n_doc < 1 OR n_ticket < 1 THEN
-        RAISE EXCEPTION 'e2e 种子未生效：FAQ库=% 文档=% 工单总数=%', n_kb, n_doc, n_ticket;
+    IF n_kb < 1 OR n_doc < 1 OR n_ticket < 1 OR n_role < 2 THEN
+        RAISE EXCEPTION 'e2e 种子未生效：FAQ库=% 文档=% 工单总数=% 角色账号=%',
+            n_kb, n_doc, n_ticket, n_role;
     END IF;
-    RAISE NOTICE 'e2e 种子就绪：FAQ库=% 种子文档=% 工单总数=%', n_kb, n_doc, n_ticket;
+    RAISE NOTICE 'e2e 种子就绪：FAQ库=% 种子文档=% 工单总数=% 角色账号=%',
+        n_kb, n_doc, n_ticket, n_role;
 END $$;
 
 COMMIT;
