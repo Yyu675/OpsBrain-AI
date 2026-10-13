@@ -98,8 +98,8 @@ const diagnosisTrendSeries = computed<TrendSeries[]>(() => {
   const t = board.data.value?.sessionTrend
   if (!t || !t.days.length) return []
   return [
-    { name: '发起诊断', data: t.created, type: 'bar', color: '#409eff', suffix: ' 次' },
-    { name: '完成诊断', data: t.completed, type: 'line', color: '#67c23a', suffix: ' 次' },
+    { name: '发起诊断', data: t.created, type: 'bar', color: '--chart-1', suffix: ' 次' },
+    { name: '完成诊断', data: t.completed, type: 'line', color: '--chart-2', suffix: ' 次' },
   ]
 })
 
@@ -295,9 +295,9 @@ const funnelTrendSeries = computed<TrendSeries[]>(() => {
   const rows = trend.data.value ?? []
   if (!rows.length) return []
   return [
-    { name: '告警', data: rows.map(s => s.alerts_total), color: '#f56c6c', suffix: ' 条', area: true },
-    { name: '事件', data: rows.map(s => s.events_total ?? 0), color: '#e6a23c', suffix: ' 条' },
-    { name: '告警建单', data: rows.map(s => s.alert_sourced_tickets), color: '#67c23a', suffix: ' 单' },
+    { name: '告警', data: rows.map(s => s.alerts_total), color: '--chart-4', suffix: ' 条', area: true },
+    { name: '事件', data: rows.map(s => s.events_total ?? 0), color: '--chart-3', suffix: ' 条' },
+    { name: '告警建单', data: rows.map(s => s.alert_sourced_tickets), color: '--chart-2', suffix: ' 单' },
   ]
 })
 

@@ -18,6 +18,7 @@ import {
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import * as echarts from 'echarts/core'
+import { chartChromeColors, chartPalette, resolveChartColor, useThemeVersion } from '@/utils/chartTheme'
 
 // 只注册用到的模块——注册缺失会在运行时报「Series xxx not exists」而非编译期发现
 use([
@@ -36,7 +37,7 @@ export interface TrendSeries {
   type?: 'line' | 'bar'
   /** 挂右轴（用于量纲差异大的系列，如成本） */
   useRightAxis?: boolean
-  /** 线/柱颜色，缺省用主题色板 */
+  /** 线/柱颜色：传主题令牌名（如 '--chart-1'，推荐）或任意 CSS 颜色；缺省用主题色板 */
   color?: string
   /** 数值后缀，进提示框（如 '%'、' 元'） */
   suffix?: string
@@ -81,19 +82,28 @@ const chartInstance = shallowRef<echarts.ECharts | null>(null)
 /** 是否存在挂右轴的系列——决定是否渲染第二根 Y 轴 */
 const hasRightAxis = computed(() => props.series.some(s => s.useRightAxis))
 
-/** 与项目 CSS 变量色板对齐的默认色序 */
-const DEFAULT_COLORS = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399']
+/**
+ * 主题版本（批92）：颜色是取色瞬间从 CSS 令牌抄的 canvas 快照
+ * （ECharts canvas 不吃 var()，见 utils/chartTheme 头注），
+ * 主题四轴一切换必须重新取色并重绘——把版本号纳入取色依赖即可。
+ */
+const themeVersion = useThemeVersion()
 
 const buildOption = (): echarts.EChartsCoreOption => {
+  // 每次重建 option 都重新取色：主题版本纳入依赖（见上方 themeVersion），
+  // 明暗/配色轴切换后这里拿到的是新令牌解析值
+  void themeVersion.value
+  const chrome = chartChromeColors()
+  const defaultColors = chartPalette()
   const yAxes: Record<string, unknown>[] = [
     {
       type: 'value',
       name: props.leftAxisName || '',
-      nameTextStyle: { color: '#909399', fontSize: 11 },
+      nameTextStyle: { color: chrome.axisText, fontSize: 11 },
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#909399', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#ebeef5', type: 'dashed' } }
+      axisLabel: { color: chrome.axisText, fontSize: 11 },
+      splitLine: { lineStyle: { color: chrome.splitLine, type: 'dashed' } }
     }
   ]
 
@@ -101,17 +111,17 @@ const buildOption = (): echarts.EChartsCoreOption => {
     yAxes.push({
       type: 'value',
       name: props.rightAxisName || '',
-      nameTextStyle: { color: '#909399', fontSize: 11 },
+      nameTextStyle: { color: chrome.axisText, fontSize: 11 },
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#909399', fontSize: 11 },
+      axisLabel: { color: chrome.axisText, fontSize: 11 },
       // 右轴不画网格线，否则与左轴网格交错成密网
       splitLine: { show: false }
     })
   }
 
   return {
-    color: DEFAULT_COLORS,
+    color: defaultColors,
     grid: {
       left: 8,
       right: hasRightAxis.value ? 8 : 12,
@@ -122,10 +132,10 @@ const buildOption = (): echarts.EChartsCoreOption => {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      backgroundColor: 'rgba(255,255,255,0.97)',
-      borderColor: '#e4e7ed',
+      backgroundColor: chrome.tooltipBg,
+      borderColor: chrome.tooltipBorder,
       borderWidth: 1,
-      textStyle: { color: '#303133', fontSize: 12 },
+      textStyle: { color: chrome.tooltipText, fontSize: 12 },
       // 自定义格式化：带上各系列后缀，否则「0.42」无法区分是元还是百分比
       formatter: (params: unknown) => {
         const list = Array.isArray(params) ? params : [params]
@@ -147,17 +157,17 @@ const buildOption = (): echarts.EChartsCoreOption => {
           icon: 'roundRect',
           itemWidth: 10,
           itemHeight: 10,
-          textStyle: { color: '#606266', fontSize: 11 }
+          textStyle: { color: chrome.legendText, fontSize: 11 }
         }
       : { show: false },
     xAxis: {
       type: 'category',
       data: props.labels,
       boundaryGap: props.series.some(s => s.type === 'bar'),
-      axisLine: { lineStyle: { color: '#dcdfe6' } },
+      axisLine: { lineStyle: { color: chrome.axisLine } },
       axisTick: { show: false },
       axisLabel: {
-        color: '#909399',
+        color: chrome.axisText,
         fontSize: 11,
         // 只显示 MM-DD：完整 yyyy-MM-dd 在 30 天窗口下会挤成一团
         formatter: (v: string) => (typeof v === 'string' && v.length >= 10 ? v.slice(5) : v)
@@ -165,42 +175,44 @@ const buildOption = (): echarts.EChartsCoreOption => {
     },
     yAxis: yAxes,
     dataZoom: props.enableZoom
-      ? [{ type: 'slider', height: 18, bottom: 8, borderColor: '#e4e7ed' }]
+      ? [{ type: 'slider', height: 18, bottom: 8, borderColor: chrome.zoomBorder }]
       : undefined,
-    series: props.series.map((s, i) => ({
-      name: s.name,
-      type: s.type ?? 'line',
-      data: s.data,
-      yAxisIndex: s.useRightAxis && hasRightAxis.value ? 1 : 0,
-      smooth: s.smooth ?? true,
-      showSymbol: props.labels.length <= 14,
-      symbolSize: 5,
-      lineStyle: { width: 2 },
-      itemStyle: s.color ? { color: s.color } : undefined,
-      barMaxWidth: 22,
-      areaStyle: s.area
-        ? {
-            opacity: 0.12,
-            color: s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]
-          }
-        : undefined,
-      // 目标线只挂第一个系列：N 条数据线共用一根左轴，目标线画一次就够，
-      // 每条都画会叠出 N 根重合的虚线
-      markLine: i === 0 && props.targetLine
-        ? {
-            silent: true,
-            symbol: 'none',
-            lineStyle: { color: '#e6a23c', type: 'dashed', width: 1.5 },
-            label: {
-              formatter: props.targetLine.label,
-              position: 'insideEndTop',
-              color: '#e6a23c',
-              fontSize: 11
-            },
-            data: [{ yAxis: props.targetLine.value }]
-          }
-        : undefined
-    }))
+    series: props.series.map((s, i) => {
+      // 系列色在此统一解析（令牌名或裸色均可，见 resolveChartColor）：
+      // 消费方传 '--chart-1' 即随主题四轴自动换色，零样板
+      const seriesColor = s.color
+        ? resolveChartColor(s.color, defaultColors[i % defaultColors.length])
+        : defaultColors[i % defaultColors.length]
+      return {
+        name: s.name,
+        type: s.type ?? 'line',
+        data: s.data,
+        yAxisIndex: s.useRightAxis && hasRightAxis.value ? 1 : 0,
+        smooth: s.smooth ?? true,
+        showSymbol: props.labels.length <= 14,
+        symbolSize: 5,
+        lineStyle: { width: 2 },
+        itemStyle: { color: seriesColor },
+        barMaxWidth: 22,
+        areaStyle: s.area ? { opacity: 0.12, color: seriesColor } : undefined,
+        // 目标线只挂第一个系列：N 条数据线共用一根左轴，目标线画一次就够，
+        // 每条都画会叠出 N 根重合的虚线
+        markLine: i === 0 && props.targetLine
+          ? {
+              silent: true,
+              symbol: 'none',
+              lineStyle: { color: chrome.targetLine, type: 'dashed', width: 1.5 },
+              label: {
+                formatter: props.targetLine.label,
+                position: 'insideEndTop',
+                color: chrome.targetLine,
+                fontSize: 11
+              },
+              data: [{ yAxis: props.targetLine.value }]
+            }
+          : undefined
+      }
+    })
   }
 }
 
@@ -249,7 +261,8 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => [props.labels, props.series] as const,
+  // themeVersion 入依赖：主题四轴切换后颜色必须重新从令牌取色重绘
+  () => [themeVersion.value, props.labels, props.series] as const,
   () => { render() },
   { deep: true }
 )

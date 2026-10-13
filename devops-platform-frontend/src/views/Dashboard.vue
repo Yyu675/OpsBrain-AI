@@ -80,13 +80,13 @@ const loadDashboard = () => {
   void trendQuery.refetch()
 }
 
-/** 工单趋势：柱（新建）+ 折线（验证通过） */
+/** 工单趋势：柱（新建）+ 折线（验证通过）。色值传 --chart-* 令牌名，主题四轴自动换色（批92） */
 const ticketTrendSeries = computed<TrendSeries[]>(() => {
   const t = trend.value
   if (!t) return []
   return [
-    { name: '新建工单', data: t.created, type: 'bar', color: '#409eff', suffix: ' 单' },
-    { name: '验证通过', data: t.resolved, type: 'line', color: '#67c23a', suffix: ' 单', area: true }
+    { name: '新建工单', data: t.created, type: 'bar', color: '--chart-1', suffix: ' 单' },
+    { name: '验证通过', data: t.resolved, type: 'line', color: '--chart-2', suffix: ' 单', area: true }
   ]
 })
 
@@ -95,8 +95,8 @@ const costTrendSeries = computed<TrendSeries[]>(() => {
   const t = trend.value
   if (!t) return []
   return [
-    { name: '缓存命中率', data: t.cacheHitRate, type: 'line', color: '#e6a23c', suffix: '%', area: true },
-    { name: 'AI 成本', data: t.cost, type: 'line', color: '#f56c6c', suffix: ' 元', useRightAxis: true }
+    { name: '缓存命中率', data: t.cacheHitRate, type: 'line', color: '--chart-3', suffix: '%', area: true },
+    { name: 'AI 成本', data: t.cost, type: 'line', color: '--chart-4', suffix: ' 元', useRightAxis: true }
   ]
 })
 
@@ -502,7 +502,7 @@ const rootCauseTop = computed(() =>
   background: var(--surface-1);
   border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .panel-header h3 {
@@ -566,7 +566,7 @@ const rootCauseTop = computed(() =>
 
 .model-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--brand), #8b5cf6);
+  background: linear-gradient(90deg, var(--brand), var(--chart-5));
   transition: width 0.3s;
 }
 
@@ -582,7 +582,7 @@ const rootCauseTop = computed(() =>
   background: var(--surface-1);
   border-radius: 12px;
   padding: 16px 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
   text-align: center;
 }
 

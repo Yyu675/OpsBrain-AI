@@ -36,8 +36,8 @@ const trendSeries = computed<TrendSeries[]>(() => {
   const t = props.trend
   if (!t) return []
   return [
-    { name: '新建', data: t.created, type: 'line', color: '#409eff', suffix: ' 单', area: true },
-    { name: '验证通过', data: t.resolved, type: 'line', color: '#67c23a', suffix: ' 单' }
+    { name: '新建', data: t.created, type: 'line', color: '--chart-1', suffix: ' 单', area: true },
+    { name: '验证通过', data: t.resolved, type: 'line', color: '--chart-2', suffix: ' 单' }
   ]
 })
 
