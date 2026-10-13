@@ -222,14 +222,20 @@ export default tseslint.config(
     /**
      * Node 侧工具脚本（CJS）。
      *
-     * tools/ 下是构建/审计脚本（如 check_bundle_budget.cjs），跑在 Node 而非
-     * 浏览器：require/__dirname/console/process 都是合法全局，且 CJS 的
-     * require 是它该有的模块形式——不适用前端源码的 ESM 约束。
+     * tools/ 下是构建/审计脚本（如 check_bundle_budget.cjs），scripts/ 下是
+     * 取证/截图脚本（如 shot-ticket-detail.cjs），两者都跑在 Node 而非浏览器：
+     * require/__dirname/console/process 都是合法全局，且 CJS 的 require 是它
+     * 该有的模块形式——不适用前端源码的 ESM 约束。
+     *
+     * ⚠️ 为什么 globals 同时给 node 与 browser：截图脚本会把回调交给
+     * `page.evaluate(() => document.body.innerText)`，该回调在**浏览器上下文**
+     * 里执行，`document` 合法。只给 node globals 会让它报 no-undef，
+     * 于是有人去写行内 global 注释或直接关规则——那才是真正的漏。
      */
-    files: ['tools/**/*.cjs'],
+    files: ['tools/**/*.cjs', 'scripts/**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
-      globals: { ...globals.node },
+      globals: { ...globals.node, ...globals.browser },
     },
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
