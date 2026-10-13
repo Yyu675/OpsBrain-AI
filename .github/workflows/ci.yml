@@ -511,6 +511,21 @@ jobs:
           done
           echo "::error::后端 120s 未起来"; tail -80 /tmp/e2e-backend.log; exit 1
 
+      - name: 灌入 e2e 种子数据（故障FAQ库 + faq-test-doc + 常驻工单）
+        # 存量 6 例红的根因修复（取证见 721fff5 的 `opsbrain-e2e-run-diag` 帖）：
+        # 本作业此前只 psql 灌 V1 基线（V2..V15 由后端启动时 Flyway 补），
+        # **库里没有任何业务数据**，而 tickets.spec / knowledge-v2.spec 的用例
+        # 建立在「dev 库常驻 1 张工单 / 人工联调造出的 FAQ 库」之上——
+        # 在全新库上必红。数据制备交由版本化的 tools/seed/e2e-seed.sql（幂等），
+        # 放后端起来之后（迁移已就位）；脚本自带回读校验，缺数据即非零退出，
+        # 避免 6 例各红一次再靠人猜「是数据没有还是功能坏了」。
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          set -o pipefail
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db \
+               -v ON_ERROR_STOP=1 -f tools/seed/e2e-seed.sql 2>&1 | tee /tmp/e2e-seed.log
+
       - name: 安装 Node 22
         uses: actions/setup-node@v4
         with:
@@ -558,14 +573,21 @@ jobs:
         # artifact（playwright-report）落在 azure blob，沙箱 egress 不通该域，
         # 下载是 EOF——回帖带 e2e 输出尾段 + 后端启动日志尾段，
         # 让「是应用没起来还是断言不过」在沙箱侧可直接判读。
-        if: failure() && steps.e2erun.outcome == 'failure'
+        # 条件放宽为「本作业任一步失败」：种子步/前端依赖步红时同样要留痕
+        # （此前只认 e2erun，种子步红会静默——没有日志通道就又要靠猜）。
+        if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
             echo "<!-- opsbrain-e2e-run-diag -->"
-            echo "### 🔴 端到端腿「跑 e2e」步骤取证（批 64 tee 道）"
+            echo "### 🔴 端到端腿失败取证（批 64 tee 道）"
             echo "SHA: $GITHUB_SHA"
+            echo
+            echo "**种子数据日志尾段**："
+            echo '```'
+            tail -20 /tmp/e2e-seed.log 2>/dev/null || echo "(无种子日志——本步未跑到或种子步在 tee 前即炸)"
+            echo '```'
             echo
             echo "**playwright 输出尾段**："
             echo '```'
