@@ -516,6 +516,40 @@ jobs:
           } > /tmp/e2e-package-diag.md
           gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/e2e-package-diag.md --silent || true
 
+      - name: 启动 Prometheus 桩（监控中心的 e2e 数据源）
+        # 监控中心是「代理查询」设计：数据不在 OpsBrain 里，页面数据全靠后端转调
+        # Prometheus；数据源不在时后端按契约返回 50020 / HTTP 503，浏览器控制台于是
+        # 出现 "Failed to load resource ... 503"，而 navigation.spec 的
+        # 「访问 /monitoring 渲染正常且无控制台错误」把控制台错误算作失败
+        # （2026-10-14 实测 38432764009 / 38432769846 同一条用例同红）。
+        # 这不是产品缺陷，是本作业只起了 pg/redis、缺监控数据源——用桩补齐环境，
+        # 断言不放宽。桩的来由与契约见 tools/seed/prom-stub.py。
+        run: |
+          nohup python3 tools/seed/prom-stub.py --port 29090 > /tmp/prom-stub.log 2>&1 &
+          for i in $(seq 1 10); do
+            sleep 1
+            if curl -sf http://localhost:29090/-/healthy > /dev/null; then break; fi
+          done
+          # 可证伪的健康检查：/healthy 要通，且查询端点必须回「合法空结果」而不是 404/500
+          python3 - <<'PY'
+          import json, sys, urllib.request
+
+          def get(path):
+              with urllib.request.urlopen('http://localhost:29090' + path, timeout=5) as r:
+                  return r.status, json.loads(r.read().decode())
+
+          try:
+              code, body = get('/api/v1/query?query=up')
+          except Exception as e:  # 桩没起来 → 直接失败，不做「跳过这段」的软化
+              print('::error::Prometheus 桩不可用：%s' % e)
+              sys.exit(1)
+          empty = body.get('data', {}).get('result')
+          if code != 200 or body.get('status') != 'success' or empty != []:
+              print('::error::Prometheus 桩响应不符契约：%s %s' % (code, body))
+              sys.exit(1)
+          print('Prometheus 桩就绪：/healthy 200；/api/v1/query -> success + 空结果')
+          PY
+
       - name: 启动后端（dev + MOCK AI，不烧额度不依赖外网）
         env:
           AI_MODE: MOCK
@@ -619,6 +653,21 @@ jobs:
             echo "**后端启动/运行日志尾段**："
             echo '```'
             tail -40 /tmp/e2e-backend.log 2>/dev/null || echo "(后端日志缺失)"
+            echo '```'
+            echo
+            echo "**后端日志里的数据源/错误线索（503 / 50020 / Prometheus）**："
+            echo '```'
+            (grep -aE "503|50020|MetricsUnavailable|Prometheus" /tmp/e2e-backend.log 2>/dev/null | tail -20) || true
+            echo '```'
+            echo
+            echo "**前端 dev server 日志尾段（代理失败、依赖优化器 503 都在这里）**："
+            echo '```'
+            tail -20 /tmp/e2e-vite.log 2>/dev/null || echo "(vite 日志缺失)"
+            echo '```'
+            echo
+            echo "**Prometheus 桩日志尾段**："
+            echo '```'
+            tail -10 /tmp/prom-stub.log 2>/dev/null || echo "(桩日志缺失)"
             echo '```'
             echo
             echo "**失败用例名（report 摘要）**："

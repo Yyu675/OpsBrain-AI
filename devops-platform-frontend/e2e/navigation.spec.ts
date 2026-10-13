@@ -28,6 +28,16 @@ test.describe('全站导航冒烟', () => {
       })
       page.on('pageerror', (e) => errors.push(String(e)))
 
+      // 失败响应单独记账：控制台那行「Failed to load resource ... 503」不带 URL，
+      // 只看它判不出「产品接口坏了」还是「e2e 环境缺件」。2026-10-14 的 /monitoring
+      // 红例正是这种情况——三行同文案的 console error 只留一条，靠它无法定位；
+      // 带上状态码与 URL 后，是缺 Prometheus 还是接口真挂了一眼可辨
+      // （环境侧的补齐见 tools/seed/prom-stub.py）。仅作诊断，不参与断言。
+      const badResponses: string[] = []
+      page.on('response', (r) => {
+        if (r.status() >= 400) badResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`)
+      })
+
       await page.goto(p.path)
 
       if (p.title) {
@@ -38,7 +48,10 @@ test.describe('全站导航冒烟', () => {
         await expect(page.locator('#app')).not.toBeEmpty()
       }
 
-      expect(errors, `控制台错误:\n${errors.join('\n')}`).toHaveLength(0)
+      expect(
+        errors,
+        `控制台错误:\n${errors.join('\n')}\n失败响应:\n${badResponses.join('\n') || '（无）'}`
+      ).toHaveLength(0)
     })
   }
 
