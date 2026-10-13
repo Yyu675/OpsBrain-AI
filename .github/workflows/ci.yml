@@ -195,6 +195,11 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
+          # 绿色也留一条汇总注解：沙箱读不到作业日志（azure blob 被墙），
+          # 「本腿真的跑了 N 个测试」只有注解这一条可读证据道——
+          # 这正是本批「假绿」教训的延伸：门禁不但要真红，绿也要可证。
+          grep -aE 'Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$' /tmp/mvn-verify.log \
+            | tail -1 | sed 's/^/::notice::后端测试汇总 /' || true
 
       - name: 失败诊断回帖（沙箱日志取证道 · 批 45 红案催生）
         # 背景：托管 runner 日志归档在 azure blob，开发沙箱 egress 不通该域，
@@ -560,6 +565,10 @@ jobs:
         run: |
           set -o pipefail
           npx playwright test 2>&1 | tee /tmp/e2e-run.log
+          # 同上：绿案也要能在沙箱侧读到「跑了多少、过多少」——
+          # e2e 的用例数正是本批 6 例红转绿的证据位。
+          grep -aE '[0-9]+ (passed|failed|flaky|skipped)' /tmp/e2e-run.log \
+            | tail -2 | sed 's/^/::notice::e2e 汇总 /' || true
 
       - name: 失败时上传 Playwright 报告取证
         if: failure()
