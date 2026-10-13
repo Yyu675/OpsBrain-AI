@@ -8,7 +8,10 @@
  *  - 上传 Dialog 打开后有拖拽区与知识库选择器
  *  - 管理 Dialog 打开后列出库及其切片参数
  *
- * 前置：后端 8088 已跑 V2（存在 id=1 默认库与 id=2 faq 库），
+ * 前置：后端已完成 Flyway 迁移（V2 种下「默认知识库」），
+ * 第二个库「故障FAQ库」（1200/300/50）与其文档 faq-test-doc 由
+ * tools/seed/e2e-seed.sql 灌入（CI 在后端起来后、跑用例前执行该脚本）——
+ * 此前这两个对象依赖人工联调残留，全新库上本文件必红三例。
  * 前端 5173 dev server 已启动。
  *
  * 注意断言作用域：侧栏与 Dialog 会出现同名文本（如库名），
@@ -32,7 +35,7 @@ test.describe('知识库 V2：多知识库 + 上传', () => {
     await page.getByRole('button', { name: /故障FAQ库/ }).click()
     await page.waitForTimeout(500) // 等列表刷新 + URL 防抖（200ms）
     expect(page.url()).toContain('kb=')
-    // 库内应看到真机联调上传的文档
+    // 库内应看到种子文档（tools/seed/e2e-seed.sql 灌入）
     await expect(page.getByText('faq-test-doc').first()).toBeVisible({ timeout: 10_000 })
     // 筛选后不该再报「发生意外错误」（此前 kbId 筛选 500 的回归断言）
     await expect(page.getByText('服务内部异常')).toHaveCount(0)

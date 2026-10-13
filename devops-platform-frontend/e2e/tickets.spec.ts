@@ -11,6 +11,12 @@ import { test, expect, request } from '@playwright/test'
  *
  * 数据纪律：测试工单标题带 E2E_PW_ 前缀；afterEach 经后端 API 按前缀清理，
  * 不污染 dev 库（对齐 e2e-business-flow.sh 的自清理原则）。
+ *
+ * 常驻基线数据（列表类用例需要库内「本来就有 1 张工单」）不在本文件里造：
+ * 由 tools/seed/e2e-seed.sql 灌入，CI 在跑用例前执行。该种子工单刻意**不**带
+ * E2E_PW_ 前缀——否则会被本文件的 afterEach 按前缀删掉，自断数据源。
+ * 本地复现：psql -h localhost -p 25432 -U devops -d devops_knowledge_db \
+ *          -v ON_ERROR_STOP=1 -f tools/seed/e2e-seed.sql
  * 依赖 storageState（setup 项目产出的 admin 登录态）。
  */
 
@@ -52,7 +58,7 @@ test.describe('工单列表与创建', () => {
     // 4 张固定 KPI + 视数据而定的「待分配」卡（有待分配工单时才出现）——
     // 断言下限而非精确数，避免依赖 dev 库具体数据
     await expect.poll(() => page.locator('.kpi-card').count()).toBeGreaterThanOrEqual(4)
-    // 表格有数据行（dev 库常驻 ≥1 张工单）
+    // 表格有数据行——基线数据由 tools/seed/e2e-seed.sql 灌入（CI 跑用例前执行）
     await expect(page.locator('.el-table__row').first()).toBeVisible({ timeout: 15_000 })
   })
 
