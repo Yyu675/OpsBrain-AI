@@ -40,7 +40,7 @@ interface AlertEvent {
  * 详情页的状态翻转都靠它，不为每个消费方各开一条连接。
  * 通知逻辑（下方 onmessage）只是订阅者之一。
  */
-export type AlertEventListener = (e: AlertEvent) => void
+type AlertEventListener = (e: AlertEvent) => void
 const alertEventListeners = new Set<AlertEventListener>()
 
 /** 订阅告警实时事件。返回退订函数（组件卸载时必须退订，否则闭包泄漏） */
