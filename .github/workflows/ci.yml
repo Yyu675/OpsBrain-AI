@@ -189,8 +189,13 @@ jobs:
         # gh api/gh run view --log 都取不到失败日志（批 45 红案两度空跑）。
         # PR 评论走 api.github.com 是沙箱唯一稳定通道——失败时把编译错误
         # 指纹 + 红测报告摘要 + maven 日志尾段回帖本 PR，取证不求日志。
-        # 只有失败且 PR 触发时执行，绿案零开销零噪声；本步常驻不拆。
-        if: failure() && github.event_name == 'pull_request'
+        # 只有失败时执行，绿案零开销零噪声；本步常驻不拆。
+        #
+        # 2026-10-13：原条件 `failure() && github.event_name == 'pull_request'`
+        # 在本仓实测拿不到任何东西——本分支的 Actions 只产生 push 事件运行
+        # （PR #3 无 pull_request 运行），于是后端腿红了也无人能读。
+        # 现改为：push/dispatch 走 commit comment，PR 事件额外再回帖 PR（保持原通道）。
+        if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -204,12 +209,14 @@ jobs:
             (grep -E "\[ERROR\]|cannot find symbol|COMPILATION ERROR" /tmp/mvn-verify.log | head -25) || echo "(无编译错误——为测试阶段红)"
             echo '```'
             echo
-            echo "**失败测试摘要**："
+            echo "**失败用例清单**（surefire 的 `<<< FAILURE!` 行就是用例全名）："
             echo '```'
-            grep -rl -E "FAILURE!|Failures: [1-9]|Errors: [1-9]" target/surefire-reports/*.txt 2>/dev/null | head -4 | while read -r f; do
-              echo "== $f =="
-              grep -E -B2 -A10 "FAILURE!|Failures: [1-9]|Errors: [1-9]" "$f" | head -22
-            done
+            (grep -h -E "<<< (FAILURE|ERROR)!" target/surefire-reports/*.txt 2>/dev/null | head -20) || true
+            echo '```'
+            echo
+            echo "**失败摘要**："
+            echo '```'
+            (grep -h -E "^Tests run.*(Failures: [1-9]|Errors: [1-9])" target/surefire-reports/*.txt 2>/dev/null | head -20) || echo "(无 SUMMARY 行)"
             echo '```'
             echo
             echo "**mvn 日志尾段**："
@@ -217,7 +224,13 @@ jobs:
             tail -50 /tmp/mvn-verify.log
             echo '```'
           } > /tmp/red-diag.md
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md
+          # commit comment：push / workflow_dispatch 运行时唯一可读通道（沙箱读不了 blob 日志）
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
+            -F body=@/tmp/red-diag.md --silent || true
+          # PR 评论：pull_request 事件时保留原通道（本仓暂无此类运行，条件不满足即跳过）
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md || true
+          fi
 
       - name: 评测指标基线对比（S4-3 CI 回归门禁）
         # 接线批次 18（报告 121）。契约层指标由 AgentEvaluationTest 常驻落盘
