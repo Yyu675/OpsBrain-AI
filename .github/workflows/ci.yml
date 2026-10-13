@@ -181,8 +181,20 @@ jobs:
           # 而不是等到运行时用户点检索才发现
           SCHEMA_FAIL_FAST: 'true'
         # tee 留档：下一「失败诊断回帖」步从 /tmp/mvn-verify.log 取材。
-        # GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉。
-        run: ./mvnw -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
+        #
+        # ⚠️ 必须显式 `set -o pipefail`（2026-10-13 实测修正）：
+        # 此前这里写着「GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉」，
+        # 那是错的。GitHub Actions 未显式声明 shell 时用 `bash -e {0}`：
+        # 有 -e，但**没有 -o pipefail**，管道退出码 = 最后一个命令，而 tee 恒返回 0。
+        # 后果：./mvnw verify 失败（甚至 12 个红测）时 step 仍被判定 success，
+        # 整个后端腿谎报绿——两轮注入-还原反例（注入缺陷、无条件 fail() 探针）
+        # 都没能让本腿变红，根因即此；那一轮 CI 日志里已白纸黑字
+        # 写着 `Tests run: 1924, Failures: 12, Errors: 1`，门禁却全绿。
+        # 依据：GitHub Docs「Exit codes」——`set -eo pipefail` 仅在显式
+        # `shell: bash` 时启用，默认不启用。
+        run: |
+          set -o pipefail
+          ./mvnw -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
 
       - name: OpenAPI 快照新鲜度（门禁 · 批88）
         # target/openapi.json 由上一步 mvn verify 内的 OpenApiSchemaIntegrationTest
@@ -289,7 +301,10 @@ jobs:
         # 前置（4-3.2 首跑即基线）：tools/audit/eval_baseline.json 须由
         # EVAL_RAG 真实窗口首跑生成并人工 --update 提交后，本门禁才真正亮剑；
         # 无基线时对比按首跑语义 rc=0 放行并打印引导，不会误红门禁。
+        # ⚠️ 同「编译与测试」：默认 shell 无 pipefail，tee 会吞掉对比脚本
+        # 的非零退出码，让回归门禁形同虚设——显式开启（2026-10-13 修正）。
         run: |
+          set -o pipefail
           node tools/audit/eval_compare.js \
             --current target/eval-metrics.json \
             --baseline tools/audit/eval_baseline.json | tee eval-compare.txt
@@ -512,8 +527,11 @@ jobs:
       - name: 后端打包（跳过测试——测试在 backend 腿已跑）
         id: e2epackage
         # tee 留档：失败时由下一「打包失败取证」步回帖 commit comment 取材。
-        # GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉。
-        run: ./mvnw -B -ntp -DskipTests package 2>&1 | tee /tmp/e2e-package.log
+        # ⚠️ 同后端腿：默认 shell 是 `bash -e {0}`，不含 pipefail，
+        # tee 会把 mvn 的非零退出码吞掉——必须显式开启（2026-10-13 修正）。
+        run: |
+          set -o pipefail
+          ./mvnw -B -ntp -DskipTests package 2>&1 | tee /tmp/e2e-package.log
 
       - name: 打包失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道）
         # 与「Flyway 步失败时回 commit 取证帖」同款：托管 runner 的作业日志归档在
@@ -575,9 +593,12 @@ jobs:
       - name: 跑 e2e（登录 + 导航 + 重定向 + 搜索 + 工单流）
         id: e2erun
         working-directory: devops-platform-frontend
-        # tee 留档：失败时由下一「e2e 失败取证」步回帖 commit comment 取材
-        # （GitHub 默认 bash 带 pipefail，playwright 退出码不被 tee 吞掉）
-        run: npx playwright test 2>&1 | tee /tmp/e2e-run.log
+        # tee 留档：失败时由下一「e2e 失败取证」步回帖 commit comment 取材。
+        # ⚠️ 同后端腿：默认 shell 是 `bash -e {0}`，不含 pipefail，
+        # tee 会把 playwright 的非零退出码吞掉——必须显式开启（2026-10-13 修正）。
+        run: |
+          set -o pipefail
+          npx playwright test 2>&1 | tee /tmp/e2e-run.log
 
       - name: 失败时上传 Playwright 报告取证
         if: failure()
