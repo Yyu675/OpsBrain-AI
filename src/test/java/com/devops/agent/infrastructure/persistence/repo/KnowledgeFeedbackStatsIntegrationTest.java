@@ -10,7 +10,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -53,12 +57,28 @@ class KnowledgeFeedbackStatsIntegrationTest extends AbstractIntegrationTest {
     }
 
     private long seedDoc(String title) {
+        String content = "内容-" + title;
         Long docId = jdbcTemplate.queryForObject("""
-                INSERT INTO sys_knowledge_doc (title, content, status, index_status, source_ticket_id, source_type)
-                VALUES (?, ?, 'PUBLISHED', 'INDEXED', ?, 'TICKET') RETURNING id
-                """, Long.class, title, "内容-" + title, TICKET);
+                INSERT INTO sys_knowledge_doc
+                       (title, content, status, index_status, content_hash, source_ticket_id, source_type)
+                VALUES (?, ?, 'PUBLISHED', 'INDEXED', ?, ?, 'TICKET') RETURNING id
+                """, Long.class, title, content, sha256Hex(content), TICKET);
         seededDocIds.add(docId);
         return docId;
+    }
+
+    /**
+     * V1 基线里 {@code sys_knowledge_doc.content_hash} 是 {@code NOT NULL}（SHA-256(content)），
+     * 生产侧由 {@code KnowledgeDocService} 计算后落库。本用例此前直接 INSERT 漏了这一列，
+     * 撞上非空约束（2026-10-13 门禁修复后暴露的存量红测）。
+     */
+    private static String sha256Hex(String text) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
+        }
     }
 
     private long seedChunk(long docId) {
