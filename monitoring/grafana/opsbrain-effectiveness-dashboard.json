@@ -121,7 +121,7 @@
     },
     {
       "id": 6,
-      "title": "诊断/工具时延(5-1.4 面,真窗后自然填充)",
+      "title": "诊断时延 p95 / 诊断队列深度（opsbrain_*）",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -131,16 +131,17 @@
       },
       "targets": [
         {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, rate(devops_diagnosis_seconds_bucket[5m]))",
-          "legendFormat": "诊断 p95"
+          "expr": "histogram_quantile(0.95, sum by (le, result) (rate(opsbrain_diagnosis_seconds_bucket[5m])))",
+          "legendFormat": "诊断 p95 · {{result}}",
+          "refId": "A"
         },
         {
-          "refId": "B",
-          "expr": "histogram_quantile(0.95, rate(devops_tool_seconds_bucket[5m]))",
-          "legendFormat": "工具 p95 {{tool}}"
+          "expr": "opsbrain_diagnosis_queue_depth",
+          "legendFormat": "诊断队列深度",
+          "refId": "B"
         }
-      ]
+      ],
+      "description": "2026-10-15 修正：本面板原查 devops_diagnosis_seconds / devops_tool_seconds —— 这两个指标名**全仓不存在**（代码里是 opsbrain_diagnosis_seconds，工具耗时指标从未实现），面板永远空白。死面板比没面板更坏：它让人以为诊断时延已被监控覆盖。现改查真指标，并把此前无人消费的opsbrain_diagnosis_queue_depth 接上（积压可见=诊断被堵住时能看出来）。"
     },
     {
       "title": "告警链 RED 自监控（接收/去重/建单/诊断/受理/送达）",

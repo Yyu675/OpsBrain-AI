@@ -45,9 +45,45 @@ scrape_configs:
   # 没有名为 app 的容器——targets 写 app:8088 时该 job 恒 down，
   # OpsBrainDown 告警因此反复误报（sys_alert 里 7 条全是它）。
   # 与 alertmanager webhook 同一模式：host.docker.internal + 容器侧 extra_hosts。
+  # ⚠️ 抓取凭据（2026-10-15 修正）：应用把 /actuator/**（health 除外）纳入登录校验，
+  # 而 Prometheus 不会登录——**没有下面这段 authorization，本 job 恒 401**：
+  #   up{job="opsbrain"} 恒 0 → OpsBrainDown 常亮误报；其余 6 条应用规则恒无数据（永不触发）。
+  # 这不是"少几个数字"，是监控自己失真。令牌文件由 compose 的 scrape-token-init 生成
+  # （见 docker-compose.yml），应用侧读同一个文件（SCRAPE_TOKEN_FILE），轮换只改文件。
+  # 生成/轮换：bash scripts/monitoring-init-token.sh
   - job_name: opsbrain
     metrics_path: /ai/actuator/prometheus
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/scrape_token
     static_configs:
       - targets: ['host.docker.internal:8088']
         labels:
           service: 'opsbrain-ai'
+
+  # ==================== 中间件 exporter（2026-10-15 补接线）====================
+  # 此前 alert.rules.yml 的 opsbrain-dependency-alerts 三条规则（pg_up / redis_up /
+  # minio_*）**没有任何数据源**：比较运算对空序列恒不成立，所以不误报，但也永远不响——
+  # PG 真宕机时只能靠应用报错倒查（"用户先痛，监控后知"）。这三个 job 就是它们的供给。
+  #
+  # 指标来源：postgres_exporter 提供 pg_up（探活）与 pg_stat_*；redis_exporter 提供 redis_up；
+  # MinIO 自带 /minio/v2/metrics/cluster（compose 里已置 MINIO_PROMETHEUS_AUTH_TYPE=public）。
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'opsbrain-ai'
+
+  - job_name: redis
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'opsbrain-ai'
+
+  - job_name: minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ['minio:9000']
+        labels:
+          service: 'opsbrain-ai'
+          module: 'STORAGE'
