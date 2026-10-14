@@ -83,6 +83,32 @@ Agent 版本升级失败。
 
 
 # ------------------------------------------------------------------ 基础设施
+def _tls_ctx():
+    """容忍自签证书的上下文（演练常打 https 网关；证书问题不该伪装成业务失败）。"""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def http_raw(url: str, headers: dict | None = None, limit: int = 4096) -> tuple[int, str]:
+    """原始 GET：带自定义头取前 limit 字节。返回 (状态码, 文本)；连接层异常返回 (-1, 原因)。
+
+    与 http() 分开的原因：http() 是"平台 API 约定"（satoken 头 + JSON 解析），
+    而抓取面/探针面要看的是**原始响应**（状态码本身即判据，body 只取前几 KB）。
+    """
+    req = urllib.request.Request(url)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=_tls_ctx()) as resp:
+            return resp.status, resp.read(limit).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read(limit).decode("utf-8", "replace")
+    except Exception as e:      # 不静默：网络层问题要看得见
+        return -1, f"{type(e).__name__}: {e}"
+
+
 def http(method: str, url: str, token: str | None = None, body=None) -> tuple[int, dict | str]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -128,6 +154,41 @@ class Drill:
     def skip(self, phase: str, key: str, reason: str) -> None:
         print(f"  {CYAN}∅{NC} [{phase}] {key} — SKIPPED（{reason}）")
         self.hops.append({"phase": phase, "key": key, "verdict": "SKIPPED", "detail": reason})
+
+    def check_scrape_face(self, base: str, scrape_token_file: str | None) -> None:
+        """指标抓取面校验（2026-10-15 接入；见 run() 里 Z 组注释）。
+
+        两个断言都是一句话能说清、但坏了都**不报错**的事实：
+          1. 不带凭据 → 必须 401（200 说明指标面裸奔：内部拓扑、依赖可达性匿名可读）；
+          2. 带凭据 → 必须 200 且真含业务指标（401 说明凭据配错，结果与"没接监控"一样：
+             up{job=opsbrain} 恒 0 → 宕机规则常亮误报、其余应用规则恒哑）。
+        """
+        scrape_path = "/actuator/prometheus"
+        scrape_token = ""
+        if not scrape_token_file:
+            self.skip("Z-监控面", "抓取面凭据校验",
+                      "未提供 --scrape-token-file（无法区分 401 是缺凭据还是配错）")
+            return
+        try:
+            with open(scrape_token_file, encoding="utf-8") as f:
+                scrape_token = f.read().strip()
+        except Exception as e:   # 不静默：读不到就说清楚，不假装通过
+            self.hop("Z-监控面", "读取令牌文件", False, f"{type(e).__name__}: {e}")
+
+        if not scrape_token:
+            return
+
+        code_anon, _ = http_raw(base + scrape_path)
+        self.hop("Z-监控面", "无凭据抓取被拒（401）", code_anon == 401,
+                 f"HTTP {code_anon}｜200 = 监控面裸奔；非 401 说明鉴权口径被改过")
+
+        code_tok, body = http_raw(base + scrape_path,
+                                  {"Authorization": f"Bearer {scrape_token}"})
+        self.hop("Z-监控面", "带凭据抓取成功（200 + 业务指标）",
+                 code_tok == 200 and "opsbrain_" in body,
+                 f"HTTP {code_tok}｜含 opsbrain_={'opsbrain_' in body}｜"
+                 + ("这一点不通 → Prometheus 的 up{job=opsbrain} 恒 0 → 宕机规则常亮误报"
+                    if code_tok != 200 else "业务指标可抓"))
 
     def api(self, method: str, path: str, body=None):
         return http(method, self.base + path, self.token, body)
@@ -479,6 +540,13 @@ def run(args) -> int:
               bool(reason and "不会再自动建单" in reason),
               f"unticketedReason={reason!r}")
 
+    # ============================== 监控面：指标抓取面（2026-10-15 接入）
+    # 为什么闭环演练要管监控面：这条链的失败是「监控自己失真」——Prometheus 抓不到应用指标时，
+    # up{job="opsbrain"} 恒 0 → 宕机规则常亮误报、其余规则恒哑，于是「闭环有没有问题」这个结论
+    # 本身就失去依据（拿不到数据 ≠ 没问题）。所以把抓取面纳入演练，作为元监控的哨兵。
+    print(f"\n{CYAN}▸ 收尾：监控面（指标抓取面的凭据口径）{NC}")
+    d.check_scrape_face(base, args.scrape_token_file)
+
     # ============================== 通知链自监控
     print(f"\n{CYAN}▸ 收尾：通知链自监控（送达面）{NC}")
     code, health = d.data("GET", "/api/v1/alerts/notify-health")
@@ -512,6 +580,10 @@ def main() -> int:
     ap.add_argument("--pgurl", default=None)
     ap.add_argument("--diag-timeout", type=int, default=90)
     ap.add_argument("--require-rag-hit", action="store_true")
+    ap.add_argument("--scrape-token-file", default=None,
+                    help="指标抓取面令牌文件（与后端 SCRAPE_TOKEN_FILE / Prometheus credentials_file 同一份）。"
+                         "给了就校验抓取面：不带令牌必须 401、带令牌必须 200 且含 opsbrain_*；"
+                         "不给则该项 SKIPPED（不是静默跳过）。")
     ap.add_argument("--json", default=None)
     ap.add_argument("--keep", action="store_true", help="保留演练数据（默认也不删，仅占位）")
     return run(ap.parse_args())

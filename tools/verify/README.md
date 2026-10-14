@@ -18,6 +18,7 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | `closed_loop_drill.py` | 六条核心链路的端到端契约 | 见下节「业务闭环实弹」 |
 | `rbac_walkthrough.py` | `OpsWriteGuard` + 类级 RBAC 门控 | 见下节「权限矩阵实弹」 |
 | `monitoring_audit.py` | 指标名 / 规则 / 看板 / 抓取面四方对账 | 见下节「监控面静态对账」 |
+| `selftest_scrape_face.py`（本地件，见 `.local-verify/scripts/`） | 闭环演练的 Z-监控面 判据自测 | 用桩服务模拟「正确/裸奔/凭据错/文件缺」四种后端，确认这个哨兵本身不会永远 PASS |
 
 ## 业务闭环实弹（`closed_loop_drill.py`）
 
@@ -31,9 +32,12 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 
 ```bash
 python3 tools/verify/closed_loop_drill.py --base http://localhost:8088/ai \
-    --account admin:admin123 [--psql <psql> --pgurl <dsn>] [--require-rag-hit] [--json /tmp/cl.json]
+    --account admin:admin123 [--psql <psql> --pgurl <dsn>] [--require-rag-hit] \
+    [--scrape-token-file monitoring/secrets/scrape_token] [--json /tmp/cl.json]
 # 退出码：0=硬闸全过；1=有硬闸失败（逐跳点名）；2=环境/前置不满足
 ```
+
+`--scrape-token-file` 给的是**监控面**校验（Z-监控面 组）：无凭据抓取必须 401、带凭据必须 200 且含 `opsbrain_*`——抓取面一旦不通，`up{job=opsbrain}` 恒 0 会让宕机规则常亮误报，"闭环没问题"这个结论本身就失去依据。不给该参数时该项记 **SKIPPED**（不是静默跳过）。
 
 口径提醒：`AI_MODE=MOCK` 下知识检索命中是**桩向量**决定的（无语义），所以「RAG 命中」默认是
 软闸；REAL 模式再加 `--require-rag-hit` 转硬闸。方案与实跑记录见
@@ -55,6 +59,8 @@ python3 tools/verify/monitoring_audit.py [--probe http://localhost:8088/ai/actua
 · D CI 是否上闸 · E 实测抓取面状态码 · F 无人消费的指标（提示）。
 
 **上闸顺序**：先修硬缺口，再接进 CI——红门禁会被无视，比没有门禁更坏。
+
+**CI 侧的镜像**：`MonitoringConfigContractTest`（后端测试腿，随 `编译与测试` 一起跑）用同一套判据做静态对账；它跑在既有测试腿里，所以**不需要改 workflow**。两边读同一份前缀表与提取规则，改判据必须同步修改（否则就是「核对另一份规则」）。
 
 ## 权限矩阵实弹（`rbac_walkthrough.py`）
 

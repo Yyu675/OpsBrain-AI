@@ -225,10 +225,34 @@ EXPORTER_HINTS = {
 # 主流程
 # --------------------------------------------------------------------------- #
 
+def probe_token(explicit: str | None) -> str:
+    """取抓取令牌用于 E 段实测：优先显式路径，其次默认生成的 secrets 文件。
+
+    读不到就返回空串——调用方据此**跳过并说明**，而不是假装通过（静默跳过是本项目
+    反复吃过亏的形态：门禁不报错，也永远不生效）。
+    """
+    candidates = [explicit] if explicit else []
+    candidates.append(str(ROOT / "monitoring/secrets/scrape_token"))
+    for cand in candidates:
+        if not cand:
+            continue
+        try:
+            with open(cand, encoding="utf-8") as fh:
+                tok = fh.read().strip()
+            if tok:
+                return tok
+        except OSError:
+            continue
+    return ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="监控面静态对账")
     parser.add_argument("--json", help="把结果写成 JSON")
     parser.add_argument("--quiet", action="store_true", help="只打印结论行")
+    parser.add_argument("--probe-token-file", metavar="PATH",
+                        help="抓取令牌文件（默认 monitoring/secrets/scrape_token）；"
+                             "--probe 时用它做「带凭据」实测——这一发才是判定 Prometheus 能否真读到指标的判据")
     parser.add_argument("--probe", metavar="URL",
                         help="额外真打一次抓取面（如 http://localhost:8088/ai/actuator/prometheus），"
                              "把「需要凭据」从配置推理变成实测状态码；4xx/5xx 打印并计入证据")
@@ -364,17 +388,33 @@ def main() -> int:
 
     # ---------------- D. CI 是否上闸 ----------------
     say("── D. CI 门禁 ────────────────────────────────────────────────")
+    # 2026-10-15 起本判据改了（原来只看 workflow 里有没有调本脚本）：
+    # 本仓 push workflow 的通道历史上被 token 权限拦过，硬塞一个 workflow 改动的收益
+    # 小于一个「本来就会跑」的位置——后端测试腿（./mvnw verify）里的 Java 契约测试
+    # MonitoringConfigContractTest 用**同一套判据**做门禁。所以现在认三种上闸形态：
+    #   ① workflow 直接调本脚本（最强：连实测抓取面一起跑）
+    #   ② 后端测试腿里有 Java 契约测试（次强：静态对账，随编译与测试一起红）
+    #   ③ 两者都无 → 提示（人工跑的东西会漂）
     ci_hits = []
     for wf in sorted((ROOT / ".github/workflows").glob("*.yml")):
         if "monitoring_audit" in read(wf):
             ci_hits.append(wf.name)
+    contract = ROOT / "src/test/java/com/devops/agent/contract/MonitoringConfigContractTest.java"
+    # 契约测试只要在 src/test/java 下就会被 surefire 按 *Test 规则拾起；再确认 CI 真跑测试腿
+    ci_yml = read(ROOT / ".github/workflows/ci.yml")
+    contract_ok = contract.exists() and ("verify" in ci_yml or "test" in ci_yml)
     if ci_hits:
-        say(f"    ✅ 已在 CI 中调用：{', '.join(ci_hits)}")
+        say(f"    ✅ 已在 CI 中调用本脚本：{', '.join(ci_hits)}")
+    elif contract_ok:
+        say(f"    ✅ CI 门禁在后端测试腿：{contract.relative_to(ROOT)}（随 ./mvnw verify 一起红）")
+        say("       口径与本脚本同源（前缀表 + 提取规则），改判据要两边一起改——"
+            "否则就是「核对另一份规则」，比没有门禁更坏")
     else:
         findings.append({
             "level": "提示",
             "kind": "CI 未上闸",
-            "detail": "本脚本尚未接入 CI——没有门禁的检查会随人员变动漂掉（改指标名忘改看板即静默失效）",
+            "detail": "既没有 workflow 调本脚本，也没有在测试腿里的契约测试——"
+                      "没有门禁的检查会随人员变动漂掉（改指标名忘改看板即静默失效）",
         })
         say("    ⚠️ 未接入 CI（只能人工跑）")
     say("")
@@ -395,15 +435,46 @@ def main() -> int:
             print(f"    ⚠️ 连不上 {args.probe}：{exc}")
             body = b""
         if status is not None:
-            verdict = "✅ 无需凭据即可抓取" if status == 200 else \
-                      "❌ 无凭据抓取被拒（Prometheus 也会被同样拒绝）"
+            # 2026-10-15 后：应用侧已有抓取令牌，所以「裸抓 401」是**预期行为**，
+            # 只在这一层说「还要再看带凭据的那一发」；真正判红的是 E 段下面的带凭据实测。
+            if status == 200:
+                verdict = "✅ 无需凭据即可抓取"
+            elif status == 401:
+                verdict = "✅ 无凭据被拒（预期：凭据由文件提供）— 关键看下面「带凭据」那一发"
+            else:
+                verdict = f"❌ 非预期状态码（既非 200 也非 401）"
             print(f"    裸抓 {args.probe} → HTTP {status} {verdict}")
-            if status != 200:
+            if status not in (200, 401):
                 findings.append({
-                    "level": "硬缺口" if guarded else "提示",
-                    "kind": "抓取面实测非 200",
-                    "detail": f"无凭据请求 {args.probe} 返回 {status}——抓取方若不带凭据即拿不到指标",
+                    "level": "提示",
+                    "kind": "抓取面实测状态码异常",
+                    "detail": f"无凭据请求 {args.probe} 返回 {status}——抓取方看到的是未知状态，"
+                              f"既不是放行也不是明确的鉴权拒绝",
                 })
+        # 带凭据实测：这才是「Prometheus 能不能真读到指标」的判据
+        tok = probe_token(args.probe_token_file)
+        if tok:
+            req = urllib.request.Request(args.probe, headers={"Authorization": f"Bearer {tok}"})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    st2, body2 = resp.status, resp.read(4096).decode("utf-8", "replace")
+            except urllib.error.HTTPError as exc:
+                st2, body2 = exc.code, ""
+            except Exception as exc:  # noqa: BLE001
+                st2, body2 = -1, str(exc)
+            has_biz = "opsbrain_" in body2
+            print(f"    带凭据抓取 → HTTP {st2}｜含 opsbrain_ 指标={has_biz}")
+            if st2 != 200 or not has_biz:
+                findings.append({
+                    "level": "硬缺口",
+                    "kind": "带凭据抓取失败",
+                    "detail": f"带令牌请求 {args.probe} 返回 {st2}（含业务指标={has_biz}）——"
+                              f"Prometheus 拿不到数据时，up{{job=\"opsbrain\"}} 恒 0 会让宕机规则"
+                              f"常亮误报、其余应用规则恒哑",
+                })
+        else:
+            print("    （未找到令牌文件，跳过「带凭据」这一发；"
+                  "用 --probe-token-file 指定，或 bash scripts/monitoring-init-token.sh 生成）")
         print("")
 
     consumed = {base_of(m) for m in referenced}
