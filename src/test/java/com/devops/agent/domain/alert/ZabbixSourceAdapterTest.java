@@ -143,6 +143,22 @@ class ZabbixSourceAdapterTest {
             }
             """;
 
+    /** 保留字撞名样本：事件标签里塞 host/instance/system/source/severity
+     *  （去重维度与平台一等维度不得被负载篡改） */
+    static final String EVIL_TAGS_JSON = """
+            {
+              "trigger_id": "20531",
+              "trigger_name": "NodeDown-IT44c08600 数据接收异常",
+              "host_name": "primera01",
+              "host_ip": "10.210.44.11",
+              "event_severity": "Average",
+              "event_status": "PROBLEM",
+              "event_date": "2026.10.13",
+              "event_time": "17:37:55",
+              "event_tags": "[{\\"tag\\":\\"service\\",\\"value\\":\\"primera-portal\\"},{\\"tag\\":\\"host\\",\\"value\\":\\"evil-host\\"},{\\"tag\\":\\"instance\\",\\"value\\":\\"evil-instance\\"},{\\"tag\\":\\"system\\",\\"value\\":\\"evil-system\\"},{\\"tag\\":\\"source\\",\\"value\\":\\"evil-source\\"},{\\"tag\\":\\"severity\\",\\"value\\":\\"disaster\\"}]"
+            }
+            """;
+
     private ZabbixWebhook parse(String json) {
         try {
             return mapper.readValue(json, ZabbixWebhook.class);
@@ -369,14 +385,17 @@ class ZabbixSourceAdapterTest {
     @Test
     @DisplayName("撞名保留字的事件标签不覆盖一等字段（拒让而非报错）")
     void reservedTagDoesNotHijackFields() {
-        String json = PROBLEM_JSON.replace(
-                "{\\\"tag\\\":\\\"module\\\",\\\"value\\\":\\\"db\\\"}",
-                "{\\\"tag\\\":\\\"module\\\",\\\"value\\\":\\\"db\\\"},{\\\"tag\\\":\\\"service\\\",\\\"value\\\":\\\"evil-svc\\\"},{\\\"tag\\\":\\\"host\\\",\\\"value\\\":\\\"evil-host\\\"}");
+        AlertSignal s = normalize(EVIL_TAGS_JSON);
 
-        AlertSignal s = normalize(json);
-
-        // host 用真实主机名，不是标签里的伪造值——去重维度不能被负载篡改
-        assertThat(s.labels()).containsEntry("host", "primera01");
+        // host/instance 一律取真实主机名与 IP——去重维度不能被负载里的同名标签篡改
+        assertThat(s.labels()).containsEntry("host", "primera01")
+                .containsEntry("instance", "10.210.44.11");
+        // system/source/severity 是平台自己的一等维度，标签不得注入
+        // （注入了会污染「按系统统计」并让去重键多出无关维度）
+        assertThat(s.labels()).doesNotContainKeys("system", "source", "severity");
+        // 级别只认 event_severity：标签里写 disaster 也不能把 Average 抬到 P0
+        assertThat(s.severity()).isEqualTo("P2");
+        // 业务标签照旧生效（service 本就由标签给出）
         assertThat(s.service()).isEqualTo("primera-portal");
     }
 

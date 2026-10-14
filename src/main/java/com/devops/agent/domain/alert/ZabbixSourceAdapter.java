@@ -212,9 +212,11 @@ public class ZabbixSourceAdapter implements AlertSourceAdapter {
                 labels,
                 annotations,
                 summarize(f, alertName),
+                // 触发中：有开始、**没有结束**——endsAt 填上会让「已持续多久」算成 0，
+                // 也会让下游把一条还在烧的告警当成已经收尾（CI 首轮就是这么红的）
                 resolved ? null : eventTime,
                 resolved,
-                eventTime));
+                resolved ? eventTime : null));
     }
 
     // ==================================================================
