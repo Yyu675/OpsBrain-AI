@@ -17,6 +17,7 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | `AlertNotifyTemplateProbe.java` | `AlertNotifyTemplateTest` | 触发卡事实/链接/转义/估算标注、恢复卡三态收尾与回落取值、升级卡插入位置、诊断卡逐方向状态与恒 normal、行级与整卡两级截断 |
 | `closed_loop_drill.py` | 六条核心链路的端到端契约 | 见下节「业务闭环实弹」 |
 | `rbac_walkthrough.py` | `OpsWriteGuard` + 类级 RBAC 门控 | 见下节「权限矩阵实弹」 |
+| `monitoring_audit.py` | 指标名 / 规则 / 看板 / 抓取面四方对账 | 见下节「监控面静态对账」 |
 
 ## 业务闭环实弹（`closed_loop_drill.py`）
 
@@ -37,6 +38,23 @@ python3 tools/verify/closed_loop_drill.py --base http://localhost:8088/ai \
 口径提醒：`AI_MODE=MOCK` 下知识检索命中是**桩向量**决定的（无语义），所以「RAG 命中」默认是
 软闸；REAL 模式再加 `--require-rag-hit` 转硬闸。方案与实跑记录见
 `docs/09-operations/业务闭环能力验证方案.md`。
+
+## 监控面静态对账（`monitoring_audit.py`）
+
+监控有三个「各自都对、拼起来是空」的失效方式，且**都不报错**：指标名对不上（空面板）、
+规则查的指标没人供给（永不触发）、抓取面被鉴权拦掉（面板全空 + `up=0` 让宕机规则恒亮）。
+人眼审 yml 抓不住这类漂移，把判据固化成脚本：
+
+```bash
+python3 tools/verify/monitoring_audit.py [--probe http://localhost:8088/ai/actuator/prometheus] [--json /tmp/audit.json]
+# 退出码：0=无硬缺口；1=有硬缺口（逐条点名）；2=环境不满足
+```
+
+检查面：A 指标名对账（引用 vs 代码声明/框架自动/部署侧三类供给）· B 抓取面鉴权
+（`/actuator/**` 若需登录，prometheus.yml 就必须带凭据）· C 外部供给（exporter 服务 + 抓取 job 两件齐）
+· D CI 是否上闸 · E 实测抓取面状态码 · F 无人消费的指标（提示）。
+
+**上闸顺序**：先修硬缺口，再接进 CI——红门禁会被无视，比没有门禁更坏。
 
 ## 权限矩阵实弹（`rbac_walkthrough.py`）
 
