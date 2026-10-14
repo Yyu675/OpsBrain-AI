@@ -30,6 +30,11 @@ public class AlertmanagerSourceAdapter implements AlertSourceAdapter {
     private static final String DEFAULT_MODULE = "OTHER";
 
     @Override
+    public String sourceName() {
+        return SOURCE;
+    }
+
+    @Override
     public boolean supports(Object rawPayload) {
         return rawPayload instanceof AlertmanagerWebhook;
     }

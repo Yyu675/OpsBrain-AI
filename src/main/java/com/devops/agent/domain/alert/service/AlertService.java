@@ -75,8 +75,12 @@ public class AlertService {
     @Value("${devops.notify.public-base-url:}")
     private String notificationBaseUrl;
 
-    /** 告警源适配器（L2 跨源接缝）：把具体源负载归一化为 AlertSignal */
-    private final AlertmanagerSourceAdapter alertSourceAdapter;
+    /**
+     * 告警源注册表（L2 跨源接缝）：按负载形状挑适配器并归一化为 AlertSignal。
+     * <p>接入 Zabbix（第二源）后这里从「单个 Alertmanager 适配器」换成注册表——
+     * 两个实现同时存在时注入点会直接变成 NoUniqueBeanDefinition，必须显式选。</p>
+     */
+    private final AlertSourceNormalizer alertSourceNormalizer;
 
     /** 诊断编排器（S2-1）：新告警建单后异步触发诊断。required=false 的旧构造点
      *  （三个手工构造测试）不挂它的场景沿用原语义——诊断是附属增值，缺装不阻断。 */
@@ -85,13 +89,13 @@ public class AlertService {
     public AlertService(AlertRepository alertRepository, TicketService ticketService,
                         AlertWebSocketNotifier alertNotifier,
                         com.devops.agent.domain.notify.Notifier notifier,
-                        AlertmanagerSourceAdapter alertSourceAdapter,
+                        AlertSourceNormalizer alertSourceNormalizer,
                         com.devops.agent.application.diagnosis.DiagnosisOrchestrator diagnosisOrchestrator) {
         this.alertRepository = alertRepository;
         this.ticketService = ticketService;
         this.alertNotifier = alertNotifier;
         this.notifier = notifier;
-        this.alertSourceAdapter = alertSourceAdapter;
+        this.alertSourceNormalizer = alertSourceNormalizer;
         this.diagnosisOrchestrator = diagnosisOrchestrator;
     }
 
@@ -499,7 +503,30 @@ public class AlertService {
         }
 
         // 源适配器归一化 → 路径注入 system → 归一化信号流（接第二源时核心链路零改动）
-        processSignals(injectSystemLabel(alertSourceAdapter.normalize(webhook), pathSystem));
+        processSignals(injectSystemLabel(alertSourceNormalizer.normalize(webhook), pathSystem));
+    }
+
+    /**
+     * 处理任意已注册源的 Webhook 负载（跨源入口，L2 多信号源）。
+     *
+     * <p>
+     * 与 {@link #processWebhook(AlertmanagerWebhook, String)} 的分工：那个入口保留了
+     * Alertmanager 专属的「路径注入 system」语义（FR-1.2，路径即权威来源），
+     * 而 Zabbix 这类源的接入不需要它——来源标识由适配器写进 {@code sys_alert.source}，
+     * 业务系统的 {@code system} 维度在 Zabbix 事件里没有对应物。硬塞一个
+     * {@code system=zabbix} 会把「来源」与「业务系统」两个维度混成一个，
+     * 日后按 system 统计时会得到错误的分布。
+     * </p>
+     *
+     * <p>负载不认识时抛 {@link IllegalArgumentException}（控制器翻成 400）——
+     * 与「空负载返回 200 静默跳过」不同：这里不是没数据，是配置错了。</p>
+     */
+    public void processSourceWebhook(Object payload) {
+        if (!alertEnabled) {
+            log.warn("⏸️ [AlertService] 告警接收已关闭（devops.alert.enabled=false），跳过处理");
+            return;
+        }
+        processSignals(alertSourceNormalizer.normalize(payload));
     }
 
     /**

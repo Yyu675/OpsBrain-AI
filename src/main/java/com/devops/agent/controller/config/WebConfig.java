@@ -26,7 +26,8 @@ import java.util.Arrays;
  * <ul>
  *   <li>/api/v1/auth/** —— 登录/取当前用户/登出（登录本身不需 token；me/logout 内部自判）</li>
  *   <li>/api/v1/health/** —— K8s 探针，高频拉取，不能要求 token</li>
- *   <li>/api/v1/alerts/webhook —— Prometheus/Alertmanager 推送，无 token</li>
+ *   <li>/api/v1/alerts/webhook/** —— Prometheus/Alertmanager 与 Zabbix 推送，无 token
+ *       （调用方是机器，鉴权由 WebhookGuard 的 token/HMAC/限流承担）</li>
  * </ul>
  * SSE（/api/v1/chat/stream）与其余端点均需登录；前端用 {@code @microsoft/fetch-event-source}
  * （基于 fetch，支持自定义头）在 satoken 请求头里带 token，无需退化到 query 参数。
@@ -103,8 +104,10 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/v1/auth/**",         // 登录/取当前用户/登出
                         "/api/v1/health/**",       // K8s 探针
-                        "/api/v1/alerts/webhook",  // Prometheus/Alertmanager 推送
-                        "/api/v1/alerts/webhook/**"  // FR-1.2：/{system} 按路径注入来源系统
+                        "/api/v1/alerts/webhook",    // Prometheus/Alertmanager 推送
+                        // FR-1.2 的 /{system} 与 Zabbix 的 /zabbix 都落在这条通配下（前缀齐备，
+                        // 不为单个来源再加一行——多一行就多一处漏改的机会）
+                        "/api/v1/alerts/webhook/**"
                 );
 
         // ==================== P2 自身可观测性：/actuator/** 必须显式鉴权 ====================

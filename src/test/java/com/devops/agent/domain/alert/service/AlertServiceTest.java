@@ -1,6 +1,7 @@
 package com.devops.agent.domain.alert.service;
 
 import com.devops.agent.domain.alert.DTO.AlertmanagerWebhook;
+import com.devops.agent.domain.alert.DTO.ZabbixWebhook;
 import com.devops.agent.domain.alert.entity.Alert;
 import com.devops.agent.domain.alert.repository.AlertRepository;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
@@ -19,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -82,8 +85,11 @@ class AlertServiceTest {
         dingTalk = mock(Notifier.class);
         diagnosisOrchestrator = mock(com.devops.agent.application.diagnosis.DiagnosisOrchestrator.class);
         when(diagnosisOrchestrator.submit(anyLong(), any(), anyString())).thenReturn("trace-diag-1");
+        // 注册表按要求装两个真实适配器（与生产一致）：跨源入口的用例要靠它选源
         service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
-                new com.devops.agent.domain.alert.AlertmanagerSourceAdapter(),
+                new com.devops.agent.domain.alert.AlertSourceNormalizer(java.util.List.of(
+                        new com.devops.agent.domain.alert.AlertmanagerSourceAdapter(),
+                        new com.devops.agent.domain.alert.ZabbixSourceAdapter())),
                 diagnosisOrchestrator);
 
         // @Value 字段在非 Spring 环境不会注入，必须显式设成与生产默认值一致
@@ -1388,6 +1394,88 @@ class AlertServiceTest {
             service.processWebhook(webhook(incoming("resolved", labels("alertname", "NodeDown", "service", "infra"))));
             verify(notifier).broadcastResolved(any());
             verify(dingTalk, never()).send(any());
+        }
+    }
+
+    // ==================================================================
+
+    /**
+     * 跨源入口（{@code processSourceWebhook}）——Zabbix 是第二个真实源。
+     *
+     * <h3>这些用例要证明什么</h3>
+     * <p>
+     * 适配器单测已锁住字段映射，本组锁的是「接入第二源之后核心链没变形」：
+     * 来源正确落到 {@code sys_alert.source}、级别走同一套归一化、恢复仍走
+     * 原子守卫（不是「先查后改」）、业务系统的 {@code system} 维度不会被硬塞成
+     * {@code zabbix}（来源与业务系统是两个维度，混了以后按 system 统计全错）。
+     * </p>
+     */
+    @Nested
+    @DisplayName("跨源入口（Zabbix）")
+    class ZabbixSource {
+
+        /** 真实事件形态：primera01 / Average / PROBLEM */
+        private Map<String, Object> problemEvent() {
+            Map<String, Object> raw = new LinkedHashMap<>();
+            raw.put("event_id", "12002061");
+            raw.put("trigger_id", "20531");
+            raw.put("trigger_name", "NodeDown-IT44c08600 数据接收异常");
+            raw.put("event_severity", "Average");
+            raw.put("event_status", "PROBLEM");
+            raw.put("event_date", "2026.10.13");
+            raw.put("event_time", "17:37:55");
+            raw.put("host_name", "primera01");
+            raw.put("host_ip", "10.210.44.11");
+            return raw;
+        }
+
+        @Test
+        @DisplayName("PROBLEM → 落库带 source=zabbix、级别 P2、system 不被写成 zabbix（来源≠业务系统）")
+        void problemEventLandsWithZabbixSource() {
+            service.processSourceWebhook(ZabbixWebhook.of(problemEvent()));
+
+            ArgumentCaptor<Alert> cap = ArgumentCaptor.forClass(Alert.class);
+            verify(alertRepository).insertOrIncrement(cap.capture());
+            Alert saved = cap.getValue();
+            assertThat(saved.getSource()).isEqualTo("zabbix");
+            assertThat(saved.getLevel()).isEqualTo("P2");
+            assertThat(saved.getAlertName()).isEqualTo("NodeDown-IT44c08600 数据接收异常");
+            // 业务系统的 system 维度在 Zabbix 事件里没有对应物 —— 适配器不注入 system 标签，
+            // 由核心链按既有规则回落 "default"（**不是** zabbix：把来源写进系统维度之后，
+            // 「按 system 统计来源分布」会把两码事混成一个，且不报错）
+            assertThat(saved.getSystem()).isEqualTo("default");
+            // 去重键含 host：同触发器在不同主机必须分开计次
+            assertThat(saved.getDedupKey()).isNotBlank();
+        }
+
+        @Test
+        @DisplayName("OK → 走恢复链并与 PROBLEM 命中同一条活跃告警（指纹不含 event_id）")
+        void okEventResolvesTheFiringAlert() {
+            Alert active = new Alert();
+            active.setId(7L);
+            active.setLevel("P2");
+            active.setAlertName("NodeDown-IT44c08600 数据接收异常");
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
+
+            Map<String, Object> ok = problemEvent();
+            ok.put("event_status", "OK");
+            ok.put("event_time", "17:38:47");
+            ok.put("event_id", "12002062");   // Zabbix 的恢复事件是另一条事件、另一个 id
+            service.processSourceWebhook(ZabbixWebhook.of(ok));
+
+            // 若指纹里混进 event_id，这里就会找不到活跃告警（恢复配不上对，告警一直挂着）
+            verify(alertRepository).resolve(eq(7L), any());
+            verify(notifier).broadcastResolved(active);
+            verify(alertRepository, never()).insertOrIncrement(any());
+        }
+
+        @Test
+        @DisplayName("不认得的负载 → 抛异常（跨源入口不许静默吞掉，控制器会翻成 400）")
+        void unknownPayloadIsRejected() {
+            assertThatThrownBy(() -> service.processSourceWebhook("plain-text"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("没有适配器认识这份负载");
+            verify(alertRepository, never()).insertOrIncrement(any());
         }
     }
 
