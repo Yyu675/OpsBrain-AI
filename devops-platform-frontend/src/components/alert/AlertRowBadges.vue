@@ -72,9 +72,9 @@ defineProps<{
   border-radius: 9px;
   font-size: 11px;
   line-height: 16px;
-  color: var(--text-secondary);
+  color: var(--text-3);
   background: var(--surface-2);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--color-border);
 }
 
 /* 误报标注（V17 Feedback 回流）徽标：warning 语义——不是危险，是「规则在被投票」 */

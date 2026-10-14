@@ -761,7 +761,7 @@ const goList = () => router.push('/alerts')
 }
 
 .unticketed-note {
-  color: var(--text-secondary);
+  color: var(--text-3);
 }
 
 .observing-badge {
