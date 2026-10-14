@@ -15,6 +15,11 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | 探针 | 对应契约 | 覆盖 |
 | --- | --- | --- |
 | `AlertNotifyTemplateProbe.java` | `AlertNotifyTemplateTest` | 触发卡事实/链接/转义/估算标注、恢复卡三态收尾与回落取值、升级卡插入位置、诊断卡逐方向状态与恒 normal、行级与整卡两级截断 |
+| `closed_loop_drill.py` | 六条核心链路的端到端契约 | 真告警 → 归一化 → 建单 → 双向溯源 → 诊断（四路证据 + 充分度语义）→ 处置五连 → 恢复穿透 → 复盘沉淀；另含观察窗降噪与历史回放两个场景。41 跳硬闸，逐跳点名。方案说明见 `docs/09-operations/业务闭环能力验证方案.md` |
+| `rbac_walkthrough.py` | `OPS 写守卫 / ADMIN 专有面` 的实弹口径 | 14 个探针面 × N 账号（默认 ADMIN/OPS/VIEWER），判据**取自源码执法点**而非"跑出来什么抄什么"，不一致即红并逐行点名（DoD#7 第二列） |
+
+**相关脚本**（住在别处，但与上面几件是一套验证面）：`scripts/rollback-drill.sh`（DoD#6 版本回退实弹，
+`artifact`/`docker` 双模式，版本身份用契约差异证伪）、`scripts/e2e-business-flow.sh`（跨模块业务流直查库版）。
 
 ## 怎么跑
 
