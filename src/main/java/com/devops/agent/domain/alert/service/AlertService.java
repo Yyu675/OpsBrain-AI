@@ -4,6 +4,7 @@ import com.devops.agent.domain.alert.AlertAnnotationKeys;
 import com.devops.agent.domain.alert.AlertmanagerSourceAdapter;
 import com.devops.agent.domain.alert.AlertNotifyTemplate;
 import com.devops.agent.domain.alert.AlertSignal;
+import com.devops.agent.domain.alert.AlertSourceNormalizer;
 import com.devops.agent.domain.alert.DTO.AlertmanagerWebhook;
 import com.devops.agent.domain.alert.ReservedAlertNames;
 import com.devops.agent.domain.alert.entity.Alert;
