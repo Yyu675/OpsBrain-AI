@@ -8,8 +8,8 @@ import type { DashboardOverviewDTO } from './dashboardOverviewDTO';
 
 export interface ApiResponseDashboardOverviewDTO {
   code?: number;
-  message?: string;
   data?: DashboardOverviewDTO;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

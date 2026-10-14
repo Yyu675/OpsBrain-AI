@@ -8,8 +8,8 @@ import type { Revealed } from './revealed';
 
 export interface ApiResponseRevealed {
   code?: number;
-  message?: string;
   data?: Revealed;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

@@ -8,8 +8,8 @@ import type { Alert } from './alert';
 
 export interface ApiResponseListAlert {
   code?: number;
-  message?: string;
   data?: Alert[];
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

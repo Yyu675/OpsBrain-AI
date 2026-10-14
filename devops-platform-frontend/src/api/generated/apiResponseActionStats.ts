@@ -8,8 +8,8 @@ import type { ActionStats } from './actionStats';
 
 export interface ApiResponseActionStats {
   code?: number;
-  message?: string;
   data?: ActionStats;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

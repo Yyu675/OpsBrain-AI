@@ -8,26 +8,6 @@
 export interface CreateTicketRequest {
   /**
    * @minLength 0
-   * @maxLength 255
-   */
-  title: string;
-  /**
-   * @minLength 0
-   * @maxLength 16
-   */
-  priority?: string;
-  /**
-   * @minLength 0
-   * @maxLength 64
-   */
-  module?: string;
-  /**
-   * @minLength 0
-   * @maxLength 20000
-   */
-  description: string;
-  /**
-   * @minLength 0
    * @maxLength 64
    */
   assignee?: string;
@@ -38,17 +18,37 @@ export interface CreateTicketRequest {
   category?: string;
   /**
    * @minLength 0
-   * @maxLength 32
+   * @maxLength 64
    */
-  sla?: string;
+  creator?: string;
+  /**
+   * @minLength 0
+   * @maxLength 20000
+   */
+  description: string;
   /**
    * @minLength 0
    * @maxLength 64
    */
-  creator?: string;
+  module?: string;
+  /**
+   * @minLength 0
+   * @maxLength 16
+   */
+  priority?: string;
+  /**
+   * @minLength 0
+   * @maxLength 32
+   */
+  sla?: string;
   /**
    * @minItems 0
    * @maxItems 20
    */
   tags?: string[];
+  /**
+   * @minLength 0
+   * @maxLength 255
+   */
+  title: string;
 }

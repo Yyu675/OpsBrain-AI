@@ -7,9 +7,9 @@
 
 export interface ObservationStats {
   enabled?: boolean;
-  windowMinutes?: number;
+  escalated30d?: number;
   levels?: string[];
   observingNow?: number;
   selfHealed30d?: number;
-  escalated30d?: number;
+  windowMinutes?: number;
 }

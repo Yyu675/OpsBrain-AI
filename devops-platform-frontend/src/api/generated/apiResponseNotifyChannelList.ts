@@ -8,8 +8,8 @@ import type { NotifyChannelList } from './notifyChannelList';
 
 export interface ApiResponseNotifyChannelList {
   code?: number;
-  message?: string;
   data?: NotifyChannelList;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

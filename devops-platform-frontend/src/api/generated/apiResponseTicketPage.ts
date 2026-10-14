@@ -8,8 +8,8 @@ import type { TicketPage } from './ticketPage';
 
 export interface ApiResponseTicketPage {
   code?: number;
-  message?: string;
   data?: TicketPage;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

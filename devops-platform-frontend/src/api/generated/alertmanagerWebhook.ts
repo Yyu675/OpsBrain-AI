@@ -7,7 +7,7 @@
 import type { Alert } from './alert';
 
 export interface AlertmanagerWebhook {
+  alerts?: Alert[];
   receiver?: string;
   status?: string;
-  alerts?: Alert[];
 }

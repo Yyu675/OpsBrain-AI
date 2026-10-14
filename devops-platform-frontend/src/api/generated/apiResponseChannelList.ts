@@ -8,8 +8,8 @@ import type { ChannelList } from './channelList';
 
 export interface ApiResponseChannelList {
   code?: number;
-  message?: string;
   data?: ChannelList;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

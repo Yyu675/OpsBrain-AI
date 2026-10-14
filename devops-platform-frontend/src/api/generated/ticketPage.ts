@@ -7,9 +7,9 @@
 import type { DevOpsTicket } from './devOpsTicket';
 
 export interface TicketPage {
-  tickets?: DevOpsTicket[];
-  total?: number;
   page?: number;
   size?: number;
+  tickets?: DevOpsTicket[];
+  total?: number;
   totalPages?: number;
 }

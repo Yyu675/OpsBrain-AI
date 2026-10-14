@@ -6,7 +6,7 @@
  */
 
 export interface TestResult {
-  success?: boolean;
-  message?: string;
   latencyMs?: number;
+  message?: string;
+  success?: boolean;
 }

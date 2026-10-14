@@ -487,6 +487,11 @@ export interface Alert {
   ticketId: string | null
   /** 读路径派生（FR-3.1）：处于自愈观察窗内——活跃+未建单+观察级+未超窗 */
   observing?: boolean
+  /**
+   * 读路径派生（F2）：不会再自动建单的原因（历史/回放事件超出补单回溯窗）。
+   * null/缺省=当前没有需要解释的情况。文案由后端单一事实源给，前端不自己拼。
+   */
+  unticketedReason?: string | null
   /** webhook 原始 labels 的 JSON 串（V11）：instance/pod/namespace/job 等下钻维度 */
   labelsJson?: string | null
   /** webhook 原始 annotations 的 JSON 串（V11）：runbook_url/当前值/阈值等 */

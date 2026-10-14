@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -1470,12 +1471,120 @@ class AlertServiceTest {
         }
 
         @Test
+        @DisplayName("事件严重度变化不改变去重键 —— 运维中途调触发器级别不该让恢复配不上（F1）")
+        void eventSeverityDoesNotAffectDedupKey() {
+            service.processSourceWebhook(ZabbixWebhook.of(problemEvent()));
+            String key1 = savedAlert().getDedupKey();
+
+            setUp();   // 重置 mock
+            Map<String, Object> afterLevelChange = problemEvent();
+            // 运维把触发器级别从 Average 调到 High —— 后再触发同一条告警
+            afterLevelChange.put("event_severity", "High");
+            afterLevelChange.put("event_id", "12002099");
+            service.processSourceWebhook(ZabbixWebhook.of(afterLevelChange));
+            String key2 = savedAlert().getDedupKey();
+
+            assertEquals(key1, key2,
+                    "event_severity 是事件属性：进 labels 供展示，但不参与身份计算");
+        }
+
+        @Test
+        @DisplayName("OK 的 event_severity 与 PROBLEM 不同 → 仍命中同一条活跃告警并恢复（F1 行为面）")
+        void okWithDifferentSeverityStillResolves() {
+            service.processSourceWebhook(ZabbixWebhook.of(problemEvent()));
+            String firingKey = savedAlert().getDedupKey();
+
+            setUp();   // 重置 mock
+            Alert active = new Alert();
+            active.setId(7L);
+            active.setLevel("P2");
+            active.setAlertName("NodeDown-IT44c08600 数据接收异常");
+            // 关键：只认 PROBLEM 那一刻算出的键。若恢复事件因 event_severity 不同
+            // 算出另一个键，这里根本不会被命中 → resolve 不会发生 → 断言失败
+            when(alertRepository.findActiveByDedupKey(firingKey)).thenReturn(Optional.of(active));
+
+            Map<String, Object> ok = problemEvent();
+            ok.put("event_status", "OK");
+            ok.put("event_time", "17:38:47");
+            ok.put("event_id", "12002062");
+            ok.put("event_severity", "High");   // 级别已被改过
+            service.processSourceWebhook(ZabbixWebhook.of(ok));
+
+            verify(alertRepository).resolve(eq(7L), any());
+            verify(notifier).broadcastResolved(active);
+        }
+
+        @Test
         @DisplayName("不认得的负载 → 抛异常（跨源入口不许静默吞掉，控制器会翻成 400）")
         void unknownPayloadIsRejected() {
             assertThatThrownBy(() -> service.processSourceWebhook("plain-text"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("没有适配器认识这份负载");
             verify(alertRepository, never()).insertOrIncrement(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("未建单原因（读路径派生，F2）")
+    class UnticketedReason {
+
+        private Alert alert(String status, String level, LocalDateTime first, String ticketId) {
+            Alert a = new Alert();
+            a.setId(1L);
+            a.setStatus(status);
+            a.setLevel(level);
+            a.setFirstOccurredAt(first);
+            a.setTicketId(ticketId);
+            return a;
+        }
+
+        private void observeConfig() {
+            ReflectionTestUtils.setField(service, "observationEnabled", true);
+            ReflectionTestUtils.setField(service, "observationLevels", "P2,P3");
+            ReflectionTestUtils.setField(service, "observationWindowMinutes", 10);
+        }
+
+        @Test
+        @DisplayName("回放来的历史 P2（超出补单回溯窗 24h）→ 明确给出「不会再自动建单」")
+        void historicalReplayGetsReason() {
+            observeConfig();
+            Alert a = alert("FIRING", "P2", LocalDateTime.now().minusHours(26), null);
+
+            assertThat(service.unticketedReason(a))
+                    .isNotNull()
+                    .contains("不会再自动建单");
+        }
+
+        @Test
+        @DisplayName("仍在观察窗内 → 不解释（页面另有「观察中」标，两句话不能都说）")
+        void withinObservationWindowStaysQuiet() {
+            observeConfig();
+            Alert a = alert("FIRING", "P2", LocalDateTime.now().minusMinutes(3), null);
+
+            assertThat(service.unticketedReason(a)).isNull();
+        }
+
+        @Test
+        @DisplayName("仍在补单回溯窗内（比如 3 小时前）→ 不解释：补单扫描会捞起它")
+        void withinLookbackStaysQuiet() {
+            observeConfig();
+            Alert a = alert("FIRING", "P2", LocalDateTime.now().minusHours(3), null);
+
+            assertThat(service.unticketedReason(a)).isNull();
+        }
+
+        @Test
+        @DisplayName("已建单 / 非活跃态 / 观察窗关闭 → 不解释（没有话说就不说）")
+        void silentWhenNotApplicable() {
+            observeConfig();
+            assertThat(service.unticketedReason(
+                    alert("FIRING", "P2", LocalDateTime.now().minusHours(26), "TK-1"))).isNull();
+            assertThat(service.unticketedReason(
+                    alert("RESOLVED", "P2", LocalDateTime.now().minusHours(26), null))).isNull();
+
+            ReflectionTestUtils.setField(service, "observationEnabled", false);
+            assertThat(service.unticketedReason(
+                    alert("FIRING", "P2", LocalDateTime.now().minusHours(26), null))).isNull();
         }
     }
 

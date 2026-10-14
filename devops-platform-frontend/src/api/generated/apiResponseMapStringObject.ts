@@ -8,8 +8,8 @@ import type { ApiResponseMapStringObjectData } from './apiResponseMapStringObjec
 
 export interface ApiResponseMapStringObject {
   code?: number;
-  message?: string;
   data?: ApiResponseMapStringObjectData;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

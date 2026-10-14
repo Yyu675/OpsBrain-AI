@@ -8,8 +8,8 @@ import type { TicketReply } from './ticketReply';
 
 export interface ApiResponseTicketReply {
   code?: number;
-  message?: string;
   data?: TicketReply;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

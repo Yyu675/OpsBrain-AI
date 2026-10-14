@@ -6,9 +6,9 @@
  */
 
 export interface StormStatus {
-  enabled?: boolean;
   active?: boolean;
-  ratePerMin?: number;
+  enabled?: boolean;
   enterRatePerMin?: number;
   exitRatePerMin?: number;
+  ratePerMin?: number;
 }

@@ -59,8 +59,37 @@ if (verbful.length !== paths.length) {
   die(`${paths.length - verbful.length} 条 path 无任何 HTTP 方法`)
 }
 
+// 规范化：把每个 schema 的 properties 键按字典序重排后再落盘。
+//
+// 为什么（2026-10-15 实测）：springdoc 的 properties 顺序来自 JVM 反射顺序，
+// **同一套代码在不同运行间会给出不同顺序**。于是同一份契约两次同步出的文件
+// 不逐字相等 → `npm run gen:api` 的产物（orval 按 properties 顺序生成字段）
+// 也跟着抖 → 开发者跑 api:refresh 会看到一堆纯顺序的假 diff，真漂移被埋在里面。
+// 规范化只改顺序不改内容：CI 的「快照新鲜度」门禁按 path/method + 属性**集合**
+// 对账（见 ci.yml 该步注释），因此与本排序相容。
+const sortSchemaProperties = (node) => {
+  if (Array.isArray(node)) {
+    node.forEach(sortSchemaProperties)
+    return
+  }
+  if (node && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'properties' && v && typeof v === 'object' && !Array.isArray(v)) {
+        const sorted = {}
+        for (const key of Object.keys(v).sort()) sorted[key] = v[key]
+        node.properties = sorted
+      }
+      sortSchemaProperties(node[k] === node.properties ? node.properties : node[k])
+    }
+  }
+}
+sortSchemaProperties(doc.components?.schemas ?? {})
+// 保持单行紧凑格式（与历史快照逐字对齐——格式化差异会掩盖真漂移）
+const normalized = Buffer.from(JSON.stringify(doc), 'utf8')
+
 mkdirSync(dirname(OUT), { recursive: true })
-writeFileSync(TMP, buf)
+writeFileSync(TMP, normalized)
 renameSync(TMP, OUT)
 console.log(`✓ paths=${paths.length} 全带方法`)
-console.log(`✓ 快照落盘 openapi/api-docs.snapshot.json（${buf.length}B）——记得 git add 提交`)
+console.log(`✓ 快照落盘 openapi/api-docs.snapshot.json（${normalized.length}B，schema 属性已字典序规范化）`)
+console.log('  ——记得 git add 提交')

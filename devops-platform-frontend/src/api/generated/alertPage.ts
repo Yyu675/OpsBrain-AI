@@ -8,10 +8,10 @@ import type { Alert } from './alert';
 
 export interface AlertPage {
   alerts?: Alert[];
-  total?: number;
-  page?: number;
-  size?: number;
-  totalPages?: number;
   firingFiltered?: number;
   firingTotal?: number;
+  page?: number;
+  size?: number;
+  total?: number;
+  totalPages?: number;
 }

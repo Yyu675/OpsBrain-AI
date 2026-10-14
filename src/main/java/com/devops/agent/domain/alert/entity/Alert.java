@@ -106,6 +106,14 @@ public class Alert implements Serializable {
      */
     private boolean observing;
 
+    /**
+     * 展示态派生字段：未建单原因（不会再自动建单时才非空，文案由 AlertService 给）。
+     * <p><b>非持久化</b>——与 {@link #observing} 同一理由：回溯窗/观察窗都是可调
+     * 配置，且原因随事件时间推移而变化（今天还在窗内，明天就出窗），落库必然腐烂。
+     * RowMapper 不设它。</p>
+     */
+    private String unticketedReason;
+
     // ==================== 便利方法 ====================
 
     /**
@@ -193,4 +201,7 @@ public class Alert implements Serializable {
 
     public boolean isObserving() { return observing; }
     public void setObserving(boolean observing) { this.observing = observing; }
+
+    public String getUnticketedReason() { return unticketedReason; }
+    public void setUnticketedReason(String unticketedReason) { this.unticketedReason = unticketedReason; }
 }

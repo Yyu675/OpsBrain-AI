@@ -11,18 +11,24 @@ export interface ActionRequest {
    * @maxLength 64
    */
   actionKey: string;
-  /**
-   * @minLength 0
-   * @maxLength 64
-   */
-  displayName: string;
+  /** @minLength 1 */
+  category: string;
   /**
    * @minLength 0
    * @maxLength 255
    */
   description?: string;
+  /**
+   * @minLength 0
+   * @maxLength 64
+   */
+  displayName: string;
+  enabled?: boolean;
   /** @minLength 1 */
-  category: string;
+  environments: string;
+  maxBlastRadiusCount?: number;
+  paramSchema?: string;
+  requiresApproval?: boolean;
   /** @minLength 1 */
   riskLevel: string;
   /**
@@ -30,11 +36,5 @@ export interface ActionRequest {
    * @maxLength 255
    */
   targetPattern?: string;
-  /** @minLength 1 */
-  environments: string;
-  paramSchema?: string;
-  requiresApproval?: boolean;
-  maxBlastRadiusCount?: number;
-  enabled?: boolean;
   version?: number;
 }

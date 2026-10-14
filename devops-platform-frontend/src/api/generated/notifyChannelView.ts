@@ -7,12 +7,12 @@
 
 export interface NotifyChannelView {
   channelKey?: string;
-  enabled?: boolean;
   configured?: boolean;
-  source?: string;
-  webhookMasked?: string;
+  enabled?: boolean;
   hasSecret?: boolean;
   needsReEntry?: boolean;
-  updatedBy?: string;
+  source?: string;
   updateTime?: string;
+  updatedBy?: string;
+  webhookMasked?: string;
 }

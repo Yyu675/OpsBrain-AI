@@ -6,11 +6,11 @@
  */
 
 export interface TicketReply {
-  id?: number;
-  ticketId?: string;
-  role?: string;
   author?: string;
   authorColor?: string;
   content?: string;
   createTime?: string;
+  id?: number;
+  role?: string;
+  ticketId?: string;
 }

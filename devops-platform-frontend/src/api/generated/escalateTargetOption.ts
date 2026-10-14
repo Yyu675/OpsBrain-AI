@@ -6,6 +6,6 @@
  */
 
 export interface EscalateTargetOption {
-  value?: string;
   label?: string;
+  value?: string;
 }

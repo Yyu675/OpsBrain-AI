@@ -510,6 +510,14 @@ const goList = () => router.push('/alerts')
               <p v-if="alert.ticketId && isAggregated" class="ticket-aggregate-note">
                 聚合抑制：本告警并入同组工单，未单独建单（窗口内同服务已有建单告警）
               </p>
+              <!-- 未建单说明：有后端口径（unticketedReason）就先说它——
+                   「不会再自动建单」与「可能被关闭」是两句不同的话，不能混 -->
+              <p
+                v-if="!alert.ticketId && alert.unticketedReason"
+                class="desc-empty unticketed-note"
+              >
+                {{ alert.unticketedReason }}
+              </p>
               <p v-else-if="!alert.ticketId" class="desc-empty">
                 未关联工单（自动建单可能被关闭，或该告警级别低于建单门槛）
               </p>
@@ -750,6 +758,10 @@ const goList = () => router.push('/alerts')
   font-size: var(--text-xs);
   color: var(--text-3);
   flex-shrink: 0;
+}
+
+.unticketed-note {
+  color: var(--text-secondary);
 }
 
 .observing-badge {

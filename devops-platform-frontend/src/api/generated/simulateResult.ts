@@ -4,13 +4,13 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
-import type { SimulateInput } from './simulateInput';
 import type { SimulatedRow } from './simulatedRow';
+import type { SimulateInput } from './simulateInput';
 
 export interface SimulateResult {
-  input?: SimulateInput;
   evaluated?: SimulatedRow[];
-  matchedCount?: number;
   firstEffective?: SimulatedRow;
+  input?: SimulateInput;
+  matchedCount?: number;
   summary?: string;
 }

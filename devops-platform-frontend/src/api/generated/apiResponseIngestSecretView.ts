@@ -8,8 +8,8 @@ import type { IngestSecretView } from './ingestSecretView';
 
 export interface ApiResponseIngestSecretView {
   code?: number;
-  message?: string;
   data?: IngestSecretView;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

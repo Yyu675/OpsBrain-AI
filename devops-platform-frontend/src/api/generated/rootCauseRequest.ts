@@ -6,7 +6,7 @@
  */
 
 export interface RootCauseRequest {
-  rootCause?: string;
   category?: string;
   operator?: string;
+  rootCause?: string;
 }

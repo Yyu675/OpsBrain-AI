@@ -7,11 +7,11 @@
 
 export interface EvaluateResult {
   actionKey?: string;
-  environment?: string;
   allowed?: boolean;
-  reason?: string;
-  requiresApproval?: boolean;
   approvalMode?: string;
   blastRadiusCount?: number;
   cooldownSeconds?: number;
+  environment?: string;
+  reason?: string;
+  requiresApproval?: boolean;
 }

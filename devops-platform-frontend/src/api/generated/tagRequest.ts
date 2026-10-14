@@ -6,7 +6,7 @@
  */
 
 export interface TagRequest {
-  name?: string;
-  description?: string;
   color?: string;
+  description?: string;
+  name?: string;
 }

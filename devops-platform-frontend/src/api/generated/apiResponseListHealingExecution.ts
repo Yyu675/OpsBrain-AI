@@ -8,8 +8,8 @@ import type { HealingExecution } from './healingExecution';
 
 export interface ApiResponseListHealingExecution {
   code?: number;
-  message?: string;
   data?: HealingExecution[];
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

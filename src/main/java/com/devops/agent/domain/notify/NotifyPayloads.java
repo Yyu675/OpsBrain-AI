@@ -23,6 +23,9 @@ import java.util.Map;
  */
 public final class NotifyPayloads {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(NotifyPayloads.class);
+
     private NotifyPayloads() {}
 
     /**
@@ -84,6 +87,33 @@ public final class NotifyPayloads {
 
     /** 渠道成功判据（钉钉/企微同构：HTTP 200 + errcode==0）。 */
     public static boolean accepted(int httpStatus, String body) {
-        return httpStatus == 200 && body != null && body.contains("\"errcode\":0");
+        if (httpStatus != 200 || body == null || body.isBlank()) {
+            return false;
+        }
+        // F4（2026-10-15 实弹抓到）：原实现是报文串匹配 body.contains("\"errcode\":0")。
+        // 真实钉钉/企微回紧凑 JSON 所以线上一直"能用"，但等价的合法回执
+        // （多一个空格、键序不同、被网关重排）会被判「渠道拒收」——本机假接收端
+        // 首跑就撞上：{"errcode": 0, "errmsg": "ok"} 被判拒收。
+        // 改为结构化解析：errcode 字段存在且为 0 才算送达。
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = ACCEPT_MAPPER.readTree(body);
+            com.fasterxml.jackson.databind.JsonNode errcode = node == null ? null : node.get("errcode");
+            if (errcode != null) {
+                return errcode.asInt(Integer.MIN_VALUE) == 0;
+            }
+            // 无 errcode 字段：不是钉钉/企微回执格式，保守判未送达
+            // （宁可多发一次告警，也不把没送达说成送达）
+            return false;
+        } catch (Exception parseFailure) {
+            // 非 JSON 体：渠道可能改了回执格式——保守判未送达，**并且留下线索**。
+            // 这里必须自己记日志：调用方只看到「未送达」，现场（渠道到底回了什么）
+            // 只有这一处能留下——静默 catch 会造出「渠道拒收但没人知道为什么」。
+            log.warn("⚠️ [Notify] 渠道回执非 JSON，按未送达处理 | status={} | body={}",
+                    httpStatus, body.length() > 200 ? body.substring(0, 200) + "…(截断)" : body);
+            return false;
+        }
     }
+
+    /** 判收专用：只读 errcode，不依赖调用方传入的 ObjectMapper（测试探针也能直接用） */
+    private static final ObjectMapper ACCEPT_MAPPER = new ObjectMapper();
 }

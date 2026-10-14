@@ -8,8 +8,8 @@ import type { Item } from './item';
 
 export interface ApiResponseListItem {
   code?: number;
-  message?: string;
   data?: Item[];
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

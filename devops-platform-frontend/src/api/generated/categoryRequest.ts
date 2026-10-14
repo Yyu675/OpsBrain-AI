@@ -6,7 +6,7 @@
  */
 
 export interface CategoryRequest {
-  parentId?: number;
   name?: string;
+  parentId?: number;
   sortOrder?: number;
 }

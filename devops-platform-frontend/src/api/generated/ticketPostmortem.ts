@@ -6,14 +6,14 @@
  */
 
 export interface TicketPostmortem {
-  id?: number;
-  ticketId?: string;
-  timeline?: string;
-  impactScope?: string;
-  impactDuration?: number;
-  lessons?: string;
-  docId?: number;
   author?: string;
   createTime?: string;
+  docId?: number;
+  id?: number;
+  impactDuration?: number;
+  impactScope?: string;
+  lessons?: string;
+  ticketId?: string;
+  timeline?: string;
   updateTime?: string;
 }

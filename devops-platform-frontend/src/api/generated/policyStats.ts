@@ -6,9 +6,9 @@
  */
 
 export interface PolicyStats {
-  total?: number;
-  enabledCount?: number;
   dryRunCount?: number;
+  enabledCount?: number;
   liveCount?: number;
   prodLiveCount?: number;
+  total?: number;
 }

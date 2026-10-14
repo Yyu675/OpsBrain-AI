@@ -8,8 +8,8 @@ import type { ObservationStats } from './observationStats';
 
 export interface ApiResponseObservationStats {
   code?: number;
-  message?: string;
   data?: ObservationStats;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

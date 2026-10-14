@@ -8,8 +8,8 @@ import type { DeleteResult } from './deleteResult';
 
 export interface ApiResponseDeleteResult {
   code?: number;
-  message?: string;
   data?: DeleteResult;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

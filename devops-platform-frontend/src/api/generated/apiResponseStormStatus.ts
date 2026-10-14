@@ -8,8 +8,8 @@ import type { StormStatus } from './stormStatus';
 
 export interface ApiResponseStormStatus {
   code?: number;
-  message?: string;
   data?: StormStatus;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

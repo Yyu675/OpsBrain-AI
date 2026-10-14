@@ -6,15 +6,15 @@
  */
 
 export interface TicketAttachment {
-  id?: number;
-  ticketId?: string;
   bucket?: string;
+  contentType?: string;
+  createTime?: string;
+  id?: number;
   objectKey?: string;
   originalName?: string;
-  contentType?: string;
-  sizeBytes?: number;
   sha256?: string;
-  uploader?: string;
-  createTime?: string;
+  sizeBytes?: number;
   sizeText?: string;
+  ticketId?: string;
+  uploader?: string;
 }

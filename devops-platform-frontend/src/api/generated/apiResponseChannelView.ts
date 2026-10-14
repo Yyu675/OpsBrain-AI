@@ -8,8 +8,8 @@ import type { ChannelView } from './channelView';
 
 export interface ApiResponseChannelView {
   code?: number;
-  message?: string;
   data?: ChannelView;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

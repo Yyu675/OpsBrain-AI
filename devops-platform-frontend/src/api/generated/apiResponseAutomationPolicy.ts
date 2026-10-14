@@ -8,8 +8,8 @@ import type { AutomationPolicy } from './automationPolicy';
 
 export interface ApiResponseAutomationPolicy {
   code?: number;
-  message?: string;
   data?: AutomationPolicy;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

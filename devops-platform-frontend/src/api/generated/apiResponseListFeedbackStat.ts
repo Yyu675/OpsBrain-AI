@@ -8,8 +8,8 @@ import type { FeedbackStat } from './feedbackStat';
 
 export interface ApiResponseListFeedbackStat {
   code?: number;
-  message?: string;
   data?: FeedbackStat[];
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

@@ -6,11 +6,11 @@
  */
 
 export interface KnowledgeCategory {
-  id?: number;
-  parentId?: number;
-  name?: string;
-  sortOrder?: number;
-  docCount?: number;
   createTime?: string;
+  docCount?: number;
+  id?: number;
+  name?: string;
+  parentId?: number;
+  sortOrder?: number;
   updateTime?: string;
 }

@@ -7,8 +7,8 @@
 
 export interface IngestSecretView {
   configured?: boolean;
-  source?: string;
-  secretMasked?: string;
-  hmacConfigured?: boolean;
   hint?: string;
+  hmacConfigured?: boolean;
+  secretMasked?: string;
+  source?: string;
 }

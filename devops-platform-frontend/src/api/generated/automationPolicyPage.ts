@@ -8,8 +8,8 @@ import type { AutomationPolicy } from './automationPolicy';
 
 export interface AutomationPolicyPage {
   items?: AutomationPolicy[];
-  total?: number;
   page?: number;
   size?: number;
+  total?: number;
   totalPages?: number;
 }

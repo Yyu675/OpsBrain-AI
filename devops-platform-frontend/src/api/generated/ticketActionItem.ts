@@ -6,13 +6,13 @@
  */
 
 export interface TicketActionItem {
-  id?: number;
-  postmortemId?: number;
-  ticketId?: string;
   content?: string;
-  owner?: string;
-  dueDate?: string;
-  status?: string;
   createTime?: string;
+  dueDate?: string;
+  id?: number;
+  owner?: string;
+  postmortemId?: number;
+  status?: string;
+  ticketId?: string;
   updateTime?: string;
 }

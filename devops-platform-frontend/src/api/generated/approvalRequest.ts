@@ -6,25 +6,25 @@
  */
 
 export interface ApprovalRequest {
-  id?: number;
   actionType?: string;
-  toolName?: string;
-  riskLevel?: string;
-  summary?: string;
-  payload?: string;
-  requester?: string;
-  traceId?: string;
-  sessionId?: string;
-  status?: string;
   approver?: string;
+  createTime?: string;
+  decidable?: boolean;
   decidedAt?: string;
   decisionReason?: string;
-  expiresAt?: string;
-  executedAt?: string;
   executeResult?: string;
-  createTime?: string;
-  updateTime?: string;
-  overdue?: boolean;
-  decidable?: boolean;
+  executedAt?: string;
+  expiresAt?: string;
   highRisk?: boolean;
+  id?: number;
+  overdue?: boolean;
+  payload?: string;
+  requester?: string;
+  riskLevel?: string;
+  sessionId?: string;
+  status?: string;
+  summary?: string;
+  toolName?: string;
+  traceId?: string;
+  updateTime?: string;
 }

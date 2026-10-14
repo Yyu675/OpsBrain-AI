@@ -6,12 +6,12 @@
  */
 
 export interface TicketActivity {
-  id?: number;
-  ticketId?: string;
   color?: string;
-  text?: string;
-  detail?: string;
-  userName?: string;
-  highlight?: boolean;
   createTime?: string;
+  detail?: string;
+  highlight?: boolean;
+  id?: number;
+  text?: string;
+  ticketId?: string;
+  userName?: string;
 }

@@ -27,8 +27,10 @@
 - **软闸**（默认只报告，`--require-rag-hit` 转硬）：诊断的知识证据是否命中导入的手册。
   `AI_MODE=MOCK` 下 embedding 是确定性桩向量（前 4 维放余弦系数），**语义相似度不成立**，
   命中与否取决于桩向量；只有 REAL 模式它才是真指标。
-- 场景 C 全部是软闸：它验证的是「系统在非预期时序下的行为是否可解释」，其现状本身
-  就是一条待决策的发现（见 `docs/09-operations/业务闭环能力验证方案.md` §4）。
+- 场景 C 的时序类断言是软闸：它验证的是「系统在非预期时序下的行为是否可解释」，
+  现状本身曾是一条待决策发现（见 `docs/09-operations/业务闭环能力验证方案.md` §4）。
+- **例外**：「未建单原因显式标注（F2）」是硬闸（观察窗启用时）——它已从「发现」
+  变成「契约」：不会再自动建单的告警必须在读路径带上原因，否则页面就是静默漏单。
 
 用法
 ====
@@ -376,9 +378,14 @@ def run(args) -> int:
 
     # 恢复事件穿透
     print(f"\n{CYAN}▸ 场景 A：恢复事件（同一触发器，54 秒后 OK）{NC}")
+    # 故意换级别：PROBLEM 是 High、OK 报 Average。
+    # 这是 F1（2026-10-15 修复）的回归防线——Zabbix 的 event_severity 是事件属性，
+    # 运维中途调过触发器级别时两事件不同；若它参与去重身份，恢复就会配不上原告警，
+    # 告警永远挂在 FIRING（真机上表现为「恢复了但系统还亮着」）。
     code, _ = d.api("POST", "/api/v1/alerts/webhook/zabbix",
-                    zabbix_event(tag, "High", t_ok, resolved=True, event_seq="2"))
-    d.hop("A-恢复", "恢复事件受理", code == 200, f"HTTP {code}")
+                    zabbix_event(tag, "Average", t_ok, resolved=True, event_seq="2"))
+    d.hop("A-恢复", "恢复事件受理（级别与触发事件不同：High→Average）",
+          code == 200, f"HTTP {code}｜F1 回归点：event_severity 不得参与去重身份")
     a = d.poll(lambda: (lambda x: x if x and x.get("status") == "RESOLVED" else None)(find_alert(d, tag)),
                timeout_s=30)
     d.hop("A-恢复", "告警状态转 RESOLVED", bool(a), f"status={(a or {}).get('status')}")
@@ -457,6 +464,20 @@ def run(args) -> int:
           bool(a_c) and a_c.get("ticketId") is None,
           f"ticketId={(a_c or {}).get('ticketId')}｜观察窗回溯 24h、窗口 10min；"
           f"事件距今 26h → 不进观察窗也不被补单扫描捞起", soft=True)
+
+    # F2（2026-10-15 修复）：「不会再自动建单」必须在页面上说清楚。
+    # 之前这里是静默无单——值班人分不清「系统漏单」和「系统明确不建单」。
+    code_obs, obs = d.data("GET", "/api/v1/alerts/observation-stats")
+    obs_enabled = bool((obs or {}).get("enabled")) if isinstance(obs, dict) else False
+    reason = (a_c or {}).get("unticketedReason")
+    if code_obs != 200 or not obs_enabled:
+        d.skip("C-回放", "未建单原因标注（F2）",
+               f"观察窗未启用或端点不可读（enabled={obs_enabled} HTTP {code_obs}）——"
+               f"该标注只在观察窗生效时有意义")
+    else:
+        d.hop("C-回放", "未建单原因显式标注（F2：不再静默无单）",
+              bool(reason and "不会再自动建单" in reason),
+              f"unticketedReason={reason!r}")
 
     # ============================== 通知链自监控
     print(f"\n{CYAN}▸ 收尾：通知链自监控（送达面）{NC}")

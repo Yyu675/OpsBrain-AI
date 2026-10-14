@@ -15,6 +15,45 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | 探针 | 对应契约 | 覆盖 |
 | --- | --- | --- |
 | `AlertNotifyTemplateProbe.java` | `AlertNotifyTemplateTest` | 触发卡事实/链接/转义/估算标注、恢复卡三态收尾与回落取值、升级卡插入位置、诊断卡逐方向状态与恒 normal、行级与整卡两级截断 |
+| `closed_loop_drill.py` | 六条核心链路的端到端契约 | 见下节「业务闭环实弹」 |
+| `rbac_walkthrough.py` | `OpsWriteGuard` + 类级 RBAC 门控 | 见下节「权限矩阵实弹」 |
+
+## 业务闭环实弹（`closed_loop_drill.py`）
+
+三场景、42 跳断言（其中 1 跳是 RAG 语义软闸），把「告警进来 → 建单 → 诊断 → 处置 → 恢复 → 复盘沉淀」走一遍并逐跳断言：
+
+| 场景 | 验的是什么 |
+| --- | --- |
+| A 高危 P1 | 主链 + 时间穿透（事件墙钟不是收到时刻）+ 知识飞轮沉淀 |
+| B P2 抖动 | 观察窗降噪（窗口内自愈**不建单**）真的生效 |
+| C 历史回放 | 非预期时序下的行为可解释，且**页面显式标注「不会再自动建单」**（F2） |
+
+```bash
+python3 tools/verify/closed_loop_drill.py --base http://localhost:8088/ai \
+    --account admin:admin123 [--psql <psql> --pgurl <dsn>] [--require-rag-hit] [--json /tmp/cl.json]
+# 退出码：0=硬闸全过；1=有硬闸失败（逐跳点名）；2=环境/前置不满足
+```
+
+口径提醒：`AI_MODE=MOCK` 下知识检索命中是**桩向量**决定的（无语义），所以「RAG 命中」默认是
+软闸；REAL 模式再加 `--require-rag-hit` 转硬闸。方案与实跑记录见
+`docs/09-operations/业务闭环能力验证方案.md`。
+
+## 权限矩阵实弹（`rbac_walkthrough.py`）
+
+14 个探针面 × 3 个账号（42 格），判据**取自源码执法点**（类级 `@SaCheckRole`、
+`OpsWriteGuard` 资源级守卫），不一致即红并逐行点名——这正是 DoD#7 第二列要的
+「双账号实弹走查」，比人工点页面更可复现。
+
+```bash
+python3 tools/verify/rbac_walkthrough.py --base http://localhost:8088/ai \
+    --account admin:admin123:ADMIN [--account ops:<pwd>:OPS] [--account viewer:<pwd>:VIEWER] [--json /tmp/rbac.json]
+```
+
+## 发布回退实弹（`scripts/rollback-drill.sh`）
+
+DoD#6 的「后端版本回退 <5min」：两种模式（沙箱无 Docker 时用 `artifact`，两个发布目录切换；
+生产用 `docker`，双 tag + `compose up -d`）。版本身份**用契约差异证伪**（新版独有端点在新版必须存在、
+旧版必须不存在）——只看 HTTP 200 会误判：旧版也有通配路由，两版都回 200。
 | `closed_loop_drill.py` | 六条核心链路的端到端契约 | 真告警 → 归一化 → 建单 → 双向溯源 → 诊断（四路证据 + 充分度语义）→ 处置五连 → 恢复穿透 → 复盘沉淀；另含观察窗降噪与历史回放两个场景。41 跳硬闸，逐跳点名。方案说明见 `docs/09-operations/业务闭环能力验证方案.md` |
 | `rbac_walkthrough.py` | `OPS 写守卫 / ADMIN 专有面` 的实弹口径 | 14 个探针面 × N 账号（默认 ADMIN/OPS/VIEWER），判据**取自源码执法点**而非"跑出来什么抄什么"，不一致即红并逐行点名（DoD#7 第二列） |
 

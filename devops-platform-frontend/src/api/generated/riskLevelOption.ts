@@ -6,7 +6,7 @@
  */
 
 export interface RiskLevelOption {
-  value?: string;
-  label?: string;
   description?: string;
+  label?: string;
+  value?: string;
 }

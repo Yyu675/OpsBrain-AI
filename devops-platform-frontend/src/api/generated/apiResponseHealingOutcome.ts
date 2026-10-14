@@ -8,8 +8,8 @@ import type { HealingOutcome } from './healingOutcome';
 
 export interface ApiResponseHealingOutcome {
   code?: number;
-  message?: string;
   data?: HealingOutcome;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

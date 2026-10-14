@@ -6,30 +6,31 @@
  */
 
 export interface Alert {
-  id?: number;
-  source?: string;
-  system?: string;
-  alertName?: string;
-  level?: string;
-  title?: string;
-  description?: string;
-  status?: string;
-  dedupKey?: string;
-  service?: string;
-  module?: string;
-  occurrenceCount?: number;
-  firstOccurredAt?: string;
-  lastOccurredAt?: string;
   acknowledgedAt?: string;
-  resolvedAt?: string;
-  ticketId?: string;
-  labelsJson?: string;
+  alertName?: string;
   annotationsJson?: string;
+  createTime?: string;
+  dedupKey?: string;
+  description?: string;
   falsePositive?: boolean;
   falsePositiveMarkedAt?: string;
-  createTime?: string;
-  updateTime?: string;
-  observing?: boolean;
+  firstOccurredAt?: string;
   highRisk?: boolean;
+  id?: number;
+  labelsJson?: string;
+  lastOccurredAt?: string;
+  level?: string;
   lowRisk?: boolean;
+  module?: string;
+  observing?: boolean;
+  occurrenceCount?: number;
+  resolvedAt?: string;
+  service?: string;
+  source?: string;
+  status?: string;
+  system?: string;
+  ticketId?: string;
+  title?: string;
+  unticketedReason?: string;
+  updateTime?: string;
 }

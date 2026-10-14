@@ -6,11 +6,8 @@
  */
 
 export interface ChangeEventRequest {
-  /**
-   * @minLength 0
-   * @maxLength 128
-   */
-  serviceName: string;
+  /** @minLength 1 */
+  changeTime: string;
   /**
    * @minLength 0
    * @maxLength 32
@@ -18,21 +15,24 @@ export interface ChangeEventRequest {
   changeType: string;
   /**
    * @minLength 0
+   * @maxLength 191
+   */
+  externalId?: string;
+  /**
+   * @minLength 0
    * @maxLength 64
    */
   operator?: string;
-  /** @minLength 1 */
-  summary: string;
-  /** @minLength 1 */
-  changeTime: string;
+  /**
+   * @minLength 0
+   * @maxLength 128
+   */
+  serviceName: string;
   /**
    * @minLength 0
    * @maxLength 64
    */
   source?: string;
-  /**
-   * @minLength 0
-   * @maxLength 191
-   */
-  externalId?: string;
+  /** @minLength 1 */
+  summary: string;
 }

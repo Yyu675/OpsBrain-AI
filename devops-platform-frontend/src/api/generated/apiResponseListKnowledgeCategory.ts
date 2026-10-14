@@ -8,8 +8,8 @@ import type { KnowledgeCategory } from './knowledgeCategory';
 
 export interface ApiResponseListKnowledgeCategory {
   code?: number;
-  message?: string;
   data?: KnowledgeCategory[];
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

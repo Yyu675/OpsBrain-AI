@@ -6,8 +6,8 @@
  */
 
 export interface AddReplyRequest {
-  role?: string;
   author?: string;
   authorColor?: string;
   content?: string;
+  role?: string;
 }

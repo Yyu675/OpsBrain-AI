@@ -6,7 +6,7 @@
  */
 
 export interface VerifyRequest {
-  method?: string;
   conclusion?: string;
+  method?: string;
   verifier?: string;
 }

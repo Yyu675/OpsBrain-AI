@@ -6,6 +6,6 @@
  */
 
 export interface EscalateRequest {
-  reason?: string;
   operator?: string;
+  reason?: string;
 }

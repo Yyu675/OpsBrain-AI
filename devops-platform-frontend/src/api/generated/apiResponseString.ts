@@ -7,8 +7,8 @@
 
 export interface ApiResponseString {
   code?: number;
-  message?: string;
   data?: string;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

@@ -446,6 +446,50 @@ public class AlertService {
         return first != null && first.isAfter(LocalDateTime.now().minusMinutes(observationWindowMinutes));
     }
 
+    /**
+     * 该告警「不会再自动建单」的原因（读路径派生，供列表/详情显式标注）。
+     *
+     * <p>为什么需要它（2026-10-15 演练抓到）：观察窗只回溯 {@code 24} 小时
+     * （{@link #OBSERVATION_LOOKBACK_HOURS}），补单扫描同样只看这个窗口。
+     * 于是**回放/补推来的 P2 告警**（Zabbix 侧网络恢复后重投、历史迁移、
+     * 演练回放）既不在观察窗内、也不会被补单捞起——告警挂 FIRING、
+     * 永远没有工单，而页面当时什么也不说，值班人会当成系统漏单。</p>
+     *
+     * <p>返回 {@code null} 表示「当前没有需要解释的情况」：已建单、
+     * 非活跃态、还在观察窗内（页面另有「观察中」标）、或自动建单本身关闭。
+     * 级别低于建单门槛的情形由既有列表语义表达，不在此重复解释。</p>
+     */
+    public String unticketedReason(Alert alert) {
+        if (alert == null || alert.getTicketId() != null) {
+            return null;
+        }
+        if (!autoTicketEnabled || !observationEnabled) {
+            return null;
+        }
+        if (!"FIRING".equals(alert.getStatus())) {
+            return null;
+        }
+        if (!observationLevelSet().contains(alert.getLevel())) {
+            return null;
+        }
+        LocalDateTime first = alert.getFirstOccurredAt() != null
+                ? alert.getFirstOccurredAt() : alert.getCreateTime();
+        if (first == null) {
+            return null;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        // 还在观察窗内：等它自己过期后会进补单扫描，不是「不会建单」
+        if (first.isAfter(now.minusMinutes(observationWindowMinutes))) {
+            return null;
+        }
+        // 在补单回溯窗内：补单扫描会捞起，也不是「不会建单」
+        if (first.isAfter(now.minusHours(OBSERVATION_LOOKBACK_HOURS))) {
+            return null;
+        }
+        return "历史事件：早于补单回溯窗 " + OBSERVATION_LOOKBACK_HOURS
+                + " 小时，不会再自动建单；如需处置请手工建单";
+    }
+
     /** 观察窗配置快照（供查询侧统计用——单一配置源，口径不分叉） */
     public ObservationPolicy observationPolicy() {
         return new ObservationPolicy(observationEnabled, observationLevelSet(), observationWindowMinutes);
@@ -1395,6 +1439,12 @@ public class AlertService {
             sorted.remove("alertname");
             sorted.remove("service");
             sorted.remove("severity");
+            // 事件级严重度必须同排除（F1，2026-10-15 演练复现）：
+            // Zabbix 的 event_severity 是**事件属性**，恢复事件（OK）带的是触发器
+            // 当前级别——运维中途调过触发器级别时，PROBLEM 与 OK 的该字段不同，
+            // 指纹随之不同 → 恢复事件配不上原告警，告警永远挂在 FIRING。
+            // labels 里仍保留它（展示/统计要用），只是不参与身份计算。
+            sorted.remove("event_severity");
             for (Map.Entry<String, String> e : sorted.entrySet()) {
                 sb.append("|").append(e.getKey()).append("=").append(e.getValue());
             }

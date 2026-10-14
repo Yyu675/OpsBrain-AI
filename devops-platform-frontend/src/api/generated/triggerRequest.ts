@@ -8,8 +8,8 @@ import type { TriggerRequestParams } from './triggerRequestParams';
 
 export interface TriggerRequest {
   actionKey?: string;
-  environment?: string;
-  target?: string;
-  params?: TriggerRequestParams;
   alertId?: number;
+  environment?: string;
+  params?: TriggerRequestParams;
+  target?: string;
 }

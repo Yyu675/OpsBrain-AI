@@ -8,8 +8,8 @@ import type { HistoryList } from './historyList';
 
 export interface ApiResponseHistoryList {
   code?: number;
-  message?: string;
   data?: HistoryList;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

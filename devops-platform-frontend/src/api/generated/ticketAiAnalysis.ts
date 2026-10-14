@@ -6,16 +6,16 @@
  */
 
 export interface TicketAiAnalysis {
-  id?: number;
-  ticketId?: string;
-  version?: number;
-  content?: string;
-  reasons?: string[];
-  commands?: string[];
   citations?: string[];
+  commands?: string[];
   confidence?: number;
+  content?: string;
   costRmb?: number;
+  createTime?: string;
   feedback?: string;
   feedbackAt?: string;
-  createTime?: string;
+  id?: number;
+  reasons?: string[];
+  ticketId?: string;
+  version?: number;
 }

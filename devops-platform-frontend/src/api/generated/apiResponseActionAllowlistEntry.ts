@@ -8,8 +8,8 @@ import type { ActionAllowlistEntry } from './actionAllowlistEntry';
 
 export interface ApiResponseActionAllowlistEntry {
   code?: number;
-  message?: string;
   data?: ActionAllowlistEntry;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

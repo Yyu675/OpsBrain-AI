@@ -6,10 +6,10 @@
  */
 
 export interface PostmortemRequest {
-  timeline?: string;
-  impactScope?: string;
-  impactDuration?: number;
-  lessons?: string;
-  docId?: number;
   author?: string;
+  docId?: number;
+  impactDuration?: number;
+  impactScope?: string;
+  lessons?: string;
+  timeline?: string;
 }
