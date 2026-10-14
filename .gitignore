@@ -96,3 +96,7 @@ __pycache__/
 
 # orval 弃件（client 文件不入库，真产物是 src/api/generated）
 tools/orval-out/
+
+# 指标抓取令牌（2026-10-15）：秘密，只在本机/compose 卷里
+# 生成：bash scripts/monitoring-init-token.sh
+monitoring/secrets/

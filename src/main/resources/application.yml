@@ -212,6 +212,20 @@ devops:
     # 本地免登录预览用法：AUTH_ENABLED=false ./mvnw spring-boot:run
     auth-enabled: ${AUTH_ENABLED:true}
 
+    # ==================== 指标抓取面令牌（2026-10-15）====================
+    # /actuator/** 需要登录是对的，但 Prometheus 不会登录：抓取恒 401 会让
+    # up{job="opsbrain"} 恒 0 → 宕机规则常亮误报，其余 6 条应用规则恒无数据。
+    # 因此给抓取方一把**最小的钥匙**：令牌只对 /actuator/prometheus 一个路径生效，
+    # 其余 actuator 端点（health 详情、bean、依赖地址）仍需登录。
+    #
+    # 默认空 = 关（fail-closed）：没配就是今天的行为（401），不会意外敞开。
+    # 建议用文件而非环境变量：与应用/Prometheus 两侧共用同一份文件，
+    # 轮换只改文件、不需要改 env 也不需要重启应用（Prometheus 亦支持热读）。
+    # 生成（幂等，已在则保留；--rotate 轮换）：bash scripts/monitoring-init-token.sh
+    # 产出 monitoring/secrets/scrape_token（已 gitignore），并打印三处挂法自测命令。
+    scrape-token:        ${SCRAPE_TOKEN:}
+    scrape-token-file:   ${SCRAPE_TOKEN_FILE:}
+
     cors:
       # 允许跨域的来源，逗号分隔。默认 * 仅供本地开发。
       # ⚠️ 生产必须显式列举，例如：

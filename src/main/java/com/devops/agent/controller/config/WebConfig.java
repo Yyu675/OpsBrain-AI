@@ -69,10 +69,22 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${devops.security.auth-enabled:true}")
     private boolean authEnabled;
 
+    /**
+     * 指标抓取面的令牌身份（2026-10-15）。
+     *
+     * <p>{@code /actuator/**} 需要登录是对的，但 Prometheus 不会登录：抓取恒 401 会让
+     * {@code up{job="opsbrain"}} 恒 0 → 宕机规则常亮误报，其余应用规则恒哑（详见
+     * {@link com.devops.agent.infrastructure.guard.ScrapeTokenGuard} 类注释）。
+     * 守卫只对 {@code /actuator/prometheus} 一个路径生效，且默认关（未配令牌行为不变）。
+     */
+    private final com.devops.agent.infrastructure.guard.ScrapeTokenGuard scrapeTokenGuard;
+
     public WebConfig(
             com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor,
+            com.devops.agent.infrastructure.guard.ScrapeTokenGuard scrapeTokenGuard,
             Environment environment) {
         this.auditInterceptor = auditInterceptor;
+        this.scrapeTokenGuard = scrapeTokenGuard;
         this.environment = environment;
     }
 
@@ -117,11 +129,36 @@ public class WebConfig implements WebMvcConfigurer {
         // /actuator/health 放行给 K8s 探针：探针不带 token，
         // 拦下来会让 Pod 一直处于 NotReady。健康端点本身已配置为
         // 不暴露敏感明细（management.endpoint.health.show-details=never 时只回 UP/DOWN）。
+        // 令牌身份先行放行（只对 /actuator/prometheus 生效，见 guard 类注释）：
+        // 抓取方（Prometheus）带令牌直接通过；不带令牌或令牌不对，一律回落到登录校验——
+        // 即"未配置令牌"与"配错令牌"的表现都是 401，不会意外敞开。
         registry.addInterceptor(new SaInterceptor(handle ->
                         SaRouter.match("/actuator/**")
                                 .notMatch("/actuator/health", "/actuator/health/**")
-                                .check(() -> StpUtil.checkLogin())))
+                                .check(this::checkActuatorAccess)))
                 .addPathPatterns("/actuator/**");
+    }
+
+    /**
+     * actuator 端点放行判定：抓取令牌命中即放行，否则仍以登录身份为准。
+     * <p>抽成方法而非内联三元，只为一件事：<b>让"谁能进"这一行读起来就是一句话</b>——
+     * 安全判定的可读性就是它的可审计性。
+     */
+    private void checkActuatorAccess() {
+        if (scrapeTokenGuard.allows(currentRequest())) {
+            return;
+        }
+        StpUtil.checkLogin();
+    }
+
+    /** 取当前请求（拦截器阶段 Spring 已把请求放进 RequestContextHolder）。 */
+    private static jakarta.servlet.http.HttpServletRequest currentRequest() {
+        org.springframework.web.context.request.RequestAttributes attrs =
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+            return servletAttrs.getRequest();
+        }
+        return null;
     }
 
     /**

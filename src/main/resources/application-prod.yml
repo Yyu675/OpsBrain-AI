@@ -25,6 +25,12 @@ devops:
     # ——这个组合曾经真实发生过（当时是为了预览临时注释掉拦截器）。
     auth-enabled: true
 
+    # 指标抓取面令牌（2026-10-15）：生产**必须**配置，否则 Prometheus 抓不到应用指标
+    # → OpsBrainDown 恒亮误报 + 6 条应用规则恒哑（监控自己失真，比没有监控更坏）。
+    # 挂法与轮换见 docs/09-operations/部署运维手册.md「指标抓取面」。
+    scrape-token:      ${SCRAPE_TOKEN:}
+    scrape-token-file: ${SCRAPE_TOKEN_FILE:/run/secrets/scrape_token}
+
     # ==================== 安全响应头（P3-3 批 86）====================
     # 生产环境启用安全响应头，防护 XSS、点击劫持、MIME 嗅探等攻击。
     #
