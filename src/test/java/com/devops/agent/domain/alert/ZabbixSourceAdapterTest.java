@@ -442,7 +442,9 @@ class ZabbixSourceAdapterTest {
                 .isEqualTo(OffsetDateTime.parse("2026-10-13T17:37:55+08:00"));
 
         // {EVENT.TIME} 缺失（「每日」型触发器）：按当天零点，而不是整天不解析
-        assertThat(normalize(PROBLEM_JSON.replace("\"17:37:55\"", "")).startsAt())
+        // 变异成空串而不是删掉整行：删值会留下 "event_time": , 这种非法 JSON，
+        // 测试就会死在「样本解析失败」上，看着像产品缺陷其实是样本写坏了
+        assertThat(normalize(PROBLEM_JSON.replace("\"17:37:55\"", "\"\"")).startsAt())
                 .isEqualTo(OffsetDateTime.parse("2026-10-13T00:00:00+08:00"));
     }
 
