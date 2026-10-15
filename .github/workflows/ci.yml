@@ -41,6 +41,7 @@ jobs:
           python3 tools/verify/test_trivy_summary.py
           python3 tools/verify/test_sbom_runtime_probe.py
           python3 tools/verify/test_sbom_workflow.py
+          python3 tools/verify/test_verify_runtime_patches.py
           python3 tools/verify/test_maven_scan_coverage.py
           python3 tools/verify/test_maven_coverage_workflow.py
           python3 tools/verify/test_trivy_policy.py
@@ -269,6 +270,32 @@ jobs:
                   sys.exit(1)
           PY
 
+      - name: Tika 旧版本真实负对照（不能把编译/下载失败当安全断言失败）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.TikaParserSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/tika-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Dtika.version=3.0.0 \
+            '-Dtest=TikaParserSecurityCompatibilityTest#externalDtdsAndEntitiesAreDisabled' test > /tmp/tika-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import shutil, sys, xml.etree.ElementTree as ET
+          path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.TikaParserSecurityCompatibilityTest.xml'
+          root = ET.parse(path).getroot()
+          case = root.find('testcase')
+          assert sys.argv[1] == '1', '旧版必须真实红测，而不是下载/编译等失败'
+          assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['1', '1', '0', '0']
+          assert case.get('name') == 'externalDtdsAndEntitiesAreDisabled'
+          assert case.find('failure').get('type') == 'org.opentest4j.AssertionFailedError'
+          cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+          assert any(p.endswith('/tika-core-3.0.0.jar') for p in cp), '负对照未加载旧版Tika'
+          assert not any(p.endswith('/tika-core-3.2.2.jar') for p in cp), '负对照混入修补后core'
+          shutil.copyfile(path, '/tmp/tika-negative-control.xml')
+          print('::notice::Tika 3.0.0真实负对照：StAX安全断言1失败/0错误；修补版随后必须通过完整clean verify，非线上利用性证明')
+          PYTEST
+
       - name: 编译与测试
         # AI_MODE=MOCK：不调真实模型，CI 不烧额度也不依赖外网
         env:
@@ -410,7 +437,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-reports
-          path: target/surefire-reports/
+          path: |
+            target/surefire-reports/
+            /tmp/tika-negative-control.xml
+            /tmp/tika-negative-control.log
           if-no-files-found: ignore
           retention-days: 7
 
