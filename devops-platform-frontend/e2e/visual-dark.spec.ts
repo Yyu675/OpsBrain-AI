@@ -1,4 +1,5 @@
 import { test } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 import { mkdirSync } from 'node:fs'
 
 /**
@@ -25,7 +26,7 @@ test.describe('暗色主题截屏走查', () => {
     mkdirSync(outDir, { recursive: true })
 
     for (const p of PAGES) {
-      await page.goto(p.path)
+      await gotoApp(page, p.path)
       await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
       // 强制暗色（绕过系统偏好，直接钉死验收态）
       await page.evaluate(() => document.documentElement.classList.add('dark'))

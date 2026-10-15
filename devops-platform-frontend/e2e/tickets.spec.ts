@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 
 /**
  * 工单列表与创建 E2E（批88 P2）
@@ -53,7 +54,7 @@ test.describe('工单列表与创建', () => {
   })
 
   test('列表页渲染：KPI 卡片与表格', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     await expect(page.locator('.page-title', { hasText: '智能工单' })).toBeVisible()
     // 4 张固定 KPI + 视数据而定的「待分配」卡（有待分配工单时才出现）——
     // 断言下限而非精确数，避免依赖 dev 库具体数据
@@ -63,7 +64,7 @@ test.describe('工单列表与创建', () => {
   })
 
   test('创建工单：必填校验拦截空提交', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     await page.locator('.btn-create').click()
 
     const dialog = page.locator('#ticket-form-title')
@@ -77,7 +78,7 @@ test.describe('工单列表与创建', () => {
   test('创建工单：完整表单流 → 新单出现在列表', async ({ page }) => {
     const title = `${PREFIX}${Date.now()} 磁盘告警演练`
 
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     await page.locator('.btn-create').click()
     await expect(page.locator('#ticket-form-title')).toBeVisible()
 
@@ -98,7 +99,7 @@ test.describe('工单列表与创建', () => {
   })
 
   test('搜索过滤：keyword 走服务端', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     await expect(page.locator('.el-table__row').first()).toBeVisible({ timeout: 15_000 })
 
     const search = page.locator('input.filter-search-input').first()
@@ -111,7 +112,7 @@ test.describe('工单列表与创建', () => {
   })
 
   test('点击工单号进入详情页', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     const firstLink = page.locator('a.ticket-id').first()
     await expect(firstLink).toBeVisible({ timeout: 15_000 })
     const id = (await firstLink.textContent())!.trim()

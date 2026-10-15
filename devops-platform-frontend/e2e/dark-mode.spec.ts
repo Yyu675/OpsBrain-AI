@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 
 test.describe('暗色模式', () => {
   test('html 元素加载后不带 dark 类（默认浅色）', async ({ page }) => {
-    await page.goto('/')
+    await gotoApp(page, '/')
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {})
     await expect(page.locator('html')).toBeAttached()
   })
 
   test('通过 JS 切换 html.dark 类正常生效', async ({ page }) => {
-    await page.goto('/')
+    await gotoApp(page, '/')
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {})
 
     // 初始为浅色，切到暗色

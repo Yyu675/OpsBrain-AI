@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 
 /**
  * 移动端窄视口走查（390px）——对应任务清单「移动端窄视口走查」。
@@ -15,7 +16,7 @@ test.describe('移动端窄视口（390px）', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
   test('窄屏下显示汉堡、隐藏桌面侧栏', async ({ page }) => {
-    await page.goto('/')
+    await gotoApp(page, '/')
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {})
 
     // 窄屏形态：汉堡接管导航，桌面侧栏整体隐藏
@@ -24,7 +25,7 @@ test.describe('移动端窄视口（390px）', () => {
   })
 
   test('汉堡开抽屉 → 点导航项跳转 → 抽屉自动关闭', async ({ page }) => {
-    await page.goto('/')
+    await gotoApp(page, '/')
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {})
 
     // 开抽屉
@@ -39,7 +40,7 @@ test.describe('移动端窄视口（390px）', () => {
   })
 
   test('首页 390px 无横向溢出（KPI/卡片折行，不顶破视口）', async ({ page }) => {
-    await page.goto('/')
+    await gotoApp(page, '/')
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {})
 
     // 横向溢出 = scrollWidth 超过视口宽（留 2px 容差吃滚动条/四舍五入）

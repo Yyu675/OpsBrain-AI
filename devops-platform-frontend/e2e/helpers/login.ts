@@ -41,7 +41,12 @@ const CLICK_ATTEMPTS = 3
  * 纪律：断言一条不放宽（该跳 / 就必须跳 /、该有 token 就必须有 token），
  * 只是把现场带进报错——断言失败时必须能一眼看出该去查哪一层。
  */
-const submitUntilRequested = async (page: Page, username: string, password: string) => {
+export const submitLoginForm = async (
+  page: Page,
+  username: string,
+  password: string,
+  // 有些用例（如错误凭据）本就期待非 2xx，不该由这一层断言，故只负责「点到发出请求为止」
+) => {
   let requestSeen = false
   const onRequest = (req: Request) => {
     if (req.url().includes(LOGIN_URL_PART)) requestSeen = true
@@ -77,7 +82,7 @@ export const loginViaForm = async (page: Page, username: string, password: strin
   await page.evaluate(() => localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })
 
-  const { resp, attempts, requestSeen } = await submitUntilRequested(page, username, password)
+  const { resp, attempts, requestSeen } = await submitLoginForm(page, username, password)
 
   if (!resp) {
     throw new Error(

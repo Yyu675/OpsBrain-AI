@@ -1,5 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { submitLoginForm } from './helpers/login'
+import { gotoApp } from './helpers/nav'
+
 /**
  * 鉴权与路由守卫 E2E（批88 P2）
  *
@@ -21,11 +24,15 @@ import { test, expect, type Page } from '@playwright/test'
 
 const TOKEN_KEY = 'opsbrain-token'
 
-/** 在登录页完成一次真实登录（表单流），返回后 token 已写入 */
+/**
+ * 在登录页完成一次真实登录（表单流），返回后 token 已写入。
+ *
+ * 走公用原语 `submitLoginForm`：boot 期按钮重渲染会吞掉点击，而 Playwright 的
+ * actionability 检查在点击那一刻是通过的、不会自动重试（见 helpers/login.ts）。
+ * 这里**不断言结果**——本文件有用例本就期待 4xx（错误凭据），断言留在各用例里。
+ */
 async function loginViaForm(page: Page, user = 'admin', pass = 'admin123') {
-  await page.locator('input[placeholder="用户名"]').fill(user)
-  await page.locator('input[placeholder="密码"]').fill(pass)
-  await page.locator('button[type="submit"].login-btn').click()
+  await submitLoginForm(page, user, pass)
 }
 
 test.describe('鉴权与路由守卫', () => {
@@ -35,7 +42,7 @@ test.describe('鉴权与路由守卫', () => {
   })
 
   test('未登录访问受保护页 → 弹「请先登录」→ 前往登录带 redirect', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
 
     // 守卫弹 ElMessageBox 确认框（非静默重定向——用户决定去向）
     const box = page.locator('.el-message-box')
@@ -49,7 +56,7 @@ test.describe('鉴权与路由守卫', () => {
   })
 
   test('未登录访问受保护页 → 留在当前页 → 初始导航回落首页', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
 
     const box = page.locator('.el-message-box')
     await expect(box).toBeVisible({ timeout: 15_000 })
@@ -60,7 +67,7 @@ test.describe('鉴权与路由守卫', () => {
   })
 
   test('redirect 回跳：登录成功写入 token 并回到来源页', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     const box = page.locator('.el-message-box')
     await expect(box).toBeVisible({ timeout: 15_000 })
     await box.locator('button', { hasText: '前往登录' }).click()
@@ -76,7 +83,7 @@ test.describe('鉴权与路由守卫', () => {
   })
 
   test('错误密码：停留登录页且不写 token', async ({ page }) => {
-    await page.goto('/login')
+    await gotoApp(page, '/login')
     await loginViaForm(page, 'admin', 'wrong-password-xyz')
 
     await expect(page).toHaveURL(/\/login/)
@@ -85,7 +92,7 @@ test.describe('鉴权与路由守卫', () => {
   })
 
   test('直接落地登录页：登录成功跳首页', async ({ page }) => {
-    await page.goto('/login')
+    await gotoApp(page, '/login')
     await loginViaForm(page)
 
     // 无 redirect 参数 → redirectTarget() 回落 '/'
@@ -97,7 +104,7 @@ test.describe('鉴权与路由守卫', () => {
 
   test('带有效 token 直达 /login：自动恢复会话并跳走，不停留输密码', async ({ page }) => {
     // 先正常登录拿 token
-    await page.goto('/login')
+    await gotoApp(page, '/login')
     await loginViaForm(page)
     await expect(page).toHaveURL(/localhost:5173\/$/, { timeout: 15_000 })
     const token = await page.evaluate((k) => localStorage.getItem(k), TOKEN_KEY)
@@ -107,7 +114,7 @@ test.describe('鉴权与路由守卫', () => {
     // 再注册一个后执行的 init script 把有效 token 注回去（模拟"带着登录态回来"），
     // 然后重开 /login（书签/后退场景）：onMounted restoreSession → 自动跳走
     await page.addInitScript(([k, v]) => localStorage.setItem(k, v!), [TOKEN_KEY, token] as const)
-    await page.goto('/login')
+    await gotoApp(page, '/login')
     await expect(page).toHaveURL(/localhost:5173\/$/, { timeout: 15_000 })
     await expect(page.locator('input[placeholder="用户名"]')).toHaveCount(0)
   })
@@ -115,7 +122,7 @@ test.describe('鉴权与路由守卫', () => {
   test('带失效 token 直达 /login：清 token 停留本页，可正常重新登录', async ({ page }) => {
     // 同上：after-delete init script 注入失效 token
     await page.addInitScript((k) => localStorage.setItem(k, 'invalid-token-e2e'), TOKEN_KEY)
-    await page.goto('/login')
+    await gotoApp(page, '/login')
 
     // 无效 token：restoreSession 判凭证失效 → 清 token、停留登录页
     await expect(page.locator('input[placeholder="用户名"]')).toBeVisible()
