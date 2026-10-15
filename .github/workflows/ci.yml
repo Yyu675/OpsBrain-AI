@@ -42,6 +42,7 @@ jobs:
           python3 tools/verify/test_sbom_runtime_probe.py
           python3 tools/verify/test_sbom_workflow.py
           python3 tools/verify/test_verify_runtime_patches.py
+          python3 tools/verify/test_maven_patch_availability.py
           python3 tools/verify/test_maven_scan_coverage.py
           python3 tools/verify/test_maven_coverage_workflow.py
           python3 tools/verify/test_trivy_policy.py
