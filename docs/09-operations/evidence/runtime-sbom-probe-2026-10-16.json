@@ -1,11 +1,11 @@
 {
   "date": "2026-10-16",
-  "run": 38786511670,
-  "head": "95ae1468214be929d62d132bd9c2a2f9299c7e7a",
-  "job": 116599971327,
+  "run": 38787391235,
+  "head": "d8330bc344a9ce557e5d732879b042d3c47ba55b",
+  "job": 116602990878,
   "source": "Check annotations紧凑压缩分片（不含完整packaged_libraries数组）；已验证分片SHA256，不冒称下载过原始artifact",
-  "compact_sha256": "244e7bf885218b2fddcf3fa99c6e0a0f07128a07df787bb8b0703bb6ce96aec5",
-  "full_artifact_sha256": "f09a8253fe7197721780f2bbb1c5e9ac6c1ec2073695e738b826d09723fc1641",
+  "compact_sha256": "903edd8cb166ec089f42188c227065e9d11a6dcd3b1d2b2de92c6faf1e288282",
+  "full_artifact_sha256": "2252bea8430df86075e6ca6da99b2a22b20c2cce90c14337e8d3510b80fbe81f",
   "result": {
     "schema_version": 1,
     "input_candidate_complete": false,
@@ -24,7 +24,8 @@
       "packaged_unknown": 1,
       "finding_rows": 58,
       "unique_cves": 56,
-      "fixed_rows": 58
+      "fixed_rows": 58,
+      "packaged_finding_rows": 58
     },
     "native_gate_rc": 1,
     "findings": [
@@ -34,7 +35,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.18.8, 2.21.4"
+        "FixedVersion": "2.18.8, 2.21.4",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-89407",
@@ -42,7 +44,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.18.11, 2.21.7, 2.22.3"
+        "FixedVersion": "2.18.11, 2.21.7, 2.22.3",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-89425",
@@ -50,7 +53,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.21.7, 2.22.3, 2.18.11"
+        "FixedVersion": "2.21.7, 2.22.3, 2.18.11",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-54512",
@@ -58,7 +62,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.18.8, 3.1.4, 2.21.4"
+        "FixedVersion": "2.18.8, 3.1.4, 2.21.4",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-54513",
@@ -66,7 +71,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.18.8, 2.21.4, 3.1.4"
+        "FixedVersion": "2.18.8, 2.21.4, 3.1.4",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-68497",
@@ -74,7 +80,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.18.10, 2.21.6, 2.22.2"
+        "FixedVersion": "2.18.10, 2.21.6, 2.22.2",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-91776",
@@ -82,7 +89,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.18.11, 2.21.7, 2.22.3"
+        "FixedVersion": "2.18.11, 2.21.7, 2.22.3",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-91777",
@@ -90,7 +98,8 @@
         "InstalledVersion": "2.19.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.21.7, 2.18.11, 2.22.3"
+        "FixedVersion": "2.21.7, 2.18.11, 2.22.3",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-40983",
@@ -98,7 +107,8 @@
         "InstalledVersion": "1.15.10",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "1.16.6, 1.15.12"
+        "FixedVersion": "1.16.6, 1.15.12",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-40984",
@@ -106,7 +116,8 @@
         "InstalledVersion": "1.15.10",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "1.16.6, 1.15.12"
+        "FixedVersion": "1.16.6, 1.15.12",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42583",
@@ -114,7 +125,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.1.133.Final"
+        "FixedVersion": "4.1.133.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-59901",
@@ -122,7 +134,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.1.136.Final"
+        "FixedVersion": "4.1.136.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42579",
@@ -130,7 +143,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.13.Final, 4.1.133.Final"
+        "FixedVersion": "4.2.13.Final, 4.1.133.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-33870",
@@ -138,7 +152,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.1.132.Final, 4.2.10.Final"
+        "FixedVersion": "4.1.132.Final, 4.2.10.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42584",
@@ -146,7 +161,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.13.Final, 4.1.133.Final"
+        "FixedVersion": "4.2.13.Final, 4.1.133.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42587",
@@ -154,7 +170,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.13.Final, 4.1.133.Final"
+        "FixedVersion": "4.2.13.Final, 4.1.133.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-55831",
@@ -162,7 +179,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.16.Final, 4.1.136.Final"
+        "FixedVersion": "4.2.16.Final, 4.1.136.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-55833",
@@ -170,7 +188,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.16.Final, 4.1.136.Final"
+        "FixedVersion": "4.2.16.Final, 4.1.136.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-56745",
@@ -178,7 +197,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.16.Final, 4.1.136.Final"
+        "FixedVersion": "4.2.16.Final, 4.1.136.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-33871",
@@ -186,7 +206,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.1.132.Final, 4.2.11.Final"
+        "FixedVersion": "4.1.132.Final, 4.2.11.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42587",
@@ -194,7 +215,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.13.Final, 4.1.133.Final"
+        "FixedVersion": "4.2.13.Final, 4.1.133.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-56819",
@@ -202,7 +224,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.16.Final, 4.1.136.Final"
+        "FixedVersion": "4.2.16.Final, 4.1.136.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-75595",
@@ -210,7 +233,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "4.2.17.Final, 4.1.137.Final"
+        "FixedVersion": "4.2.17.Final, 4.1.137.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-44249",
@@ -218,7 +242,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.15.Final, 4.1.135.Final"
+        "FixedVersion": "4.2.15.Final, 4.1.135.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-45416",
@@ -226,7 +251,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.15.Final, 4.1.135.Final"
+        "FixedVersion": "4.2.15.Final, 4.1.135.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-50010",
@@ -234,7 +260,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.15.Final, 4.1.135.Final"
+        "FixedVersion": "4.2.15.Final, 4.1.135.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-45674",
@@ -242,7 +269,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.15.Final, 4.1.135.Final"
+        "FixedVersion": "4.2.15.Final, 4.1.135.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-47691",
@@ -250,7 +278,8 @@
         "InstalledVersion": "4.1.131.Final",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.2.15.Final, 4.1.135.Final"
+        "FixedVersion": "4.2.15.Final, 4.1.135.Final",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-40682",
@@ -258,7 +287,8 @@
         "InstalledVersion": "2.5.4",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "2.5.9, 3.0.0-M3, 1.9.5"
+        "FixedVersion": "2.5.9, 3.0.0-M3, 1.9.5",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42027",
@@ -266,7 +296,8 @@
         "InstalledVersion": "2.5.4",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "2.5.9, 3.0.0-M3, 1.9.5"
+        "FixedVersion": "2.5.9, 3.0.0-M3, 1.9.5",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42440",
@@ -274,7 +305,8 @@
         "InstalledVersion": "2.5.4",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "2.5.9, 3.0.0-M3"
+        "FixedVersion": "2.5.9, 3.0.0-M3",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2025-66516",
@@ -282,7 +314,8 @@
         "InstalledVersion": "3.0.0",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "3.2.2"
+        "FixedVersion": "3.2.2",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2025-54988",
@@ -290,7 +323,8 @@
         "InstalledVersion": "3.0.0",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "3.2.2"
+        "FixedVersion": "3.2.2",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2025-66516",
@@ -298,7 +332,8 @@
         "InstalledVersion": "3.0.0",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "3.2.2"
+        "FixedVersion": "3.2.2",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-41293",
@@ -306,7 +341,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "9.0.118, 10.1.55, 11.0.22"
+        "FixedVersion": "9.0.118, 10.1.55, 11.0.22",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-43512",
@@ -314,7 +350,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "9.0.118, 10.1.55, 11.0.22"
+        "FixedVersion": "9.0.118, 10.1.55, 11.0.22",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-43515",
@@ -322,7 +359,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "9.0.118, 10.1.55, 11.0.22"
+        "FixedVersion": "9.0.118, 10.1.55, 11.0.22",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-65182",
@@ -330,7 +368,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "11.0.25, 10.1.58, 9.0.121"
+        "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-65905",
@@ -338,7 +377,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "11.0.25, 10.1.58, 9.0.121"
+        "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-68525",
@@ -346,7 +386,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "11.0.25, 10.1.58, 9.0.121"
+        "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-29129",
@@ -354,7 +395,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "9.0.116, 10.1.53, 11.0.20"
+        "FixedVersion": "9.0.116, 10.1.53, 11.0.20",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-34483",
@@ -362,7 +404,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "9.0.116, 10.1.54, 11.0.21"
+        "FixedVersion": "9.0.116, 10.1.54, 11.0.21",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-34487",
@@ -370,7 +413,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "9.0.117, 10.1.54, 11.0.21"
+        "FixedVersion": "9.0.117, 10.1.54, 11.0.21",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-41284",
@@ -378,7 +422,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "9.0.118, 10.1.55, 11.0.22"
+        "FixedVersion": "9.0.118, 10.1.55, 11.0.22",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-42498",
@@ -386,7 +431,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "9.0.118, 10.1.55, 11.0.22"
+        "FixedVersion": "9.0.118, 10.1.55, 11.0.22",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-43513",
@@ -394,7 +440,8 @@
         "InstalledVersion": "10.1.52",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "9.0.118, 10.1.55, 11.0.22"
+        "FixedVersion": "9.0.118, 10.1.55, 11.0.22",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2025-14813",
@@ -402,7 +449,8 @@
         "InstalledVersion": "1.81",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "1.80.2, 1.81.1, 1.84"
+        "FixedVersion": "1.80.2, 1.81.1, 1.84",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-8763",
@@ -410,7 +458,8 @@
         "InstalledVersion": "1.81",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "1.85"
+        "FixedVersion": "1.85",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-13506",
@@ -418,7 +467,8 @@
         "InstalledVersion": "1.81",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "1.85"
+        "FixedVersion": "1.85",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-75140",
@@ -426,7 +476,8 @@
         "InstalledVersion": "1.18.1",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "1.23.2"
+        "FixedVersion": "1.23.2",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-40973",
@@ -434,7 +485,8 @@
         "InstalledVersion": "3.5.12",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.0.6, 3.5.14"
+        "FixedVersion": "4.0.6, 3.5.14",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-41695",
@@ -442,7 +494,8 @@
         "InstalledVersion": "3.5.10",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.0.6, 3.5.12"
+        "FixedVersion": "4.0.6, 3.5.12",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-41716",
@@ -450,7 +503,8 @@
         "InstalledVersion": "3.5.10",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "4.0.6, 3.5.12"
+        "FixedVersion": "4.0.6, 3.5.12",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-41850",
@@ -458,7 +512,8 @@
         "InstalledVersion": "6.2.17",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "7.0.8, 6.2.19"
+        "FixedVersion": "7.0.8, 6.2.19",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-47884",
@@ -466,7 +521,8 @@
         "InstalledVersion": "6.2.17",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "7.0.9"
+        "FixedVersion": "7.0.9",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-47890",
@@ -474,7 +530,8 @@
         "InstalledVersion": "6.2.17",
         "Severity": "CRITICAL",
         "Status": "fixed",
-        "FixedVersion": "7.0.9"
+        "FixedVersion": "7.0.9",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-41842",
@@ -482,7 +539,8 @@
         "InstalledVersion": "6.2.17",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "7.0.8, 6.2.19"
+        "FixedVersion": "7.0.8, 6.2.19",
+        "byte_matched_packaged": true
       },
       {
         "VulnerabilityID": "CVE-2026-41845",
@@ -490,7 +548,8 @@
         "InstalledVersion": "6.2.17",
         "Severity": "HIGH",
         "Status": "fixed",
-        "FixedVersion": "7.0.8, 6.2.19"
+        "FixedVersion": "7.0.8, 6.2.19",
+        "byte_matched_packaged": true
       }
     ],
     "runtime_missing_from_sbom": [],
@@ -519,6 +578,48 @@
         "jar",
         ""
       ]
+    ],
+    "sbom_extra_packaging_evidence": [
+      {
+        "variant": [
+          "jakarta.activation:jakarta.activation-api",
+          "2.1.4",
+          "jar",
+          ""
+        ],
+        "byte_matched_packaged": true,
+        "runtime_tree_paths": []
+      },
+      {
+        "variant": [
+          "jakarta.xml.bind:jakarta.xml.bind-api",
+          "4.0.4",
+          "jar",
+          ""
+        ],
+        "byte_matched_packaged": true,
+        "runtime_tree_paths": []
+      },
+      {
+        "variant": [
+          "org.springframework:spring-core",
+          "6.2.17",
+          "jar",
+          ""
+        ],
+        "byte_matched_packaged": true,
+        "runtime_tree_paths": []
+      },
+      {
+        "variant": [
+          "org.springframework:spring-jcl",
+          "6.2.17",
+          "jar",
+          ""
+        ],
+        "byte_matched_packaged": true,
+        "runtime_tree_paths": []
+      }
     ],
     "sbom_missing_from_scan": [],
     "runtime_not_packaged": [
@@ -615,14 +716,14 @@
       }
     ],
     "boundary": "独立实验非生产放行；Boot库按SBOM SHA256绑定，不按文件名猜；只核SBOM扫描GAV，不证明scanner逐classifier覆盖；新增发现不是已修补/已确认可利用",
-    "checkout_sha": "e3dc6254dcc5b547646e159db4bc289309332ad2",
+    "checkout_sha": "ee437e647fb09020cb19b4d11b2560873c1308a9",
     "input_sha256": {
       "tree": "4bc302d648b5415e5b6bd566229033e05ec15879c4f5c734a42de470625d42ec",
-      "sbom": "3e360bff4f6eb772802867e5e50b090a8a0468cebcca021f17c7e53ff3ab950e",
-      "report": "0cca16c60e74c1b9a0c835b9ff5aed2b2a4135820dec6519b2cd2b1c9990e45c",
-      "gate": "0cca16c60e74c1b9a0c835b9ff5aed2b2a4135820dec6519b2cd2b1c9990e45c",
+      "sbom": "0ca985223dd3e5527e6fbb9fc5573c2ef31d3517033334f9cfc0425796ad5572",
+      "report": "77391150c54be7c6ddde3b698508a002a4a79c0ef647b5c13b052862e8f7e20e",
+      "gate": "77391150c54be7c6ddde3b698508a002a4a79c0ef647b5c13b052862e8f7e20e",
       "gate_rc": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
-      "boot_jar": "755b9132497ecaf5945872537c17404c4a4ad6e9c94c57e145c3e3fc8d49f3a8"
+      "boot_jar": "b33f780ff864d0b922b46e71b62b4aad215d566d14b92fe4b62056faf24ba112"
     }
   },
   "reviewed_advisories": [
@@ -752,5 +853,13 @@
         }
       ]
     }
-  ]
+  ],
+  "initial_snapshot": {
+    "run": 38786511670,
+    "head": "95ae1468214be929d62d132bd9c2a2f9299c7e7a",
+    "job": 116599971327,
+    "compact_sha256": "244e7bf885218b2fddcf3fa99c6e0a0f07128a07df787bb8b0703bb6ce96aec5",
+    "full_artifact_sha256": "f09a8253fe7197721780f2bbb1c5e9ac6c1ec2073695e738b826d09723fc1641"
+  },
+  "verification": "全部58条发现均关联到SBOM SHA256匹配的实际Boot内嵌库；4个SBOM额外坐标均实际打包，且原runtime tree无对应路径。不证明全部可利用，也未修补。代码HEAD构建/协议检查10/10成功≠native gate rc1安全通过。"
 }
