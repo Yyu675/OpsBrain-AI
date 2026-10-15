@@ -25,6 +25,10 @@ def verify(bom, experiment):
     missing = REQUIRED - {v[0] for v in registry}
     if missing:
         raise ValueError("缺必需目标模块：" + ", ".join(sorted(missing)))
+    libraries = experiment.get("packaged_libraries")
+    if not isinstance(libraries, list) or not libraries:
+        raise ValueError("缺实际Boot内嵌库字节证据，不能仅凭SBOM验收")
+    packaged = {tuple(row["variant"]): row["sha256"] for row in libraries if "variant" in row}
     selected = []
     for name, version, kind, classifier in registry:
         group = name.split(":")[0]
@@ -33,6 +37,8 @@ def verify(bom, experiment):
         # tcnative有独立2.x版本流，随Netty BOM对齐；只排除版本相等断言，不豁免漏洞。
         if not name.startswith("io.netty:netty-tcnative") and version != VERSIONS[group]:
             raise ValueError(f"补丁模块混版/回退：{name}:{version}，需{VERSIONS[group]}")
+        if packaged.get((name, version, kind, classifier)) != registry[(name, version, kind, classifier)]:
+            raise ValueError(f"补丁未绑定实际Boot字节：{name}:{version}:{classifier}")
         selected.append({"name": name, "version": version, "type": kind, "classifier": classifier})
     target_findings = [f for f in experiment["findings"] if f.get("PkgName", "").split(":")[0] in VERSIONS
                        and f.get("Severity") in ("HIGH", "CRITICAL")]

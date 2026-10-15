@@ -24,6 +24,8 @@ def fixture():
     experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
                   "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
                   "native_gate_rc": 1, "checkout_sha": "b" * 40}
+    experiment["packaged_libraries"] = [{"variant": [c["group"] + ":" + c["name"], c["version"], "jar", ""],
+                                         "sha256": c["hashes"][0]["content"]} for c in bom["components"]]
     return bom, experiment
 
 
@@ -60,8 +62,18 @@ class TestRuntimePatches(unittest.TestCase):
     def test_tcnative独立版本不是漏洞豁免(self):
         bom, probe = fixture()
         bom["components"].append(component("io.netty:netty-tcnative-classes", "2.0.75.Final"))
+        probe["packaged_libraries"].append({"variant": ["io.netty:netty-tcnative-classes", "2.0.75.Final", "jar", ""], "sha256": "a" * 64})
         verify(bom, probe)
         probe["findings"].append({"PkgName": "io.netty:netty-tcnative-classes", "Severity": "HIGH"})
+        with self.assertRaises(ValueError):
+            verify(bom, probe)
+
+    def test_SBOM已补但Boot仍旧字节不能绿(self):
+        bom, probe = fixture()
+        probe["packaged_libraries"][0]["sha256"] = "b" * 64
+        with self.assertRaisesRegex(ValueError, "实际Boot字节"):
+            verify(bom, probe)
+        probe.pop("packaged_libraries")
         with self.assertRaises(ValueError):
             verify(bom, probe)
 
@@ -94,7 +106,7 @@ class TestRuntimePatches(unittest.TestCase):
                 self.prepare(root)
                 (root / "out.json").write_text("stale green")
                 if mode == "hash":
-                    (root / "bom.json").write_text("{}")
+                    (root / "bom.json").write_bytes((root / "bom.json").read_bytes() + b"\n")
                 elif mode == "missing":
                     (root / "probe.json").unlink()
                 self.assertEqual(self.invoke(root, "LOW" if mode == "severity" else "HIGH,CRITICAL"), 1)

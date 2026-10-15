@@ -257,4 +257,4 @@ ECJ=/path/to/ecj.jar
 
 ### 批116 三组运行时补丁验收
 
-`verify_runtime_patches.py --sbom … --experiment … --scan-severity HIGH,CRITICAL --json …` 在原生实验之后验证Tika3.2.2全模块、Netty4.1.137.Final（tcnative独立版本流，但不豁免其HC）、Tomcat10.1.58；必需模块/扫描覆盖/同源SHA缺失、混版、残余目标HC都失败并删除陈旧输出。7例行为/CLI自测：`python3 tools/verify/test_verify_runtime_patches.py`。这是本批补丁验收，不替代全量漏洞门禁；其`full_security_passed=false`表示不签发整体安全证明。后续升级须同步调整本批精确版本验收约束。后端CI另有真实Tika3.0.0 StAX负对照（恰好1失败、0错误、旧core classpath），随后修补版全量clean verify，XML/log单独留档。
+`verify_runtime_patches.py --sbom … --experiment … --scan-severity HIGH,CRITICAL --json …` 在原生实验之后验证Tika3.2.2全模块、Netty4.1.137.Final（tcnative独立版本流，但不豁免其HC）、Tomcat10.1.58；目标模块未绑定实际Boot字节、必需模块/扫描覆盖/同源SHA缺失、混版、残余目标HC都失败并删除陈旧输出。8例行为/CLI自测：`python3 tools/verify/test_verify_runtime_patches.py`。这是本批补丁验收，不替代全量漏洞门禁；其`full_security_passed=false`表示不签发整体安全证明。后续升级须同步调整本批精确版本验收约束。后端CI另有真实Tika3.0.0 StAX负对照（恰好1失败、0错误、旧core classpath），随后修补版全量clean verify，XML/log单独留档。
