@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import contextlib
+import base64
+import zlib
 import hashlib
 import io
 import json
@@ -9,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from verify_runtime_patches import REQUIRED, VERSIONS, main, verify
+from verify_runtime_patches import REQUIRED, VERSIONS, evidence_frames, main, verify
 
 
 def component(name, version):
@@ -76,6 +78,20 @@ class TestRuntimePatches(unittest.TestCase):
         probe.pop("packaged_libraries")
         with self.assertRaises(ValueError):
             verify(bom, probe)
+
+    def test_补丁字节证据分片完整可验且超容不静默丢证(self):
+        payload = json.dumps({"hashes": [hashlib.sha256(str(i).encode()).hexdigest() for i in range(150)]}).encode()
+        frames = evidence_frames(payload)
+        self.assertGreater(len(frames), 1)
+        self.assertEqual([f["part"] for f in frames], list(range(1, len(frames) + 1)))
+        self.assertTrue(all(f["parts"] == len(frames) and len(f["data"]) <= 2700 for f in frames))
+        decoded = zlib.decompress(base64.b64decode("".join(f["data"] for f in frames)))
+        self.assertEqual(decoded, payload)
+        self.assertEqual(frames[0]["sha256"], hashlib.sha256(decoded).hexdigest())
+        with self.assertRaises(ValueError):
+            evidence_frames(json.dumps([hashlib.sha256(str(i).encode()).hexdigest() for i in range(1000)]).encode())
+        bom, probe = fixture()
+        self.assertTrue(all(v["sha256"] == "a" * 64 and v["byte_matched_packaged"] for v in verify(bom, probe)["verified_variants"]))
 
     def invoke(self, root, severity="HIGH,CRITICAL"):
         argv = ["guard", "--sbom", str(root / "bom.json"), "--experiment", str(root / "probe.json"),

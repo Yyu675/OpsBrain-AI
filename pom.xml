@@ -69,13 +69,18 @@
     <!-- 用 LangChain4j BOM 统一托管所有 langchain4j-* 子模块版本，避免版本错配 -->
     <dependencyManagement>
         <dependencies>
-            <!-- Tika 全模块统一，防止只补 core 而 PDF/parser 仍停留 3.0.0。 -->
+            <!-- 只管理两处 Tika 入口；standard-package 的同版父 POM 统一其全部 parser。
+                 不导入 tika-bom：继承的第三方管理项会覆盖 Boot（实测拉入 Netty 4.2.3）。
+                 原生补丁闸对所有 Tika/Netty variant + Boot 字节强校验，不能只补 core。 -->
             <dependency>
                 <groupId>org.apache.tika</groupId>
-                <artifactId>tika-bom</artifactId>
+                <artifactId>tika-core</artifactId>
                 <version>${tika.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-parsers-standard-package</artifactId>
+                <version>${tika.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.langchain4j</groupId>

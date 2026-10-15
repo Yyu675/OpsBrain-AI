@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """批116两组补丁验收，不替代全量安全门禁，不豁免其他发现。"""
 import argparse
+import base64
 import hashlib
 import json
 from pathlib import Path
 import sys
+import zlib
 
 from sbom_runtime_probe import components
 from trivy_summary import escape
@@ -38,16 +40,25 @@ def verify(bom, experiment):
             raise ValueError(f"补丁模块混版/回退：{name}:{version}，需{VERSIONS[group]}")
         if packaged.get((name, version, kind, classifier)) != registry[(name, version, kind, classifier)]:
             raise ValueError(f"补丁未绑定实际Boot字节：{name}:{version}:{classifier}")
-        selected.append({"name": name, "version": version, "type": kind, "classifier": classifier})
+        selected.append({"name": name, "version": version, "type": kind, "classifier": classifier, "sha256": registry[(name, version, kind, classifier)], "byte_matched_packaged": True})
     target_findings = [f for f in experiment["findings"] if f.get("PkgName", "").split(":")[0] in VERSIONS
                        and f.get("Severity") in ("HIGH", "CRITICAL")]
     if target_findings:
         raise ValueError("两组仍有HIGH/CRITICAL：" + json.dumps(target_findings, ensure_ascii=False))
     return {"schema_version": 1, "target_groups_passed": True, "versions": VERSIONS,
             "verified_variants": sorted(selected, key=lambda v: (v["name"], v["classifier"])),
-            "target_hc_rows": 0, "remaining_hc_rows": len(experiment["findings"]),
+            "verified_variants_count": len(selected), "target_hc_rows": 0, "remaining_hc_rows": len(experiment["findings"]),
             "native_gate_rc": experiment.get("native_gate_rc"), "full_security_passed": False,
             "notice": "仅本批Tika/Netty通过；其他HC与Boot额外库覆盖仍待处置，不作为安全/灰度放行"}
+
+
+def evidence_frames(payload):
+    encoded = base64.b64encode(zlib.compress(payload)).decode()
+    chunks = [encoded[i:i + 2700] for i in range(0, len(encoded), 2700)]
+    if len(chunks) > 6:
+        raise ValueError("补丁证据超过注解容量，不能无证据绿")
+    return [{"part": i, "parts": len(chunks), "codec": "zlib+base64",
+             "sha256": hashlib.sha256(payload).hexdigest(), "data": chunk} for i, chunk in enumerate(chunks, 1)]
 
 
 def main():
@@ -70,10 +81,14 @@ def main():
         result = verify(json.loads(source), data)
         result["checkout_sha"] = data["checkout_sha"]
         result["sha256"] = {"sbom": hashlib.sha256(source).hexdigest(), "experiment": hashlib.sha256(probe).hexdigest()}
-        args.json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        payload = (json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode()
+        frames = evidence_frames(payload)
+        args.json.write_bytes(payload)
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         print("::error::两组运行时补丁验收失败：" + escape(e))
         return 1
+    for frame in frames:
+        print("::notice::运行时补丁证据压缩JSON：" + json.dumps(frame))
     print("::notice::两组运行时补丁通过：" + escape(json.dumps({k: v for k, v in result.items() if k != "verified_variants"}, ensure_ascii=False)))
     return 0
 
