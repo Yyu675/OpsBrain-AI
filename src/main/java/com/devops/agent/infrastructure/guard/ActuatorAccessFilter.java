@@ -51,6 +51,15 @@ import java.nio.charset.StandardCharsets;
  * 其余一律 401，响应体与 {@code GlobalExceptionHandler.handleNotLoginException}
  * 同码同文案（40101）——客户端不需要为 actuator 学第二套错误格式。
  *
+ * <h3>为什么守卫用 ObjectProvider 注入（一处踩过的坑）</h3>
+ * 切片测试（{@code @WebMvcTest}）的扫描白名单里<b>包含 {@code Filter}</b>，却不包含普通
+ * {@code @Component}——也就是说本类会被装进切片上下文，而 {@link ScrapeTokenGuard} 不会。
+ * 构造函数强依赖守卫时，切片上下文直接起不来：2026-10-15 的 CI 上，一个个
+ * {@code @WebMvcTest} 全部报 "ApplicationContext failure threshold exceeded"
+ * （AlertWebhook/Ticket/TeamMember/SessionMemory/HealthCheck 一起红，看起来像"到处都坏了"，
+ * 实际只有一个根因）。改成 ObjectProvider 后：切片里守卫缺席 → 等价于"未配置令牌"，
+ * 仍然 fail-closed，且只影响 {@code /actuator/**}（切片里本来也没有这些端点）。
+ *
  * <h3>为什么不用 StpUtil.checkLogin() 判「登录」</h3>
  * 那个 API 依赖 Sa-Token 的请求上下文（{@code RequestContextHolder}），
  * 而 Filter 阶段 {@code DispatcherServlet} 还没初始化它，会抛
@@ -68,9 +77,13 @@ public class ActuatorAccessFilter extends OncePerRequestFilter {
 
     private static final String ACTUATOR_PREFIX = "/actuator";
 
-    private final ScrapeTokenGuard scrapeTokenGuard;
+    /**
+     * 用 {@code ObjectProvider} 而非直接注入（理由见类注释「一处踩过的坑」）：
+     * 切片上下文里没有守卫，缺席时按「未配置令牌」处理即可，不该让上下文起不来。
+     */
+    private final org.springframework.beans.factory.ObjectProvider<ScrapeTokenGuard> scrapeTokenGuard;
 
-    public ActuatorAccessFilter(ScrapeTokenGuard scrapeTokenGuard) {
+    public ActuatorAccessFilter(org.springframework.beans.factory.ObjectProvider<ScrapeTokenGuard> scrapeTokenGuard) {
         this.scrapeTokenGuard = scrapeTokenGuard;
     }
 
@@ -90,7 +103,8 @@ public class ActuatorAccessFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);          // ① 探针契约
             return;
         }
-        if (scrapeTokenGuard.allows(request)) {
+        ScrapeTokenGuard guard = scrapeTokenGuard.getIfAvailable();
+        if (guard != null && guard.allows(request)) {
             chain.doFilter(request, response);          // ② 抓取令牌（仅 prometheus 路径）
             return;
         }
