@@ -19,5 +19,1089 @@
     "runtime_variants": 298
   },
   "status": "incomplete",
-  "decision": "审计执行成功不等于覆盖完整；不能据首扫0 HIGH/CRITICAL认定运行时安全。"
+  "decision": "审计执行成功不等于覆盖完整；不能据首扫0 HIGH/CRITICAL认定运行时安全。",
+  "verified_full_audit": {
+    "run": 38781873040,
+    "head": "b4b013b535490ed110966e6b0f478b9fdc846044",
+    "source": "4个Check annotation压缩分片，按part拼接/base64/zlib恢复并核对SHA256；不是下载原始artifact",
+    "audit_sha256": "e9b7e8e55768973ca0c5bc9d89792556240536c111e83ab44283e6dd2de79284",
+    "bytes": 96323,
+    "checkout_sha": "7cd3be35adbe8f33dc73d8ed4bba6c77b48a2fbe",
+    "input_sha256": {
+      "tree": "4bc302d648b5415e5b6bd566229033e05ec15879c4f5c734a42de470625d42ec",
+      "report": "d4a33e5eb7a624c16141f52cc974a8f3d63489238cb4e3e044541ca61e7f7b5c",
+      "pom": "ae8a701e41740f3b1095d7616ccdefef421fe4ea6add15fe863c36c617b099b8"
+    },
+    "counts": {
+      "runtime_gavs": 293,
+      "scanned_gavs": 32,
+      "matched_gavs": 32,
+      "missing_gavs": 261,
+      "extra_gavs": 0,
+      "runtime_variants": 298
+    },
+    "missing": [
+      {
+        "name": "ch.qos.logback:logback-classic",
+        "version": "1.5.32"
+      },
+      {
+        "name": "ch.qos.logback:logback-core",
+        "version": "1.5.32"
+      },
+      {
+        "name": "cn.dev33:sa-token-core",
+        "version": "1.44.0"
+      },
+      {
+        "name": "cn.dev33:sa-token-jackson",
+        "version": "1.44.0"
+      },
+      {
+        "name": "cn.dev33:sa-token-jakarta-servlet",
+        "version": "1.44.0"
+      },
+      {
+        "name": "cn.dev33:sa-token-spring-boot-autoconfig",
+        "version": "1.44.0"
+      },
+      {
+        "name": "com.adobe.xmp:xmpcore",
+        "version": "6.1.11"
+      },
+      {
+        "name": "com.azure:azure-ai-openai",
+        "version": "1.0.0-beta.16"
+      },
+      {
+        "name": "com.azure:azure-core",
+        "version": "1.55.3"
+      },
+      {
+        "name": "com.azure:azure-core-http-netty",
+        "version": "1.15.11"
+      },
+      {
+        "name": "com.azure:azure-json",
+        "version": "1.5.0"
+      },
+      {
+        "name": "com.azure:azure-xml",
+        "version": "1.2.0"
+      },
+      {
+        "name": "com.carrotsearch.thirdparty:simple-xml-safe",
+        "version": "2.7.1"
+      },
+      {
+        "name": "com.drewnoakes:metadata-extractor",
+        "version": "2.19.0"
+      },
+      {
+        "name": "com.epam:parso",
+        "version": "2.0.14"
+      },
+      {
+        "name": "com.fasterxml.jackson.core:jackson-annotations",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml.jackson.core:jackson-core",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml.jackson.core:jackson-databind",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml.jackson.dataformat:jackson-dataformat-toml",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml.jackson.datatype:jackson-datatype-jdk8",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml.jackson.datatype:jackson-datatype-jsr310",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml.jackson.module:jackson-module-parameter-names",
+        "version": "2.19.4"
+      },
+      {
+        "name": "com.fasterxml:classmate",
+        "version": "1.7.3"
+      },
+      {
+        "name": "com.github.albfernandez:juniversalchardet",
+        "version": "2.5.0"
+      },
+      {
+        "name": "com.github.jai-imageio:jai-imageio-core",
+        "version": "1.4.0"
+      },
+      {
+        "name": "com.github.junrar:junrar",
+        "version": "7.5.5"
+      },
+      {
+        "name": "com.github.virtuald:curvesapi",
+        "version": "1.08"
+      },
+      {
+        "name": "com.google.errorprone:error_prone_annotations",
+        "version": "2.43.0"
+      },
+      {
+        "name": "com.google.guava:failureaccess",
+        "version": "1.0.3"
+      },
+      {
+        "name": "com.google.guava:guava",
+        "version": "33.4.8-jre"
+      },
+      {
+        "name": "com.google.guava:listenablefuture",
+        "version": "9999.0-empty-to-avoid-conflict-with-guava"
+      },
+      {
+        "name": "com.google.j2objc:j2objc-annotations",
+        "version": "3.0.0"
+      },
+      {
+        "name": "com.google.protobuf:protobuf-java",
+        "version": "4.28.3"
+      },
+      {
+        "name": "com.googlecode.plist:dd-plist",
+        "version": "1.28"
+      },
+      {
+        "name": "com.healthmarketscience.jackcess:jackcess",
+        "version": "4.0.7"
+      },
+      {
+        "name": "com.healthmarketscience.jackcess:jackcess-encrypt",
+        "version": "4.0.2"
+      },
+      {
+        "name": "com.knuddels:jtokkit",
+        "version": "1.1.0"
+      },
+      {
+        "name": "com.pff:java-libpst",
+        "version": "0.9.3"
+      },
+      {
+        "name": "com.pgvector:pgvector",
+        "version": "0.1.6"
+      },
+      {
+        "name": "com.rometools:rome",
+        "version": "2.1.0"
+      },
+      {
+        "name": "com.rometools:rome-utils",
+        "version": "2.1.0"
+      },
+      {
+        "name": "com.squareup.okhttp3:logging-interceptor",
+        "version": "3.12.12"
+      },
+      {
+        "name": "com.squareup.okhttp3:okhttp",
+        "version": "5.1.0"
+      },
+      {
+        "name": "com.squareup.okio:okio",
+        "version": "3.15.0"
+      },
+      {
+        "name": "com.squareup.okio:okio-jvm",
+        "version": "3.15.0"
+      },
+      {
+        "name": "com.sun.istack:istack-commons-runtime",
+        "version": "4.1.2"
+      },
+      {
+        "name": "com.zaxxer:HikariCP",
+        "version": "6.3.3"
+      },
+      {
+        "name": "com.zaxxer:SparseBitSet",
+        "version": "1.3"
+      },
+      {
+        "name": "commons-codec:commons-codec",
+        "version": "1.18.0"
+      },
+      {
+        "name": "commons-io:commons-io",
+        "version": "2.20.0"
+      },
+      {
+        "name": "commons-logging:commons-logging",
+        "version": "1.3.4"
+      },
+      {
+        "name": "dev.langchain4j:langchain4j-core",
+        "version": "1.2.0"
+      },
+      {
+        "name": "dev.langchain4j:langchain4j-http-client",
+        "version": "1.2.0"
+      },
+      {
+        "name": "dev.langchain4j:langchain4j-http-client-spring-restclient",
+        "version": "1.2.0-beta8"
+      },
+      {
+        "name": "info.picocli:picocli",
+        "version": "4.7.6"
+      },
+      {
+        "name": "io.fabric8:kubernetes-client-api",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-httpclient-okhttp",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-admissionregistration",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-apiextensions",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-apps",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-autoscaling",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-batch",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-certificates",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-common",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-coordination",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-core",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-discovery",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-events",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-extensions",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-flowcontrol",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-gatewayapi",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-metrics",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-networking",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-node",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-policy",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-rbac",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-resource",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-scheduling",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:kubernetes-model-storageclass",
+        "version": "6.13.4"
+      },
+      {
+        "name": "io.fabric8:zjsonpatch",
+        "version": "0.3.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-bulkhead",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-circuitbreaker",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-circularbuffer",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-consumer",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-core",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-framework-common",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-micrometer",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-ratelimiter",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-retry",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-spring6",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.github.resilience4j:resilience4j-timelimiter",
+        "version": "2.4.0"
+      },
+      {
+        "name": "io.lettuce:lettuce-core",
+        "version": "6.6.0.RELEASE"
+      },
+      {
+        "name": "io.micrometer:micrometer-commons",
+        "version": "1.15.10"
+      },
+      {
+        "name": "io.micrometer:micrometer-core",
+        "version": "1.15.10"
+      },
+      {
+        "name": "io.micrometer:micrometer-jakarta9",
+        "version": "1.15.10"
+      },
+      {
+        "name": "io.micrometer:micrometer-observation",
+        "version": "1.15.10"
+      },
+      {
+        "name": "io.netty:netty-buffer",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-codec",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-codec-dns",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-codec-http",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-codec-http2",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-codec-socks",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-common",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-handler",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-handler-proxy",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-resolver",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-resolver-dns",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-resolver-dns-classes-macos",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-resolver-dns-native-macos",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-tcnative-boringssl-static",
+        "version": "2.0.75.Final"
+      },
+      {
+        "name": "io.netty:netty-tcnative-classes",
+        "version": "2.0.75.Final"
+      },
+      {
+        "name": "io.netty:netty-transport",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-transport-classes-epoll",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-transport-classes-kqueue",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-transport-native-epoll",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-transport-native-kqueue",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.netty:netty-transport-native-unix-common",
+        "version": "4.1.131.Final"
+      },
+      {
+        "name": "io.opentelemetry.proto:opentelemetry-proto",
+        "version": "1.5.0-alpha"
+      },
+      {
+        "name": "io.projectreactor.netty:reactor-netty-core",
+        "version": "1.2.16"
+      },
+      {
+        "name": "io.projectreactor.netty:reactor-netty-http",
+        "version": "1.2.16"
+      },
+      {
+        "name": "io.projectreactor:reactor-core",
+        "version": "3.7.17"
+      },
+      {
+        "name": "io.prometheus:prometheus-metrics-config",
+        "version": "1.3.10"
+      },
+      {
+        "name": "io.prometheus:prometheus-metrics-core",
+        "version": "1.3.10"
+      },
+      {
+        "name": "io.prometheus:prometheus-metrics-exposition-formats",
+        "version": "1.3.10"
+      },
+      {
+        "name": "io.prometheus:prometheus-metrics-exposition-textformats",
+        "version": "1.3.10"
+      },
+      {
+        "name": "io.prometheus:prometheus-metrics-model",
+        "version": "1.3.10"
+      },
+      {
+        "name": "io.prometheus:prometheus-metrics-tracer-common",
+        "version": "1.3.10"
+      },
+      {
+        "name": "io.smallrye:jandex",
+        "version": "3.2.0"
+      },
+      {
+        "name": "io.swagger.core.v3:swagger-annotations-jakarta",
+        "version": "2.2.41"
+      },
+      {
+        "name": "io.swagger.core.v3:swagger-core-jakarta",
+        "version": "2.2.41"
+      },
+      {
+        "name": "io.swagger.core.v3:swagger-models-jakarta",
+        "version": "2.2.41"
+      },
+      {
+        "name": "jakarta.annotation:jakarta.annotation-api",
+        "version": "2.1.1"
+      },
+      {
+        "name": "jakarta.inject:jakarta.inject-api",
+        "version": "2.0.1"
+      },
+      {
+        "name": "jakarta.persistence:jakarta.persistence-api",
+        "version": "3.1.0"
+      },
+      {
+        "name": "jakarta.servlet:jakarta.servlet-api",
+        "version": "6.0.0"
+      },
+      {
+        "name": "jakarta.transaction:jakarta.transaction-api",
+        "version": "2.0.1"
+      },
+      {
+        "name": "jakarta.validation:jakarta.validation-api",
+        "version": "3.0.2"
+      },
+      {
+        "name": "net.bytebuddy:byte-buddy",
+        "version": "1.17.8"
+      },
+      {
+        "name": "org.antlr:antlr4-runtime",
+        "version": "4.13.0"
+      },
+      {
+        "name": "org.apache.commons:commons-collections4",
+        "version": "4.4"
+      },
+      {
+        "name": "org.apache.commons:commons-compress",
+        "version": "1.28.0"
+      },
+      {
+        "name": "org.apache.commons:commons-csv",
+        "version": "1.12.0"
+      },
+      {
+        "name": "org.apache.commons:commons-exec",
+        "version": "1.4.0"
+      },
+      {
+        "name": "org.apache.commons:commons-lang3",
+        "version": "3.17.0"
+      },
+      {
+        "name": "org.apache.commons:commons-math3",
+        "version": "3.6.1"
+      },
+      {
+        "name": "org.apache.james:apache-mime4j-core",
+        "version": "0.8.11"
+      },
+      {
+        "name": "org.apache.james:apache-mime4j-dom",
+        "version": "0.8.11"
+      },
+      {
+        "name": "org.apache.logging.log4j:log4j-api",
+        "version": "2.24.3"
+      },
+      {
+        "name": "org.apache.logging.log4j:log4j-to-slf4j",
+        "version": "2.24.3"
+      },
+      {
+        "name": "org.apache.opennlp:opennlp-tools",
+        "version": "2.5.4"
+      },
+      {
+        "name": "org.apache.pdfbox:fontbox",
+        "version": "3.0.3"
+      },
+      {
+        "name": "org.apache.pdfbox:jbig2-imageio",
+        "version": "3.0.4"
+      },
+      {
+        "name": "org.apache.pdfbox:jempbox",
+        "version": "1.8.17"
+      },
+      {
+        "name": "org.apache.pdfbox:pdfbox",
+        "version": "3.0.3"
+      },
+      {
+        "name": "org.apache.pdfbox:pdfbox-io",
+        "version": "3.0.3"
+      },
+      {
+        "name": "org.apache.pdfbox:pdfbox-tools",
+        "version": "3.0.3"
+      },
+      {
+        "name": "org.apache.pdfbox:xmpbox",
+        "version": "3.0.3"
+      },
+      {
+        "name": "org.apache.poi:poi",
+        "version": "5.3.0"
+      },
+      {
+        "name": "org.apache.poi:poi-ooxml",
+        "version": "5.3.0"
+      },
+      {
+        "name": "org.apache.poi:poi-ooxml-lite",
+        "version": "5.3.0"
+      },
+      {
+        "name": "org.apache.poi:poi-scratchpad",
+        "version": "5.3.0"
+      },
+      {
+        "name": "org.apache.tika:tika-core",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-apple-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-audiovideo-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-cad-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-code-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-crypto-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-digest-commons",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-font-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-html-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-image-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-mail-commons",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-mail-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-microsoft-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-miscoffice-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-news-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-ocr-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-pdf-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-pkg-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-text-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-webarchive-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-xml-module",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-xmp-commons",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parser-zip-commons",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tika:tika-parsers-standard-package",
+        "version": "3.0.0"
+      },
+      {
+        "name": "org.apache.tomcat.embed:tomcat-embed-core",
+        "version": "10.1.52"
+      },
+      {
+        "name": "org.apache.tomcat.embed:tomcat-embed-el",
+        "version": "10.1.52"
+      },
+      {
+        "name": "org.apache.tomcat.embed:tomcat-embed-websocket",
+        "version": "10.1.52"
+      },
+      {
+        "name": "org.apache.xmlbeans:xmlbeans",
+        "version": "5.2.1"
+      },
+      {
+        "name": "org.aspectj:aspectjweaver",
+        "version": "1.9.25.1"
+      },
+      {
+        "name": "org.bouncycastle:bcjmail-jdk18on",
+        "version": "1.78.1"
+      },
+      {
+        "name": "org.bouncycastle:bcpkix-jdk18on",
+        "version": "1.78.1"
+      },
+      {
+        "name": "org.bouncycastle:bcprov-jdk18on",
+        "version": "1.81"
+      },
+      {
+        "name": "org.bouncycastle:bcutil-jdk18on",
+        "version": "1.78.1"
+      },
+      {
+        "name": "org.brotli:dec",
+        "version": "0.1.2"
+      },
+      {
+        "name": "org.ccil.cowan.tagsoup:tagsoup",
+        "version": "1.2.1"
+      },
+      {
+        "name": "org.codelibs:jhighlight",
+        "version": "1.1.0"
+      },
+      {
+        "name": "org.eclipse.angus:angus-activation",
+        "version": "2.0.3"
+      },
+      {
+        "name": "org.gagravarr:vorbis-java-core",
+        "version": "0.8"
+      },
+      {
+        "name": "org.gagravarr:vorbis-java-tika",
+        "version": "0.8"
+      },
+      {
+        "name": "org.glassfish.jaxb:jaxb-core",
+        "version": "4.0.6"
+      },
+      {
+        "name": "org.glassfish.jaxb:jaxb-runtime",
+        "version": "4.0.6"
+      },
+      {
+        "name": "org.glassfish.jaxb:txw2",
+        "version": "4.0.6"
+      },
+      {
+        "name": "org.hdrhistogram:HdrHistogram",
+        "version": "2.2.2"
+      },
+      {
+        "name": "org.hibernate.common:hibernate-commons-annotations",
+        "version": "7.0.3.Final"
+      },
+      {
+        "name": "org.hibernate.orm:hibernate-core",
+        "version": "6.6.44.Final"
+      },
+      {
+        "name": "org.hibernate.validator:hibernate-validator",
+        "version": "8.0.3.Final"
+      },
+      {
+        "name": "org.jboss.logging:jboss-logging",
+        "version": "3.6.3.Final"
+      },
+      {
+        "name": "org.jdom:jdom2",
+        "version": "2.0.6.1"
+      },
+      {
+        "name": "org.jetbrains.kotlin:kotlin-stdlib",
+        "version": "1.9.25"
+      },
+      {
+        "name": "org.jetbrains:annotations",
+        "version": "13.0"
+      },
+      {
+        "name": "org.jsoup:jsoup",
+        "version": "1.18.1"
+      },
+      {
+        "name": "org.jspecify:jspecify",
+        "version": "1.0.0"
+      },
+      {
+        "name": "org.latencyutils:LatencyUtils",
+        "version": "2.0.3"
+      },
+      {
+        "name": "org.netpreserve:jwarc",
+        "version": "0.30.0"
+      },
+      {
+        "name": "org.ow2.asm:asm",
+        "version": "9.7.1"
+      },
+      {
+        "name": "org.projectlombok:lombok",
+        "version": "1.18.44"
+      },
+      {
+        "name": "org.reactivestreams:reactive-streams",
+        "version": "1.0.4"
+      },
+      {
+        "name": "org.slf4j:jcl-over-slf4j",
+        "version": "2.0.17"
+      },
+      {
+        "name": "org.slf4j:jul-to-slf4j",
+        "version": "2.0.17"
+      },
+      {
+        "name": "org.slf4j:slf4j-api",
+        "version": "2.0.17"
+      },
+      {
+        "name": "org.snakeyaml:snakeyaml-engine",
+        "version": "2.7"
+      },
+      {
+        "name": "org.springdoc:springdoc-openapi-starter-common",
+        "version": "2.8.15"
+      },
+      {
+        "name": "org.springdoc:springdoc-openapi-starter-webmvc-api",
+        "version": "2.8.15"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-actuator",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-actuator-autoconfigure",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-autoconfigure",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-starter",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-starter-jdbc",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-starter-json",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-starter-logging",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.boot:spring-boot-starter-tomcat",
+        "version": "3.5.12"
+      },
+      {
+        "name": "org.springframework.data:spring-data-commons",
+        "version": "3.5.10"
+      },
+      {
+        "name": "org.springframework.data:spring-data-jdbc",
+        "version": "3.5.10"
+      },
+      {
+        "name": "org.springframework.data:spring-data-jpa",
+        "version": "3.5.10"
+      },
+      {
+        "name": "org.springframework.data:spring-data-keyvalue",
+        "version": "3.5.10"
+      },
+      {
+        "name": "org.springframework.data:spring-data-redis",
+        "version": "3.5.10"
+      },
+      {
+        "name": "org.springframework.data:spring-data-relational",
+        "version": "3.5.10"
+      },
+      {
+        "name": "org.springframework:spring-aop",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-aspects",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-beans",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-context",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-context-support",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-expression",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-jdbc",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-messaging",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-orm",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-oxm",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-tx",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-web",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-webmvc",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.springframework:spring-websocket",
+        "version": "6.2.17"
+      },
+      {
+        "name": "org.tallison:jmatio",
+        "version": "1.5"
+      },
+      {
+        "name": "org.tukaani:xz",
+        "version": "1.10"
+      },
+      {
+        "name": "org.webjars:swagger-ui",
+        "version": "5.31.0"
+      },
+      {
+        "name": "org.webjars:webjars-locator-lite",
+        "version": "1.1.3"
+      },
+      {
+        "name": "org.xerial.snappy:snappy-java",
+        "version": "1.1.10.7"
+      },
+      {
+        "name": "org.yaml:snakeyaml",
+        "version": "2.4"
+      },
+      {
+        "name": "redis.clients.authentication:redis-authx-core",
+        "version": "0.1.1-beta2"
+      }
+    ],
+    "version_mismatches": [],
+    "extra": [],
+    "interpretation": {
+      "direct_declared_compile_runtime_ga": 33,
+      "scanned_are_exactly_direct_minus_lombok": true,
+      "missing_transitive_gavs": 260,
+      "missing_direct": [
+        {
+          "name": "org.projectlombok:lombok",
+          "version": "1.18.44"
+        }
+      ],
+      "packaging_boundary": "pom中Spring Boot repackage显式排除Lombok；Maven scope树不是部署jar清单，不把261解释为261个实际部署漏扫jar；本批不为此添加扫描豁免。",
+      "variant_types": {
+        "jar": 298
+      }
+    }
+  }
 }

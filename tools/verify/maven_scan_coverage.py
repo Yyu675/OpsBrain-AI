@@ -107,7 +107,7 @@ def compare(tree, report, target="pom.xml"):
             "runtime": encode(expected), "scanned": encode(scanned),
             "variants": [{"name": n, "version": v, "type": t, "classifier": c}
                          for n, v, t, c in sorted(variants)],
-            "boundary": "只审计当前 Maven runtime GAV：不证明 classifier/字节完整，不含 test/provided/system、构建插件及前端；extra 不作漏扫；不替代漏洞门禁"}
+            "boundary": "只审计当前 Maven runtime GAV：不证明 classifier/字节完整，不等于最终Boot repackage清单；不含 test/provided/system、构建插件及前端；extra 不作漏扫；不替代漏洞门禁"}
 
 
 def main():
