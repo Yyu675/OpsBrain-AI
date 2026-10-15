@@ -68,8 +68,17 @@
 | **认证与团队** | 4 | Sa-Token + bcrypt、三级角色（admin/operator/viewer） |
 | **看板与可观测** | 11 | 工单/告警统计、AI 成本与缓存趋势、Prometheus 指标代理、分项健康探针 |
 
-**规模**：后端 197 文件 / 37.6K 行，前端 242 文件 / 73.7K 行，
-130 个 REST 端点，27 张表，30 条前端路由。
+**规模**（2026-10-15 实测，口径写在括号里——数字对不上时先看口径，别先怀疑代码）：
+
+- 后端 `src/main/java` **329 文件 / 59.9K 行**（含 `src/test` 共 532 文件），**30 个控制器 / 183 个 `@*Mapping` 端点**；
+- 前端 `src` **511 文件 / 85.8K 行** = 业务 193 + 契约生成物 213（`src/api/generated`，机器生成勿手改）+ 测试 105；
+  路由 **35 条唯一路径**（`router/index.ts`，含嵌套子路由共 44 个 `path:`）；
+- 数据库 **42 表**（CI「空库全量建账」口径 = 41 张契约表 + `flyway_schema_history`）。
+
+> 这些数字每批都会漂。复核只要四行（口径与上文一致）：
+> `find src/main/java -name '*.java' | wc -l`｜`grep -rhoE "@(Get|Post|Put|Delete|Patch)Mapping" src/main/java | wc -l`｜
+> `find devops-platform-frontend/src -type f \( -name '*.vue' -o -name '*.ts' \) | wc -l`｜
+> `cd devops-platform-frontend && npm run verify`（末行 `Test Files / Tests` 即测试规模）。
 
 ---
 
@@ -99,7 +108,7 @@
 | UI | Element Plus + ECharts（按需引入） |
 | SSE | `@microsoft/fetch-event-source` |
 | Markdown | marked + DOMPurify（统一 `safeMarkdown` 入口） |
-| 测试 | Vitest + @vue/test-utils（**106 文件 / 1,855 例**，2026-10-15 CI 实测） |
+| 测试 | Vitest + @vue/test-utils（**107 文件 / 1,863 例** = `src` 105 + e2e 写法守卫 2；2026-10-15 `npm run verify` 实测，**数字以该命令输出为准**——写死就会过期） |
 
 ---
 
@@ -142,7 +151,7 @@ npm run dev -- --host 0.0.0.0
 
 这个项目在质量纪律上的投入超出常规：
 
-- **测试**：后端 **2,045 例 / 0 失败**（CI 后端腿，2026-10-15），前端 **106 文件 / 1,855 例**；
+- **测试**：后端 **2,045 例 / 0 失败 / 2 跳过**（CI 后端腿，2026-10-15），前端 **107 文件 / 1,863 例**（`npm run verify` 同日实测）；
 - **契约测试**：前后端错误码、状态流转守卫、分页钳制、事务边界、
   日志脱敏、部署时区等**跨端/跨层约定都有测试守着**；
 - **评测回归门禁**（S4-3）：评测集 152 条（69 正例 + 54 负例 + 排除项），
