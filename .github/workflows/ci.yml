@@ -613,6 +613,42 @@ jobs:
           psql -h localhost -p 25432 -U devops -d devops_knowledge_db \
                -v ON_ERROR_STOP=1 -f tools/seed/e2e-seed.sql 2>&1 | tee /tmp/e2e-seed.log
 
+      - name: 业务闭环实弹演练（真 jar + 真 pg：三场景逐跳硬闸）
+        # 为什么进 CI（2026-10-15）：这条链上一轮是「本机人工跑过一次、结果写进文档」——
+        # 不可复现、不可回归。而本腿本来就备齐了演练需要的一切：真 jar + 真 pg（25432）
+        # + redis + prom 桩 + 种子数据；脚本又是「硬闸逐跳点名」设计，天生适合当门禁。
+        # 放在 Playwright 之前：即使浏览器用例后面红了，闭环证据也已经拿到（数据不冲突：
+        # FAQ 库那组 1200/300/50 是知识库行上的自定义参数，演练建的手册落在默认库）。
+        run: |
+          set +e
+          python3 tools/verify/closed_loop_drill.py \
+            --base http://localhost:8088/ai --account admin:admin123 \
+            --psql psql \
+            --pgurl "postgresql://devops:devops_password@localhost:25432/devops_knowledge_db" \
+            --scrape-token-file /tmp/e2e-scrape-token \
+            --json /tmp/closed-loop.json 2>&1 | tee /tmp/closed-loop.log
+          rc=${PIPESTATUS[0]}
+          python3 tools/verify/ci_summary.py --kind closed-loop \
+            --json /tmp/closed-loop.json --log /tmp/closed-loop.log || rc=1
+          exit $rc
+
+      - name: RBAC 权限矩阵实弹走查（14 探针面 × 三角色 = 42 格）
+        # 判据取自源码执法点（类级 @SaCheckRole / OpsWriteGuard 资源级守卫），
+        # 不是「跑出来什么抄什么」——那只能证明代码与它自己一致。
+        # 账号来自上一步的 e2e 种子（e2e_operator/e2e_viewer），口令与 role-matrix.spec 同源。
+        # 结论同样压成 ::notice::（沙箱读不到托管 runner 的作业日志，见 tools/verify/ci_summary.py）。
+        run: |
+          set +e
+          python3 tools/verify/rbac_walkthrough.py --base http://localhost:8088/ai \
+            --account admin:admin123:ADMIN \
+            --account 'e2e_operator:E2E_OP_Pwd2026!:OPS' \
+            --account 'e2e_viewer:E2E_VW_Pwd2026!:VIEWER' \
+            --json /tmp/rbac.json 2>&1 | tee /tmp/rbac.log
+          rc=${PIPESTATUS[0]}
+          python3 tools/verify/ci_summary.py --kind rbac \
+            --json /tmp/rbac.json --log /tmp/rbac.log || rc=1
+          exit $rc
+
       - name: 安装 Node 22
         uses: actions/setup-node@v4
         with:
