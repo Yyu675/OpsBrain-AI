@@ -10,6 +10,8 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.ParseContext;
@@ -58,6 +60,26 @@ class TikaParserSecurityCompatibilityTest {
             pdf.save(bytes);
             assertTrue(new DocumentParserConfig().documentParser()
                     .parse(new ByteArrayInputStream(bytes.toByteArray())).text().contains("PDF recovery"));
+        }
+    }
+
+    @Test
+    void configuredLangChainParserReadsRealWord() throws Exception {
+        try (var word = new XWPFDocument(); var bytes = new ByteArrayOutputStream()) {
+            word.createParagraph().createRun().setText("OpsBrain Word recovery instructions");
+            word.write(bytes);
+            assertTrue(new DocumentParserConfig().documentParser()
+                    .parse(new ByteArrayInputStream(bytes.toByteArray())).text().contains("Word recovery"));
+        }
+    }
+
+    @Test
+    void configuredLangChainParserReadsRealExcel() throws Exception {
+        try (var excel = new XSSFWorkbook(); var bytes = new ByteArrayOutputStream()) {
+            excel.createSheet("Recovery").createRow(0).createCell(0).setCellValue("OpsBrain Excel recovery");
+            excel.write(bytes);
+            assertTrue(new DocumentParserConfig().documentParser()
+                    .parse(new ByteArrayInputStream(bytes.toByteArray())).text().contains("Excel recovery"));
         }
     }
 
