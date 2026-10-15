@@ -33,7 +33,10 @@
         [--base http://localhost:8088/ai] [--scrape-token-file /run/secrets/scrape_token] \\
         [--json /tmp/grayscale.json]
 
-退出码：0 = 该出的数都出来了（人工登记项不算失败）；1 = 有本可算的行取数失败（SQL 错/连不上）。
+退出码：0 = 取数成功（非灰度达标）；1 = 取数失败/缺快照基线；2 = 非法窗口；3 = 内部异常。
+今天和未来日期均不计，只取至运行机本地昨天；运行机与数据库的业务日期须一致。
+通知是当前进程累计回执率，不是周增量。快照每天 09:20/启动采样，仅是采样间近似增量。
+complete/collection_complete 只表示取数状态，gate_passed=null（必须人工验收）。
 """
 
 from __future__ import annotations
@@ -41,6 +44,9 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
+import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -50,7 +56,7 @@ ROWS = [
     "连续 0-P1 天数",
     "ACK 演练次数（目标 ×3）",
     "通知送达率",
-    "诊断触发率/产报率",
+    "告警转单率/诊断充分率",
     "故障修复时长对比（前 vs 后）",
     "自愈执行次数（台账读数）",
 ]
@@ -89,12 +95,10 @@ def cumulative_delta(latest: float | None, before: float | None) -> float | None
     """累计快照的窗口增量 = 窗口末读数 − 窗口前最后一次读数。
 
     快照列是累计值，SUM 会重复相加（这是最容易写错的地方）。
-    窗口前没有任何快照时，窗口末读数本身就是增量（从 0 起算）。
+    缺任一端快照时不能推定从 0 起算。
     """
-    if latest is None:
+    if latest is None or before is None:
         return None
-    if before is None:
-        return latest
     return latest - before
 
 
@@ -115,7 +119,7 @@ def parse_counter(text: str, metric: str, label: str, value: str) -> float | Non
     """
     total = 0.0
     found = False
-    needle = f'{label}="{value}"'
+    needle = re.compile(r'(?:\{|,)\s*' + re.escape(label) + r'="' + re.escape(value) + r'"\s*(?:,|\})')
     for line in text.splitlines():
         s = line.strip()
         if not s or s.startswith("#"):
@@ -126,10 +130,14 @@ def parse_counter(text: str, metric: str, label: str, value: str) -> float | Non
         rest = s[len(metric):]
         if not (rest.startswith("{") or rest.startswith(" ")):
             continue
-        if needle not in s:
+        labels_end = s.find("}")
+        if labels_end == -1 or not needle.search(s[:labels_end + 1]):
             continue
         try:
-            total += float(s.rsplit(" ", 1)[1])
+            sample = float(s[labels_end + 1:].split()[0])
+            if not math.isfinite(sample) or sample < 0:
+                return None
+            total += sample
             found = True
         except (IndexError, ValueError):
             continue
@@ -154,7 +162,8 @@ def render_table(rows: list[dict]) -> str:
     """渲染成台账 §三 可直接粘的表格（含来源列，便于复核）。"""
     out = ["| 指标 | 本期读数 | 来源/口径 |", "| - | - | - |"]
     for r in rows:
-        out.append(f"| {r['name']} | {r['value']} | {r['source']} |")
+        out.append("| " + " | ".join(str(r[k]).replace("|", "\\|").replace("\n", "<br>")
+                                    for k in ("name", "value", "source")) + " |")
     return "\n".join(out)
 
 
@@ -176,8 +185,9 @@ class Taker:
         if not self.psql or not self.pgurl:
             return False, None, "ERR: 未提供 --psql/--pgurl"
         try:
-            out = subprocess.run([self.psql, self.pgurl, "-t", "-A", "-c", sql],
-                                 capture_output=True, text=True, timeout=30)
+            out = subprocess.run([self.psql, "-X", "-v", "ON_ERROR_STOP=1", "-d", self.pgurl, "-t", "-A", "-c", sql],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                 env={**os.environ, "PGCLIENTENCODING": "UTF8"}, timeout=30)
         except Exception as e:  # noqa: BLE001 - 取数失败要把原因带出来，不能让栈淹掉判词
             return False, None, f"ERR: {type(e).__name__}: {e}"
         if out.returncode != 0:
@@ -217,16 +227,43 @@ class Taker:
 def snapshot_delta(t: Taker, col: str, day_from: dt.date, day_to: dt.date) -> tuple[bool, float | None, str | None]:
     """累计快照列的窗口增量（末读数 − 窗口前读数）。"""
     sql = f"""
-SELECT COALESCE((SELECT {col} FROM sys_effectiveness_snapshot
-                 WHERE snapshot_date <= DATE '{day_to}' ORDER BY snapshot_date DESC LIMIT 1), 0)
-     - COALESCE((SELECT {col} FROM sys_effectiveness_snapshot
-                 WHERE snapshot_date <  DATE '{day_from}' ORDER BY snapshot_date DESC LIMIT 1), 0)
+SELECT (SELECT {col} FROM sys_effectiveness_snapshot
+         WHERE snapshot_date BETWEEN DATE '{day_from}' AND DATE '{day_to}'
+         ORDER BY snapshot_date DESC LIMIT 1)
+     - (SELECT {col} FROM sys_effectiveness_snapshot
+         WHERE snapshot_date < DATE '{day_from}' ORDER BY snapshot_date DESC LIMIT 1)
 """
-    return t.num(sql)
+    ok, value, err = t.num(sql)
+    if not ok:
+        return False, None, err
+    if value is None:
+        return False, None, "ERR: 缺窗口内快照或窗口前基线，不能从 0 起算"
+    if not math.isfinite(value) or value < 0:
+        return False, None, "ERR: 累计快照倒退或非有限值，需核查重置/数据清理"
+    return True, value, None
 
 
-def collect(t: Taker, day_from: dt.date, day_to: dt.date, rows: list[dict]) -> bool:
+def observation_window(day_from: dt.date, day_to: dt.date, today: dt.date) -> dt.date:
+    """只统计已经结束的日期；今天也不是完整的一天，不得计为零误报日。"""
+    if day_from > day_to:
+        raise ValueError("窗口起晚于窗口止")
+    effective_to = min(day_to, today - dt.timedelta(days=1))
+    if day_from > effective_to:
+        raise ValueError("窗口尚无完整日期；最早在起始日的次日取数")
+    return effective_to
+
+
+def configure_stdout() -> None:
+    """Windows GBK 控制台兜底；StringIO/嵌入调用没有 reconfigure 时不动。"""
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure:
+        reconfigure(encoding="utf-8", errors="replace")
+
+
+def collect(t: Taker, day_from: dt.date, day_to: dt.date, rows: list[dict],
+            *, today: dt.date | None = None) -> bool:
     """逐行取数，把结果写进 rows。返回是否全部「该出的都出来了」。"""
+    day_to = observation_window(day_from, day_to, today or dt.datetime.now().astimezone().date())
     db_ok = bool(t.psql and t.pgurl)
     all_ok = True
 
@@ -257,9 +294,8 @@ WHERE false_positive AND level IN ('P0','P1')
                     except ValueError:
                         pass
             n = consecutive_zero_days(days, bad)
-            verdict = "达标" if n >= 7 else f"未达标（需连续 7 天）"
-            add(ROWS[0], f"{n} 天 —— {verdict}",
-                f"sys_alert：窗口内 P0/P1 误报标记日 {len(bad)} 天，从 {day_to} 往回连续计数")
+            add(ROWS[0], f"记录连续 {n} 个完整日期无 P0/P1 误报标记（非 DoD 达标结论）",
+                f"sys_alert：窗口内 P0/P1 误报标记日 {len(bad)} 天，从 {day_to} 往回连续计数；需另核验运行覆盖、误报标记流程，缺记录不等于无误伤")
 
     # ② ACK 演练次数：人工
     add(ROWS[1], "人工登记", MANUAL_ROWS[ROWS[1]])
@@ -274,22 +310,23 @@ WHERE false_positive AND level IN ('P0','P1')
         okn = parse_counter(text, "opsbrain_notify_delivery_total", "result", "ok")
         errn = parse_counter(text, "opsbrain_notify_delivery_total", "result", "error")
         whole = None if (okn is None and errn is None) else (okn or 0) + (errn or 0)
-        add(ROWS[2], rate(okn, whole),
-            "opsbrain_notify_delivery_total{result=ok|error}：ok/(ok+error)；受理≠送达，此为渠道亲口回执")
+        add(ROWS[2], rate(okn or 0, whole) if whole is not None else "无数据（指标未暴露）",
+            "opsbrain_notify_delivery_total{result=ok|error}：ok/(ok+error)；受理≠送达，渠道回执；当前进程累计，非请求窗口增量，重启会重置；渠道真实性另核验",
+            failed=whole is None)
+        if whole is None:
+            all_ok = False
 
-    # ④ 诊断触发率 / 产报率：快照累计列取增量
+    # ④ 告警转单率 / 诊断充分率：快照累计列取近似增量
     if not db_ok:
         add(ROWS[3], "未取（缺 --psql/--pgurl）", "sys_effectiveness_snapshot（累计列取增量）", failed=True)
         all_ok = False
     else:
-        res, parts, bad = [], [], None
-        for col, label in (("alerts_total", "告警"), ("alert_sourced_tickets", "告警转单"),
-                           ("diagnosis_total", "诊断"), ("diagnosis_sufficient", "诊断充分")):
+        res, bad = [], None
+        for col in ("alerts_total", "alert_sourced_tickets", "diagnosis_total", "diagnosis_sufficient"):
             ok, v, err = snapshot_delta(t, col, day_from, day_to)
             if not ok:
                 bad = err
                 break
-            parts.append((label, v))
             res.append(v)
         if bad:
             add(ROWS[3], f"取数失败（{bad}）", "sys_effectiveness_snapshot", failed=True)
@@ -297,9 +334,10 @@ WHERE false_positive AND level IN ('P0','P1')
         else:
             alerts, sourced, diag, suff = res
             add(ROWS[3],
-                f"触发率 {rate(sourced, alerts)}｜产报率(充分) {rate(suff, diag)}",
+                f"告警转单率 {rate(sourced, alerts)}｜诊断充分率 {rate(suff, diag)}",
                 "sys_effectiveness_snapshot 增量：alert_sourced_tickets/alerts_total、"
-                "diagnosis_sufficient/diagnosis_total（累计列，末读数−窗口前读数）")
+                "diagnosis_sufficient/diagnosis_total（累计列，末读数−窗口前读数；"
+                "每日 09:20/启动采样的近似增量，非自然日完整统计；不是诊断触发率或报告生成率）")
 
     # ⑤ 故障修复时长：工单 create_time → mitigated_at（止损=业务恢复，台账关心的口径）
     if not db_ok:
@@ -351,6 +389,8 @@ WHERE created_at::date BETWEEN DATE '{day_from}' AND DATE '{day_to}'
 
 
 def main() -> int:
+    configure_stdout()
+    collected_at = dt.datetime.now().astimezone()
     ap = argparse.ArgumentParser(description="灰度台账数据取数器（台账 §三 六行）")
     ap.add_argument("--from", dest="day_from", required=True, help="窗口起（含），YYYY-MM-DD")
     ap.add_argument("--to", dest="day_to", required=True, help="窗口止（含），YYYY-MM-DD")
@@ -372,10 +412,17 @@ def main() -> int:
         print(f"::error::窗口非法：--from {day_from} 晚于 --to {day_to}")
         return 2
 
+    requested_to = day_to
+    try:
+        day_to = observation_window(day_from, requested_to, collected_at.date())
+    except ValueError as e:
+        print(f"::error::{e}")
+        return 2
+
     rows: list[dict] = []
     t = Taker(args.psql, args.pgurl, args.base, args.scrape_token_file)
     try:
-        all_ok = collect(t, day_from, day_to, rows)
+        all_ok = collect(t, day_from, day_to, rows, today=collected_at.date())
     except Exception as e:  # noqa: BLE001
         # CI 里作业日志沙箱读不到：崩在这里若不自己喊一声，看到的只有一个
         # 「exit code 1」，根因（比如解包元数不匹配）会完全隐形。批104 就是这么丢的一轮。
@@ -385,17 +432,27 @@ def main() -> int:
         return 3
 
     print(f"=== 灰度台账取数：{day_from} ~ {day_to}（{(day_to - day_from).days + 1} 天）===")
+    print(f"采集时间：{collected_at.isoformat()}（运行机本地日期；须与数据库业务日期一致）")
+    if requested_to != day_to:
+        print(f"提示：请求截止 {requested_to}，仅取至 {day_to}；今天及未来日期不计，窗口进行中。")
+    print("提示：取数成功≠灰度达标；通知为进程累计值，ACK/渠道真实性/观察覆盖需人工核验。")
     print(render_table(rows))
     failed = [r["name"] for r in rows if r.get("failed")]
     if failed:
         print(f"\n未取到：{len(failed)} 行 —— {', '.join(failed)}")
     if not (args.psql and args.pgurl):
-        print("\n提示：未提供 --psql/--pgurl，五项库内指标未取（只有送达率走抓取面）。")
+        print("\n提示：未提供 --psql/--pgurl，四项库内指标未取（只有送达率走抓取面）。")
 
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
-            json.dump({"window": {"from": str(day_from), "to": str(day_to)},
-                       "rows": rows, "complete": all_ok}, f, ensure_ascii=False, indent=2)
+            json.dump({"schema_version": 2,
+                       "collected_at": collected_at.isoformat(),
+                       "requested_window": {"from": str(day_from), "to": str(requested_to)},
+                       "window": {"from": str(day_from), "to": str(day_to)},
+                       "window_closed": requested_to < collected_at.date(),
+                       "rows": rows, "complete": all_ok, "collection_complete": all_ok,
+                       "gate_passed": None,
+                       "notice": "complete 仅为取数状态，不是验收；通知为进程累计，快照为采样近似增量"}, f, ensure_ascii=False, indent=2)
         print(f"证据已落盘：{args.json}")
 
     return 0 if all_ok else 1

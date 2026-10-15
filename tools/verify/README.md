@@ -19,8 +19,23 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | `rbac_walkthrough.py` | `OpsWriteGuard` + 类级 RBAC 门控 | 见下节「权限矩阵实弹」 |
 | `monitoring_audit.py` | 指标名 / 规则 / 看板 / 抓取面四方对账 | 见下节「监控面静态对账」 |
 | `ci_summary.py` | 演练证据 JSON → 一行 CI 通知 | 见下节「结论怎么变成可读证据」 |
-| `grayscale_metrics.py` | 灰度台账 §三 六行的**取数口径**（DoD「真实值班质量数」） | 见下节「灰度台账取数」。配套 `test_grayscale_metrics.py`（38 例：口径 + 取数胶水 + 退出码）。**已进 CI**（e2e 腿第 14 步，排在 RBAC 之后，对真迁移库跑） |
+| `grayscale_metrics.py` | 灰度台账 §三 六行的**取数口径**（DoD「真实值班质量数」） | 见下节「灰度台账取数」。配套 `test_grayscale_metrics.py`（50 例：口径 + 取数胶水 + 退出码）+ `test_grayscale_metrics_pg.py`（7 例真迁移库/HTTP/CLI 集成）。**已进 CI**（e2e 腿第 14 步，排在 RBAC 之后，对真迁移库跑） |
 | `selftest_scrape_face.py` | 闭环演练 Z-监控面 哨兵的**自证** | 桩服务六态（正确/裸奔/凭据错/端点在但无业务指标/指标排在 4KB 之后/令牌文件缺）逐一核对判词，确认哨兵不会永远 PASS。**已进 CI**（e2e 腿，排在闭环演练之前）。2026-10-15 前是 `.local-verify/scripts/` 的本地件——沙箱重置即丢失、别人复现不了，故收进仓库 |
+
+## 工作流引用与漏洞扫描取证（批110–112）
+
+- `workflow_refs.py`：依赖 `PyYAML==6.0.3` 与已授权的 `gh`，只读 API 递归查远端/local action 与 reusable workflow。
+  tag/branch/SHA 先解析到 commit 再读取元数据；检查 composite 内层引用，404 才尝试 action.yaml，403/网络错误必须报红。
+  运行 `python3 tools/verify/test_workflow_refs.py`（17 例）；再运行 `python3 tools/verify/workflow_refs.py` 连接真实 GitHub API。
+  不执行远端代码，也不声称能检查远端 shell 中所有下载 URL；Docker 镜像引用当前要求另设校验、不会悄悄算通过。
+- `trivy_summary.py --json <报告> [--log <CLI诊断>]`：报告压为 annotations，标文件名区分第一遍 gate 与第二遍留档。
+  缺/非法报告失败，摘要不替代 Trivy 原始退出码；Secrets 不输出 Match 字段。
+  `test_trivy_summary.py` 7 例，`test_trivy_workflow.py` 4 例（实际执行工作流 gate shell，证明失败码/缺报告不能吞）。
+- 扫描工作流固定 setup commit 与工具版本，默认 HIGH/CRITICAL + ignore-unfixed，门禁原始码保留。
+  第一遍 `trivy-gate.json`、诊断日志和第二遍 `trivy-report.json` 都上传；**第二遍空报告不能盖掉第一遍发现**。
+  仅修改工作流/这些检查工具时自动 PR 真扫，日常业务 push 不额外下载漏洞库；手动/每周巡检仍保留。
+- 真扫已证明“生产 npm audit 0”不能推出整个仓安全；还会发现 Maven 依赖漏洞。
+  决策、根因、版本取舍与红→绿证据见 `docs/09-decisions/2026-10-15-漏洞扫描恢复与Java依赖补丁.md`。
 
 ## 灰度台账取数（`grayscale_metrics.py`）
 
@@ -34,18 +49,23 @@ python3 tools/verify/grayscale_metrics.py --from 2026-10-13 --to 2026-10-19 \
     --json /tmp/grayscale.json
 ```
 
-输出是台账可直接粘的表格，每行都带**来源/口径**便于复核。六行的出处：
+**时间边界（批109）**：上例是计划窗口，运行时自动将终点截到**运行机本地昨天**；
+今天也不是完整日，不计为零误报日。若起始日尚未完整结束，退出 2 且不取数。
+运行机本地日期须与数据库业务日期一致，输出 `collected_at`（含时区偏移）便于复核。
+10-15 运行时实际窗口是 10-13~10-14，**不是 7 天**；10-20 才能取完整 Week2。
+
+输出表格每行带**来源/口径**，不可不经审查直接填“达标”。六行的出处：
 
 | 台账行 | 来源 | 要点 |
 | --- | --- | --- |
-| 连续 0-P1 天数 | `sys_alert.false_positive` + `level` | 按 `false_positive_marked_at` 落窗；要的是**尾部连续段**，中间断一天即重新起算 |
+| 连续 0-P1 天数 | `sys_alert.false_positive` + `level` | 按 `false_positive_marked_at` 落窗；只算已结束日期的**尾部连续段**；缺记录不等于无误伤，运行覆盖/标记流程须人工核验，不自动判 DoD |
 | ACK 演练次数 | **人工登记** | DoD#3 要求真人 + 真渠道，系统不可派生——工具只留槽位并说明原因，不猜 |
-| 通知送达率 | Prometheus `opsbrain_notify_delivery_total{result}` | **不是数据库表**（台账原写「读 notify_delivery 口径」易误导，已订正） |
-| 诊断触发率/产报率 | `sys_effectiveness_snapshot` 增量 | 快照列是**累计值**，必须「末读数 − 窗口前读数」，**不能 SUM** |
+| 通知送达率 | Prometheus `opsbrain_notify_delivery_total{result}` | **当前进程累计回执**，不是 `--from/--to` 增量，重启会重置；不是数据库表；真渠道需确认 |
+| 告警转单率/诊断充分率 | `sys_effectiveness_snapshot` 增量 | 快照列是**累计值**；末读数必须在窗口内，缺任一端/负增量报失败，不从 0 猜算。每日 09:20/启动采样，仅近似增量（非日终），不是诊断启动率或报告生成率 |
 | 修复时长对比 | `sys_devops_ticket.mitigated_at − create_time` | 工单创建列叫 `create_time`（不是 created_at） |
 | 自愈执行次数 | `sys_healing_execution` | 按 `created_at` 计数，成功 = `status='SUCCEEDED'` |
 
-**为什么配了 38 例单测**：这个工具有两种错法，都得测——
+**为什么配了口径单测与真库集成**：这个工具有两种错法，都得测——
 
 1. **安静地给出错的数**（累计列被 SUM、连续天数算成总和、`_created` 序列混进计数）：比崩掉危险得多，台账要拿它关 DoD；
 2. **走进「有库」分支就崩**：首轮 CI 正是崩在这儿——`Taker.q()` 返二元组、调用方按三元组解包（`ValueError: not enough values to unpack`）。它只在有库时才走，而沙箱没库、当时的单测又只覆盖纯函数，于是 **25 例全绿、CI 一上来就红**。所以取数胶水必须自己有测试，否则「本地全绿」这句话没有意义。
@@ -67,7 +87,29 @@ python3 tools/verify/grayscale_metrics.py --from 2026-10-13 --to 2026-10-19 \
 > 删掉前缀守卫测试照样绿——等于没测。补了 `_created` 序列的夹具后才真正咬住。
 
 **退出码**（CI 唯一读得到的判词，已逐个钉住）：`0` 该出的数都出来了（人工登记项不算失败）／
-`1` 有本可算的行没取到／`2` 窗口或日期非法／`3` 工具自己崩了（会打 `::error::取数器内部异常`）。
+`1` 有本可算的行没取到（含缺快照基线、指标未暴露）／`2` 窗口非法或尚无完整日期／`3` 工具自己崩了（会打 `::error::取数器内部异常`）。
+
+**JSON v2**：`requested_window` 是请求窗口，`window` 是实际完整日期范围；
+`window_closed` 仅说明请求终日已过去，不代表观测覆盖完整。
+`complete` 为兼容旧调用方保留，与 `collection_complete` 同义；两者只表示取数无错误。
+`gate_passed=null`：ACK、真渠道、观测覆盖、样本充分性需要人工验收。
+告警转单率为 `alert_sourced_tickets/alerts_total`，诊断充分率为 `diagnosis_sufficient/diagnosis_total`。
+Windows 输出尝试 UTF-8（无 `reconfigure` 的流兼容）；psql 使用 `-d` 显式数据库、`-X` 禁用户配置、
+`ON_ERROR_STOP=1` 不吞 SQL 错误、`PGCLIENTENCODING=UTF8` 与 Python 解码一致。
+本轮无原生 Windows 实测，单测只覆盖调用契约/输出流防护，不声称所有终端兼容。
+
+**真库集成（不可静默跳过）**：先在数据库应用仓内迁移，再执行：
+
+```bash
+POSTGRES_PG_URL='postgresql://<用户>@<地址>/<测试库>' \
+GM_BASE='http://<后端>/ai' GM_SCRAPE_TOKEN_FILE='<令牌文件>' \
+python3 tools/verify/test_grayscale_metrics_pg.py
+```
+
+`PSQL` 可显式指定可执行文件。缺库、SQL 错误、抓取面不可用均失败。
+测试随机 schema 克隆已迁移的四张表，灌手算夹具，结束删除；显式 id 不消费业务序列。
+覆盖正常增量、缺基线、缺窗口内快照、倒退、SQL 错误、六行采集、CLI/JSON。
+CI 连接真实 Spring Boot 抓取面。**夹具通过≠灰度生产达标**。
 
 ### 本地怎么真跑 SQL（不用等 CI）
 

@@ -6,7 +6,7 @@
 让 SRE 从「翻手册、搬告警、开工单」的重复劳动里解放出来。
 
 ![Java](https://img.shields.io/badge/Java-21-ed8b00?style=flat-square&logo=openjdk&logoColor=white)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.6-6db33f?style=flat-square&logo=springboot&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.12-6db33f?style=flat-square&logo=springboot&logoColor=white)
 ![LangChain4j](https://img.shields.io/badge/LangChain4j-Agent-000000?style=flat-square)
 ![Vue](https://img.shields.io/badge/Vue-3.5-42b883?style=flat-square&logo=vuedotjs&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-336791?style=flat-square&logo=postgresql&logoColor=white)
@@ -88,7 +88,7 @@
 
 | 领域 | 选型 |
 |---|---|
-| 框架 | Spring Boot 3.5.6 / Java 21（虚拟线程） |
+| 框架 | Spring Boot 3.5.12 / Java 21（虚拟线程） |
 | AI 编排 | LangChain4j |
 | 模型 | 阿里云 DashScope（qwen-plus / qwen-max / text-embedding-v2） |
 | 向量库 | PostgreSQL 16 + pgvector（1536 维） |
@@ -151,7 +151,7 @@ npm run dev -- --host 0.0.0.0
 
 这个项目在质量纪律上的投入超出常规：
 
-- **测试**：后端 **2,045 例 / 0 失败 / 2 跳过**（CI 后端腿，2026-10-15），前端 **107 文件 / 1,863 例**（`npm run verify` 同日实测）；
+- **测试**：后端 **2,050 例 / 0 失败 / 2 跳过**（CI 后端腿，2026-10-15），前端 **107 文件 / 1,863 例**（`npm run verify` 同日实测）；
 - **契约测试**：前后端错误码、状态流转守卫、分页钳制、事务边界、
   日志脱敏、部署时区等**跨端/跨层约定都有测试守着**；
 - **评测回归门禁**（S4-3）：评测集 152 条（69 正例 + 54 负例 + 排除项），

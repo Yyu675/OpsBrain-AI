@@ -26,31 +26,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 校验所有 uses 的 ref 真实存在（tag 或 branch 必须存在）
+      - name: 递归校验所有 uses（含 composite 内部与完整 SHA）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           # 为什么要有这一闸：vulnerability-scan.yml 曾把 trivy-action 钉成 @0.28.0
           # （真实 tag 是 v0.28.0），于是它**连续 5 周在 Set up job 阶段就失败、一次都没真扫过**。
           # 而它只在 schedule/dispatch 上跑、不进 push 门禁 → 没人看得见。
           # 这类坏钉本地查不出来（YAML 合法、语法没错），只能拿真 API 验。
-          refs=$(grep -rhoE 'uses: *[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[^ ]+' .github/workflows \
-                   | sed -E 's/^[[:space:]]*uses:[[:space:]]*//' | sort -u)
-          [ -n "$refs" ] || { echo "::error::一个 action 引用都没扫到——grep 模式失效了？"; exit 1; }
-          fail=0
-          for u in $refs; do
-            repo="${u%@*}"; ref="${u##*@}"
-            if gh api "repos/$repo/git/ref/tags/$ref" --silent 2>/dev/null \
-               || gh api "repos/$repo/git/ref/heads/$ref" --silent 2>/dev/null; then
-              echo "ok   $u"
-            else
-              echo "::error::无法解析 action 版本：$u —— tag 与 branch 都不存在（该工作流会在 Set up job 阶段直接失败；若它只跑 schedule，就是一次都没真跑过的哑哨兵）"
-              fail=1
-            fi
-          done
-          echo "共校验 $(echo "$refs" | wc -l) 个 action 引用"
-          exit $fail
+          # 批110：只校验最外层 tag 会漏掉内部 setup-trivy 坏钉；只读 API 递归查元数据。
+          python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+          python3 tools/verify/test_workflow_refs.py
+          python3 tools/verify/test_trivy_summary.py
+          python3 tools/verify/test_trivy_workflow.py
+          python3 tools/verify/workflow_refs.py
 
       - name: schedule 型工作流心跳检查（哨兵还活着吗）
         env:
@@ -77,7 +67,8 @@ jobs:
             max_age=$(sed -nE 's/.*heartbeat-max-age-days:[[:space:]]*([0-9]+).*/\1/p' "$f" | head -1)
             max_age=${max_age:-10}
 
-            json=$(gh run list --workflow "$name" --limit 1 --json databaseId,conclusion,createdAt 2>/dev/null || echo '[]')
+            # 进行中的 PR 自证不能盖住上一次失败；只看已完成结果。
+            json=$(gh run list --workflow "$name" --status completed --limit 1 --json databaseId,conclusion,createdAt 2>/dev/null || echo '[]')
             if [ "$(echo "$json" | jq 'length')" = "0" ]; then
               echo "::error::schedule 型工作流 $name 从未运行过——等于哑哨兵（查 cron、默认分支、文件是否真落到 main）"
               fail=1
@@ -108,6 +99,9 @@ jobs:
               else
                 echo "::warning::$name 上次运行（$rid，$created）失败于「$badstep」——可能是真发现（漏洞扫描发现 HIGH/CRITICAL 即 exit 1），请人工看一眼，别当噪声"
               fi
+            elif [ "$concl" != "success" ]; then
+              echo "::error::$name 上次完成状态为 $concl，不当作健康心跳"
+              fail=1
             else
               echo "ok   $name：上次 $concl（$created，${age_days} 天前，容忍 ${max_age} 天）"
             fi
@@ -815,6 +809,7 @@ jobs:
           set -o pipefail
           # 先跑口径单测：这个工具的错法是「安静地给出错的数」（累计列被 SUM、
           # 连续天数算成总和、_created 序列混进计数），比崩掉危险得多——台账要拿它关 DoD。
+          set +e
           python3 tools/verify/test_grayscale_metrics.py 2>&1 | tee /tmp/gm-unit.log | tail -4
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then
@@ -822,19 +817,16 @@ jobs:
             grep -aE '^(FAIL|ERROR|Ran |FAILED|OK)' /tmp/gm-unit.log | sed 's/^/::error::口径单测 /' || true
           fi
           set +e
-          # 再对真库跑一遍：沙箱无 psql/docker，SQL 里的列名只有在真迁移库上才验得了
-          # （批104 首轮正是这里抓出一个只在「有库」分支才走的解包崩溃）
-          python3 tools/verify/grayscale_metrics.py \
-            --from "$(date -u -d '7 days ago' +%F)" --to "$(date -u +%F)" \
-            --psql psql \
-            --pgurl "postgresql://devops:devops_password@localhost:25432/devops_knowledge_db" \
-            --base http://localhost:8088/ai \
-            --scrape-token-file /tmp/e2e-scrape-token \
-            --json /tmp/grayscale.json 2>&1 | tee /tmp/grayscale.log
+          # 真迁移库 + 真后端抓取面；随机 schema 克隆四张真实表后灌手算夹具。
+          # 新装 CI 库没有历史快照，不能将其当 0 基线；夹具也绝不是灰度生产证据。
+          # 缺库/抓取面即失败，无跳过；退出清理 schema，不改业务行或业务序列。
+          POSTGRES_PG_URL="postgresql://devops:devops_password@localhost:25432/devops_knowledge_db" \
+          GM_BASE=http://localhost:8088/ai GM_SCRAPE_TOKEN_FILE=/tmp/e2e-scrape-token \
+            python3 tools/verify/test_grayscale_metrics_pg.py 2>&1 | tee /tmp/grayscale.log
           rc2=${PIPESTATUS[0]}
           # 结论压成 annotation；先去 ANSI 免乱码
           CLEAN=$(sed -r 's/\x1B\[[0-9;]*m//g' /tmp/grayscale.log)
-          BODY=$(printf '%s\n' "$CLEAN" | grep -aE '^(=== |\| |未取到|提示|::error::|Traceback|  File |[A-Za-z_]*Error)' || true)
+          BODY=$(printf '%s\n' "$CLEAN" | grep -aE '^(=== |\| |未取到|提示|::error::|::notice::|Traceback|  File |[A-Za-z_]*Error|FAIL|ERROR|Ran |FAILED|OK)' || true)
           if [ -z "$BODY" ]; then
             # 首轮教训：工具在打出任何判词前就崩了，annotation 里只剩
             # 「Process completed with exit code 1」，根因（解包元数不匹配）完全隐形。

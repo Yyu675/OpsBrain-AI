@@ -19,8 +19,8 @@ OpsBrain AI（智维大脑）是企业级智能 DevOps 知识库与工单自动�
 
 | 层 | 技术 |
 | :-- | :-- |
-| 后端 | Java 21、Spring Boot 3.5.6、Spring MVC（SseEmitter）、Spring Data JPA + JdbcTemplate |
-| AI | LangChain4j 1.1.0（BOM 统一版本）、阿里云百炼 OpenAI 兼容协议 |
+| 后端 | Java 21、Spring Boot 3.5.12、Spring MVC（SseEmitter）、Spring Data JPA + JdbcTemplate |
+| AI | LangChain4j 1.2.0（BOM；pgvector 安全补丁 1.2.1-beta8）、阿里云百炼 OpenAI 兼容协议 |
 | 存储 | PostgreSQL + **pgvector**（向量）、Redis 7（语义缓存/会话）、MinIO（附件） |
 | 鉴权 | Sa-Token（header `satoken`） |
 | 前端 | Vue 3.5、TypeScript、Vite 8、Element Plus、Pinia、TanStack Vue Query、ECharts |

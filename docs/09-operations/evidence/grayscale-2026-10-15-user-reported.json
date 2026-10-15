@@ -1,0 +1,28 @@
+{
+  "provenance": {
+    "kind": "user_reported_console_and_json",
+    "received_on": "2026-10-15",
+    "independently_rerun": false,
+    "collected_at": null,
+    "notice": "用户上报真 PostgreSQL 与 Spring Boot 抓取面实跑；未提供原始文件或精确采集时间。以下为原输出留痕，不是修正口径后的重跑证据。原 7 天达标作废；complete 只表示旧工具取数无报错。"
+  },
+  "reported_output": {
+    "window": {"from": "2026-10-13", "to": "2026-10-19"},
+    "rows": [
+      {"name": "连续 0-P1 天数", "value": "7 天 —— 达标", "source": "sys_alert：窗口内 P0/P1 误报标记日 0 天，从 2026-10-19 往回连续计数", "failed": false},
+      {"name": "ACK 演练次数（目标 ×3）", "value": "人工登记", "source": "人工登记（DoD#3：真人 + 真渠道演练，非系统可派生）", "failed": false},
+      {"name": "通知送达率", "value": "100.0%（2/2）", "source": "opsbrain_notify_delivery_total{result=ok|error}：ok/(ok+error)；受理≠送达，此为渠道亲口回执", "failed": false},
+      {"name": "诊断触发率/产报率", "value": "触发率 54.5%（6/11）｜产报率(充分) 0.0%（0/17）", "source": "sys_effectiveness_snapshot 增量：alert_sourced_tickets/alerts_total、diagnosis_sufficient/diagnosis_total（累计列，末读数−窗口前读数）", "failed": false},
+      {"name": "故障修复时长对比（前 vs 后）", "value": "止损中位数 无数据｜样本 0 单 （灰度前基线需另取开跑日之前的同口径中位数对比）", "source": "sys_devops_ticket：mitigated_at − create_time，窗口内按 mitigated_at 取", "failed": false},
+      {"name": "自愈执行次数（台账读数）", "value": "0 次（成功 0）", "source": "sys_healing_execution：窗口内按 created_at 计数，成功=status='SUCCEEDED'", "failed": false}
+    ],
+    "complete": true
+  },
+  "review": {
+    "gate_passed": null,
+    "zero_p1_verdict_valid": false,
+    "notification_scope": "当前被抓取进程累计回执，不是周窗口增量；真渠道仍须确认",
+    "diagnosis_scope": "6/11 是告警转单率，0/17 是诊断充分率，不是诊断触发率或报告生成率；缺基线旧版会从 0 起算，需新版重跑",
+    "required": "新版重跑；确认运行机与数据库业务日期一致；人工核验观察覆盖、真渠道与 ACK 演练；排查 17 次诊断充分度"
+  }
+}
