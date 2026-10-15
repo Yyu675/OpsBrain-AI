@@ -697,6 +697,32 @@ jobs:
             --json /tmp/rbac.json --log /tmp/rbac.log || rc=1
           exit $rc
 
+      - name: 发布回退实弹（DoD#6：真两版本切换 + 契约证伪 + 计时）
+        # 验证矩阵里最后一个「只靠人工」的面，现在进门禁。
+        # 做法：把 origin/main 编成「旧版」、本分支产物当「新版」，跑 rollback-drill.sh 的
+        # artifact 模式——切换 → 重启 → 探活 → 前滚，全程计时并断言 <300s。
+        # 版本身份用**契约差异**证伪：新版独有的 /alerts/webhook/zabbix 端点在新版必须存在、
+        # 旧版必须没有（只看 HTTP 200 会误判——main 有 /webhook/{system} 通配映射，两版都回 200）。
+        # 两个前提本轮核对过：main 与本分支 pom.xml **完全相同**（故可共用一份依赖 classpath）、
+        # 迁移文件同为 18 个（故旧版跑在同一个库上不会被 Flyway 校验挡住）。
+        run: |
+          set -o pipefail
+          git fetch origin main
+          git worktree add /tmp/prev FETCH_HEAD
+          (cd /tmp/prev && ./mvnw -B -ntp -DskipTests compile 2>&1 | tail -3)
+          ./mvnw -B -ntp -q dependency:build-classpath -Dmdep.outputFile=/tmp/cp_full.txt
+          set +e
+          CP_BASE=/tmp/cp_full.txt bash scripts/rollback-drill.sh --mode artifact \
+            --prev /tmp/prev/target/classes --cur target/classes \
+            --prev-res /tmp/prev/src/main/resources --cur-res src/main/resources \
+            --port 8099 2>&1 | tee /tmp/rollback-drill.log
+          rc=${PIPESTATUS[0]}
+          # 结论压成 annotation（沙箱读不到作业日志，见 tools/verify/ci_summary.py 的由来）
+          grep -a "回滚耗时" /tmp/rollback-drill.log \
+            | sed "s/^/::$( [ $rc -eq 0 ] && echo notice || echo error )::/" || true
+          git worktree remove /tmp/prev --force || true
+          exit $rc
+
       - name: 安装 Node 22
         uses: actions/setup-node@v4
         with:

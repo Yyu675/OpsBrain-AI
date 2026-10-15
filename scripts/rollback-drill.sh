@@ -39,8 +39,13 @@ PROJECT="opsbrain-prod"; SERVICE="app"; IMAGE="opsbrain-ai"
 JAVA_BIN="${JAVA_BIN:-${JAVA_HOME:-/usr}/bin/java}"
 CP_BASE="${CP_BASE:-/tmp/cp_full.txt}"
 RES_DIR="${RES_DIR:-src/main/resources}"
+# 两个版本各自的资源目录（缺省都用 RES_DIR）。分开的原因：配置也在版本里——
+# 分支版 application.yml 比 main 多 33 行（抓取令牌、登录限流可覆盖等），
+# 拿新配置喂旧代码虽不报错（未知键被忽略），但演的就不是"那一版"了。
+PREV_RES=""; CUR_RES=""
 LOG_DIR="${LOG_DIR:-/tmp/rollback-drill}"
 LIMIT_SECONDS="${LIMIT_SECONDS:-300}"
+NO_FLYWAY="${NO_FLYWAY:-}"   # 旧版跑在已被新版迁移推进过的库上时置 1（关 Flyway 校验）
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,6 +55,9 @@ while [ $# -gt 0 ]; do
     --port) PORT="$2"; shift 2;;
     --marker-path) MARKER_PATH="$2"; shift 2;;
     --marker-needle) MARKER_NEEDLE="$2"; shift 2;;
+    --prev-res) PREV_RES="$2"; shift 2;;
+    --cur-res) CUR_RES="$2"; shift 2;;
+    --no-flyway) NO_FLYWAY=1; shift;;
     --project) PROJECT="$2"; shift 2;;
     --service) SERVICE="$2"; shift 2;;
     --image) IMAGE="$2"; shift 2;;
@@ -92,13 +100,19 @@ stop_app() {
   sleep 1
 }
 
-start_app() { # start_app <classes-dir> <tag>
+start_app() { # start_app <classes-dir> <tag> <res-dir>
   local classes="$1"
   local tag="$2"
+  local res="${3:-$RES_DIR}"
   local log="$LOG_DIR/$tag.log"   # 注意：不要写成同一行 local a=$1 b=$a —— bash 会先展开后赋值，$tag 为空
+  # NO_FLYWAY=1 时关掉 Flyway 校验：旧版代码不认识新版已 apply 的迁移，
+  # 默认 validate 会以「applied migration not resolved locally」直接拒绝启动。
+  local flyway_env=""
+  [ -n "$NO_FLYWAY" ] && flyway_env="SPRING_FLYWAY_ENABLED=false"
   AI_MODE=MOCK SPRING_PROFILES_ACTIVE=dev SCHEMA_FAIL_FAST=true SERVER_PORT="$PORT" \
+  ${flyway_env:+$flyway_env} \
   nohup "$JAVA_BIN" -Dlogging.level.root=WARN \
-        -cp "$classes:$(cat "$CP_BASE"):$RES_DIR" \
+        -cp "$classes:$(cat "$CP_BASE"):$res" \
         com.devops.agent.DevopsPlatformBackendApplication > "$log" 2>&1 &
   echo $! > "$PIDFILE"
 }
@@ -123,7 +137,7 @@ if [ "$MODE" = "artifact" ]; then
   info "0) 清场并启动当前版本（v_cur）"
   stop_app
   T_START=$(date +%s)
-  start_app "$CUR" cur
+  start_app "$CUR" cur "${CUR_RES:-$RES_DIR}"
   wait_health 180 || die "v_cur 180s 内未健康（见 $LOG_DIR/cur.log）"
   ok "v_cur 健康（启动耗时 $(( $(date +%s) - T_START ))s）"
   marker_present && ok "版本身份：契约含「$MARKER_NEEDLE」→ 确为 v_cur" \
@@ -132,7 +146,7 @@ if [ "$MODE" = "artifact" ]; then
   info "1) 事故发生 → 执行回滚（切到 v_prev 并重启，开始计时）"
   T_ROLL_START=$(date +%s%3N)
   stop_app
-  start_app "$PREV" prev
+  start_app "$PREV" prev "${PREV_RES:-$RES_DIR}"
   wait_health 180 || die "回滚后 180s 内未健康（见 $LOG_DIR/prev.log）"
   T_ROLL_END=$(date +%s%3N)
   ROLL_MS=$(( T_ROLL_END - T_ROLL_START ))
@@ -145,7 +159,7 @@ if [ "$MODE" = "artifact" ]; then
   info "2) 前滚（切回 v_cur，验证可逆）"
   T_FWD_START=$(date +%s%3N)
   stop_app
-  start_app "$CUR" cur2
+  start_app "$CUR" cur2 "${CUR_RES:-$RES_DIR}"
   wait_health 180 || die "前滚后 180s 内未健康"
   ok "v_cur 健康（前滚耗时 $(( ($(date +%s%3N) - T_FWD_START) / 1000 ))s）"
   marker_present && ok "版本身份：契约重新含 marker → 确为 v_cur" || die "前滚后 marker 缺失"
