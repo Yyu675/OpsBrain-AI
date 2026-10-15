@@ -567,12 +567,26 @@ jobs:
           printf '%s' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > /tmp/e2e-scrape-token
           chmod 600 /tmp/e2e-scrape-token
           nohup java -jar target/*.jar > /tmp/e2e-backend.log 2>&1 &
+          # 两段等待：端口应答 ≠ 就绪。health 是 K8s 探针契约，也是后续每一步
+          # （抓取面实弹 / 种子 / 闭环演练 / RBAC / Playwright）的隐含前提。
+          # 此前只等「端口应答」，于是抓取面步偶发撞上 health 仍为 503 的窗口
+          # （run 38666117982 实测），把「还没就绪」误报成「探针端点被拦」——
+          # 方向完全不同（一个该等，一个该改闸门），所以现在就等到位。
           for i in $(seq 1 40); do
             sleep 3
             code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8088/ai/api/v1/auth/login" -X POST || true)
-            if [ "$code" != "000" ]; then echo "backend up after ~$((i*3))s (http=$code)"; exit 0; fi
+            if [ "$code" != "000" ]; then echo "端口应答 after ~$((i*3))s (http=$code)"; break; fi
           done
-          echo "::error::后端 120s 未起来"; tail -80 /tmp/e2e-backend.log; exit 1
+          hcode=000
+          for i in $(seq 1 40); do
+            hcode=$(curl -s -o /tmp/e2e-health.json -w '%{http_code}' "http://localhost:8088/ai/actuator/health" || true)
+            if [ "$hcode" = "200" ]; then echo "health UP after ~$((i*3))s"; exit 0; fi
+            sleep 3
+          done
+          # show-details: always → 直接看哪个组件 DOWN，不必靠猜
+          echo "::error::后端 120s 内 health 未 UP（最后 HTTP $hcode）；组件明细："
+          cat /tmp/e2e-health.json 2>/dev/null; echo
+          tail -80 /tmp/e2e-backend.log; exit 1
 
       - name: 指标抓取面实弹（真 jar + 真 HTTP：裸抓 401 / 带令牌 200 且含 opsbrain_）
         # 为什么单开这一步：@SpringBootTest 里 spring-boot-test-autoconfigure 的
@@ -602,9 +616,19 @@ jobs:
           info=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/actuator/info")
           echo "同令牌 /actuator/info → $info（期望 401：最小权限，抓取钥匙只开一扇门）"
           [ "$info" = "401" ] || { echo "::error::抓取令牌不该能读 /actuator/info，实际 $info"; exit 1; }
-          health=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/actuator/health")
+          health=$(curl -s -o /tmp/e2e-health-late.json -w '%{http_code}' "$BASE/actuator/health")
           echo "无凭据 /actuator/health → $health（期望 200：K8s 探针契约）"
-          [ "$health" = "200" ] || { echo "::error::探针端点被拦，Pod 会一直 NotReady，实际 $health"; exit 1; }
+          if [ "$health" != "200" ]; then
+            # 401/403 = 被闸门拦（探针契约破了，该改闸门）；503 = 应用自报 DOWN
+            # （组件问题，该查组件）。两种「不通」混成一句话会让人改错地方
+            # ——上一版就把它一律说成「探针端点被拦」，而实际是 503。
+            case "$health" in
+              401|403) echo "::error::探针端点被闸门拦（$health）：无凭据必须可读 health，否则 Pod 永远 NotReady" ;;
+              *) echo "::error::health 非 200（$health）——不是被拦，是应用自报状态；组件明细："
+                 cat /tmp/e2e-health-late.json 2>/dev/null; echo ;;
+            esac
+            exit 1
+          fi
           echo "::notice::指标抓取面实弹通过（生产形态 · 真 jar · 无测试上下文覆盖）"
 
       - name: 灌入 e2e 种子数据（故障FAQ库 + faq-test-doc + 常驻工单）
