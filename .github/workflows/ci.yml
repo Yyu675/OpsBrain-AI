@@ -717,8 +717,9 @@ jobs:
             --prev-res /tmp/prev/src/main/resources --cur-res src/main/resources \
             --port 8099 2>&1 | tee /tmp/rollback-drill.log
           rc=${PIPESTATUS[0]}
-          # 结论压成 annotation（沙箱读不到作业日志，见 tools/verify/ci_summary.py 的由来）
-          grep -a "回滚耗时" /tmp/rollback-drill.log \
+          # 结论压成 annotation（沙箱读不到作业日志，见 tools/verify/ci_summary.py 的由来）。
+          # 先去 ANSI 色码：脚本输出带颜色，落到 annotation 里会变成 ^[[0;32m 这种乱码。
+          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/rollback-drill.log | grep -a "回滚耗时" \
             | sed "s/^/::$( [ $rc -eq 0 ] && echo notice || echo error )::/" || true
           git worktree remove /tmp/prev --force || true
           exit $rc
