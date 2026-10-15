@@ -25,7 +25,11 @@ class TestTrivyGateExit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             (tmp / "tools/verify").mkdir(parents=True)
-            shutil.copy(ROOT / "tools/verify/trivy_summary.py", tmp / "tools/verify/trivy_summary.py")
+            for name in ("trivy_summary.py", "trivy_policy.py"):
+                shutil.copy(ROOT / "tools/verify" / name, tmp / "tools/verify" / name)
+            (tmp / "trivy-report.json").write_text(json.dumps({
+                'SchemaVersion': 2, 'ArtifactName': '.', 'Results': [
+                    {'Target': 'pom.xml'}, {'Target': 'devops-platform-frontend/package-lock.json'}]}))
             executable = tmp / "trivy"
             executable.write_text(f"#!{sys.executable}\n" + """
 import json, os, pathlib, sys
@@ -36,7 +40,8 @@ if os.environ['FAKE_REPORT'] == 'yes':
 sys.exit(int(os.environ['FAKE_STATUS']))
 """)
             executable.chmod(0o755)
-            script = script.replace("/tmp/trivy-gate.log", str(tmp / "gate.log"))
+            for name in ("trivy-report.json", "trivy-gate.json", "trivy-policy-input.json", "trivy-policy.json", "trivy-gate.log"):
+                script = script.replace("/tmp/" + name, str(tmp / name))
             env = {**os.environ, "PATH": str(tmp) + os.pathsep + os.environ["PATH"],
                    "FAKE_STATUS": str(status), "FAKE_REPORT": "yes" if report_exists else "no",
                    "SCAN_SEVERITY": "HIGH,CRITICAL"}
