@@ -44,6 +44,12 @@ CI 将 tree/raw/pom SHA256 与实际 checkout SHA 留档。完整审计 JSON/树
 
 本批运行 `test_maven_scan_coverage.py`、`test_maven_coverage_workflow.py` 以及既有5组 Trivy/引用测试；shell中的fake Maven/Trivy只证控制流。真实数据与方案决策见 `docs/09-decisions/2026-10-16-Maven首扫覆盖审计与后续输入决策.md`。修改检查工具/扫描工作流或pom触发限定PR真扫，普通业务push不额外下载漏洞库。**零漏洞≠覆盖完整；审计成功≠运行时安全或灰度放行。**
 
+### 原生 runtime SBOM 与 Boot 库字节实验（批115）
+
+审计后置job固定CycloneDX2.9.1，真实package并生成1.6 JSON（compile/runtime，不含provided/test/system）；Trivy0.70.0对SBOM一次扫描，同源convert保留原生失败码。`sbom_runtime_probe.py`核树variants→SBOM→扫描GAV，再以原生SBOM SHA256绑定实际Boot内嵌库，列出未打包组件、额外SBOM组件和未知Boot库。未知字节不按文件名猜身份；发现按包/版本标注是否有打包字节匹配，不能将未打包组件称部署漏洞。原始SBOM/报告/原码/日志/完整字节清单均artifact，超长取证仅发显式紧凑分片（不含完整库数组），分片sha与完整结果sha分开。
+
+首实跑发现58条HC记录且native gate=1，Boot工具库未入原生SBOM，故**这是输入实验而非生产放行，不直接替换原前端/Secrets扫描**。`test_sbom_runtime_probe.py`、`test_sbom_workflow.py`分别验证语义与实际shell协议；fake可执行文件不冒充真实构建/扫描。完整分析/利弊/处置边界见 `docs/09-decisions/2026-10-16-原生SBOM实验与运行时漏洞处置决策.md`。
+
 ## 灰度台账取数（`grayscale_metrics.py`）
 
 台账 §三 有六个数据槽位要按周填。**Week1（10-06~10-12）填不出来**，台账如实记了「不可回溯，属实际缺口」。

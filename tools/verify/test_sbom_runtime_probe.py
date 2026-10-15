@@ -43,6 +43,8 @@ class TestSBOMProbe(unittest.TestCase):
         self.assertFalse(out["production_gate_replaced"])
         self.assertEqual(out["counts"]["fixed_rows"], 1)
         self.assertEqual(out["native_gate_rc"], 1)
+        self.assertTrue(out["findings"][0]["byte_matched_packaged"])
+        self.assertEqual(out["counts"]["packaged_finding_rows"], 1)
 
     def test_同文件名不同字节不可冒充(self):
         _, tree, bom, report = fixtures()
@@ -72,6 +74,25 @@ class TestSBOMProbe(unittest.TestCase):
         out = self.run_probe(tree, bom, report)
         self.assertEqual(out["counts"]["runtime_gavs"], 2)
         self.assertIn(["x:lombok", "1", "jar", ""], out["runtime_not_packaged"])
+
+    def test_SBOM超出tree的组件也须核对实际字节及原树路径(self):
+        library, tree, bom, report = fixtures()
+        tree["children"].append({"groupId": "x", "artifactId": "provided", "version": "1", "type": "jar", "scope": "provided"})
+        extra = copy.deepcopy(bom["components"][0])
+        extra.update({"name": "provided", "purl": "pkg:maven/x/provided@1"})
+        extra["hashes"][0]["content"] = hashlib.sha256(b"extra bytes").hexdigest()
+        bom["components"].append(extra)
+        report["Results"][0]["Packages"].append({"Name": "x:provided", "Version": "1"})
+        out = self.run_probe(tree, bom, report, libs={"a-1.jar": library, "provided-1.jar": b"extra bytes"})
+        row = out["sbom_extra_packaging_evidence"][0]
+        self.assertTrue(row["byte_matched_packaged"])
+        self.assertEqual(row["runtime_tree_paths"][0][-1]["scope"], "provided")
+
+    def test_只有SBOM但未打包的发现不能称为部署漏洞(self):
+        _, tree, bom, report = fixtures()
+        out = self.run_probe(tree, bom, report, libs={"other.jar": b"different"})
+        self.assertFalse(out["findings"][0]["byte_matched_packaged"])
+        self.assertEqual(out["counts"]["packaged_finding_rows"], 0)
 
     def test_同GAV错误classifier不能充variant(self):
         _, tree, bom, report = fixtures()
@@ -117,6 +138,7 @@ class TestSBOMProbe(unittest.TestCase):
 
     def test_PURL百分号解码与重复参数拒绝(self):
         self.assertEqual(maven_purl("pkg:maven/x/a@1%2B2?classifier=linux&type=jar"), ("x:a", "1+2", "jar", "linux"))
+        self.assertEqual(maven_purl("pkg:maven/x/a@1?classifier=%252B")[3], "%2B")
         for value in ("pkg:npm/a@1", "pkg:maven/a@1", "pkg:maven/x/a", "pkg:maven/x/a@1?type=jar&type=war"):
             with self.assertRaises(ValueError):
                 maven_purl(value)

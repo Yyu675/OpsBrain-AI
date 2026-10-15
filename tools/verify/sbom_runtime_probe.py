@@ -31,7 +31,7 @@ def maven_purl(value):
     if any(len(v) != 1 for v in qualifiers.values()):
         raise ValueError("重复 PURL qualifier")
     return (unquote(parts[0]) + ":" + unquote(parts[1]), unquote(version),
-            qualifiers.get("type", ["jar"])[0], unquote(qualifiers.get("classifier", [""])[0]))
+            qualifiers.get("type", ["jar"])[0], qualifiers.get("classifier", [""])[0])
 
 
 def components(bom):
@@ -82,6 +82,24 @@ def packaged_libraries(path, registry):
     return matched, unknown, evidence
 
 
+def tree_paths(tree, name):
+    paths = []
+    def visit(node, path):
+        if not isinstance(node, dict):
+            return
+        here = {"name": str(node.get("groupId", "")) + ":" + str(node.get("artifactId", "")),
+                "version": node.get("version"), "scope": node.get("scope", "")}
+        current = path + [here]
+        if here["name"] == name:
+            paths.append(current)
+        children = node.get("children", [])
+        if isinstance(children, list):
+            for child in children:
+                visit(child, current)
+    visit(tree, [])
+    return paths
+
+
 def inspect(tree, bom, report, gate, gate_rc, boot_jar):
     root, runtime, variants = runtime_packages(tree)
     registry = components(bom)
@@ -107,6 +125,11 @@ def inspect(tree, bom, report, gate, gate_rc, boot_jar):
     if gate_rc not in (0, 1) or gate_rc != int(bool(expected)) or expected != finding_keys(gate):
         raise ValueError("Trivy 原生门禁退出码/发现与同源 fixed 策略不符")
     packaged, unknown, evidence = packaged_libraries(boot_jar, registry)
+    packaged_gavs = {v[:2] for v in packaged}
+    for finding in findings:
+        finding["byte_matched_packaged"] = (finding["PkgName"], finding["InstalledVersion"]) in packaged_gavs
+    extras = [{"variant": list(v), "byte_matched_packaged": v in packaged,
+               "runtime_tree_paths": tree_paths(tree, v[0])} for v in sorted(registry.keys() - variants)]
     complete = variants <= registry.keys() and bom_gavs <= scanned and not unknown
     encode = lambda values: [list(v) for v in sorted(values)]
     return {"schema_version": 1, "input_candidate_complete": complete,
@@ -118,10 +141,12 @@ def inspect(tree, bom, report, gate, gate_rc, boot_jar):
                        "packaged_libraries": len(evidence), "packaged_hash_matched": len(evidence) - len(unknown),
                        "packaged_unknown": len(unknown), "finding_rows": len(findings),
                        "unique_cves": len({f["VulnerabilityID"] for f in findings}),
-                       "fixed_rows": policy["kept_vulnerabilities"]},
+                       "fixed_rows": policy["kept_vulnerabilities"],
+                       "packaged_finding_rows": sum(f["byte_matched_packaged"] for f in findings)},
             "native_gate_rc": gate_rc, "findings": findings,
             "runtime_missing_from_sbom": encode(variants - registry.keys()),
             "sbom_extra_to_runtime": encode(registry.keys() - variants),
+            "sbom_extra_packaging_evidence": extras,
             "sbom_missing_from_scan": encode(bom_gavs - scanned),
             "runtime_not_packaged": encode(variants - packaged),
             "packaged_unknown": unknown, "packaged_libraries": evidence,
