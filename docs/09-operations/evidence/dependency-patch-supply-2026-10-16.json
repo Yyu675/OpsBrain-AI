@@ -1,0 +1,500 @@
+{
+  "date": "2026-10-16",
+  "branch_head": "a6c31adbc655aa93f95389ad7641837a2c8361d9",
+  "run": 38800047162,
+  "job": 116646590007,
+  "source": "Central官方GET实际内容；check annotations分片完整恢复并验SHA。此JSON重排保存值，摘要指解码payload，不是本文件/ZIP。供应可获取不等于传递可解析/安全修复。",
+  "decoded_payload_sha256": "9be494c400954bd951e8e32971e28a8f058f088742bf767c12bab8e974271990",
+  "result": {
+    "schema_version": 1,
+    "repository": "https://repo.maven.apache.org/maven2/",
+    "tomcat_metadata": {
+      "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/maven-metadata.xml",
+      "sha256": "24a720bfda974e267d1979da7d14e9540d3f953877e8fa7d1ff328a782c5c585",
+      "last_versions_up_to_10_1_58": [
+        "10.1.49",
+        "10.1.50",
+        "10.1.52",
+        "10.1.53",
+        "10.1.54",
+        "10.1.55",
+        "10.1.56",
+        "10.1.57"
+      ]
+    },
+    "candidates": [
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-core:10.1.56",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.56/tomcat-embed-core-10.1.56.pom",
+            "http_status": 200,
+            "bytes": 1737,
+            "sha256": "aa7c5c6c8c28c1570d2a1dab8f8c392d554f83be08aa99f46f46bdbd96ee5b2b"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.56/tomcat-embed-core-10.1.56.jar",
+            "http_status": 200,
+            "bytes": 3694241,
+            "sha256": "db6e95e846192c2bf24ebc0e9ee140ba60462bebbf96d6a079896bea02182443"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-el:10.1.56",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.56/tomcat-embed-el-10.1.56.pom",
+            "http_status": 200,
+            "bytes": 1506,
+            "sha256": "0a24354147566a6d52528da1d0f8aebc0e08cae938b29f11aaeaeafd0d3d80cf"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.56/tomcat-embed-el-10.1.56.jar",
+            "http_status": 200,
+            "bytes": 265819,
+            "sha256": "164066134f1c21d4117218e5475d38869043ceb523afdac033fe6e539f750c70"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-websocket:10.1.56",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.56/tomcat-embed-websocket-10.1.56.pom",
+            "http_status": 200,
+            "bytes": 1743,
+            "sha256": "7d0353917e36563d096770164ffbf4968dc58035b9e7a8535868212802738567"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.56/tomcat-embed-websocket-10.1.56.jar",
+            "http_status": 200,
+            "bytes": 285329,
+            "sha256": "ddec0460ef1cae013d3c1fe4c0e663bdc2d4410cc8bd42e08a754e8f04091994"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-core:10.1.57",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.57/tomcat-embed-core-10.1.57.pom",
+            "http_status": 200,
+            "bytes": 1737,
+            "sha256": "a649e2977149e18fc6e1bd4f6a769b2e494536d4308490b9d1edf15f7ce6e6a7"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.57/tomcat-embed-core-10.1.57.jar",
+            "http_status": 200,
+            "bytes": 3698204,
+            "sha256": "9e230f12579c8c7158df5cbae0479fb93c81a1f1c33c5d56e75605e2074a4fa7"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-el:10.1.57",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.57/tomcat-embed-el-10.1.57.pom",
+            "http_status": 200,
+            "bytes": 1506,
+            "sha256": "34493a973b5b3eaed4a3e8a398337671b9538e847465c4124d36e5366bd7effd"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.57/tomcat-embed-el-10.1.57.jar",
+            "http_status": 200,
+            "bytes": 265819,
+            "sha256": "d0d0b86ec9d466ccaa8acf948a8c6564f09e21dcccc385805df248a053a3b449"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-websocket:10.1.57",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.57/tomcat-embed-websocket-10.1.57.pom",
+            "http_status": 200,
+            "bytes": 1743,
+            "sha256": "8fe453074eb396ada3170552049ad100a7a334f7eaab65d7c70e793035b8253b"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.57/tomcat-embed-websocket-10.1.57.jar",
+            "http_status": 200,
+            "bytes": 285844,
+            "sha256": "335c00fad89e389fe041cad16d22bc83e6ef746571442b3dc5e2a8f0388bad21"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-core:10.1.58",
+        "packaging": "jar",
+        "availability": "not_found",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.58/tomcat-embed-core-10.1.58.pom",
+            "http_status": 404
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.58/tomcat-embed-core-10.1.58.jar",
+            "http_status": 404
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-el:10.1.58",
+        "packaging": "jar",
+        "availability": "not_found",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.58/tomcat-embed-el-10.1.58.pom",
+            "http_status": 404
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.58/tomcat-embed-el-10.1.58.jar",
+            "http_status": 404
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.tomcat.embed:tomcat-embed-websocket:10.1.58",
+        "packaging": "jar",
+        "availability": "not_found",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.58/tomcat-embed-websocket-10.1.58.pom",
+            "http_status": 404
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.58/tomcat-embed-websocket-10.1.58.jar",
+            "http_status": 404
+          }
+        ]
+      },
+      {
+        "coordinate": "io.micrometer:micrometer-bom:1.15.12",
+        "packaging": "pom",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/io/micrometer/micrometer-bom/1.15.12/micrometer-bom-1.15.12.pom",
+            "http_status": 200,
+            "bytes": 8614,
+            "sha256": "5fd5d8aae19fe6c2eac4b62a966b837976dc6814efbe126e7aa5afadb32e52b1"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.apache.opennlp:opennlp-tools:2.5.9",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/opennlp/opennlp-tools/2.5.9/opennlp-tools-2.5.9.pom",
+            "http_status": 200,
+            "bytes": 5874,
+            "sha256": "38a5c7a61d0512edd7e0aa5d566596d16f4fd0a952639e20853cfd71208109cf"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/apache/opennlp/opennlp-tools/2.5.9/opennlp-tools-2.5.9.jar",
+            "http_status": 200,
+            "bytes": 1396264,
+            "sha256": "bc2d28082607b211fdf3185c1496ea8e130fa1fe1bead85622d38487920017e2"
+          }
+        ]
+      },
+      {
+        "coordinate": "org.jsoup:jsoup:1.23.2",
+        "packaging": "jar",
+        "availability": "available",
+        "files": [
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/jsoup/jsoup/1.23.2/jsoup-1.23.2.pom",
+            "http_status": 200,
+            "bytes": 23761,
+            "sha256": "3ff28beafd484e9c345e0749d697d2aa31f29ace54b5d4da4e8375e6d8fe1802"
+          },
+          {
+            "url": "https://repo.maven.apache.org/maven2/org/jsoup/jsoup/1.23.2/jsoup-1.23.2.jar",
+            "http_status": 200,
+            "bytes": 537806,
+            "sha256": "e9d8c856856680427f096d156f02a414289985c930998fcb519ce5be39b42003"
+          }
+        ]
+      }
+    ],
+    "boundary": "200且有效POM/JAR只证明本轮可获取，不证明传递解析/二进制兼容/漏洞已修；404保留，网络/坏内容失败，不自动选版本或加豁免",
+    "checkout_sha": "23d063428b0bbdadc70d300e2f26221b0a194600"
+  },
+  "representative_advisories": [
+    {
+      "ghsa_id": "GHSA-w737-wx49-qj23",
+      "html_url": "https://github.com/advisories/GHSA-w737-wx49-qj23",
+      "summary": "Micrometer gRPC server instrumentation DoS",
+      "vulnerabilities": [
+        {
+          "first_patched_version": "1.16.6",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-core"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.16.0, <= 1.16.5"
+        },
+        {
+          "first_patched_version": "1.15.12",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-core"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.15.0, <= 1.15.11"
+        }
+      ]
+    },
+    {
+      "ghsa_id": "GHSA-g3pr-3p32-fp23",
+      "html_url": "https://github.com/advisories/GHSA-g3pr-3p32-fp23",
+      "summary": "Micrometer HTTP server instrumentations DoS",
+      "vulnerabilities": [
+        {
+          "first_patched_version": "1.16.6",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-core"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.16.0, <= 1.16.5"
+        },
+        {
+          "first_patched_version": "1.15.12",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-core"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.15.0, <= 1.15.11"
+        },
+        {
+          "first_patched_version": null,
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-core"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.14.0, <= 1.14.14"
+        },
+        {
+          "first_patched_version": null,
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-core"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.10.0, <= 1.13.15"
+        },
+        {
+          "first_patched_version": null,
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-core"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": "<= 1.9.17"
+        },
+        {
+          "first_patched_version": "1.16.6",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty12"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.16.0, <= 1.16.5"
+        },
+        {
+          "first_patched_version": "1.15.12",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty12"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.15.0, <= 1.15.11"
+        },
+        {
+          "first_patched_version": null,
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty12"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.14.0, <= 1.14.14"
+        },
+        {
+          "first_patched_version": null,
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty12"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": "<= 1.13.15"
+        },
+        {
+          "first_patched_version": "1.16.6",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty11"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.16.0, <= 1.16.5"
+        },
+        {
+          "first_patched_version": "1.15.12",
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty11"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.15.0, <= 1.15.11"
+        },
+        {
+          "first_patched_version": null,
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty11"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 1.14.0, <= 1.14.14"
+        },
+        {
+          "first_patched_version": null,
+          "package": {
+            "ecosystem": "maven",
+            "name": "io.micrometer:micrometer-jetty11"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": "<= 1.13.15"
+        }
+      ]
+    },
+    {
+      "ghsa_id": "GHSA-4v8g-86x5-3vrc",
+      "html_url": "https://github.com/advisories/GHSA-4v8g-86x5-3vrc",
+      "summary": "Apache OpenNLP DictionaryEntryPersistor Vulnerable to XML External Entity (XXE) via Unsanitized Dictionary Parsing",
+      "vulnerabilities": [
+        {
+          "first_patched_version": "3.0.0-M3",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 3.0.0-M1, < 3.0.0-M3"
+        },
+        {
+          "first_patched_version": "2.5.9",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 2.0.0, < 2.5.9"
+        },
+        {
+          "first_patched_version": "1.9.5",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": "< 1.9.5"
+        }
+      ]
+    },
+    {
+      "ghsa_id": "GHSA-cx4m-2p55-rw7j",
+      "html_url": "https://github.com/advisories/GHSA-cx4m-2p55-rw7j",
+      "summary": "Apache OpenNLP ExtensionLoader Vulnerable to Arbitrary Class Instantiation via Model Manifest",
+      "vulnerabilities": [
+        {
+          "first_patched_version": "3.0.0-M3",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 3.0.0-M1, < 3.0.0-M3"
+        },
+        {
+          "first_patched_version": "2.5.9",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 2.0.0, < 2.5.9"
+        },
+        {
+          "first_patched_version": "1.9.5",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": "< 1.9.5"
+        }
+      ]
+    },
+    {
+      "ghsa_id": "GHSA-659w-93r5-9j6m",
+      "html_url": "https://github.com/advisories/GHSA-659w-93r5-9j6m",
+      "summary": "Apache OpenNLP AbstractModelReader has an OOM Denial of Service via Unbounded Array Allocation",
+      "vulnerabilities": [
+        {
+          "first_patched_version": "2.5.9",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": "< 2.5.9"
+        },
+        {
+          "first_patched_version": "3.0.0-M3",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.apache.opennlp:opennlp-tools"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": ">= 3.0.0-M1, < 3.0.0-M3"
+        }
+      ]
+    },
+    {
+      "ghsa_id": "GHSA-65r4-943x-97jj",
+      "html_url": "https://github.com/advisories/GHSA-65r4-943x-97jj",
+      "summary": "jsoup XmlTreeBuilder vulnerable to memory exhaustion through deeply nested namespace declarations",
+      "vulnerabilities": [
+        {
+          "first_patched_version": "1.23.2",
+          "package": {
+            "ecosystem": "maven",
+            "name": "org.jsoup:jsoup"
+          },
+          "vulnerable_functions": [],
+          "vulnerable_version_range": "< 1.23.2"
+        }
+      ]
+    }
+  ]
+}
