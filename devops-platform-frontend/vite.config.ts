@@ -71,6 +71,38 @@ export default defineConfig({
     // 反向代理域名不在白名单会被 403 拒绝，表现为「预览页打不开」。
     // 仅影响开发服务器，不影响生产构建。
     allowedHosts: ['.e2b.app', '.gitpod.io', '.github.dev', 'localhost'],
+    /*
+     * 预热：把 e2e 会走的入口与视图**在服务器启动时**就转换一遍。
+     *
+     * ── 为什么要这个（2026-10-15 本机复现定案，销台账 §七 A6）──────────
+     * `unplugin-vue-components` + ElementPlusResolver 是**按需**注入
+     * `element-plus/es/components/<x>/style/css` 这类副作用导入的，于是 Vite 只在
+     * 「某个视图第一次被转换」时才发现这些依赖 → 重跑 optimizer → **强制整页
+     * reload**。本机实测日志（拉 `/src/views/TicketDetail.vue`、`AlertList.vue`
+     * 的过程中）：
+     *
+     *   [vite] dependency optimized: element-plus/es/components/drawer/style/css
+     *   [vite] optimized dependencies changed. reloading      ← 整页 reload
+     *   [vite] dependencies optimized: …table/style/css, tag/style/css
+     *   [vite] optimized dependencies changed. reloading      ← 又一次
+     *
+     * 而 e2e 里 `page.goto('/tickets/<id>')` 恰恰就是「第一次转换那个懒加载视图」
+     * 的时刻——reload 与还在进行中的导航相撞，浏览器报 `net::ERR_ABORTED`。
+     * 这就是 `boundary-edge-cases.spec.ts:59`（多 Tab 并发写工单）偶发红、并曾把
+     * main 打红一次的机制。**红只是表象**：用例本身没问题，是 dev server 在
+     * 用例跑到一半时把页面重启了。
+     *
+     * 预热把这些依赖的发现时机整体挪到「服务器启动、还没有任何导航」的窗口里，
+     * reload 就不再打断用例。下面的 `optimizeDeps.include` 是同一件事的另一半。
+     */
+    warmup: {
+      clientFiles: [
+        './src/main.ts',
+        './src/router/index.ts',
+        './src/views/*.vue',
+        './src/components/**/*.vue',
+      ],
+    },
     proxy: {
       /*
        * 后端 context-path 是 /ai，但**不能直接用 '/ai' 作为 key**。
@@ -90,6 +122,20 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  /*
+   * 依赖预打包：把 element-plus 各组件的样式副作用导入**一次收全**。
+   *
+   * 与上面的 `server.warmup` 是同一件事的两半：warmup 让 Vite 提前**发现**这些
+   * 导入，这里让它提前**打包**完，两者缺一，第一次转换某个视图时仍可能触发
+   * 「optimized dependencies changed. reloading」（→ e2e 导航被打断报
+   * net::ERR_ABORTED，见 server.warmup 处的实测日志与说明）。
+   *
+   * 用通配而不是逐个列组件名：resolver 会随页面用到的组件变化而注入新的样式
+   * 路径，逐个列必然漏（漏一个就又是一次中途 reload）。
+   */
+  optimizeDeps: {
+    include: ['element-plus/es/components/*/style/css'],
   },
   build: {
     // wangeditor 富文本库体 ~870kB 已拆分到独立懒加载块 vendor-editor，
