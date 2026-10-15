@@ -7,14 +7,14 @@
 import type { EvaluateResult } from './evaluateResult';
 
 export interface SimulatedRow {
+  actionKey?: string;
+  actionVerdict?: EvaluateResult;
+  dryRun?: boolean;
+  matched?: boolean;
+  outcome?: string;
   policyId?: number;
   policyName?: string;
   priority?: number;
-  actionKey?: string;
-  dryRun?: boolean;
-  matched?: boolean;
-  skipped?: boolean;
   reason?: string;
-  outcome?: string;
-  actionVerdict?: EvaluateResult;
+  skipped?: boolean;
 }

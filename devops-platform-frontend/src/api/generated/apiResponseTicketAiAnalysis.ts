@@ -8,8 +8,8 @@ import type { TicketAiAnalysis } from './ticketAiAnalysis';
 
 export interface ApiResponseTicketAiAnalysis {
   code?: number;
-  message?: string;
   data?: TicketAiAnalysis;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

@@ -6,19 +6,19 @@
  */
 
 export interface HistoryView {
-  id?: number;
-  channelKey?: string;
   baseUrl?: string;
-  maskedKey?: string;
-  turboModel?: string;
-  reasonerModel?: string;
-  model?: string;
-  dimension?: number;
-  status?: string;
-  fallbackBaseUrl?: string;
-  fallbackModel?: string;
-  fallbackMaskedKey?: string;
+  changeNote?: string;
   changedAt?: string;
   changedBy?: string;
-  changeNote?: string;
+  channelKey?: string;
+  dimension?: number;
+  fallbackBaseUrl?: string;
+  fallbackMaskedKey?: string;
+  fallbackModel?: string;
+  id?: number;
+  maskedKey?: string;
+  model?: string;
+  reasonerModel?: string;
+  status?: string;
+  turboModel?: string;
 }

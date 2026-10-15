@@ -95,6 +95,9 @@ services:
     environment:
       MINIO_ROOT_USER: devops_minio
       MINIO_ROOT_PASSWORD: devops_minio_pwd
+      # 集群指标端点免 JWT（2026-10-15）：否则 OpsBrainMinioDown 查的
+      # minio_cluster_health_online 永远无数据（不误报，也永不响）
+      MINIO_PROMETHEUS_AUTH_TYPE: public
     ports:
       - "29000:9000"          # S3 API
       - "29001:9001"          # 控制台 http://localhost:29001
@@ -145,6 +148,57 @@ services:
       postgres:
         condition: service_healthy
 
+  # ------------------- 抓取令牌（一次性 init，幂等）-------------------
+  # 与生产同款：文件不存在则生成，已存在则保留。生成后**宿主机后端**读同一路径：
+  #   export SCRAPE_TOKEN_FILE=monitoring/secrets/scrape_token   （再启动后端）
+  scrape-token-init:
+    image: busybox:1.36
+    container_name: devops-scrape-token-init
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        f=/secrets/scrape_token
+        if [ ! -s "$$f" ]; then
+          head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$f"
+          echo "[scrape-token] 已生成新令牌（32 字节十六进制）"
+        else
+          echo "[scrape-token] 令牌已存在，保留不覆盖"
+        fi
+        chmod 644 "$$f"
+    volumes:
+      - ./monitoring/secrets:/secrets
+
+  # ------------------- 中间件 exporter（2026-10-15 补接线）-------------------
+  # 供给 opsbrain-dependency-alerts 三条规则（pg_up / redis_up / minio_*）——
+  # 缺了它们，PG/Redis 宕机规则永不触发（"用户先痛，监控后知"）。
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.19.1
+    container_name: devops-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://devops:devops_password@postgres:5432/devops_knowledge_db?sslmode=disable
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "false"
+    ports:
+      - "29187:9187"          # 宿主机 29187（2xxxx 前缀惯例）
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.91.1
+    container_name: devops-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: devops_redis_pwd
+    ports:
+      - "29121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+
   # ------------------- L2 监控栈：node-exporter（宿主机指标采集）-------------------
   # 暴露 CPU/内存/磁盘/负载等指标，供 Prometheus 抓取。
   # 端口 9100 → 宿主机 29100（沿用前缀 2 惯例）。
@@ -172,6 +226,8 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      # 抓取凭据：与宿主机后端（SCRAPE_TOKEN_FILE=monitoring/secrets/scrape_token）同一份文件
+      - ./monitoring/secrets/scrape_token:/etc/prometheus/secrets/scrape_token:ro
       - devops_prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -181,6 +237,9 @@ services:
     depends_on:
       - node-exporter
       - alertmanager
+      - scrape-token-init
+      - postgres-exporter
+      - redis-exporter
     # opsbrain job 抓宿主机的后端（host.docker.internal），Linux Docker 需要显式解析
     extra_hosts:
       - "host.docker.internal:host-gateway"

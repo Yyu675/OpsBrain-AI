@@ -6,6 +6,6 @@
  */
 
 export interface StageRequest {
-  stage?: string;
   operator?: string;
+  stage?: string;
 }

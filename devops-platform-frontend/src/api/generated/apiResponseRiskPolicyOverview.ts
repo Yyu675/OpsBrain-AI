@@ -8,8 +8,8 @@ import type { RiskPolicyOverview } from './riskPolicyOverview';
 
 export interface ApiResponseRiskPolicyOverview {
   code?: number;
-  message?: string;
   data?: RiskPolicyOverview;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

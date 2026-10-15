@@ -113,7 +113,7 @@ public class LogsEvidenceCollector {
 
         if (entries.isEmpty()) {
             return new Evidence(EvidenceStatus.NO_DATA, Evidence.Type.LOGS,
-                    "时间窗内无匹配日志（有效排除：也可能服务根本没有相应级别日志）",
+                    "时间窗内无匹配日志（需核查对象、窗口和采集覆盖，不能据此认定服务正常）",
                     Map.of("service", service, "rangeMinutes", minutes, "level", lvl),
                     logql, null, Instant.now());
         }

@@ -8,8 +8,8 @@ import type { AlertPage } from './alertPage';
 
 export interface ApiResponseAlertPage {
   code?: number;
-  message?: string;
   data?: AlertPage;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

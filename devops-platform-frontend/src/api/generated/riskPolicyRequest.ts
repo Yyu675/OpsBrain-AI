@@ -6,15 +6,15 @@
  */
 
 export interface RiskPolicyRequest {
+  allowedEnvironments?: string;
   approvalMode?: string;
   approvalTimeoutMinutes?: number;
   autoExecuteAllowed?: boolean;
-  maxBlastRadiusPercent?: number;
-  maxBlastRadiusCount?: number;
   cooldownSeconds?: number;
-  maxRetries?: number;
   escalateAfterMinutes?: number;
   escalateTarget?: string;
-  allowedEnvironments?: string;
+  maxBlastRadiusCount?: number;
+  maxBlastRadiusPercent?: number;
+  maxRetries?: number;
   version?: number;
 }

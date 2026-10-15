@@ -6,16 +6,16 @@
  */
 
 export interface ChannelTemplate {
-  id?: number;
-  channelKey?: string;
-  templateName?: string;
-  provider?: string;
   baseUrl?: string;
-  protocol?: string;
-  turboModel?: string;
-  reasonerModel?: string;
-  model?: string;
-  dimension?: number;
+  channelKey?: string;
   description?: string;
+  dimension?: number;
+  id?: number;
+  model?: string;
+  protocol?: string;
+  provider?: string;
+  reasonerModel?: string;
   sortOrder?: number;
+  templateName?: string;
+  turboModel?: string;
 }

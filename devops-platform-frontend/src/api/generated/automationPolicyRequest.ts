@@ -6,30 +6,30 @@
  */
 
 export interface AutomationPolicyRequest {
-  /**
-   * @minLength 0
-   * @maxLength 64
-   */
-  name: string;
+  /** @minLength 1 */
+  actionKey: string;
+  actionParams?: string;
+  cooldownMinutes?: number;
   /**
    * @minLength 0
    * @maxLength 255
    */
   description?: string;
-  matchAlertLevels?: string;
-  matchModule?: string;
-  matchServicePattern?: string;
-  matchAlertNamePattern?: string;
-  /** @minLength 1 */
-  actionKey: string;
-  actionParams?: string;
-  /** @minLength 1 */
-  environment: string;
-  priority?: number;
-  stopOnMatch?: boolean;
-  cooldownMinutes?: number;
-  maxExecutionsPerDay?: number;
   dryRun?: boolean;
   enabled?: boolean;
+  /** @minLength 1 */
+  environment: string;
+  matchAlertLevels?: string;
+  matchAlertNamePattern?: string;
+  matchModule?: string;
+  matchServicePattern?: string;
+  maxExecutionsPerDay?: number;
+  /**
+   * @minLength 0
+   * @maxLength 64
+   */
+  name: string;
+  priority?: number;
+  stopOnMatch?: boolean;
   version?: number;
 }

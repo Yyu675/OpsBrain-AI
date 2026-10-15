@@ -26,7 +26,8 @@ import java.util.Arrays;
  * <ul>
  *   <li>/api/v1/auth/** —— 登录/取当前用户/登出（登录本身不需 token；me/logout 内部自判）</li>
  *   <li>/api/v1/health/** —— K8s 探针，高频拉取，不能要求 token</li>
- *   <li>/api/v1/alerts/webhook —— Prometheus/Alertmanager 推送，无 token</li>
+ *   <li>/api/v1/alerts/webhook/** —— Prometheus/Alertmanager 与 Zabbix 推送，无 token
+ *       （调用方是机器，鉴权由 WebhookGuard 的 token/HMAC/限流承担）</li>
  * </ul>
  * SSE（/api/v1/chat/stream）与其余端点均需登录；前端用 {@code @microsoft/fetch-event-source}
  * （基于 fetch，支持自定义头）在 satoken 请求头里带 token，无需退化到 query 参数。
@@ -103,22 +104,32 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/v1/auth/**",         // 登录/取当前用户/登出
                         "/api/v1/health/**",       // K8s 探针
-                        "/api/v1/alerts/webhook",  // Prometheus/Alertmanager 推送
-                        "/api/v1/alerts/webhook/**"  // FR-1.2：/{system} 按路径注入来源系统
+                        "/api/v1/alerts/webhook",    // Prometheus/Alertmanager 推送
+                        // FR-1.2 的 /{system} 与 Zabbix 的 /zabbix 都落在这条通配下（前缀齐备，
+                        // 不为单个来源再加一行——多一行就多一处漏改的机会）
+                        "/api/v1/alerts/webhook/**"
                 );
 
-        // ==================== P2 自身可观测性：/actuator/** 必须显式鉴权 ====================
-        // /actuator/** 不在 /api/** 下，上面的拦截器覆盖不到——不加这条，
-        // 健康详情与 Prometheus 指标（含内部拓扑、依赖可达性）会裸奔公网。
+        // ==================== 为什么这里**没有** /actuator/** 的拦截器 ====================
+        // 曾经的实现：给 /actuator/** 注册一个 SaInterceptor 做登录校验。它**不生效**——
+        // Spring MVC 的 HandlerInterceptor 只作用于 MVC 自己的 handler mapping，
+        // 而 actuator 端点由 Boot 的 WebMvcEndpointHandlerMapping 提供
+        // （WebMvcEndpointManagementContextConfiguration 里 new WebMvcEndpointHandlerMapping(...)，
+        // 从不 setInterceptors），拦截器链是空集。
         //
-        // /actuator/health 放行给 K8s 探针：探针不带 token，
-        // 拦下来会让 Pod 一直处于 NotReady。健康端点本身已配置为
-        // 不暴露敏感明细（management.endpoint.health.show-details=never 时只回 UP/DOWN）。
-        registry.addInterceptor(new SaInterceptor(handle ->
-                        SaRouter.match("/actuator/**")
-                                .notMatch("/actuator/health", "/actuator/health/**")
-                                .check(() -> StpUtil.checkLogin())))
-                .addPathPatterns("/actuator/**");
+        // 2026-10-15 CI 实证（两处红测把这件事钉死）：
+        //   · /actuator/info 带令牌 → **200**（拦截器没拦；真实部署里就是匿名可读）；
+        //   · /actuator/prometheus 带令牌 → 404（该端点当时无 handler，回落静态资源处理器，
+        //     而那个是 MVC 管的 → 拦截器才跑起来）。
+        // 也就是说：此前"本地看到 401"是环境缺 micrometer 造成的假象，
+        // 「/actuator/** 已显式鉴权」这句注释长期与事实相反。
+        //
+        // 结论：actuator 的闸门必须在 DispatcherServlet **之前**——见
+        // com.devops.agent.infrastructure.guard.ActuatorAccessFilter
+        // （Filter 阶段判定，与 handler 由谁提供无关）。那里同时实现三件事：
+        // /actuator/health 放行给 K8s 探针、抓取令牌只开 /actuator/prometheus 一扇门、
+        // 其余（health 详情、info、beans…）需登录会话，否则 401。
+        // 保留这段说明而不是静默删除：下一个读到本文件的人不该再踩同一个坑。
     }
 
     /**

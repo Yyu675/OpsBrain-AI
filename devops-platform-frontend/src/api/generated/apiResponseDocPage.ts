@@ -8,8 +8,8 @@ import type { DocPage } from './docPage';
 
 export interface ApiResponseDocPage {
   code?: number;
-  message?: string;
   data?: DocPage;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

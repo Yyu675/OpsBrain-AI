@@ -6,6 +6,6 @@
  */
 
 export interface CostTrend {
-  date?: string;
   cost?: number;
+  date?: string;
 }

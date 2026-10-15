@@ -56,8 +56,10 @@ class OpsWriteGuardCoverageTest {
             // + ai-analysis feedback 豁免（EXEMPT_MARKERS）
             "TicketController.java", 20,
             // AlertController：acknowledge + resolve + false-positive（A1 Feedback 回流）
-            //（POST /webhook 在 AlertWebhookController，机器回调面，
-            // 由 AlertWebhookChainIntegrationTest 覆盖）
+            //（POST /webhook 在 AlertWebhookController、/webhook/zabbix 在
+            // ZabbixWebhookController——两个都是机器回调面：调用方是 Alertmanager/Zabbix，
+            // 带不了 Sa-Token，鉴权走 WebhookGuard（token/HMAC/限流），
+            // 前后端契约由 AlertWebhookControllerWebTest / ZabbixWebhookControllerWebTest 覆盖）
             "AlertController.java", 3,
             // TicketPostmortemController：savePostmortem / draft / action-items 建改 = 4
             // （本文件 3 个 POST/PUT/PATCH + 1 PATCH，注意 draft-postmortem 也算写面）

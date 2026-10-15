@@ -6,18 +6,18 @@
  */
 
 export interface CreateRequest {
-  title?: string;
+  author?: string;
   category?: string;
   categoryId?: number;
-  author?: string;
   content?: string;
-  summary?: string;
-  tags?: string[];
-  publish?: boolean;
-  knowledgeSource?: string;
   effectiveAt?: string;
   expiredAt?: string;
+  kbId?: number;
+  knowledgeSource?: string;
+  publish?: boolean;
   sourceTicketId?: string;
   sourceType?: string;
-  kbId?: number;
+  summary?: string;
+  tags?: string[];
+  title?: string;
 }

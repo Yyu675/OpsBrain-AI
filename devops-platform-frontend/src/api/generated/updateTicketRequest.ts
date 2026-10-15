@@ -6,15 +6,15 @@
  */
 
 export interface UpdateTicketRequest {
-  title?: string;
-  description?: string;
-  priority?: string;
-  module?: string;
-  status?: string;
   assignee?: string;
   category?: string;
+  description?: string;
+  module?: string;
+  priority?: string;
   sla?: string;
   stackTrace?: string;
-  version?: number;
+  status?: string;
   tags?: string[];
+  title?: string;
+  version?: number;
 }

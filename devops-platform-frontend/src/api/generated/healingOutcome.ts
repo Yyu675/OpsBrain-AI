@@ -8,11 +8,11 @@ import type { HealingOutcomeDecision } from './healingOutcomeDecision';
 import type { ExecutionResult } from './executionResult';
 
 export interface HealingOutcome {
-  executionId?: number;
-  decision?: HealingOutcomeDecision;
-  status?: string;
-  message?: string;
   approvalId?: number;
+  decision?: HealingOutcomeDecision;
   dryRunPlan?: string;
+  executionId?: number;
+  message?: string;
   result?: ExecutionResult;
+  status?: string;
 }

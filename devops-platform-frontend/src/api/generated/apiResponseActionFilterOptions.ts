@@ -8,8 +8,8 @@ import type { ActionFilterOptions } from './actionFilterOptions';
 
 export interface ApiResponseActionFilterOptions {
   code?: number;
-  message?: string;
   data?: ActionFilterOptions;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

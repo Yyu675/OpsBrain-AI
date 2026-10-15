@@ -6,8 +6,8 @@
  */
 
 export interface ActionItemRequest {
-  postmortemId?: number;
   content?: string;
-  owner?: string;
   dueDate?: string;
+  owner?: string;
+  postmortemId?: number;
 }

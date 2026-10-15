@@ -6,6 +6,6 @@
  */
 
 export interface AcknowledgeRequest {
-  responder?: string;
   assignee?: string;
+  responder?: string;
 }

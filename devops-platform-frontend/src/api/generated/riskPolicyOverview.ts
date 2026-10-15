@@ -4,12 +4,12 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
-import type { RiskPolicy } from './riskPolicy';
 import type { ApprovalModeOption } from './approvalModeOption';
 import type { EscalateTargetOption } from './escalateTargetOption';
+import type { RiskPolicy } from './riskPolicy';
 
 export interface RiskPolicyOverview {
-  items?: RiskPolicy[];
   approvalModes?: ApprovalModeOption[];
   escalateTargets?: EscalateTargetOption[];
+  items?: RiskPolicy[];
 }

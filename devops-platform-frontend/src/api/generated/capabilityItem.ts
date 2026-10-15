@@ -6,6 +6,6 @@
  */
 
 export interface CapabilityItem {
-  state?: string;
   detail?: string;
+  state?: string;
 }

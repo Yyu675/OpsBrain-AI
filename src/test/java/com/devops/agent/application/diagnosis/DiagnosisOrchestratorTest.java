@@ -75,6 +75,8 @@ class DiagnosisOrchestratorTest {
     @Mock
     private com.devops.agent.domain.biz.service.TicketService ticketService;
 
+    private com.devops.agent.domain.alert.repository.AlertRepository alertRepository;
+
     private DiagnosisOrchestrator orchestrator;
     private String traceId;
 
@@ -82,12 +84,12 @@ class DiagnosisOrchestratorTest {
     void setUp() {
         TraceContext.begin("trace-42");
         // availableMetrics 生产签名返回 Set<String>——thenReturn 必须类型严格对齐
-        when(catalog.availableMetrics()).thenReturn(Set.of("cpu", "memory"));
-        when(metricsCollector.collect(anyString(), anyString(), anyString()))
+        lenient().when(catalog.availableMetrics()).thenReturn(Set.of("cpu", "memory"));
+        lenient().when(metricsCollector.collect(anyString(), anyString(), anyString()))
                 .thenReturn(new Evidence(
                         Evidence.EvidenceStatus.SUCCESS, "metrics", "完成",
                         Map.of("anomalyCount", 1), "ref", null, Instant.now()));
-        when(changesCollector.collect(anyString(), anyString()))
+        lenient().when(changesCollector.collect(anyString(), anyString()))
                 .thenReturn(new Evidence(
                         Evidence.EvidenceStatus.SUCCESS, "changes", "完成",
                         Map.of("count", 0), "ref", null, Instant.now()));
@@ -106,12 +108,22 @@ class DiagnosisOrchestratorTest {
                 .thenReturn(new Evidence(
                         Evidence.EvidenceStatus.NO_DATA, Evidence.Type.KNOWLEDGE, "知识库相似文档",
                         Map.of("reason", "无相关文档"), "", null, Instant.now()));
+        alertRepository = mock(com.devops.agent.domain.alert.repository.AlertRepository.class);
+        var active = new com.devops.agent.domain.alert.entity.Alert();
+        active.setId(1001L);
+        active.setStatus("FIRING");
+        active.setAlertName("NodeDown");
+        active.setService("order-service");
+        lenient().when(alertRepository.findById(any())).thenReturn(java.util.Optional.of(active));
         orchestrator = new DiagnosisOrchestrator(
                 metricsCollector, changesCollector, logsCollector, knowledgeCollector,
                 catalog, evidenceRepository, sessionRepository, stateManager,
                 aiAnalysisService, hypothesisGenerator, hypothesisRepository,
                 wsNotifier, notifier,
-                mock(com.devops.agent.domain.alert.repository.AlertRepository.class));
+                alertRepository);
+        // 既有完成推送用例显式 opt-in；生产默认 false 另有独立回归用例。
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                orchestrator, "diagnosisNotificationEnabled", true);
         // 活动流留痕是 @Autowired(required=false) 字段注入——非 Spring 环境显式装上
         org.springframework.test.util.ReflectionTestUtils.setField(
                 orchestrator, "ticketService", ticketService);
@@ -242,4 +254,43 @@ class DiagnosisOrchestratorTest {
                         && d.contains("[metrics] FAILED") && d.contains("traceId=")),
                 eq("AI 诊断"), eq(false));
     }
+    @Test
+    @DisplayName("默认只留痕：诊断不足不产生第二条群告警，但 WS 仍保留完整证据")
+    void diagnosisGroupNotificationDisabledStillAudits() {
+        org.springframework.test.util.ReflectionTestUtils.setField(orchestrator, "diagnosisNotificationEnabled", false);
+        publishInsufficientCompletion();
+        verify(notifier, never()).send(any());
+        verify(wsNotifier).broadcastDiagnosis(org.mockito.ArgumentMatchers.argThat(payload ->
+                "完整取证明细".equals(payload.get("summary"))));
+    }
+
+    @Test
+    @DisplayName("开启补充后证据不足仍是普通摘要：有关联对象，不泄露原始日志")
+    void insufficientOptInIsNormalContextualSummary() {
+        publishInsufficientCompletion();
+        verify(notifier).send(org.mockito.ArgumentMatchers.argThat(msg -> !msg.urgent()
+                && msg.markdown().contains("NodeDown") && msg.markdown().contains("TK-001")
+                && msg.markdown().contains("不能据此排除")
+                && !msg.markdown().contains("完整取证明细")));
+    }
+
+    @Test
+    @DisplayName("诊断完成时告警已恢复：仅留痕，不发迟到人工介入")
+    void recoveredAlertSuppressesLateDiagnosis() {
+        var resolved = new com.devops.agent.domain.alert.entity.Alert();
+        resolved.setStatus("RESOLVED");
+        when(alertRepository.findById(1001L)).thenReturn(java.util.Optional.of(resolved));
+        publishInsufficientCompletion();
+        verify(notifier, never()).send(any());
+        verify(wsNotifier).broadcastDiagnosis(any());
+    }
+
+    private void publishInsufficientCompletion() {
+        var evidence = new Evidence(Evidence.EvidenceStatus.NO_DATA, Evidence.Type.METRICS,
+                "未查到指标", Map.of(), "", null, Instant.now());
+        var aggregate = com.devops.agent.domain.evidence.EvidenceAggregator.aggregate(List.of(evidence));
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(orchestrator, "publishCompletion",
+                "trace-42", 1001L, "TK-001", aggregate, "完整取证明细");
+    }
+
 }

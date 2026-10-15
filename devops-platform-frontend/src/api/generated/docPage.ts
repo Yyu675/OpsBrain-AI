@@ -8,8 +8,8 @@ import type { ListItem } from './listItem';
 
 export interface DocPage {
   content?: ListItem[];
-  totalElements?: number;
-  totalPages?: number;
   currentPage?: number;
   pageSize?: number;
+  totalElements?: number;
+  totalPages?: number;
 }

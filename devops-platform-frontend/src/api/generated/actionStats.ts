@@ -6,8 +6,8 @@
  */
 
 export interface ActionStats {
-  total?: number;
   enabledCount?: number;
   highRiskEnabled?: number;
   prodEnabled?: number;
+  total?: number;
 }

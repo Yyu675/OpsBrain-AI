@@ -8,8 +8,8 @@ import type { DevOpsTicket } from './devOpsTicket';
 
 export interface ApiResponseDevOpsTicket {
   code?: number;
-  message?: string;
   data?: DevOpsTicket;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

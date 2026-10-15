@@ -6,14 +6,14 @@
  */
 
 export interface UpdateRequest {
-  title?: string;
+  author?: string;
   category?: string;
   categoryId?: number;
-  author?: string;
+  changeReason?: string;
   content?: string;
+  kbId?: number;
   summary?: string;
   tags?: string[];
+  title?: string;
   version?: number;
-  changeReason?: string;
-  kbId?: number;
 }

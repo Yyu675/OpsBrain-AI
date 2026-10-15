@@ -1,6 +1,7 @@
 package com.devops.agent.domain.alert.service;
 
 import com.devops.agent.domain.alert.DTO.AlertmanagerWebhook;
+import com.devops.agent.domain.alert.DTO.ZabbixWebhook;
 import com.devops.agent.domain.alert.entity.Alert;
 import com.devops.agent.domain.alert.repository.AlertRepository;
 import com.devops.agent.domain.biz.entity.DevOpsTicket;
@@ -13,12 +14,15 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -82,8 +86,11 @@ class AlertServiceTest {
         dingTalk = mock(Notifier.class);
         diagnosisOrchestrator = mock(com.devops.agent.application.diagnosis.DiagnosisOrchestrator.class);
         when(diagnosisOrchestrator.submit(anyLong(), any(), anyString())).thenReturn("trace-diag-1");
+        // 注册表按要求装两个真实适配器（与生产一致）：跨源入口的用例要靠它选源
         service = new AlertService(alertRepository, ticketService, notifier, dingTalk,
-                new com.devops.agent.domain.alert.AlertmanagerSourceAdapter(),
+                new com.devops.agent.domain.alert.AlertSourceNormalizer(java.util.List.of(
+                        new com.devops.agent.domain.alert.AlertmanagerSourceAdapter(),
+                        new com.devops.agent.domain.alert.ZabbixSourceAdapter())),
                 diagnosisOrchestrator);
 
         // @Value 字段在非 Spring 环境不会注入，必须显式设成与生产默认值一致
@@ -103,6 +110,7 @@ class AlertServiceTest {
 
         // 默认：无活跃告警、无可聚合的组工单、保存后回填 ID
         when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.empty());
+        org.mockito.Mockito.lenient().when(alertRepository.resolve(any(), any())).thenReturn(1);
         when(alertRepository.findActiveGroupTicket(any(), any(), anyInt())).thenReturn(Optional.empty());
         // 批 76 / P2-1:去重原子化后 save 退役,改 mock insertOrIncrement。
         // 默认语义 = 无冲突新插入(返回 true 并回填 id,与产品代码一致)
@@ -324,6 +332,8 @@ class AlertServiceTest {
         void resolvedMarksAlert() {
             Alert active = new Alert();
             active.setId(7L);
+            active.setLevel("P0");
+            active.setAlertName("HighCpu");
             when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
 
             service.processWebhook(webhook(incoming("resolved",
@@ -331,6 +341,8 @@ class AlertServiceTest {
 
             verify(alertRepository).resolve(eq(7L), any());
             verify(notifier).broadcastResolved(active);
+            verify(dingTalk).send(argThat(msg -> !msg.urgent()
+                    && msg.markdown().contains("[已恢复]")));
             // 恢复不该建单，也不该新增告警记录
             verify(alertRepository, never()).insertOrIncrement(any());
         }
@@ -1295,6 +1307,284 @@ class AlertServiceTest {
 
             verify(ticketService, never()).recordActivity(any(), any(), any(), any(), any(), anyBoolean());
             verify(ticketService, never()).updateStatus(anyString(), anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("企业通知：故障触达、时间质量与恢复去重")
+    class EnterpriseNotifications {
+        @Test
+        void ticketFailureStillNotifiesHighRisk() {
+            when(ticketService.createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString()))
+                    .thenThrow(new IllegalStateException("database unavailable"));
+            // 平台地址显式配置后，卡片给的是可点直达链接（事件 ID 由实体带出，不靠外部数据）
+            ReflectionTestUtils.setField(service, "notificationBaseUrl",
+                    "https://ops.example.com/opsbrain");
+            service.processWebhook(webhook(incoming("firing", labels("alertname", "NodeDown",
+                    "service", "infra", "severity", "critical", "instance", "node-1:9100"))));
+            verify(dingTalk).send(argThat(msg -> msg.urgent()
+                    && msg.markdown().contains("自动建单失败")
+                    && msg.markdown().contains("node-1:9100")
+                    && msg.markdown().contains("(https://ops.example.com/opsbrain/alerts/")));
+        }
+
+        @Test
+        void disabledAutoTicketStillNotifiesHighRisk() {
+            ReflectionTestUtils.setField(service, "autoTicketEnabled", false);
+            service.processWebhook(webhook(incoming("firing", labels("alertname", "NodeDown",
+                    "service", "infra", "severity", "critical"))));
+            verify(dingTalk).send(argThat(msg -> msg.urgent()
+                    && msg.markdown().contains("自动建单已关闭")));
+            verify(ticketService, never()).createTicket(anyString(), anyString(), anyString(), anyString(),
+                    any(), anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void invalidStartIsSanitizedAndCannotSpoofQuality() {
+            AlertmanagerWebhook.Alert input = incoming("firing", labels("alertname", "NodeDown",
+                    "service", "infra", "severity", "critical"));
+            input.setStartsAt(OffsetDateTime.parse("0001-01-01T00:00:00Z"));
+            input.setAnnotations(Map.of("_opsbrain_starts_at_estimated", "false"));
+            java.time.LocalDateTime before = java.time.LocalDateTime.now();
+            service.processWebhook(webhook(input));
+            Alert saved = savedAlert();
+            assertFalse(saved.getFirstOccurredAt().isBefore(before));
+            assertTrue(saved.getAnnotationsJson().contains("\"_opsbrain_starts_at_estimated\":\"true\""));
+            verify(dingTalk).send(argThat(msg -> msg.markdown().contains("接收后持续（估算）")));
+        }
+
+        @Test
+        void concurrentRecoveryLoserDoesNotNotifyOrCloseTicket() {
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P0", "TK-1")));
+            when(alertRepository.resolve(any(), any())).thenReturn(0);
+            service.processWebhook(webhook(incoming("resolved", labels("alertname", "NodeDown", "service", "infra"))));
+            verify(dingTalk, never()).send(any());
+            verify(notifier, never()).broadcastResolved(any());
+            verify(ticketService, never()).recordActivity(any(), any(), any(), any(), any(), anyBoolean());
+        }
+
+        @Test
+        void recoveryUsesFreshValueNotOriginalFailureAndDoesNotCloseGroup() {
+            Alert active = activeAlert("P0", "TK-1");
+            // 首次发生时间必须有值，否则「持续」整行按缺料省略（那是模板的缺料纪律，不是本用例要测的）
+            active.setFirstOccurredAt(java.time.LocalDateTime.now().minusMinutes(3));
+            active.setAnnotationsJson("{\"value\":\"Timeout\",\"_opsbrain_starts_at_estimated\":\"false\"}");
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
+            when(alertRepository.countOtherActiveByTicket("TK-1", 42L)).thenReturn(2L);
+            DevOpsTicket ticket = new DevOpsTicket();
+            ticket.setStatus("PROCESSING");
+            when(ticketService.getTicketWithTags("TK-1")).thenReturn(ticket);
+            AlertmanagerWebhook.Alert input = incoming("resolved", labels("alertname", "NodeDown", "service", "infra"));
+            input.setAnnotations(Map.of("value", "0"));
+            service.processWebhook(webhook(input));
+            verify(dingTalk).send(argThat(msg -> !msg.urgent()
+                    && msg.markdown().contains("**恢复取值**：0")
+                    && !msg.markdown().contains("**恢复取值**：Timeout")
+                    && msg.markdown().contains("仍有 2 条活跃告警")
+                    && msg.markdown().contains("本次持续")));
+        }
+
+        @Test
+        void observationSelfRecoveryDoesNotCreateGroupNoise() {
+            ReflectionTestUtils.setField(service, "observationEnabled", true);
+            ReflectionTestUtils.setField(service, "observationLevels", "P2,P3");
+            when(alertRepository.findActiveByDedupKey(anyString()))
+                    .thenReturn(Optional.of(activeAlert("P2", null)));
+            service.processWebhook(webhook(incoming("resolved", labels("alertname", "NodeDown", "service", "infra"))));
+            verify(notifier).broadcastResolved(any());
+            verify(dingTalk, never()).send(any());
+        }
+    }
+
+    // ==================================================================
+
+    /**
+     * 跨源入口（{@code processSourceWebhook}）——Zabbix 是第二个真实源。
+     *
+     * <h3>这些用例要证明什么</h3>
+     * <p>
+     * 适配器单测已锁住字段映射，本组锁的是「接入第二源之后核心链没变形」：
+     * 来源正确落到 {@code sys_alert.source}、级别走同一套归一化、恢复仍走
+     * 原子守卫（不是「先查后改」）、业务系统的 {@code system} 维度不会被硬塞成
+     * {@code zabbix}（来源与业务系统是两个维度，混了以后按 system 统计全错）。
+     * </p>
+     */
+    @Nested
+    @DisplayName("跨源入口（Zabbix）")
+    class ZabbixSource {
+
+        /** 真实事件形态：primera01 / Average / PROBLEM */
+        private Map<String, Object> problemEvent() {
+            Map<String, Object> raw = new LinkedHashMap<>();
+            raw.put("event_id", "12002061");
+            raw.put("trigger_id", "20531");
+            raw.put("trigger_name", "NodeDown-IT44c08600 数据接收异常");
+            raw.put("event_severity", "Average");
+            raw.put("event_status", "PROBLEM");
+            raw.put("event_date", "2026.10.13");
+            raw.put("event_time", "17:37:55");
+            raw.put("host_name", "primera01");
+            raw.put("host_ip", "10.210.44.11");
+            return raw;
+        }
+
+        @Test
+        @DisplayName("PROBLEM → 落库带 source=zabbix、级别 P2、system 不被写成 zabbix（来源≠业务系统）")
+        void problemEventLandsWithZabbixSource() {
+            service.processSourceWebhook(ZabbixWebhook.of(problemEvent()));
+
+            ArgumentCaptor<Alert> cap = ArgumentCaptor.forClass(Alert.class);
+            verify(alertRepository).insertOrIncrement(cap.capture());
+            Alert saved = cap.getValue();
+            assertThat(saved.getSource()).isEqualTo("zabbix");
+            assertThat(saved.getLevel()).isEqualTo("P2");
+            assertThat(saved.getAlertName()).isEqualTo("NodeDown-IT44c08600 数据接收异常");
+            // 业务系统的 system 维度在 Zabbix 事件里没有对应物 —— 适配器不注入 system 标签，
+            // 由核心链按既有规则回落 "default"（**不是** zabbix：把来源写进系统维度之后，
+            // 「按 system 统计来源分布」会把两码事混成一个，且不报错）
+            assertThat(saved.getSystem()).isEqualTo("default");
+            // 去重键含 host：同触发器在不同主机必须分开计次
+            assertThat(saved.getDedupKey()).isNotBlank();
+        }
+
+        @Test
+        @DisplayName("OK → 走恢复链并与 PROBLEM 命中同一条活跃告警（指纹不含 event_id）")
+        void okEventResolvesTheFiringAlert() {
+            Alert active = new Alert();
+            active.setId(7L);
+            active.setLevel("P2");
+            active.setAlertName("NodeDown-IT44c08600 数据接收异常");
+            when(alertRepository.findActiveByDedupKey(anyString())).thenReturn(Optional.of(active));
+
+            Map<String, Object> ok = problemEvent();
+            ok.put("event_status", "OK");
+            ok.put("event_time", "17:38:47");
+            ok.put("event_id", "12002062");   // Zabbix 的恢复事件是另一条事件、另一个 id
+            service.processSourceWebhook(ZabbixWebhook.of(ok));
+
+            // 若指纹里混进 event_id，这里就会找不到活跃告警（恢复配不上对，告警一直挂着）
+            verify(alertRepository).resolve(eq(7L), any());
+            verify(notifier).broadcastResolved(active);
+            verify(alertRepository, never()).insertOrIncrement(any());
+        }
+
+        @Test
+        @DisplayName("事件严重度变化不改变去重键 —— 运维中途调触发器级别不该让恢复配不上（F1）")
+        void eventSeverityDoesNotAffectDedupKey() {
+            service.processSourceWebhook(ZabbixWebhook.of(problemEvent()));
+            String key1 = savedAlert().getDedupKey();
+
+            setUp();   // 重置 mock
+            Map<String, Object> afterLevelChange = problemEvent();
+            // 运维把触发器级别从 Average 调到 High —— 后再触发同一条告警
+            afterLevelChange.put("event_severity", "High");
+            afterLevelChange.put("event_id", "12002099");
+            service.processSourceWebhook(ZabbixWebhook.of(afterLevelChange));
+            String key2 = savedAlert().getDedupKey();
+
+            assertEquals(key1, key2,
+                    "event_severity 是事件属性：进 labels 供展示，但不参与身份计算");
+        }
+
+        @Test
+        @DisplayName("OK 的 event_severity 与 PROBLEM 不同 → 仍命中同一条活跃告警并恢复（F1 行为面）")
+        void okWithDifferentSeverityStillResolves() {
+            service.processSourceWebhook(ZabbixWebhook.of(problemEvent()));
+            String firingKey = savedAlert().getDedupKey();
+
+            setUp();   // 重置 mock
+            Alert active = new Alert();
+            active.setId(7L);
+            active.setLevel("P2");
+            active.setAlertName("NodeDown-IT44c08600 数据接收异常");
+            // 关键：只认 PROBLEM 那一刻算出的键。若恢复事件因 event_severity 不同
+            // 算出另一个键，这里根本不会被命中 → resolve 不会发生 → 断言失败
+            when(alertRepository.findActiveByDedupKey(firingKey)).thenReturn(Optional.of(active));
+
+            Map<String, Object> ok = problemEvent();
+            ok.put("event_status", "OK");
+            ok.put("event_time", "17:38:47");
+            ok.put("event_id", "12002062");
+            ok.put("event_severity", "High");   // 级别已被改过
+            service.processSourceWebhook(ZabbixWebhook.of(ok));
+
+            verify(alertRepository).resolve(eq(7L), any());
+            verify(notifier).broadcastResolved(active);
+        }
+
+        @Test
+        @DisplayName("不认得的负载 → 抛异常（跨源入口不许静默吞掉，控制器会翻成 400）")
+        void unknownPayloadIsRejected() {
+            assertThatThrownBy(() -> service.processSourceWebhook("plain-text"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("没有适配器认识这份负载");
+            verify(alertRepository, never()).insertOrIncrement(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("未建单原因（读路径派生，F2）")
+    class UnticketedReason {
+
+        private Alert alert(String status, String level, LocalDateTime first, String ticketId) {
+            Alert a = new Alert();
+            a.setId(1L);
+            a.setStatus(status);
+            a.setLevel(level);
+            a.setFirstOccurredAt(first);
+            a.setTicketId(ticketId);
+            return a;
+        }
+
+        private void observeConfig() {
+            ReflectionTestUtils.setField(service, "observationEnabled", true);
+            ReflectionTestUtils.setField(service, "observationLevels", "P2,P3");
+            ReflectionTestUtils.setField(service, "observationWindowMinutes", 10);
+        }
+
+        @Test
+        @DisplayName("回放来的历史 P2（超出补单回溯窗 24h）→ 明确给出「不会再自动建单」")
+        void historicalReplayGetsReason() {
+            observeConfig();
+            Alert a = alert("FIRING", "P2", LocalDateTime.now().minusHours(26), null);
+
+            assertThat(service.unticketedReason(a))
+                    .isNotNull()
+                    .contains("不会再自动建单");
+        }
+
+        @Test
+        @DisplayName("仍在观察窗内 → 不解释（页面另有「观察中」标，两句话不能都说）")
+        void withinObservationWindowStaysQuiet() {
+            observeConfig();
+            Alert a = alert("FIRING", "P2", LocalDateTime.now().minusMinutes(3), null);
+
+            assertThat(service.unticketedReason(a)).isNull();
+        }
+
+        @Test
+        @DisplayName("仍在补单回溯窗内（比如 3 小时前）→ 不解释：补单扫描会捞起它")
+        void withinLookbackStaysQuiet() {
+            observeConfig();
+            Alert a = alert("FIRING", "P2", LocalDateTime.now().minusHours(3), null);
+
+            assertThat(service.unticketedReason(a)).isNull();
+        }
+
+        @Test
+        @DisplayName("已建单 / 非活跃态 / 观察窗关闭 → 不解释（没有话说就不说）")
+        void silentWhenNotApplicable() {
+            observeConfig();
+            assertThat(service.unticketedReason(
+                    alert("FIRING", "P2", LocalDateTime.now().minusHours(26), "TK-1"))).isNull();
+            assertThat(service.unticketedReason(
+                    alert("RESOLVED", "P2", LocalDateTime.now().minusHours(26), null))).isNull();
+
+            ReflectionTestUtils.setField(service, "observationEnabled", false);
+            assertThat(service.unticketedReason(
+                    alert("FIRING", "P2", LocalDateTime.now().minusHours(26), null))).isNull();
         }
     }
 

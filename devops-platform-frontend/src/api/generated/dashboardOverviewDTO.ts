@@ -4,15 +4,15 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
-import type { ModelDistribution } from './modelDistribution';
 import type { CostTrend } from './costTrend';
+import type { ModelDistribution } from './modelDistribution';
 
 export interface DashboardOverviewDTO {
-  totalQueries?: number;
-  cacheHits?: number;
-  cacheHitRate?: number;
   avgCostRmb?: number;
-  totalTickets?: number;
-  modelDistribution?: ModelDistribution[];
+  cacheHitRate?: number;
+  cacheHits?: number;
   costSavingsChart?: CostTrend[];
+  modelDistribution?: ModelDistribution[];
+  totalQueries?: number;
+  totalTickets?: number;
 }

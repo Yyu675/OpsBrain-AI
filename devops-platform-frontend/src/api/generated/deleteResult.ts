@@ -6,6 +6,6 @@
  */
 
 export interface DeleteResult {
-  id?: number;
   deleted?: boolean;
+  id?: number;
 }

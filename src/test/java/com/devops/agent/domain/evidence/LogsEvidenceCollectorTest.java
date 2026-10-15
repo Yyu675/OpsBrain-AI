@@ -38,7 +38,14 @@ import static org.assertj.core.api.Assertions.assertThat;
         "devops.ai.mode=MOCK",
         "devops.logs.loki.enabled=true",
         "devops.logs.loki.base-url=http://willBeReplacedByDynamicProperty",
-        "devops.logs.loki.service-label=app"
+        "devops.logs.loki.service-label=app",
+        // ⚠️ 必须关掉日志管道看门狗：它是 @Scheduled(fixedDelay) 且无 initialDelay，
+        // 上下文启动即探一次 Loki（lokiClient.freshestLogAt()）。本类的 MockWebServer
+        // 队列此刻是空的——MockWebServer 对空队列的请求会挂住等待入队，于是这个
+        // 「先到者」会抢走下一个 enqueue 的响应，导致本用例的请求 5s 超时（client
+        // timeout）后误报 FAILED，并级联污染后续用例（2026-10-13 定位）。
+        // 本类只测采集器四态，不需要看门狗参与。
+        "devops.alert.logs-watchdog.enabled=false"
 })
 @DisplayName("S1-3 日志取证：四态、注入防御、字符预算")
 class LogsEvidenceCollectorTest extends AbstractIntegrationTest {

@@ -6,10 +6,10 @@
  */
 
 export interface SaveAnalysisRequest {
-  content?: string;
-  reasons?: string[];
-  commands?: string[];
   citations?: string[];
+  commands?: string[];
   confidence?: number;
+  content?: string;
   costRmb?: number;
+  reasons?: string[];
 }

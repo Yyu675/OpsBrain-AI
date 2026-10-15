@@ -6,6 +6,6 @@
  */
 
 export interface VerifySkipRequest {
-  reason?: string;
   operator?: string;
+  reason?: string;
 }

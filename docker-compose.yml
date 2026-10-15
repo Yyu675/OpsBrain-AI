@@ -56,6 +56,11 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+
+      # 指标抓取面令牌（2026-10-15）：与 Prometheus 的 credentials_file 指向同一份文件。
+      # 没有它 Prometheus 抓 /ai/actuator/prometheus 恒 401 → OpsBrainDown 常亮误报
+      # + 6 条应用规则恒哑（应用侧行为见 infrastructure/guard/ScrapeTokenGuard）。
+      SCRAPE_TOKEN_FILE: /run/secrets/scrape_token
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +68,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      # 令牌先于应用就位（只读挂载，文件缺失时应用按"未配置"处理 → fail-closed 401）
+      scrape-token-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./monitoring/secrets/scrape_token:/run/secrets/scrape_token:ro
     networks: [opsbrain]
     logging: *default-logging
     # 批 76 / P2-4（报告 174 审计件）：app 此前是全栈唯一无 healthcheck 的服务——
@@ -163,6 +173,12 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # 集群指标端点免 JWT（2026-10-15）：MinIO 默认要求 Prometheus 带 JWT 才能读
+      # /minio/v2/metrics/cluster——不带就 403，而规则 OpsBrainMinioDown 查的
+      # minio_cluster_health_online 永远没有数据（不误报，也永不响）。
+      # public 的含义是"指标端点匿名可读"，指标不含对象内容与凭据；
+      # 端口本身只在 compose 内网暴露（生产不映射到宿主）。
+      MINIO_PROMETHEUS_AUTH_TYPE: public
     volumes:
       - minio_data:/data
     healthcheck:
@@ -213,6 +229,8 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      # 抓取凭据（与 app 的 SCRAPE_TOKEN_FILE 同一份文件，见 monitoring/prometheus.yml 注释）
+      - ./monitoring/secrets/scrape_token:/etc/prometheus/secrets/scrape_token:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -226,6 +244,67 @@ services:
     depends_on:
       - node-exporter
       - alertmanager
+      - scrape-token-init
+      - postgres-exporter
+      - redis-exporter
+    networks: [opsbrain]
+    logging: *default-logging
+
+  # ------------------- 抓取令牌（一次性 init，幂等）-------------------
+  # 为什么用容器生成而不是"提交一个令牌文件"：令牌是秘密，不能进 Git。
+  # 语义：文件不存在则生成 32 字节随机十六进制；已存在则原样保留（不轮换、不覆盖）。
+  # 轮换 = 删文件后 `docker compose up -d scrape-token-init`（应用侧每次请求重读文件，
+  # 不需要重启；Prometheus 侧下个抓取周期即生效）。
+  scrape-token-init:
+    image: busybox:1.36
+    container_name: opsbrain-scrape-token-init
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        f=/secrets/scrape_token
+        if [ ! -s "$$f" ]; then
+          head -c 32 /dev/urandom | od -An -tx1 | tr -d ' 
+' > "$$f"
+          echo "[scrape-token] 已生成新令牌（32 字节十六进制）"
+        else
+          echo "[scrape-token] 令牌已存在，保留不覆盖"
+        fi
+        chmod 644 "$$f"
+    volumes:
+      - ./monitoring/secrets:/secrets
+    networks: [opsbrain]
+    logging: *default-logging
+
+  # ------------------- 中间件 exporter（2026-10-15 补接线）-------------------
+  # 供给 opsbrain-dependency-alerts 三条规则：没有它们，PG/Redis 宕机规则永不触发。
+  # 探活口径：pg_up / redis_up（1=在，0=不响应）——与应用自身 /actuator/health 的
+  # db/redis 组件互为交叉验证（一边是网络视角，一边是应用视角）。
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.19.1
+    container_name: opsbrain-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-devops}:${POSTGRES_PASSWORD:-devops_password}@postgres:5432/devops_knowledge_db?sslmode=disable
+      # 只开探活与关键库指标：默认会把 pg_stat_* 全量抓一遍，对 2g 预算的机器是白噪声
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [opsbrain]
+    logging: *default-logging
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.91.1
+    container_name: opsbrain-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-devops_redis_pwd}
+    depends_on:
+      redis:
+        condition: service_healthy
     networks: [opsbrain]
     logging: *default-logging
 

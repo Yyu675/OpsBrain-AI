@@ -109,6 +109,9 @@ public class AlertQueryService {
                 obs.levels(), obs.windowMinutes(), falsePositiveOnly, page, size);
         // 读路径派生「观察中」标识：观察级别/窗口是可调配置，落库会随配置变更腐烂
         alerts.forEach(a -> a.setObserving(alertService.isObserving(a)));
+        // 同一读路径派生「不会再自动建单」的原因（F2）：历史/回放事件既不在观察窗内
+        // 也不在补单回溯窗内，页面上必须说清楚，否则会被当成漏单
+        alerts.forEach(a -> a.setUnticketedReason(alertService.unticketedReason(a)));
         return alerts;
     }
 
@@ -274,6 +277,7 @@ public class AlertQueryService {
     public Alert getAlert(Long id) {
         Alert alert = requireExisting(id);
         alert.setObserving(alertService.isObserving(alert));
+        alert.setUnticketedReason(alertService.unticketedReason(alert));
         return alert;
     }
 
@@ -294,6 +298,7 @@ public class AlertQueryService {
         List<Alert> related = alertRepository.findRelated(
                 alert.getId(), alert.getSystem(), alert.getService(), anchor, windowMinutes);
         related.forEach(a -> a.setObserving(alertService.isObserving(a)));
+        related.forEach(a -> a.setUnticketedReason(alertService.unticketedReason(a)));
         return related;
     }
 

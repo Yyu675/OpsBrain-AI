@@ -212,6 +212,20 @@ devops:
     # 本地免登录预览用法：AUTH_ENABLED=false ./mvnw spring-boot:run
     auth-enabled: ${AUTH_ENABLED:true}
 
+    # ==================== 指标抓取面令牌（2026-10-15）====================
+    # /actuator/** 需要登录是对的，但 Prometheus 不会登录：抓取恒 401 会让
+    # up{job="opsbrain"} 恒 0 → 宕机规则常亮误报，其余 6 条应用规则恒无数据。
+    # 因此给抓取方一把**最小的钥匙**：令牌只对 /actuator/prometheus 一个路径生效，
+    # 其余 actuator 端点（health 详情、bean、依赖地址）仍需登录。
+    #
+    # 默认空 = 关（fail-closed）：没配就是今天的行为（401），不会意外敞开。
+    # 建议用文件而非环境变量：与应用/Prometheus 两侧共用同一份文件，
+    # 轮换只改文件、不需要改 env 也不需要重启应用（Prometheus 亦支持热读）。
+    # 生成（幂等，已在则保留；--rotate 轮换）：bash scripts/monitoring-init-token.sh
+    # 产出 monitoring/secrets/scrape_token（已 gitignore），并打印三处挂法自测命令。
+    scrape-token:        ${SCRAPE_TOKEN:}
+    scrape-token-file:   ${SCRAPE_TOKEN_FILE:}
+
     cors:
       # 允许跨域的来源，逗号分隔。默认 * 仅供本地开发。
       # ⚠️ 生产必须显式列举，例如：
@@ -256,8 +270,17 @@ devops:
           # 为 429 不是为测试让路，是防「测试环境偶发共享」这一合法
           # 现象误报；安全语义不降级：暴力破解脚本 10/60s 与 5/60s
           # 并无实质差别，但误伤合法登录纳炸概率归一了。
-          permits: 10
-          period-seconds: 60
+          #
+          # 2026-10-15：permits/period-seconds 改为可 env 覆盖。**生产默认不变（10/60s）**，
+          # 抬高只发生在测试环境：限流键是**远端 IP**（见 RateLimitProperties 的"IP 桶"纪律），
+          # 而 e2e 腿里 Playwright 串行套件的所有请求都来自 127.0.0.1 —— 共用这一只桶，
+          # 一轮要发 ~15 次登录（setup 1 + auth.spec 6 + role-matrix 6 + tickets 2），
+          # 于是 60s 窗口内撞 429、角色矩阵假红（run 38665168695 实测，
+          # 报错文本由 e2e/helpers/login.ts 的诊断带出：HTTP 429 RATE_LIMITED）。
+          # 对单个可信本机客户端做"防暴力破解"没有意义，故按环境抬高，而不是把用例删掉
+          # 或把限流总开关关掉（总开关一关，e2e 就再也不覆盖限流这条链了）。
+          permits: ${LOGIN_RATE_LIMIT_PERMITS:10}
+          period-seconds: ${LOGIN_RATE_LIMIT_PERIOD_SECONDS:60}
         - name: chat
           paths: /api/v1/chat
           permits: 20
@@ -596,6 +619,12 @@ devops:
 
   # ==================== L2 通知渠道（钉钉自定义机器人） ====================
   notify:
+    # 平台可从通知群访问的 HTTPS 前端地址；空值不生成假链接，仅提示按事件/工单号查询。
+    # 支持部署路径前缀；不会使用外部 annotations 中未经验证的 URL。
+    public-base-url: ${OPSBRAIN_NOTIFY_PUBLIC_BASE_URL:}
+    # 默认只在工单/详情留诊断证据，避免一次故障告警后又因 NO_DATA 刷屏。
+    # 开启仅发送仍活跃事件的普通摘要，不 @所有人；生产故障首报强提醒保持现状。
+    diagnosis-completion-enabled: ${DIAGNOSIS_COMPLETION_NOTIFY_ENABLED:false}
     dingtalk:
       # 通知总开关。默认关闭——需运维填 webhook 后显式开启（改为 true 或设环境变量）。
       # 关闭/未配 webhook 时 DingTalkNotifier 以 MOCK 方式仅打印日志，不阻塞主流程。

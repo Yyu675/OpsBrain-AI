@@ -8,22 +8,22 @@ import type { RiskPolicyApprovalMode } from './riskPolicyApprovalMode';
 import type { RiskPolicyEscalateTarget } from './riskPolicyEscalateTarget';
 
 export interface RiskPolicy {
-  riskLevel?: string;
-  displayName?: string;
-  description?: string;
+  allowedEnvironments?: string;
   approvalMode?: RiskPolicyApprovalMode;
   approvalTimeoutMinutes?: number;
   autoExecuteAllowed?: boolean;
-  maxBlastRadiusPercent?: number;
-  maxBlastRadiusCount?: number;
   cooldownSeconds?: number;
-  maxRetries?: number;
+  createTime?: string;
+  description?: string;
+  displayName?: string;
   escalateAfterMinutes?: number;
   escalateTarget?: RiskPolicyEscalateTarget;
-  allowedEnvironments?: string;
-  version?: number;
-  updatedBy?: string;
-  createTime?: string;
-  updateTime?: string;
   fullyAutonomous?: boolean;
+  maxBlastRadiusCount?: number;
+  maxBlastRadiusPercent?: number;
+  maxRetries?: number;
+  riskLevel?: string;
+  updateTime?: string;
+  updatedBy?: string;
+  version?: number;
 }

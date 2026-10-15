@@ -8,8 +8,8 @@ import type { KnowledgeTag } from './knowledgeTag';
 
 export interface ApiResponseListKnowledgeTag {
   code?: number;
-  message?: string;
   data?: KnowledgeTag[];
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

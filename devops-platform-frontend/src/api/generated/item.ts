@@ -6,20 +6,20 @@
  */
 
 export interface Item {
-  id?: number;
-  name?: string;
-  code?: string;
-  description?: string;
-  parentChunkSize?: number;
   childChunkSize?: number;
   chunkOverlap?: number;
-  effectiveParentChunkSize?: number;
+  code?: string;
+  createTime?: string;
+  description?: string;
+  docCount?: number;
   effectiveChildChunkSize?: number;
   effectiveChunkOverlap?: number;
-  status?: string;
-  docCount?: number;
-  indexedCount?: number;
+  effectiveParentChunkSize?: number;
   failedCount?: number;
-  createTime?: string;
+  id?: number;
+  indexedCount?: number;
+  name?: string;
+  parentChunkSize?: number;
+  status?: string;
   updateTime?: string;
 }

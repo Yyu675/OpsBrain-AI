@@ -7,7 +7,7 @@
 
 export interface FeedbackStat {
   docId?: number;
-  title?: string;
   helpfulCount?: number;
+  title?: string;
   wrongCount?: number;
 }

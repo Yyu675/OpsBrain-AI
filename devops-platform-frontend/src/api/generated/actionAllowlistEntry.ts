@@ -6,23 +6,23 @@
  */
 
 export interface ActionAllowlistEntry {
-  id?: number;
   actionKey?: string;
-  displayName?: string;
-  description?: string;
   category?: string;
-  riskLevel?: string;
-  targetPattern?: string;
+  createTime?: string;
+  createdBy?: string;
+  description?: string;
+  displayName?: string;
+  effectiveBlastRadiusCount?: number;
+  effectiveRequiresApproval?: boolean;
+  enabled?: boolean;
   environments?: string;
+  id?: number;
+  maxBlastRadiusCount?: number;
   paramSchema?: string;
   requiresApproval?: boolean;
-  maxBlastRadiusCount?: number;
-  enabled?: boolean;
-  version?: number;
-  createdBy?: string;
-  updatedBy?: string;
-  createTime?: string;
+  riskLevel?: string;
+  targetPattern?: string;
   updateTime?: string;
-  effectiveRequiresApproval?: boolean;
-  effectiveBlastRadiusCount?: number;
+  updatedBy?: string;
+  version?: number;
 }

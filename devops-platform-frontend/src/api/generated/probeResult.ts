@@ -7,7 +7,7 @@
 import type { ProbeResultCapabilities } from './probeResultCapabilities';
 
 export interface ProbeResult {
-  channelKey?: string;
   capabilities?: ProbeResultCapabilities;
+  channelKey?: string;
   probedAt?: string;
 }

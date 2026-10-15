@@ -7,14 +7,14 @@
 import type { ExecutionResultPreSnapshot } from './executionResultPreSnapshot';
 
 export interface ExecutionResult {
-  executorKey?: string;
   actionKey?: string;
-  success?: boolean;
   dryRun?: boolean;
-  output?: string;
   error?: string;
-  preSnapshot?: ExecutionResultPreSnapshot;
-  undoToken?: string;
-  startedAt?: string;
+  executorKey?: string;
   finishedAt?: string;
+  output?: string;
+  preSnapshot?: ExecutionResultPreSnapshot;
+  startedAt?: string;
+  success?: boolean;
+  undoToken?: string;
 }

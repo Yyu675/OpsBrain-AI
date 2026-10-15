@@ -8,8 +8,8 @@ import type { PolicyStats } from './policyStats';
 
 export interface ApiResponsePolicyStats {
   code?: number;
-  message?: string;
   data?: PolicyStats;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

@@ -6,7 +6,7 @@
  */
 
 export interface ApprovalModeOption {
-  value?: string;
   label?: string;
   requiredApprovers?: number;
+  value?: string;
 }

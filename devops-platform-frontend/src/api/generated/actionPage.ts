@@ -8,8 +8,8 @@ import type { ActionAllowlistEntry } from './actionAllowlistEntry';
 
 export interface ActionPage {
   items?: ActionAllowlistEntry[];
-  total?: number;
   page?: number;
   size?: number;
+  total?: number;
   totalPages?: number;
 }

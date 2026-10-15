@@ -22,6 +22,15 @@ public interface AlertSourceAdapter {
     boolean supports(Object rawPayload);
 
     /**
+     * 来源标识（接入排错与错误提示用）。
+     * <p>默认取实现类名；有明确来源词汇表的实现覆盖它（alertmanager→prometheus、
+     * zabbix→zabbix），让「没有适配器认识这份负载」的报错直接列出可操作的来源清单。</p>
+     */
+    default String sourceName() {
+        return getClass().getSimpleName();
+    }
+
+    /**
      * 把某源的原始负载归一化为平台统一告警信号。
      * <p>不支持的类型由实现决定抛异常还是返回空——契约上调用方只传
      * {@link #supports} 判定为 true 的负载。</p>

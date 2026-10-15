@@ -8,8 +8,8 @@ import type { ApprovalRequest } from './approvalRequest';
 
 export interface ApiResponseApprovalRequest {
   code?: number;
-  message?: string;
   data?: ApprovalRequest;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

@@ -8,12 +8,12 @@
 export interface UpsertRequest {
   /**
    * @minLength 0
-   * @maxLength 128
-   */
-  service: string;
-  /**
-   * @minLength 0
    * @maxLength 64
    */
   owner: string;
+  /**
+   * @minLength 0
+   * @maxLength 128
+   */
+  service: string;
 }

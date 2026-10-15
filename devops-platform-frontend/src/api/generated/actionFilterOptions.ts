@@ -8,7 +8,7 @@ import type { RiskLevelOption } from './riskLevelOption';
 
 export interface ActionFilterOptions {
   categories?: string[];
-  riskLevels?: RiskLevelOption[];
   environments?: string[];
   knownCategories?: string[];
+  riskLevels?: RiskLevelOption[];
 }

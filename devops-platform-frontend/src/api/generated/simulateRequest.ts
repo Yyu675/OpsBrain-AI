@@ -6,9 +6,9 @@
  */
 
 export interface SimulateRequest {
+  alertName?: string;
+  environment?: string;
   level?: string;
   module?: string;
   service?: string;
-  alertName?: string;
-  environment?: string;
 }

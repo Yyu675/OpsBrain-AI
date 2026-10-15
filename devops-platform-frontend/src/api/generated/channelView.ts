@@ -6,19 +6,19 @@
  */
 
 export interface ChannelView {
-  channelKey?: string;
   baseUrl?: string;
-  maskedKey?: string;
-  turboModel?: string;
-  reasonerModel?: string;
-  model?: string;
+  channelKey?: string;
   dimension?: number;
-  status?: string;
-  updatedAt?: string;
-  restartRequired?: boolean;
   fallbackBaseUrl?: string;
-  fallbackModel?: string;
   fallbackMaskedKey?: string;
-  provider?: string;
+  fallbackModel?: string;
+  maskedKey?: string;
+  model?: string;
   protocol?: string;
+  provider?: string;
+  reasonerModel?: string;
+  restartRequired?: boolean;
+  status?: string;
+  turboModel?: string;
+  updatedAt?: string;
 }

@@ -6,9 +6,9 @@
  */
 
 export interface KnowledgeTag {
+  color?: string;
+  description?: string;
   id?: number;
   name?: string;
-  description?: string;
-  color?: string;
   usageCount?: number;
 }

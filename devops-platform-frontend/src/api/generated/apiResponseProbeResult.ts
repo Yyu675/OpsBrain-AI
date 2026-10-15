@@ -8,8 +8,8 @@ import type { ProbeResult } from './probeResult';
 
 export interface ApiResponseProbeResult {
   code?: number;
-  message?: string;
   data?: ProbeResult;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

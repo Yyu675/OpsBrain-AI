@@ -8,12 +8,12 @@
 export interface LoginRequest {
   /**
    * @minLength 0
-   * @maxLength 64
-   */
-  username: string;
-  /**
-   * @minLength 0
    * @maxLength 128
    */
   password: string;
+  /**
+   * @minLength 0
+   * @maxLength 64
+   */
+  username: string;
 }

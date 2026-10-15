@@ -57,7 +57,8 @@ public class OperationAuditInterceptor implements HandlerInterceptor {
     /** 高频且无价值的路径，避免污染审计表 */
     private static final Set<String> SKIP_PREFIXES = Set.of(
             "/api/v1/health",
-            "/api/v1/alerts/webhook"   // 告警推送量极大，且已有 sys_alert 表留痕
+            // 告警推送量极大，且已有 sys_alert 表留痕（前缀匹配：Alertmanager 与 Zabbix 两端点都含在内）
+            "/api/v1/alerts/webhook"
     );
 
     @Value("${devops.audit.enabled:true}")

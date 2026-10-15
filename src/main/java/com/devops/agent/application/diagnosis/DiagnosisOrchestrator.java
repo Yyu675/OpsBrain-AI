@@ -89,8 +89,14 @@ public class DiagnosisOrchestrator {
     private final com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository hypothesisRepository;
     /** 2-1.6：诊断完成 WebSocket 推送（前端诊断页实时刷新）。 */
     private final com.devops.agent.domain.alert.service.AlertWebSocketNotifier wsNotifier;
-    /** 2-1.6：钉钉通知（INSUFFICIENT 时 urgent——人工介入是必须被看到的事）。 */
+    /** 可选群诊断补充；完整取证仍通过 WS/工单留痕，不将证据不足视为紧急故障。 */
     private final com.devops.agent.domain.notify.Notifier notifier;
+    @org.springframework.beans.factory.annotation.Value("${devops.notify.diagnosis-completion-enabled:false}")
+    private boolean diagnosisNotificationEnabled;
+
+    @org.springframework.beans.factory.annotation.Value("${devops.notify.public-base-url:}")
+    private String notificationBaseUrl;
+
     /** 知识检索的查询锚点：按 alertId 回查告警名，让知识检索带上症状信号而不只是服务名 */
     private final com.devops.agent.domain.alert.repository.AlertRepository alertRepository;
 
@@ -592,12 +598,22 @@ public class DiagnosisOrchestrator {
             log.warn("⚠️ [Diagnosis] WebSocket 推送失败 | traceId={} why={}", traceId, ex.getMessage());
         }
         try {
-            String title = aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
-                    ? "⚠️ 诊断证据不足，需人工介入" : "🩺 诊断完成";
-            var msg = aggregated.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT
-                    ? com.devops.agent.domain.notify.NotifyMessage.urgent(title, summary)
-                    : com.devops.agent.domain.notify.NotifyMessage.normal(title, summary);
-            notifier.send(msg);
+            if (!diagnosisNotificationEnabled || alertId == null) return;
+            var current = alertRepository.findById(alertId);
+            if (current.isEmpty()) return;
+            var alert = current.get();
+            // 发送前复查真实状态；恢复/抑制/删除的事件只留痕，不补发过期人工介入。
+            if (!"FIRING".equals(alert.getStatus()) && !"ACKNOWLEDGED".equals(alert.getStatus())) return;
+            Map<String, String> labels = Map.of();
+            if (objectMapper != null && alert.getLabelsJson() != null) {
+                labels = objectMapper.readValue(alert.getLabelsJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
+                if (labels == null) labels = Map.of();
+            }
+            // 卡片单源：诊断卡同样收在 AlertNotifyTemplate（恒 normal——证据不足是
+            // 「需要人看」，不是「需要把所有人群呼起来」，触发卡已承担强提醒职责）
+            notifier.send(com.devops.agent.domain.alert.AlertNotifyTemplate.diagnosis(
+                    alert, labels, aggregated, ticketId, notificationBaseUrl));
         } catch (Exception ex) {
             log.warn("⚠️ [Diagnosis] 钉钉通知失败 | traceId={} why={}", traceId, ex.getMessage());
         }

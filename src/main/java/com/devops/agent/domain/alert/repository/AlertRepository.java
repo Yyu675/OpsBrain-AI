@@ -579,7 +579,11 @@ public class AlertRepository {
                 "level = EXCLUDED.level, " +
                 "description = EXCLUDED.description, " +
                 "labels_json = EXCLUDED.labels_json, " +
-                "annotations_json = EXCLUDED.annotations_json, " +
+                // first_occurred_at 不随重复上报变化，其时间质量也必须保留首次值。
+                // 历史记录无标记时保留 unknown，不能用本次 startsAt 假装首次时间已验证。
+                "annotations_json = EXCLUDED.annotations_json || jsonb_build_object(" +
+                "'_opsbrain_starts_at_estimated', COALESCE(sys_alert.annotations_json -> " +
+                "'_opsbrain_starts_at_estimated', '\"unknown\"'::jsonb)), " +
                 "occurrence_count = sys_alert.occurrence_count + 1, " +
                 "last_occurred_at = EXCLUDED.last_occurred_at, update_time = EXCLUDED.update_time " +
                 "RETURNING (xmax = 0) AS inserted";

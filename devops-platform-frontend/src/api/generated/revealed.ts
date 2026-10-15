@@ -7,6 +7,6 @@
 
 export interface Revealed {
   channelKey?: string;
-  webhook?: string;
   secret?: string;
+  webhook?: string;
 }

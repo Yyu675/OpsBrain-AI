@@ -6,20 +6,20 @@
  */
 
 export interface ListItem {
-  id?: number;
-  title?: string;
+  author?: string;
   category?: string;
   categoryId?: number;
-  author?: string;
-  summary?: string;
-  version?: number;
-  status?: string;
-  indexStatus?: string;
   chunkCount?: number;
   createTime?: string;
-  updateTime?: string;
-  tags?: string[];
+  id?: number;
+  indexStatus?: string;
+  kbId?: number;
   sourceTicketId?: string;
   sourceType?: string;
-  kbId?: number;
+  status?: string;
+  summary?: string;
+  tags?: string[];
+  title?: string;
+  updateTime?: string;
+  version?: number;
 }

@@ -6,7 +6,7 @@
  */
 
 export interface ModelDistribution {
-  model?: string;
   count?: number;
+  model?: string;
   percentage?: number;
 }

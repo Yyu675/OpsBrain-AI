@@ -6,14 +6,14 @@
  */
 
 export interface TicketAction {
-  id?: number;
-  ticketId?: string;
   actionType?: string;
-  summary?: string;
-  detail?: string;
-  operator?: string;
-  effective?: boolean;
-  startedAt?: string;
-  finishedAt?: string;
   createTime?: string;
+  detail?: string;
+  effective?: boolean;
+  finishedAt?: string;
+  id?: number;
+  operator?: string;
+  startedAt?: string;
+  summary?: string;
+  ticketId?: string;
 }

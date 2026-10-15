@@ -17,8 +17,11 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    // 数组形式（而非对象）：Element Plus 的两条别名必须是**精确正则**——
+    // 对象形式的字符串 key 是前缀匹配，会把 `element-plus/es/components/xx/style/css`
+    // 这类深度路径也一并改写掉，那些恰恰是 resolver 注入的样式副作用导入。
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
       // md-editor-v3 内部引用 @codemirror/language-data —— CodeMirror 的全语言注册表，
       // 含 136 个动态 import。Rollup 会把每个切成独立 chunk，实测产出 148 个碎片、
       // 合计 630 KB，绝大多数是 z80/yacas/xquery/verilog/vbscript 这类
@@ -29,10 +32,34 @@ export default defineConfig({
       //
       // ⚠️ 去掉这行别名会让 630 KB 的碎片全部回来。
       // 契约测试 codemirrorLanguageSlim.test.ts 守住这一点。
-      '@codemirror/language-data': fileURLToPath(
-        new URL('./src/vendor/codemirror-language-data-slim.ts', import.meta.url)
-      )
-    }
+      {
+        find: '@codemirror/language-data',
+        replacement: fileURLToPath(
+          new URL('./src/vendor/codemirror-language-data-slim.ts', import.meta.url)
+        ),
+      },
+      /**
+       * Element Plus 也换精简入口：resolver 给每个组件/指令生成的导入路径都是
+       * barrel `element-plus/es`，其顶层 `makeInstaller([...全部组件])` 让
+       * tree-shaking 失效（实测产物含 cascader/tour/watermark 等零引用组件，
+       * vendor-element 单块 966KB）。换成本仓库显式列名的精简入口后，
+       * 只有真正用到的组件进入依赖图。
+       *
+       * ⚠️ 必须是 `^...$` 精确匹配：前缀匹配会连
+       * `element-plus/es/components/<comp>/style/css`（resolver 注入的样式）
+       * 一起改写，导致组件样式丢失。
+       *
+       * ⚠️ 去掉这两条别名会让 vendor-element 回弹到整包体积。
+       */
+      {
+        find: new RegExp('^element-plus/es$'),
+        replacement: fileURLToPath(new URL('./src/vendor/element-plus-slim.ts', import.meta.url)),
+      },
+      {
+        find: new RegExp('^element-plus$'),
+        replacement: fileURLToPath(new URL('./src/vendor/element-plus-slim.ts', import.meta.url)),
+      },
+    ],
   },
   // 开发服务器：监听 0.0.0.0 使局域网其他设备可通过本机 IP 访问；
   // 代理 /ai 到后端，前端用相对路径即可，无需硬编码 localhost。

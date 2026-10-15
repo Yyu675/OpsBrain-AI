@@ -8,8 +8,8 @@ import type { ActionPage } from './actionPage';
 
 export interface ApiResponseActionPage {
   code?: number;
-  message?: string;
   data?: ActionPage;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

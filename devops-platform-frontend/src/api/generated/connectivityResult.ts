@@ -6,8 +6,8 @@
  */
 
 export interface ConnectivityResult {
-  success?: boolean;
-  latencyMs?: number;
   dimension?: number;
+  latencyMs?: number;
   message?: string;
+  success?: boolean;
 }

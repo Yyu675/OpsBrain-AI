@@ -8,8 +8,8 @@ import type { ConnectivityResult } from './connectivityResult';
 
 export interface ApiResponseConnectivityResult {
   code?: number;
-  message?: string;
   data?: ConnectivityResult;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

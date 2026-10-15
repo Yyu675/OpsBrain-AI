@@ -8,8 +8,8 @@ import type { SimulateResult } from './simulateResult';
 
 export interface ApiResponseSimulateResult {
   code?: number;
-  message?: string;
   data?: SimulateResult;
-  traceId?: string;
+  message?: string;
   timestamp?: number;
+  traceId?: string;
 }

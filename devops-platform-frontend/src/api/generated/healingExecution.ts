@@ -6,25 +6,25 @@
  */
 
 export interface HealingExecution {
-  id?: number;
   actionKey?: string;
-  environment?: string;
-  target?: string;
-  paramsJson?: string;
   alertId?: number;
-  requestedBy?: string;
-  gateDecision?: string;
   approvalId?: number;
-  executorKey?: string;
-  status?: string;
-  dryRunPlan?: string;
-  output?: string;
-  error?: string;
-  preSnapshotJson?: string;
-  undoToken?: string;
   createdAt?: string;
+  dryRunPlan?: string;
+  environment?: string;
+  error?: string;
+  executorKey?: string;
   finishedAt?: string;
-  verifyStatus?: string;
-  verifyResultJson?: string;
+  gateDecision?: string;
+  id?: number;
+  output?: string;
+  paramsJson?: string;
+  preSnapshotJson?: string;
+  requestedBy?: string;
+  status?: string;
+  target?: string;
+  undoToken?: string;
   verifiedAt?: string;
+  verifyResultJson?: string;
+  verifyStatus?: string;
 }

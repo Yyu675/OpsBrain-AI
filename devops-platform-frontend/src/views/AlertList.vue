@@ -509,7 +509,11 @@ const offAlertEvents = subscribeAlertEvents(() => {
                   <RouterLink :to="`/alerts/${row.id}`" class="alert-title-link" @click.stop>
                     <span class="alert-title">{{ row.title || row.alertName || '—' }}</span>
                   </RouterLink>
-                  <AlertRowBadges :observing="row.observing" :false-positive="row.falsePositive" />
+                  <AlertRowBadges
+                    :observing="row.observing"
+                    :unticketed-reason="row.unticketedReason"
+                    :false-positive="row.falsePositive"
+                  />
                 </div>
               </el-tooltip>
             </template>
