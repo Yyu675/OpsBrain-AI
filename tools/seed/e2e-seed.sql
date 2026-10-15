@@ -114,7 +114,32 @@ SELECT 'e2e_viewer', '$2a$10$2uioDh72AxUcrc7wDbcXm.q6mmpf4JQV4.iExdaBOD5mA5BBvRa
  WHERE NOT EXISTS (SELECT 1 FROM sys_user WHERE username = 'e2e_viewer');
 
 -- ---------------------------------------------------------------------
--- 5) 自校验：种子四件套逐一回读，缺任何一样立即失败（ON_ERROR_STOP 生效）
+-- ---------------------------------------------------------------------
+-- 5) 「不会再自动建单」标注种子告警：alerts-unticketed.spec 的数据源（批106，
+--    销台账 §七 A5——F2 徽标此前只有单测与 API 字段实测，没有浏览器级证据）。
+--
+--    F2 修的是「回放/重投来的老事件永远挂 FIRING、页面什么也不说，值班人当成
+--    系统漏单」。所以这条种子的形状必须**就是那个场景**：
+--      · last_occurred_at = now()  —— 刚刚重投；列表按 last_occurred_at 倒序
+--        （AlertRepository 的列表查询），这样它才保证落在第一页；
+--      · first_occurred_at = now() - 26h —— 早于补单回溯窗 24h
+--        （AlertService.OBSERVATION_LOOKBACK_HOURS），unticketedReason() 才派生文案；
+--      · level = P2 + status = FIRING + 无 ticket_id —— 派生的另外三个前提
+--        （观察级默认 P2,P3；观察窗 10 分钟；已建单则不解释）。
+--    三者缺一，页面就什么也不显示，用例红得莫名其妙——故在此写清。
+-- ---------------------------------------------------------------------
+INSERT INTO sys_alert (source, alert_name, level, title, description, status, dedup_key,
+                       service, module, system, occurrence_count,
+                       first_occurred_at, last_occurred_at)
+SELECT 'zabbix', 'E2ESeedReplayedDiskPressure', 'P2',
+       'E2E 种子告警：26 小时前的事件重投（不该再自动建单）',
+       'e2e 种子：模拟 Zabbix 侧网络恢复后重投的历史事件——早于补单回溯窗，不会再自动建单，页面须显式说明。',
+       'FIRING', 'e2e-seed-unticketed-replay-0001',
+       'e2e-seed-svc', 'HOST', 'default', 2,
+       CURRENT_TIMESTAMP - INTERVAL '26 hours', CURRENT_TIMESTAMP
+ WHERE NOT EXISTS (SELECT 1 FROM sys_alert WHERE dedup_key = 'e2e-seed-unticketed-replay-0001');
+
+-- 6) 自校验：种子五件套逐一回读，缺任何一样立即失败（ON_ERROR_STOP 生效）
 -- ---------------------------------------------------------------------
 DO $$
 DECLARE
@@ -122,6 +147,7 @@ DECLARE
     n_doc    INT;
     n_ticket INT;
     n_role   INT;
+    n_alert  INT;
 BEGIN
     SELECT COUNT(*) INTO n_kb FROM sys_knowledge_base
      WHERE LOWER(code) = 'faq' OR name = '故障FAQ库';
@@ -134,13 +160,18 @@ BEGIN
     -- 与「密码错」同属登不进，但排查方向完全不同，故分开计数
     SELECT COUNT(*) INTO n_role FROM sys_user
      WHERE username IN ('e2e_operator', 'e2e_viewer') AND status = 'ACTIVE';
+    -- 未建单标注种子告警必须还在、且形状没被改坏（三前提任一被改，徽标就不显示）
+    SELECT COUNT(*) INTO n_alert FROM sys_alert
+     WHERE dedup_key = 'e2e-seed-unticketed-replay-0001'
+       AND status = 'FIRING' AND level = 'P2' AND ticket_id IS NULL
+       AND first_occurred_at < CURRENT_TIMESTAMP - INTERVAL '24 hours';
 
-    IF n_kb < 1 OR n_doc < 1 OR n_ticket < 1 OR n_role < 2 THEN
-        RAISE EXCEPTION 'e2e 种子未生效：FAQ库=% 文档=% 工单总数=% 角色账号=%',
-            n_kb, n_doc, n_ticket, n_role;
+    IF n_kb < 1 OR n_doc < 1 OR n_ticket < 1 OR n_role < 2 OR n_alert < 1 THEN
+        RAISE EXCEPTION 'e2e 种子未生效：FAQ库=% 文档=% 工单总数=% 角色账号=% 未建单告警=%',
+            n_kb, n_doc, n_ticket, n_role, n_alert;
     END IF;
-    RAISE NOTICE 'e2e 种子就绪：FAQ库=% 种子文档=% 工单总数=% 角色账号=%',
-        n_kb, n_doc, n_ticket, n_role;
+    RAISE NOTICE 'e2e 种子就绪：FAQ库=% 种子文档=% 工单总数=% 角色账号=% 未建单告警=%',
+        n_kb, n_doc, n_ticket, n_role, n_alert;
 END $$;
 
 COMMIT;
