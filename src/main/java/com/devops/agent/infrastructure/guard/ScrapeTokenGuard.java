@@ -16,15 +16,20 @@ import java.util.concurrent.atomic.AtomicReference;
  * 指标抓取面（{@code /actuator/prometheus}）的令牌身份。
  *
  * <h3>为什么需要它（2026-10-15 监控对账的硬缺口）</h3>
- * {@code WebConfig} 对 {@code /actuator/**} 加了登录校验（health 豁免）——这是对的，
- * 内部拓扑与依赖可达性不该裸奔公网。但 <b>Prometheus 没有浏览器，不会登录</b>：
- * 抓取恒 401 的后果不是"少几个数字"，而是——
+ * {@code /actuator/**} 应当需要身份（内部拓扑与依赖可达性不该裸奔公网），
+ * 而 <b>Prometheus 没有浏览器、不会登录</b>：抓取被拒的后果不是"少几个数字"，而是——
  * <ul>
  *   <li>{@code up{job="opsbrain"}} 恒 0 → 宕机规则 {@code OpsBrainDown} <b>常亮误报</b>（P0 级）；</li>
  *   <li>依赖该 job 的另外 6 条规则（业务水位 / JVM / 5xx / 送达失败）恒无数据 → <b>永不触发</b>。</li>
  * </ul>
  * 而这一切在平台内部毫无痕迹：告警表里只有一条永远 FIRING 的 OpsBrainDown，
  * 值班人会慢慢学会无视它。<b>监控自己失真，比没有监控更坏。</b>
+ *
+ * <h3>装配位置</h3>
+ * 由 {@link ActuatorAccessFilter} 调用（Filter 在 DispatcherServlet 之前，与 handler
+ * 由谁提供无关）。<b>不能放在 MVC 拦截器里</b>：actuator 端点的 handler 由 Boot 自己的
+ * {@code WebMvcEndpointHandlerMapping} 提供，从不挂 MVC 拦截器——2026-10-15 的 CI
+ * 实证推翻了此前"已用拦截器鉴权"的假设，详见该 Filter 的类注释。
  *
  * <h3>为什么是「令牌」而不是「放行 /actuator/**」</h3>
  * 放行让健康详情、bean 清单、依赖地址全部可匿名读取；令牌是"给机器一把最小的钥匙"。

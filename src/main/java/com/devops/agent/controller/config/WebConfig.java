@@ -69,22 +69,10 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${devops.security.auth-enabled:true}")
     private boolean authEnabled;
 
-    /**
-     * 指标抓取面的令牌身份（2026-10-15）。
-     *
-     * <p>{@code /actuator/**} 需要登录是对的，但 Prometheus 不会登录：抓取恒 401 会让
-     * {@code up{job="opsbrain"}} 恒 0 → 宕机规则常亮误报，其余应用规则恒哑（详见
-     * {@link com.devops.agent.infrastructure.guard.ScrapeTokenGuard} 类注释）。
-     * 守卫只对 {@code /actuator/prometheus} 一个路径生效，且默认关（未配令牌行为不变）。
-     */
-    private final com.devops.agent.infrastructure.guard.ScrapeTokenGuard scrapeTokenGuard;
-
     public WebConfig(
             com.devops.agent.common.audit.OperationAuditInterceptor auditInterceptor,
-            com.devops.agent.infrastructure.guard.ScrapeTokenGuard scrapeTokenGuard,
             Environment environment) {
         this.auditInterceptor = auditInterceptor;
-        this.scrapeTokenGuard = scrapeTokenGuard;
         this.environment = environment;
     }
 
@@ -122,44 +110,26 @@ public class WebConfig implements WebMvcConfigurer {
                         "/api/v1/alerts/webhook/**"
                 );
 
-        // ==================== P2 自身可观测性：/actuator/** 必须显式鉴权 ====================
-        // /actuator/** 不在 /api/** 下，上面的拦截器覆盖不到——不加这条，
-        // 健康详情与 Prometheus 指标（含内部拓扑、依赖可达性）会裸奔公网。
+        // ==================== 为什么这里**没有** /actuator/** 的拦截器 ====================
+        // 曾经的实现：给 /actuator/** 注册一个 SaInterceptor 做登录校验。它**不生效**——
+        // Spring MVC 的 HandlerInterceptor 只作用于 MVC 自己的 handler mapping，
+        // 而 actuator 端点由 Boot 的 WebMvcEndpointHandlerMapping 提供
+        // （WebMvcEndpointManagementContextConfiguration 里 new WebMvcEndpointHandlerMapping(...)，
+        // 从不 setInterceptors），拦截器链是空集。
         //
-        // /actuator/health 放行给 K8s 探针：探针不带 token，
-        // 拦下来会让 Pod 一直处于 NotReady。健康端点本身已配置为
-        // 不暴露敏感明细（management.endpoint.health.show-details=never 时只回 UP/DOWN）。
-        // 令牌身份先行放行（只对 /actuator/prometheus 生效，见 guard 类注释）：
-        // 抓取方（Prometheus）带令牌直接通过；不带令牌或令牌不对，一律回落到登录校验——
-        // 即"未配置令牌"与"配错令牌"的表现都是 401，不会意外敞开。
-        registry.addInterceptor(new SaInterceptor(handle ->
-                        SaRouter.match("/actuator/**")
-                                .notMatch("/actuator/health", "/actuator/health/**")
-                                .check(this::checkActuatorAccess)))
-                .addPathPatterns("/actuator/**");
-    }
-
-    /**
-     * actuator 端点放行判定：抓取令牌命中即放行，否则仍以登录身份为准。
-     * <p>抽成方法而非内联三元，只为一件事：<b>让"谁能进"这一行读起来就是一句话</b>——
-     * 安全判定的可读性就是它的可审计性。
-     */
-    private void checkActuatorAccess() {
-        if (scrapeTokenGuard.allows(currentRequest())) {
-            return;
-        }
-        StpUtil.checkLogin();
-    }
-
-    /** 取当前请求（拦截器阶段 Spring 已把请求放进 RequestContextHolder）。 */
-    private static jakarta.servlet.http.HttpServletRequest currentRequest() {
-        org.springframework.web.context.request.RequestAttributes attrs =
-                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
-            return servletAttrs.getRequest();
-        }
-        return null;
-    }
+        // 2026-10-15 CI 实证（两处红测把这件事钉死）：
+        //   · /actuator/info 带令牌 → **200**（拦截器没拦；真实部署里就是匿名可读）；
+        //   · /actuator/prometheus 带令牌 → 404（该端点当时无 handler，回落静态资源处理器，
+        //     而那个是 MVC 管的 → 拦截器才跑起来）。
+        // 也就是说：此前"本地看到 401"是环境缺 micrometer 造成的假象，
+        // 「/actuator/** 已显式鉴权」这句注释长期与事实相反。
+        //
+        // 结论：actuator 的闸门必须在 DispatcherServlet **之前**——见
+        // com.devops.agent.infrastructure.guard.ActuatorAccessFilter
+        // （Filter 阶段判定，与 handler 由谁提供无关）。那里同时实现三件事：
+        // /actuator/health 放行给 K8s 探针、抓取令牌只开 /actuator/prometheus 一扇门、
+        // 其余（health 详情、info、beans…）需登录会话，否则 401。
+        // 保留这段说明而不是静默删除：下一个读到本文件的人不该再踩同一个坑。
 
     /**
      * 允许跨域的来源（A6/D3）。
