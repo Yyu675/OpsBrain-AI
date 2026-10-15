@@ -182,13 +182,27 @@ class Drill:
         self.hop("Z-监控面", "无凭据抓取被拒（401）", code_anon == 401,
                  f"HTTP {code_anon}｜200 = 监控面裸奔；非 401 说明鉴权口径被改过")
 
+        # ⚠️ 读取窗口要够大：Prometheus 文本按**指标族名排序**输出，应用族 opsbrain_* 排在
+        #    application_/executor_/http_/jvm_/logback_ 这些之后。首版沿用探针默认的 4KB
+        #    窗口 → 在 CI 上把「业务指标明明抓得到」判成硬失败（2026-10-15 实撞，探针自身的坑）。
+        #    所以：先取一窗常用量，窗口内没看到再放大重取一次——只有"再读也没有"才算没接上。
         code_tok, body = http_raw(base + scrape_path,
-                                  {"Authorization": f"Bearer {scrape_token}"})
+                                  {"Authorization": f"Bearer {scrape_token}"}, limit=256 * 1024)
+        if code_tok == 200 and "opsbrain_" not in body:
+            code_tok, body = http_raw(base + scrape_path,
+                                      {"Authorization": f"Bearer {scrape_token}"}, limit=8 * 1024 * 1024)
+        has_biz = "opsbrain_" in body
+        families = [ln.split()[2] for ln in body.splitlines()
+                    if ln.startswith("# HELP ") and len(ln.split()) > 2]
         self.hop("Z-监控面", "带凭据抓取成功（200 + 业务指标）",
-                 code_tok == 200 and "opsbrain_" in body,
-                 f"HTTP {code_tok}｜含 opsbrain_={'opsbrain_' in body}｜"
-                 + ("这一点不通 → Prometheus 的 up{job=opsbrain} 恒 0 → 宕机规则常亮误报"
-                    if code_tok != 200 else "业务指标可抓"))
+                 code_tok == 200 and has_biz,
+                 f"HTTP {code_tok}｜读 {len(body)} 字节｜含 opsbrain_={has_biz}｜"
+                 f"族数={len(families)}"
+                 + (f"（头三个：{', '.join(families[:3])}）" if families else "（未见 # HELP，非 prometheus 文本）")
+                 + ("｜业务指标可抓" if has_biz else
+                    "｜没读到 opsbrain_* → 计量器没接上（与「抓不到」等价：up 恒 0 → 宕机规则常亮误报）"
+                    if code_tok == 200 else
+                    "｜非 200：凭据/闸门口径不对，Prometheus 一样抓不到"))
 
     def api(self, method: str, path: str, body=None):
         return http(method, self.base + path, self.token, body)

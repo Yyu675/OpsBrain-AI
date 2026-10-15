@@ -585,9 +585,13 @@ jobs:
           echo "裸抓 /actuator/prometheus → $anon（期望 401）"
           [ "$anon" = "401" ] || { echo "::error::裸抓应 401（200 = 指标面裸奔：内部拓扑与依赖可达性匿名可读），实际 $anon"; exit 1; }
           tok=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/actuator/prometheus")
-          body=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/actuator/prometheus" | head -c 200000)
+          # 不做 head 截断：Prometheus 文本按指标族名排序，应用族 opsbrain_* 排在
+          # jvm_/http_/logback_ 之后；曾经 4KB 窗口的把关方式会把「明明抓得到」判成失败
+          # （2026-10-15 演练探针实撞一次）。这里取全量再数行，顺带把字节数写进日志。
+          body=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/actuator/prometheus")
+          bytes=$(printf '%s' "$body" | wc -c)
           cnt=$(printf '%s' "$body" | grep -c '^opsbrain_' || true)
-          echo "带令牌 /actuator/prometheus → $tok｜opsbrain_* 行数=$cnt"
+          echo "带令牌 /actuator/prometheus → $tok｜读取 ${bytes} 字节｜opsbrain_* 行数=$cnt"
           [ "$tok" = "200" ] || { echo "::error::带令牌应 200（否则 Prometheus 抓不到：up{job=opsbrain} 恒 0 → 宕机规则常亮误报），实际 $tok"; exit 1; }
           [ "$cnt" -gt 0 ] || { echo "::error::抓得到但没有任何 opsbrain_* 业务指标——计量器没接上，等于没接监控"; exit 1; }
           info=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/actuator/info")
