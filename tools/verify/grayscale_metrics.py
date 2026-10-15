@@ -165,23 +165,29 @@ class Taker:
     def __init__(self, psql: str | None, pgurl: str | None, base: str, token_file: str | None):
         self.psql, self.pgurl, self.base, self.token_file = psql, pgurl, base, token_file
 
-    def q(self, sql: str) -> tuple[bool, str | None]:
-        """执行 SQL。返回 (成功?, 单值文本)。没给 --psql/--pgurl 时返回 (False, None)。"""
+    def q(self, sql: str) -> tuple[bool, str | None, str | None]:
+        """执行 SQL。返回 (成功?, 结果文本, 错误说明)。
+
+        **三元组是刻意的**：失败时结果与错误必须分槽。首版这里返回二元组
+        (ok, 结果或错误)，调用方按三元组解包 —— 只要走进「有库」分支就
+        ValueError 崩掉，而沙箱里没库，25 个单测又只覆盖纯函数，于是这个崩溃
+        一路活到 CI（真库）才现形。取数器的每个出口一律同构 (ok, value, err)。
+        """
         if not self.psql or not self.pgurl:
-            return False, None
+            return False, None, "ERR: 未提供 --psql/--pgurl"
         try:
             out = subprocess.run([self.psql, self.pgurl, "-t", "-A", "-c", sql],
                                  capture_output=True, text=True, timeout=30)
         except Exception as e:  # noqa: BLE001 - 取数失败要把原因带出来，不能让栈淹掉判词
-            return False, f"ERR: {type(e).__name__}: {e}"
+            return False, None, f"ERR: {type(e).__name__}: {e}"
         if out.returncode != 0:
-            return False, f"ERR: {out.stderr.strip()[:200]}"
-        return True, out.stdout.strip()
+            return False, None, f"ERR: {out.stderr.strip()[:200]}"
+        return True, out.stdout.strip(), None
 
     def num(self, sql: str) -> tuple[bool, float | None, str | None]:
-        ok, raw = self.q(sql)
+        ok, raw, err = self.q(sql)
         if not ok:
-            return False, None, raw
+            return False, None, err
         if raw in ("", None):
             return True, None, None
         try:
@@ -368,7 +374,15 @@ def main() -> int:
 
     rows: list[dict] = []
     t = Taker(args.psql, args.pgurl, args.base, args.scrape_token_file)
-    all_ok = collect(t, day_from, day_to, rows)
+    try:
+        all_ok = collect(t, day_from, day_to, rows)
+    except Exception as e:  # noqa: BLE001
+        # CI 里作业日志沙箱读不到：崩在这里若不自己喊一声，看到的只有一个
+        # 「exit code 1」，根因（比如解包元数不匹配）会完全隐形。批104 就是这么丢的一轮。
+        import traceback
+        traceback.print_exc()
+        print(f"::error::取数器内部异常（不是取不到数，是代码崩了）：{type(e).__name__}: {e}")
+        return 3
 
     print(f"=== 灰度台账取数：{day_from} ~ {day_to}（{(day_to - day_from).days + 1} 天）===")
     print(render_table(rows))
