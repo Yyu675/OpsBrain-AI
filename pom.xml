@@ -158,7 +158,9 @@
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
-            <version>8.5.12</version>
+            <!-- CVE-2025-59952 / GHSA-h7rh-xfpj-hpcm：8.6.0 禁用 XML 属性/环境变量替换。
+                 MinioXmlSecurityTest 用真实 SDK String/Reader 解析行为防止回退。 -->
+            <version>8.6.0</version>
         </dependency>
 
         <!-- ================= 数据访问 ================= -->
