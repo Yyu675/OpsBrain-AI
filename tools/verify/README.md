@@ -19,7 +19,7 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | `rbac_walkthrough.py` | `OpsWriteGuard` + 类级 RBAC 门控 | 见下节「权限矩阵实弹」 |
 | `monitoring_audit.py` | 指标名 / 规则 / 看板 / 抓取面四方对账 | 见下节「监控面静态对账」 |
 | `ci_summary.py` | 演练证据 JSON → 一行 CI 通知 | 见下节「结论怎么变成可读证据」 |
-| `selftest_scrape_face.py`（本地件，见 `.local-verify/scripts/`） | 闭环演练的 Z-监控面 判据自测 | 用桩服务模拟「正确/裸奔/凭据错/文件缺」四种后端，确认这个哨兵本身不会永远 PASS |
+| `selftest_scrape_face.py` | 闭环演练 Z-监控面 哨兵的**自证** | 桩服务六态（正确/裸奔/凭据错/端点在但无业务指标/指标排在 4KB 之后/令牌文件缺）逐一核对判词，确认哨兵不会永远 PASS。**已进 CI**（e2e 腿，排在闭环演练之前）。2026-10-15 前是 `.local-verify/scripts/` 的本地件——沙箱重置即丢失、别人复现不了，故收进仓库 |
 
 ## 业务闭环实弹（`closed_loop_drill.py`）
 

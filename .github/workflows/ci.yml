@@ -646,6 +646,21 @@ jobs:
           psql -h localhost -p 25432 -U devops -d devops_knowledge_db \
                -v ON_ERROR_STOP=1 -f tools/seed/e2e-seed.sql 2>&1 | tee /tmp/e2e-seed.log
 
+      - name: 监控哨兵自测（证明 Z-监控面 判据不会永远 PASS）
+        # 哨兵的坏法通常是「恒 PASS」——那比没有哨兵更坏：让人以为监控面有人看着。
+        # 桩服务六态（正确 / 裸奔 / 凭据错 / 端点在但无业务指标 / 指标排在 4KB 之后 /
+        # 令牌文件缺失）逐一核对判词。本机变异验证过：把「裸奔必须 401」判据改成恒真
+        # → 5/6 退出 1；还原历史上那次单次 4KB 读的 bug → far 态红。
+        # 放在闭环演练之前：哨兵不可信时，演练的 Z 组结论就一文不值。
+        run: |
+          set +e
+          python3 tools/verify/selftest_scrape_face.py --json /tmp/scrape-face-selftest.json \
+            2>&1 | tee /tmp/scrape-face-selftest.log
+          rc=${PIPESTATUS[0]}
+          grep -a "汇总" /tmp/scrape-face-selftest.log \
+            | sed "s/^/::$( [ $rc -eq 0 ] && echo notice || echo error )::/" || true
+          exit $rc
+
       - name: 业务闭环实弹演练（真 jar + 真 pg：三场景逐跳硬闸）
         # 为什么进 CI（2026-10-15）：这条链上一轮是「本机人工跑过一次、结果写进文档」——
         # 不可复现、不可回归。而本腿本来就备齐了演练需要的一切：真 jar + 真 pg（25432）
