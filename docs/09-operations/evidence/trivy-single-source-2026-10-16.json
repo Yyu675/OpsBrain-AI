@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-16",
+  "basis": "GitHub Check annotations 与 artifact 元信息，不冒充已下载的原始 JSON",
+  "old_probe": {
+    "run": 38772526074,
+    "job": 116551753215,
+    "annotation_messages": [
+      "Trivy 隔离对照 {\"case\": \"outside-reverse\", \"inside\": false, \"memory\": false, \"reverse\": true, \"full\": {\"rc\": 0, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"gate\": {\"rc\": 1, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"consistent\": true}",
+      "Trivy 隔离对照 {\"case\": \"outside-memory\", \"inside\": false, \"memory\": true, \"reverse\": false, \"gate\": {\"rc\": 1, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"full\": {\"rc\": 0, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"consistent\": true}",
+      "Trivy 隔离对照 {\"case\": \"inside-default\", \"inside\": true, \"memory\": false, \"reverse\": false, \"gate\": {\"rc\": 1, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"full\": {\"rc\": 0, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"consistent\": true}",
+      "Trivy 隔离对照 {\"case\": \"outside-default\", \"inside\": false, \"memory\": false, \"reverse\": false, \"gate\": {\"rc\": 1, \"ids\": [\"CVE-2025-14813\", \"CVE-2025-59952\", \"CVE-2026-13506\", \"CVE-2026-54512\", \"CVE-2026-54513\", \"CVE-2026-68494\", \"CVE-2026-68497\", \"CVE-2026-8763\", \"CVE-2026-89425\", \"CVE-2026-91776\", \"CVE-2026-91777\"], \"targets\": [\"pom.xml\"]}, \"full\": {\"rc\": 0, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"consistent\": true}"
+    ],
+    "verdict": "旧 consistent=true 判据作废，只检指定CVE，漏报11→1"
+  },
+  "one_source": {
+    "run": 38773493944,
+    "job": 116555086521,
+    "head": "90cadaec6b40dfd0e1b7c6c0dd9e36de0de8bc3b",
+    "conclusion": "success",
+    "annotation_messages": [
+      "Trivy 受控故障与同源修复 {\"healthy_full\": {\"rc\": 0, \"ids\": [\"CVE-2025-59952\"], \"targets\": [\"pom.xml\"]}, \"injected_429_full\": {\"rc\": 0, \"ids\": [], \"targets\": [\"pom.xml\"]}, \"same_source_gate\": {\"rc\": 1, \"ids\": [\"CVE-2025-59952\"]}, \"maven_requests_during_convert\": 0, \"kept_vulnerabilities\": 1, \"notice\": \"已复现解析失败返回0且丢传递发现；不等于已证明历史网络状态\"}",
+      "trivy-gate.json | 扫描目标：pom.xml (pom)",
+      "trivy-gate.json | 扫描目标：devops-platform-frontend/package-lock.json (npm)",
+      "trivy-gate.json | Trivy 报告：目标 2，HIGH/CRITICAL 条目 0（漏洞有修复版本 0）；是否拦截以扫描步退出码为准，完整 JSON 已留档",
+      "Trivy CLI 诊断：",
+      "Trivy 同源门禁：{\"policy\": \"trivy-0.70.0-ignore-unfixed-status-fixed\", \"targets\": [\"devops-platform-frontend/package-lock.json\", \"pom.xml\"], \"kept_vulnerabilities\": 0, \"unfixed_vulnerabilities\": 0, \"packages\": 196, \"notice\": \"同一原始报告离线派生；未删除 secrets/config/licenses，不代表依赖覆盖完整\", \"source_sha256\": \"0d7c4e216560c63249cb1ede88fd51ed7db7efb6d76c49cb5efcc1adcfd5c152\", \"derived_sha256\": \"169952a09c5b37efef968df09372b2b705d58195a15fc7fca40515918df2ddb1\"}",
+      "trivy-report.json | 扫描目标：pom.xml (pom)",
+      "trivy-report.json | 扫描目标：devops-platform-frontend/package-lock.json (npm)",
+      "trivy-report.json | Trivy 报告：目标 2，HIGH/CRITICAL 条目 0（漏洞有修复版本 0）；是否拦截以扫描步退出码为准，完整 JSON 已留档",
+      "Trivy CLI 诊断：2026-10-15T16:59:03Z\tINFO\t[vulndb] Need to update DB\n2026-10-15T16:59:03Z\tINFO\t[vulndb] Downloading vulnerability DB...\n2026-10-15T16:59:03Z\tINFO\t[vulndb] Downloading artifact...\trepo=\"mirror.gcr.io/aquasec/trivy-db:2\"\n2026-10-15T16:59:08Z\tINFO\t[vulndb] Artifact successfully downloaded\trepo=\"mirror.gcr.io/aquasec/trivy-db:2\"\n2026-10-15T16:59:08Z\tINFO\t[vuln] Vulnerability scanning is enabled\n2026-10-15T16:59:08Z\tINFO\t[secret] Secret scanning is enabled\n2026-10-15T16:59:08Z\tINFO\t[secret] If your scanning is slow, please try '--scanners vuln' to disable secret scanning\n2026-10-15T16:59:08Z\tINFO\t[secret] Please see https://trivy.dev/docs/v0.70/guide/scanner/secret#recommendation for faster secret detection\n2026-10-15T16:59:11Z\tINFO\t[npm] To collect the license information of packages, \"npm install\" needs to be performed beforehand\tdir=\"devops-platform-frontend/node_modules\"\n2026-10-15T16:59:11Z\tINFO\tSuppressing dependencies for development and testing. To display them, try the '--include-dev-deps' flag.\n2026-10-15T16:59:11Z\tINFO\tNumber of language-specific files\tnum=2\n2026-10-15T16:59:11Z\tINFO\t[npm] Detecting vulnerabilities...\n2026-10-15T16:59:11Z\tINFO\t[pom] Detecting vulnerabilities...\n\n📣 ^[[34mNotices:^[[0m\n  - Version 0.76.0 of Trivy is now available, current version is 0.70.0\n\nTo suppress version checks, run Trivy scans with the --skip-version-check flag\n\n"
+    ],
+    "artifact_metadata": {
+      "total_count": 1,
+      "artifacts": [
+        {
+          "id": 11993005567,
+          "node_id": "MDg6QXJ0aWZhY3QxMTk5MzAwNTU2Nw==",
+          "name": "trivy-report",
+          "size_in_bytes": 39241,
+          "url": "https://api.github.com/repos/Yyu675/OpsBrain-AI/actions/artifacts/11993005567",
+          "archive_download_url": "https://api.github.com/repos/Yyu675/OpsBrain-AI/actions/artifacts/11993005567/zip",
+          "expired": false,
+          "digest": "sha256:c32b1f6446c287a9ca65f338e9c7c3cb0dd87801c9430a9cf3e269cf3021adcd",
+          "created_at": "2026-10-15T16:59:12Z",
+          "updated_at": "2026-10-15T16:59:12Z",
+          "expires_at": "2026-11-14T16:59:12Z",
+          "workflow_run": {
+            "id": 38773493944,
+            "repository_id": 1344493282,
+            "head_repository_id": 1344493282,
+            "head_branch": "arena/0060d91b-opsbrain-ai",
+            "head_sha": "90cadaec6b40dfd0e1b7c6c0dd9e36de0de8bc3b"
+          }
+        }
+      ]
+    }
+  },
+  "boundary": "同源一致≠依赖覆盖完整；受控429实证不代表已确认历史HTTP状态/缓存根因。后续包/路径指纹加强以PR最新HEAD检查为准，不以本快照替代。"
+}
