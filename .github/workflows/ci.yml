@@ -39,6 +39,8 @@ jobs:
           python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
           python3 tools/verify/test_workflow_refs.py
           python3 tools/verify/test_trivy_summary.py
+          python3 tools/verify/test_sbom_runtime_probe.py
+          python3 tools/verify/test_sbom_workflow.py
           python3 tools/verify/test_maven_scan_coverage.py
           python3 tools/verify/test_maven_coverage_workflow.py
           python3 tools/verify/test_trivy_policy.py
