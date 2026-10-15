@@ -554,7 +554,13 @@ jobs:
         env:
           AI_MODE: MOCK
           SPRING_PROFILES_ACTIVE: dev
+          # 指标抓取面令牌（2026-10-15）：与生产同一套口径——应用从文件读令牌，
+          # 下一「指标抓取面实弹」步用同一个文件 curl。文件生成在启动之前，
+          # 否则守卫按「未配置」处理（fail-closed）。
+          SCRAPE_TOKEN_FILE: /tmp/e2e-scrape-token
         run: |
+          printf '%s' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > /tmp/e2e-scrape-token
+          chmod 600 /tmp/e2e-scrape-token
           nohup java -jar target/*.jar > /tmp/e2e-backend.log 2>&1 &
           for i in $(seq 1 40); do
             sleep 3
@@ -562,6 +568,35 @@ jobs:
             if [ "$code" != "000" ]; then echo "backend up after ~$((i*3))s (http=$code)"; exit 0; fi
           done
           echo "::error::后端 120s 未起来"; tail -80 /tmp/e2e-backend.log; exit 1
+
+      - name: 指标抓取面实弹（真 jar + 真 HTTP：裸抓 401 / 带令牌 200 且含 opsbrain_）
+        # 为什么单开这一步：@SpringBootTest 里 spring-boot-test-autoconfigure 的
+        # ObservabilityContextCustomizerFactory 会**默认关掉指标导出**
+        # （注入 management.defaults.metrics.export.enabled=false），于是 Prometheus 注册器与
+        # /actuator/prometheus 端点在测试上下文里根本不存在——「抓取面在生产形态下真的通吗」
+        # 是集成测试结构上证明不了的事（本轮正是这么翻的车：测试里 404，一度误判成端点缺失）。
+        # 这里用与生产同一份 application.yml、同一个 java -jar 起进程，curl 四发定案：
+        # 裸抓必须 401、带令牌必须 200 且真含 opsbrain_ 业务指标、同令牌读不了 info、
+        # 探针不带凭据仍 200。四条任一不成立，监控面就是坏的（且大多是静默坏）。
+        run: |
+          BASE=http://localhost:8088/ai
+          TOKEN=$(cat /tmp/e2e-scrape-token)
+          anon=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/actuator/prometheus")
+          echo "裸抓 /actuator/prometheus → $anon（期望 401）"
+          [ "$anon" = "401" ] || { echo "::error::裸抓应 401（200 = 指标面裸奔：内部拓扑与依赖可达性匿名可读），实际 $anon"; exit 1; }
+          tok=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/actuator/prometheus")
+          body=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/actuator/prometheus" | head -c 200000)
+          cnt=$(printf '%s' "$body" | grep -c '^opsbrain_' || true)
+          echo "带令牌 /actuator/prometheus → $tok｜opsbrain_* 行数=$cnt"
+          [ "$tok" = "200" ] || { echo "::error::带令牌应 200（否则 Prometheus 抓不到：up{job=opsbrain} 恒 0 → 宕机规则常亮误报），实际 $tok"; exit 1; }
+          [ "$cnt" -gt 0 ] || { echo "::error::抓得到但没有任何 opsbrain_* 业务指标——计量器没接上，等于没接监控"; exit 1; }
+          info=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/actuator/info")
+          echo "同令牌 /actuator/info → $info（期望 401：最小权限，抓取钥匙只开一扇门）"
+          [ "$info" = "401" ] || { echo "::error::抓取令牌不该能读 /actuator/info，实际 $info"; exit 1; }
+          health=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/actuator/health")
+          echo "无凭据 /actuator/health → $health（期望 200：K8s 探针契约）"
+          [ "$health" = "200" ] || { echo "::error::探针端点被拦，Pod 会一直 NotReady，实际 $health"; exit 1; }
+          echo "::notice::指标抓取面实弹通过（生产形态 · 真 jar · 无测试上下文覆盖）"
 
       - name: 灌入 e2e 种子数据（故障FAQ库 + faq-test-doc + 常驻工单）
         # 存量 6 例红的根因修复（取证见 721fff5 的 `opsbrain-e2e-run-diag` 帖）：

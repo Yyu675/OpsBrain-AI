@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
@@ -33,6 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>端点是否真的存在（缺 micrometer 时是 404 而不是 401——两种"不通"混在一起，
  *       曾让一个 401 假象被当成"鉴权已生效"）。</li>
  * </ol>
+ * 还有一处<b>只有真机才测得出来</b>：Spring Boot 的测试框架默认关掉指标导出
+ * （见下方 {@code @AutoConfigureObservability} 注释），所以本类即便起了完整容器，也仍然
+ * 必须显式放行导出；生产形态（真 jar）另由 CI e2e 腿的「指标抓取面实弹」步验收。
  * 两个方向的失败都是静默的：抓不到指标 → {@code up{job="opsbrain"}} 恒 0 → 宕机规则
  * 常亮误报；端点匿名可读 → 内部拓扑与依赖地址裸奔。两面都要钉住。
  *
@@ -42,6 +46,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * "闸门装错位置" 与 "端点压根没装配"，白白多花一轮往返。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// ★ 必须有：spring-boot-test-autoconfigure 的 ObservabilityContextCustomizerFactory 对**每个**
+//   Spring Boot 测试**默认关掉指标导出**（注入 management.defaults.metrics.export.enabled=false
+//   + management.simple.metrics.export.enabled=true）——于是 PrometheusMetricsExportAutoConfiguration
+//   被 @ConditionalOnEnabledMetricsExport("prometheus") 挡在门外：没有 PrometheusMeterRegistry，
+//   也就没有 /actuator/prometheus 端点（本轮 CI 实测 404 就是这么来的，生产形态不受影响）。
+//   本类要验的正是「抓取面能不能工作」，所以用官方开关显式打开（@AutoConfigureObservability
+//   的 metrics 默认为 true，即为放行）。
+@AutoConfigureObservability
 @TestPropertySource(properties = {
         // 令牌走内联配置（文件模式的行为由 ScrapeTokenGuardTest 覆盖）
         "devops.security.scrape-token=" + ActuatorScrapeTokenHttpTest.TOKEN,
@@ -83,7 +95,7 @@ class ActuatorScrapeTokenHttpTest {
      * （本轮为此白丢了一轮往返：只看到 MeterRegistry 只有 SimpleMeterRegistry，看不到
      * 后半段的注册器/端点 Bean）。一行里按判定链顺序放全部关键事实：
      * <pre>
-     *   类在路径 → 注册器 Bean → Clock Bean → 三个 export 开关 → 端点 Bean → 已注册路径
+     *   类在路径 → 注册器 Bean → 三个 export 开关 → 端点 Bean → 已注册路径
      * </pre>
      * 任何一环断掉都能一眼定位，不必再往返一次。
      */
@@ -103,7 +115,6 @@ class ActuatorScrapeTokenHttpTest {
                 + " | registries=" + (registryNames.isEmpty() ? "无" : registryNames)
                 + " | 类在路径[prom=" + isClassPresent("io.micrometer.prometheusmetrics.PrometheusMeterRegistry")
                 + ",core=" + isClassPresent("io.prometheus.metrics.model.registry.PrometheusRegistry") + "]"
-                + " | ClockBean=" + (context.getBeanNamesForType(java.time.Clock.class).length > 0)
                 + " | export开关[prom=" + env.getProperty("management.prometheus.metrics.export.enabled")
                 + ",defaults=" + env.getProperty("management.defaults.metrics.export.enabled")
                 + ",simple=" + env.getProperty("management.simple.metrics.export.enabled") + "]"
