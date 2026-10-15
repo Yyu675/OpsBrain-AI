@@ -75,7 +75,7 @@ test.describe('告警「未建单」标注（F2 · 浏览器级）', () => {
     const link = page.locator('a.alert-title-link', { hasText: SEED_TITLE }).first()
     await expect(link).toBeVisible()
     const cell = link.locator('xpath=..')
-    const badge = cell.locator('.unticketed-badge-nonexistent')
+    const badge = cell.locator('.unticketed-badge')
     await expect(badge).toBeVisible()
     await expect(badge).toHaveText('未建单')
 
@@ -107,7 +107,7 @@ test.describe('告警「未建单」标注（F2 · 浏览器级）', () => {
       const id = String(href ?? '').split('/').pop() ?? ''
       const api = byId.get(id)
       if (!api) continue // 分页/刷新导致的错位行，跳过而不是误判
-      const hasBadge = (await links.nth(i).locator('xpath=..').locator('.unticketed-badge-nonexistent').count()) > 0
+      const hasBadge = (await links.nth(i).locator('xpath=..').locator('.unticketed-badge').count()) > 0
       expect(
         hasBadge,
         `行 ${id}（${api.title ?? ''}）徽标与后端 unticketedReason 不一致：` +
