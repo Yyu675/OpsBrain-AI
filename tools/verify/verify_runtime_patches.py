@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""批116两组补丁验收，不替代全量安全门禁，不豁免其他发现。"""
+"""批116/117补丁验收：完成组清零，Tomcat九条定向修补，不替代全量安全门禁，不豁免其他发现。"""
 import argparse
 import base64
 import hashlib
@@ -11,9 +11,18 @@ import zlib
 from sbom_runtime_probe import components
 from trivy_summary import escape
 
-VERSIONS = {"org.apache.tika": "3.2.2", "io.netty": "4.1.137.Final"}
+VERSIONS = {"org.apache.tika": "3.2.2", "io.netty": "4.1.137.Final",
+            "io.micrometer": "1.15.12", "org.apache.opennlp": "2.5.9", "org.jsoup": "1.23.2",
+            "org.apache.tomcat.embed": "10.1.57"}
+ZERO_HC_GROUPS = set(VERSIONS) - {"org.apache.tomcat.embed"}
+# 正向列出本次必须关闭的9条；不是剩余漏洞忽略表，原生报告/门禁完整保留。
+TOMCAT_REMEDIATED = {"CVE-2026-41293", "CVE-2026-43512", "CVE-2026-43515", "CVE-2026-29129",
+                     "CVE-2026-34483", "CVE-2026-34487", "CVE-2026-41284", "CVE-2026-42498", "CVE-2026-43513"}
 REQUIRED = {"org.apache.tika:tika-core", "org.apache.tika:tika-parser-pdf-module",
-            "io.netty:netty-handler", "io.netty:netty-codec-http", "io.netty:netty-codec-http2"}
+            "io.netty:netty-handler", "io.netty:netty-codec-http", "io.netty:netty-codec-http2",
+            "io.micrometer:micrometer-core", "io.micrometer:micrometer-registry-prometheus", "io.micrometer:micrometer-registry-otlp",
+            "org.apache.opennlp:opennlp-tools", "org.jsoup:jsoup",
+            "org.apache.tomcat.embed:tomcat-embed-core", "org.apache.tomcat.embed:tomcat-embed-el", "org.apache.tomcat.embed:tomcat-embed-websocket"}
 
 
 def verify(bom, experiment):
@@ -41,15 +50,21 @@ def verify(bom, experiment):
         if packaged.get((name, version, kind, classifier)) != registry[(name, version, kind, classifier)]:
             raise ValueError(f"补丁未绑定实际Boot字节：{name}:{version}:{classifier}")
         selected.append({"name": name, "version": version, "type": kind, "classifier": classifier, "sha256": registry[(name, version, kind, classifier)], "byte_matched_packaged": True})
-    target_findings = [f for f in experiment["findings"] if f.get("PkgName", "").split(":")[0] in VERSIONS
+    target_findings = [f for f in experiment["findings"] if f.get("PkgName", "").split(":")[0] in ZERO_HC_GROUPS
                        and f.get("Severity") in ("HIGH", "CRITICAL")]
+    tomcat_findings = [f for f in experiment["findings"] if f.get("PkgName", "").startswith("org.apache.tomcat.embed:")
+                      and f.get("Severity") in ("HIGH", "CRITICAL")]
+    if any(f.get("VulnerabilityID") in TOMCAT_REMEDIATED for f in tomcat_findings):
+        raise ValueError("Tomcat本次承诺修补的9条仍有残留")
     if target_findings:
-        raise ValueError("两组仍有HIGH/CRITICAL：" + json.dumps(target_findings, ensure_ascii=False))
+        raise ValueError("完成组仍有HIGH/CRITICAL：" + json.dumps(target_findings, ensure_ascii=False))
     return {"schema_version": 1, "target_groups_passed": True, "versions": VERSIONS,
             "verified_variants": sorted(selected, key=lambda v: (v["name"], v["classifier"])),
-            "verified_variants_count": len(selected), "target_hc_rows": 0, "remaining_hc_rows": len(experiment["findings"]),
+            "verified_variants_count": len(selected), "target_hc_rows": 0, "zero_hc_groups": sorted(ZERO_HC_GROUPS),
+            "partial_target_hc_rows": len(tomcat_findings),
+            "partial_targets": {"org.apache.tomcat.embed": {"required_absent_cves": sorted(TOMCAT_REMEDIATED), "remaining_findings": tomcat_findings}}, "remaining_hc_rows": len(experiment["findings"]),
             "native_gate_rc": experiment.get("native_gate_rc"), "full_security_passed": False,
-            "notice": "仅本批Tika/Netty通过；其他HC与Boot额外库覆盖仍待处置，不作为安全/灰度放行"}
+            "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup完成组清零；Tomcat仅验九条关闭，剩余发现完整保留；非整体安全/灰度放行"}
 
 
 def evidence_frames(payload):
@@ -85,11 +100,11 @@ def main():
         frames = evidence_frames(payload)
         args.json.write_bytes(payload)
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-        print("::error::两组运行时补丁验收失败：" + escape(e))
+        print("::error::运行时补丁验收失败：" + escape(e))
         return 1
     for frame in frames:
         print("::notice::运行时补丁证据压缩JSON：" + json.dumps(frame))
-    print("::notice::两组运行时补丁通过：" + escape(json.dumps({k: v for k, v in result.items() if k != "verified_variants"}, ensure_ascii=False)))
+    print("::notice::运行时补丁通过：" + escape(json.dumps({k: v for k, v in result.items() if k != "verified_variants"}, ensure_ascii=False)))
     return 0
 
 

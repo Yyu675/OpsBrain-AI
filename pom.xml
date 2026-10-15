@@ -18,9 +18,14 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- 批116：同主线可解析补丁（Tomcat候选10.1.58 Central缺构件，另批交付）；原生 SBOM 发现的传递 HIGH/CRITICAL，不改变扫描豁免。 -->
+        <!-- 批116/117：兼容维护线修补；构件供应、原生扫描和实际Boot字节均须核验。 -->
         <tika.version>3.2.2</tika.version>
         <netty.version>4.1.137.Final</netty.version>
+        <!-- 10.1.58仍未发布到Central；57实取可用，先修9条，3条剩余不豁免。 -->
+        <tomcat.version>10.1.57</tomcat.version>
+        <micrometer.version>1.15.12</micrometer.version>
+        <opennlp.version>2.5.9</opennlp.version>
+        <jsoup.version>1.23.2</jsoup.version>
         <!-- CVE-2026-22731/22733：Boot 同 3.5 线升至 3.5.12，不跨 4.x。 -->
         <!-- CVE-2026-54291/42198：JDBC 最小补丁线；覆盖 Boot 的托管版本。 -->
         <postgresql.version>42.7.12</postgresql.version>
@@ -81,6 +86,17 @@
                 <groupId>org.apache.tika</groupId>
                 <artifactId>tika-parsers-standard-package</artifactId>
                 <version>${tika.version}</version>
+            </dependency>
+            <!-- OpenNLP字典/模型加载安全补丁，不引入第三方整张BOM。 -->
+            <dependency>
+                <groupId>org.apache.opennlp</groupId>
+                <artifactId>opennlp-tools</artifactId>
+                <version>${opennlp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jsoup</groupId>
+                <artifactId>jsoup</artifactId>
+                <version>${jsoup.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.langchain4j</groupId>

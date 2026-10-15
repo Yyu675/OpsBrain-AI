@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import contextlib
 import io
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -27,9 +28,12 @@ def jar():
 
 class TestAvailability(unittest.TestCase):
     def test_POM和实际JAR都可获取才算available(self):
-        result = probe.probe("x", "a", "1", get=lambda url: (200, pom() if url.endswith(".pom") else jar()))
+        binary = jar()
+        result = probe.probe("x", "a", "1", get=lambda url: (200, pom() if url.endswith(".pom") else binary))
         self.assertEqual(result["availability"], "available")
         self.assertEqual(len(result["files"]), 2)
+        self.assertEqual(result["files"][0]["sha256"], hashlib.sha256(pom()).hexdigest())
+        self.assertEqual(result["files"][1]["sha256"], hashlib.sha256(binary).hexdigest())
         self.assertTrue(all(len(f["sha256"]) == 64 and f["bytes"] > 0 for f in result["files"]))
 
     def test_404必须保留而不是升级成功(self):
@@ -40,9 +44,16 @@ class TestAvailability(unittest.TestCase):
     def test_错误页与错坐标不能冒充供应(self):
         for body in (b"<html>404</html>", pom(version="2")):
             with self.assertRaises(ValueError):
-                probe.probe("x", "a", "1", get=lambda url: (200, body))
+                probe.probe("x", "a", "1", get=lambda url: (200, body if url.endswith(".pom") else jar()))
         with self.assertRaises(zipfile.BadZipFile):
             probe.probe("x", "a", "1", get=lambda url: (200, pom() if url.endswith(".pom") else b"html error"))
+
+    def test_空ZIP也不能冒充有效JAR(self):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w"):
+            pass
+        with self.assertRaises(ValueError):
+            probe.probe("x", "a", "1", get=lambda url: (200, pom() if url.endswith(".pom") else out.getvalue()))
 
     def test_网络和服务故障不能伪装未发布(self):
         with self.assertRaises(ValueError):
