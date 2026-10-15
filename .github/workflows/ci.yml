@@ -714,12 +714,16 @@ jobs:
         # ⚠️ 同后端腿：默认 shell 是 `bash -e {0}`，不含 pipefail，
         # tee 会把 playwright 的非零退出码吞掉——必须显式开启（2026-10-13 修正）。
         run: |
-          set -o pipefail
+          set +e
           npx playwright test 2>&1 | tee /tmp/e2e-run.log
-          # 同上：绿案也要能在沙箱侧读到「跑了多少、过多少」——
-          # e2e 的用例数正是本批 6 例红转绿的证据位。
-          grep -aE '[0-9]+ (passed|failed|flaky|skipped)' /tmp/e2e-run.log \
-            | tail -2 | sed 's/^/::notice::e2e 汇总 /' || true
+          rc=${PIPESTATUS[0]}
+          # 绿案与红案都要能在沙箱侧读到结论：作业日志在 egress 不通的域上，
+          # check-run annotations 是唯一读得到的通道。此前汇总写在 playwright 之后，
+          # 而 `bash -e` + pipefail 让**红案在汇总行之前就中断**——于是红案反而
+          # 零 annotation（run 38667020710 实测：失败却没有任何可读线索）。
+          # 现在无论红绿都先出汇总，红案带失败用例名 + 首条报错（由 ci_summary 解析）。
+          python3 ../tools/verify/ci_summary.py --kind playwright --log /tmp/e2e-run.log || rc=1
+          exit $rc
 
       - name: 失败时上传 Playwright 报告取证
         if: failure()

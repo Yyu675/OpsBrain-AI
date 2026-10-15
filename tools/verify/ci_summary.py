@@ -30,6 +30,20 @@ import sys
 MAX_DETAIL = 240
 
 
+def read_tail(path: str | None, n: int = 200_000) -> str | None:
+    """原样读尾部（**不做空白折叠**）。
+
+    与 tail() 的区别是本函数的存在理由：tail() 为了压成一行会 `split()` 再 join，
+    换行没了 —— 而 playwright 类的判据全靠行首锚点（`^  N) [chromium] › …`）。
+    第一版直接复用 tail()，于是失败清单永远解析不出来，红案被报成
+    `::notice::e2e 汇总 2 failed` 且退出码 0（本机四态自测当场抓到）。
+    """
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return f.read()[-n:]
+
+
 def clip(text: str, limit: int = MAX_DETAIL) -> str:
     text = " ".join(str(text).split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -80,16 +94,50 @@ def rbac(path: str, log: str | None) -> tuple[bool, str]:
     return (d["mismatches"] == 0), msg
 
 
-KINDS = {"closed-loop": closed_loop, "rbac": rbac}
+def playwright(path: str, log: str | None) -> tuple[bool, str]:
+    """Playwright 输出 → 一行汇总/失败清单（这一类没有 JSON 证据，直接读 stdout）。
+
+    为什么必须有它：作业日志在沙箱读不到的域上，而原来那条 `::notice::` 写在
+    `npx playwright test` 之后——`bash -e` + pipefail 下红案在汇总行之前就中断了，
+    于是**红案反而没有任何 annotation**（run 38667020710 实测：失败、零 annotation、
+    零回帖，只能靠猜）。现在无论红绿都先出汇总，红案带失败用例名与首条报错。
+    """
+    text = read_tail(log)
+    if text is None:
+        return False, "e2e 未产出日志（/tmp/e2e-run.log 缺失）——步骤在 tee 前即炸"
+
+    import re
+    names = re.findall(r'^\s*\d+\) \[\w+\] › (.+?)\s*$', text, re.M)
+    counts = re.findall(r'(\d+) (passed|failed|flaky|skipped)', text)
+    tally = "、".join(f"{n} {w}" for n, w in counts[-4:]) or "（未找到汇总行）"
+    first_err = ""
+    m = re.search(r"Error: (.+)", text)
+    if m:
+        first_err = clip(m.group(1), 300)
+
+    if names:
+        msg = f"e2e 红 {len(names)} 例（{tally}）｜用例=" + "；".join(clip(n, 90) for n in names[:4])
+        if first_err:
+            msg += f"｜首条报错={first_err}"
+        return False, msg
+    if not counts:
+        return False, f"e2e 输出无法判读（既无失败清单也无汇总行）｜尾部：{clip(text[-300:])}"
+    return True, f"e2e 汇总 {tally}"
+
+
+KINDS = {"closed-loop": closed_loop, "rbac": rbac, "playwright": playwright}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--kind", choices=sorted(KINDS), required=True)
-    ap.add_argument("--json", required=True, help="演练产出的证据文件")
+    ap.add_argument("--json", default=None, help="演练产出的证据文件（playwright 类不需要）")
     ap.add_argument("--log", default=None, help="演练 stdout 落盘文件（缺证据时取尾部）")
     args = ap.parse_args()
 
+    if args.kind != "playwright" and not args.json:
+        print("::error::--json 证据文件缺失（%s 类必须要）" % args.kind)
+        return 1
     try:
         ok, msg = KINDS[args.kind](args.json, args.log)
     except Exception as e:                      # 缺证据/结构不符都按失败处理，不静默放过
