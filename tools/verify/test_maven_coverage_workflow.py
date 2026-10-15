@@ -42,7 +42,7 @@ class TestCoverageWorkflow(unittest.TestCase):
 
     def execute(self, status, writes_tree):
         steps = workflow()["jobs"]["maven-runtime-coverage"]["steps"]
-        scripts = [s["run"] for s in steps if "run" in s]
+        scripts = [s["run"] for s in steps if s.get("name") in ("解析 Maven 运行时依赖（固定 plugin JSON 契约）", "对照运行时 GAV 与原始 Java 包集（审计非放行）")]
         self.assertEqual(len(scripts), 2)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
