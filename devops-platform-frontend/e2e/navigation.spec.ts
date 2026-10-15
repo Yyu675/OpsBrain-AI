@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 
 /**
  * 全站导航冒烟 E2E（批88 P2）
@@ -38,7 +39,7 @@ test.describe('全站导航冒烟', () => {
         if (r.status() >= 400) badResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`)
       })
 
-      await page.goto(p.path)
+      await gotoApp(page, p.path)
 
       if (p.title) {
         await expect(page.locator('.page-title', { hasText: p.title }).first()).toBeVisible({ timeout: 30_000 })
@@ -56,34 +57,34 @@ test.describe('全站导航冒烟', () => {
   }
 
   test('未匹配路由落 404 页', async ({ page }) => {
-    await page.goto('/definitely-not-a-route')
+    await gotoApp(page, '/definitely-not-a-route')
     await expect(page.locator('#app')).toContainText(/404|未找到|不存在/, { timeout: 10_000 })
   })
 
   // 2026-09-26 信息架构整合：旧路由全部重定向，分享出去的链接不能死
   test('旧路由 /trends 重定向到监控中心并保留筛选参数', async ({ page }) => {
-    await page.goto('/trends?range=7d&metric=memory.usage')
+    await gotoApp(page, '/trends?range=7d&metric=memory.usage')
     await expect(page).toHaveURL(/\/monitoring\?range=7d&metric=memory\.usage/)
     await expect(page.locator('.page-title', { hasText: '监控中心' })).toBeVisible({ timeout: 30_000 })
   })
 
   test('治理旧路由重定向到设置页对应标签', async ({ page }) => {
-    await page.goto('/model-channels')
+    await gotoApp(page, '/model-channels')
     await expect(page).toHaveURL(/\/settings\?tab=model-channels/)
 
-    await page.goto('/governance/audit-logs')
+    await gotoApp(page, '/governance/audit-logs')
     await expect(page).toHaveURL(/\/settings\?tab=audit-logs/)
   })
 
   // 2026-09-27 二次收敛：数据概览升格首页、审批/自愈合并处置中心
   test('旧路由重定向：/dashboard 与审批/自愈入口', async ({ page }) => {
-    await page.goto('/dashboard')
+    await gotoApp(page, '/dashboard')
     await expect(page).toHaveURL(/\/$/)
 
-    await page.goto('/approvals')
+    await gotoApp(page, '/approvals')
     await expect(page).toHaveURL(/\/disposal\?tab=approvals/)
 
-    await page.goto('/self-healing/tasks')
+    await gotoApp(page, '/self-healing/tasks')
     await expect(page).toHaveURL(/\/disposal\?tab=healing/)
   })
 })

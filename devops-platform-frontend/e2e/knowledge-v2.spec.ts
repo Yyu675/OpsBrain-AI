@@ -18,10 +18,11 @@
  * 一律用 getByRole('dialog', ...) 收窄，避免 strict mode violation。
  */
 import { test, expect } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 
 test.describe('知识库 V2：多知识库 + 上传', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/knowledge')
+    await gotoApp(page, '/knowledge')
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {})
   })
 

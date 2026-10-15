@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 
 /**
  * 前端边界 E2E 用例（P2-5，批 88 产物）
@@ -14,7 +15,7 @@ import { test, expect } from '@playwright/test'
 // ═══════════════════════════════════════════════════════════
 test.describe('边界：超长输入 XSS 防护', () => {
   test('搜索框粘贴 <script> 标签不被执行', async ({ page }) => {
-    await page.goto('/knowledge')
+    await gotoApp(page, '/knowledge')
     const xssPayload = '<script>alert("xss")</script>'
 
     const searchInput = page.locator('.search-input input, input[placeholder*="搜索"], [data-testid="global-search"] input')
@@ -33,7 +34,7 @@ test.describe('边界：超长输入 XSS 防护', () => {
   })
 
   test('工单标题框粘贴超长 5000 字被截断不崩溃', async ({ page }) => {
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     // 打开创建工单 Dialog
     const createBtn = page.locator('button:has-text("创建工单"), button:has-text("新建"), .create-btn')
     if (await createBtn.isVisible()) {
@@ -114,7 +115,7 @@ test.describe('边界：多 Tab 并发写工单', () => {
 // ═══════════════════════════════════════════════════════════
 test.describe('边界：断网恢复', () => {
   test('断网后显示离线提示，恢复后自动重连', async ({ page, context }) => {
-    await page.goto('/knowledge')
+    await gotoApp(page, '/knowledge')
 
     // 模拟断网
     await context.setOffline(true)
@@ -140,7 +141,7 @@ test.describe('边界：断网恢复', () => {
   })
 
   test('断网期间导航不崩溃', async ({ page, context }) => {
-    await page.goto('/dashboard')
+    await gotoApp(page, '/dashboard')
 
     // 断网
     await context.setOffline(true)

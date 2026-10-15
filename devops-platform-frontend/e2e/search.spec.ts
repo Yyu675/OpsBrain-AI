@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test'
+import { gotoApp } from './helpers/nav'
 
 test.describe('全局搜索', () => {
   test.beforeEach(async ({ page }) => {
     // 导航到受保护路由（/tickets）触发路由守卫的 restoreSession，
     // 会话恢复后 navbar 中的搜索框才会渲染（app.isAuthenticated=true）
-    await page.goto('/tickets')
+    await gotoApp(page, '/tickets')
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {})
     // 等 navbar 渲染完成（搜索框在 navbar 中，仅登录用户可见）
     await page.locator('.gsearch-input').first().waitFor({ timeout: 10_000 }).catch(() => {})
