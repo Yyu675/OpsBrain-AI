@@ -22,6 +22,21 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | `grayscale_metrics.py` | 灰度台账 §三 六行的**取数口径**（DoD「真实值班质量数」） | 见下节「灰度台账取数」。配套 `test_grayscale_metrics.py`（50 例：口径 + 取数胶水 + 退出码）+ `test_grayscale_metrics_pg.py`（7 例真迁移库/HTTP/CLI 集成）。**已进 CI**（e2e 腿第 14 步，排在 RBAC 之后，对真迁移库跑） |
 | `selftest_scrape_face.py` | 闭环演练 Z-监控面 哨兵的**自证** | 桩服务六态（正确/裸奔/凭据错/端点在但无业务指标/指标排在 4KB 之后/令牌文件缺）逐一核对判词，确认哨兵不会永远 PASS。**已进 CI**（e2e 腿，排在闭环演练之前）。2026-10-15 前是 `.local-verify/scripts/` 的本地件——沙箱重置即丢失、别人复现不了，故收进仓库 |
 
+## 工作流引用与漏洞扫描取证（批110–112）
+
+- `workflow_refs.py`：依赖 `PyYAML==6.0.3` 与已授权的 `gh`，只读 API 递归查远端/local action 与 reusable workflow。
+  tag/branch/SHA 先解析到 commit 再读取元数据；检查 composite 内层引用，404 才尝试 action.yaml，403/网络错误必须报红。
+  运行 `python3 tools/verify/test_workflow_refs.py`（17 例）；再运行 `python3 tools/verify/workflow_refs.py` 连接真实 GitHub API。
+  不执行远端代码，也不声称能检查远端 shell 中所有下载 URL；Docker 镜像引用当前要求另设校验、不会悄悄算通过。
+- `trivy_summary.py --json <报告> [--log <CLI诊断>]`：报告压为 annotations，标文件名区分第一遍 gate 与第二遍留档。
+  缺/非法报告失败，摘要不替代 Trivy 原始退出码；Secrets 不输出 Match 字段。
+  `test_trivy_summary.py` 7 例，`test_trivy_workflow.py` 4 例（实际执行工作流 gate shell，证明失败码/缺报告不能吞）。
+- 扫描工作流固定 setup commit 与工具版本，默认 HIGH/CRITICAL + ignore-unfixed，门禁原始码保留。
+  第一遍 `trivy-gate.json`、诊断日志和第二遍 `trivy-report.json` 都上传；**第二遍空报告不能盖掉第一遍发现**。
+  仅修改工作流/这些检查工具时自动 PR 真扫，日常业务 push 不额外下载漏洞库；手动/每周巡检仍保留。
+- 真扫已证明“生产 npm audit 0”不能推出整个仓安全；还会发现 Maven 依赖漏洞。
+  决策、根因、版本取舍与红→绿证据见 `docs/09-decisions/2026-10-15-漏洞扫描恢复与Java依赖补丁.md`。
+
 ## 灰度台账取数（`grayscale_metrics.py`）
 
 台账 §三 有六个数据槽位要按周填。**Week1（10-06~10-12）填不出来**，台账如实记了「不可回溯，属实际缺口」。

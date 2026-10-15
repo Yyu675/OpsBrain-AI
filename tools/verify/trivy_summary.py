@@ -57,7 +57,7 @@ def main():
         print(f"::error::Trivy 报告缺失/非法：{escape(e)}")
         return 1
     for line in lines:
-        print(f"::notice::{escape(line)}")
+        print(f"::notice::{escape(args.json.name)} | {escape(line)}")
     return 0
 
 
