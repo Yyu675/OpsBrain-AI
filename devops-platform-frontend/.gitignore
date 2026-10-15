@@ -31,3 +31,10 @@ playwright-report/
 
 # Playwright 走查截图产物（visual-dark.spec.ts 等产出，不入库）
 e2e/.artifacts/
+
+# 只认 package-lock.json 一份锁文件（安装路径全是 npm：CI 两处 `npm ci`、Dockerfile `npm ci`）。
+# 历史上项目用过 pnpm，迁移到 npm 时留下了 pnpm-lock.yaml：它 4 个声明依赖缺失、
+# 21 个版本与实装不符，且**落在漏洞扫描的扫描面内**——trivy 会把它也当依赖真相解析，
+# 于是可能报出「我们根本没装的那个版本」的漏洞。2026-10-15 移除。
+# 若将来真要改用 pnpm，删掉本行并重新生成，别两份并存。
+pnpm-lock.yaml
