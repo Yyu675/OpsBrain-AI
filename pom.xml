@@ -18,10 +18,9 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- 批116：同主线补丁；原生 SBOM 发现的传递 HIGH/CRITICAL，不改变扫描豁免。 -->
+        <!-- 批116：同主线可解析补丁（Tomcat候选10.1.58 Central缺构件，另批交付）；原生 SBOM 发现的传递 HIGH/CRITICAL，不改变扫描豁免。 -->
         <tika.version>3.2.2</tika.version>
         <netty.version>4.1.137.Final</netty.version>
-        <tomcat.version>10.1.58</tomcat.version>
         <!-- CVE-2026-22731/22733：Boot 同 3.5 线升至 3.5.12，不跨 4.x。 -->
         <!-- CVE-2026-54291/42198：JDBC 最小补丁线；覆盖 Boot 的托管版本。 -->
         <postgresql.version>42.7.12</postgresql.version>

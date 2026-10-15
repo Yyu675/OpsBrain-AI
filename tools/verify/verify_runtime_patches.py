@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""批116三组补丁验收，不替代全量安全门禁，不豁免其他发现。"""
+"""批116两组补丁验收，不替代全量安全门禁，不豁免其他发现。"""
 import argparse
 import hashlib
 import json
@@ -9,10 +9,9 @@ import sys
 from sbom_runtime_probe import components
 from trivy_summary import escape
 
-VERSIONS = {"org.apache.tika": "3.2.2", "io.netty": "4.1.137.Final", "org.apache.tomcat.embed": "10.1.58"}
+VERSIONS = {"org.apache.tika": "3.2.2", "io.netty": "4.1.137.Final"}
 REQUIRED = {"org.apache.tika:tika-core", "org.apache.tika:tika-parser-pdf-module",
-            "io.netty:netty-handler", "io.netty:netty-codec-http", "io.netty:netty-codec-http2",
-            "org.apache.tomcat.embed:tomcat-embed-core", "org.apache.tomcat.embed:tomcat-embed-websocket"}
+            "io.netty:netty-handler", "io.netty:netty-codec-http", "io.netty:netty-codec-http2"}
 
 
 def verify(bom, experiment):
@@ -43,12 +42,12 @@ def verify(bom, experiment):
     target_findings = [f for f in experiment["findings"] if f.get("PkgName", "").split(":")[0] in VERSIONS
                        and f.get("Severity") in ("HIGH", "CRITICAL")]
     if target_findings:
-        raise ValueError("三组仍有HIGH/CRITICAL：" + json.dumps(target_findings, ensure_ascii=False))
+        raise ValueError("两组仍有HIGH/CRITICAL：" + json.dumps(target_findings, ensure_ascii=False))
     return {"schema_version": 1, "target_groups_passed": True, "versions": VERSIONS,
             "verified_variants": sorted(selected, key=lambda v: (v["name"], v["classifier"])),
             "target_hc_rows": 0, "remaining_hc_rows": len(experiment["findings"]),
             "native_gate_rc": experiment.get("native_gate_rc"), "full_security_passed": False,
-            "notice": "仅本批Tika/Netty/Tomcat通过；其他HC与Boot额外库覆盖仍待处置，不作为安全/灰度放行"}
+            "notice": "仅本批Tika/Netty通过；其他HC与Boot额外库覆盖仍待处置，不作为安全/灰度放行"}
 
 
 def main():
@@ -73,9 +72,9 @@ def main():
         result["sha256"] = {"sbom": hashlib.sha256(source).hexdigest(), "experiment": hashlib.sha256(probe).hexdigest()}
         args.json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-        print("::error::三组运行时补丁验收失败：" + escape(e))
+        print("::error::两组运行时补丁验收失败：" + escape(e))
         return 1
-    print("::notice::三组运行时补丁通过：" + escape(json.dumps({k: v for k, v in result.items() if k != "verified_variants"}, ensure_ascii=False)))
+    print("::notice::两组运行时补丁通过：" + escape(json.dumps({k: v for k, v in result.items() if k != "verified_variants"}, ensure_ascii=False)))
     return 0
 
 
