@@ -130,6 +130,7 @@ public class WebConfig implements WebMvcConfigurer {
         // /actuator/health 放行给 K8s 探针、抓取令牌只开 /actuator/prometheus 一扇门、
         // 其余（health 详情、info、beans…）需登录会话，否则 401。
         // 保留这段说明而不是静默删除：下一个读到本文件的人不该再踩同一个坑。
+    }
 
     /**
      * 允许跨域的来源（A6/D3）。
