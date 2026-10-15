@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import contextlib
+import base64
+import zlib
 import copy
 import hashlib
 import io
@@ -149,6 +151,24 @@ class TestCoverage(unittest.TestCase):
             result = json.loads((root / "audit.json").read_text())
             for name, file in (("tree", "tree.json"), ("report", "report.json"), ("pom", "pom.xml")):
                 self.assertEqual(result["sha256"][name], hashlib.sha256((root / file).read_bytes()).hexdigest())
+
+    def test_长审计分片可完整恢复且校验实际文件哈希(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.prepare(root)
+            model = node("app", children=[node(hashlib.sha256(str(i).encode()).hexdigest()) for i in range(120)])
+            (root / "tree.json").write_text(json.dumps(model))
+            rc, output = self.invoke(root)
+            self.assertEqual(rc, 0)
+            lines = [s for s in output.splitlines() if "审计压缩JSON：" in s]
+            self.assertGreater(len(lines), 1)
+            self.assertTrue(all(len(s.encode()) < 4000 for s in lines))
+            frames = [json.loads(s.split("审计压缩JSON：", 1)[1]) for s in lines]
+            self.assertEqual([s["part"] for s in frames], list(range(1, len(frames) + 1)))
+            restored = zlib.decompress(base64.b64decode("".join(s["data"] for s in frames)))
+            self.assertEqual(restored, (root / "audit.json").read_bytes())
+            self.assertTrue(all(s["sha256"] == hashlib.sha256(restored).hexdigest() for s in frames))
+            self.assertEqual(len(json.loads(restored)["missing"]), 120)
 
     def test_缺输入或坏JSON清除旧绿证据且失败(self):
         for missing in (False, True):

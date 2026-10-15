@@ -5,6 +5,8 @@
 合法差异留 warning + JSON，输入/工具错误失败；--strict 可用于反例测试或未来门禁。
 """
 import argparse
+import base64
+import zlib
 import hashlib
 import json
 from pathlib import Path
@@ -138,9 +140,17 @@ def main():
           f"status={result['status']}，审计差异不替代漏洞门禁；checkout={args.checkout_sha}")
     fingerprint = {"checkout_sha": args.checkout_sha, "sha256": result["sha256"], "project": result["project"]}
     print(f"::notice::Maven 覆盖审计指纹：{escape(json.dumps(fingerprint, ensure_ascii=False))}")
-    full_diff = json.dumps({k: result[k] for k in ("missing", "extra", "version_mismatches")}, ensure_ascii=False)
-    if len(full_diff.encode()) <= 48000:
-        print(f"::notice::Maven 覆盖差异JSON：{escape(full_diff)}")
+    # GitHub 实测单条 annotation 截断到约 4KB。完整审计压缩分片，不能把截断 JSON 当证据。
+    payload = args.json.read_bytes()
+    encoded = base64.b64encode(zlib.compress(payload)).decode("ascii")
+    chunks = [encoded[i:i + 2700] for i in range(0, len(encoded), 2700)]
+    if len(chunks) <= 6:  # 每步 notice 配额留余量；超大件仍以 artifact 为准。
+        for i, chunk in enumerate(chunks, 1):
+            frame = {"part": i, "parts": len(chunks), "codec": "zlib+base64",
+                     "sha256": hashlib.sha256(payload).hexdigest(), "data": chunk}
+            print(f"::notice::Maven 覆盖审计压缩JSON：{json.dumps(frame)}")
+    else:
+        print("::notice::Maven 覆盖审计过大，完整 JSON 仅见 artifact，未声称注解已包含全量")
     if not result["coverage_complete"]:
         details = {"missing_first_10": result["missing"][:10], "version_mismatches_first_5": result["version_mismatches"][:5]}
         print(f"::warning::Maven 覆盖差异（全量见 artifact）：{escape(json.dumps(details, ensure_ascii=False))}")

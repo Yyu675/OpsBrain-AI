@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-16",
+  "run": 38781339101,
+  "head": "1119e9ccd9fb9eee14e305d9869e955e3f063789",
+  "audit_job": 116582194618,
+  "method": "Check annotations：计数与指纹；非声称已下载原始 artifact",
+  "messages": [
+    "Maven 覆盖差异（全量见 artifact）：{\"missing_first_10\": [{\"name\": \"ch.qos.logback:logback-classic\", \"version\": \"1.5.32\"}, {\"name\": \"ch.qos.logback:logback-core\", \"version\": \"1.5.32\"}, {\"name\": \"cn.dev33:sa-token-core\", \"version\": \"1.44.0\"}, {\"name\": \"cn.dev33:sa-token-jackson\", \"version\": \"1.44.0\"}, {\"name\": \"cn.dev33:sa-token-jakarta-servlet\", \"version\": \"1.44.0\"}, {\"name\": \"cn.dev33:sa-token-spring-boot-autoconfig\", \"version\": \"1.44.0\"}, {\"name\": \"com.adobe.xmp:xmpcore\", \"version\": \"6.1.11\"}, {\"name\": \"com.azure:azure-ai-openai\", \"version\": \"1.0.0-beta.16\"}, {\"name\": \"com.azure:azure-core\", \"version\": \"1.55.3\"}, {\"name\": \"com.azure:azure-core-http-netty\", \"version\": \"1.15.11\"}], \"version_mismatches_first_5\": []}",
+    "Maven 覆盖审计指纹：{\"checkout_sha\": \"5b626504d3392b8e3b3c3c75f1414305ee227346\", \"sha256\": {\"tree\": \"4bc302d648b5415e5b6bd566229033e05ec15879c4f5c734a42de470625d42ec\", \"report\": \"b7034b22fb80272155d3f2836e669f7abefa2de7c6bebfb00da56c6102c14dab\", \"pom\": \"ae8a701e41740f3b1095d7616ccdefef421fe4ea6add15fe863c36c617b099b8\"}, \"project\": {\"name\": \"cn.bgyueyu:devops-platform-backend\", \"version\": \"0.0.1-SNAPSHOT\"}}",
+    "Maven runtime GAV 覆盖：{\"runtime_gavs\": 293, \"scanned_gavs\": 32, \"matched_gavs\": 32, \"missing_gavs\": 261, \"extra_gavs\": 0, \"runtime_variants\": 298}；status=incomplete，审计差异不替代漏洞门禁；checkout=5b626504d3392b8e3b3c3c75f1414305ee227346"
+  ],
+  "truncation": "首版单条完整差异JSON注解被截断，长度4086字符，无法解析；该条不作为全量差异证据。后续改压缩分片+SHA256校验，最终HEAD结果另附。",
+  "counts": {
+    "runtime_gavs": 293,
+    "scanned_gavs": 32,
+    "matched_gavs": 32,
+    "missing_gavs": 261,
+    "extra_gavs": 0,
+    "runtime_variants": 298
+  },
+  "status": "incomplete",
+  "decision": "审计执行成功不等于覆盖完整；不能据首扫0 HIGH/CRITICAL认定运行时安全。"
+}
