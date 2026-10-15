@@ -708,13 +708,20 @@ jobs:
         run: |
           set -o pipefail
           git fetch origin main
-          # prev 取哪个版本？不能想当然取 origin/main：
-          #   · 在 main 上，origin/main == HEAD，同版自切毫无意义（PR #3 合并后首跑就红了）；
-          #   · 在分支上，若本批只改脚本/CI/文档，origin/main 与 HEAD 的**构建物完全相同**
-          #     （实测 src/+pom 差异 0 文件），照样演不出两版。
-          # 故取「本轮工作线之前的那一版」＝ merge-base(origin/main, HEAD)；在 main 上它等于 HEAD，再退一格取 HEAD^。
-          PREV_REF=$(git merge-base origin/main HEAD)
-          [ "$PREV_REF" = "$(git rev-parse HEAD)" ] && PREV_REF=HEAD^
+          # prev 取哪个版本？两个坑都踩过了：
+          #   1) 不能无条件用 main 的 tip——在 main 上它就是 HEAD，同版自切（PR #3 合并后首跑就红）；
+          #   2) **checkout@v4 是浅克隆（fetch-depth=1）**：`origin/main` 这个 ref 根本不存在、
+          #      `git merge-base` 与 `HEAD^` 都 fatal（本机浅克隆实测）。所以只能用 FETCH_HEAD，
+          #      要拿它的父提交必须先 --deepen。
+          git fetch --deepen=2 origin main 2>/dev/null || true
+          if [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ]; then
+            PREV_REF=FETCH_HEAD^     # 就在 main 上：上一版 = main 的父提交
+          else
+            PREV_REF=FETCH_HEAD      # 在分支上：main 的 tip 就是「上一版」
+          fi
+          # 兜底：深克隆失败/父提交拿不到时退回 FETCH_HEAD——宁可「身份不可证」（脚本会响亮警告），
+          # 也不要让这一步因为取不到 ref 而整步红。
+          git rev-parse --verify "$PREV_REF^{commit}" >/dev/null 2>&1 || PREV_REF=FETCH_HEAD
           echo "prev=$PREV_REF（$(git rev-parse --short "$PREV_REF")） cur=HEAD（$(git rev-parse --short HEAD)）"
           git worktree add /tmp/prev "$PREV_REF"
           (cd /tmp/prev && ./mvnw -B -ntp -DskipTests compile 2>&1 | tail -3)
