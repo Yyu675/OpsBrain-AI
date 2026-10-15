@@ -56,42 +56,53 @@ test.describe('边界：超长输入 XSS 防护', () => {
 // ═══════════════════════════════════════════════════════════
 test.describe('边界：多 Tab 并发写工单', () => {
   test('两窗口同时编辑同一工单 → 第二个提交应有冲突提示', async ({ browser }) => {
-    const ctx1 = await browser.newContext()
-    const ctx2 = await browser.newContext()
+    // ── 为什么必须显式带 storageState（2026-10-15 定案） ──────────────
+    // `browser.newContext()` **不继承** playwright.config.ts 里 chromium 项目的
+    // storageState（那是 `context` fixture 才注入的，见 playwright/lib/index.js 的
+    // `browser.newContext({ ...videoOptions, ...options })`）。裸建的上下文是未登录的，
+    // 而 /tickets 没有 meta.public → 守卫会 `await promptLogin(...)` 弹一个
+    // **没人点**的模态，随后按「初始导航无处可留」回落首页——这次客户端跳转与还在
+    // 进行中的 goto 抢跑，就报 net::ERR_ABORTED（CI 上这条用例偶发红的那一例）。
+    // 也就是说：红只是表象，真正的毛病是这个用例根本没在「两个已登录窗口」上跑。
+    const authState = 'e2e/.auth/admin.json'
+    const ctx1 = await browser.newContext({ storageState: authState })
+    const ctx2 = await browser.newContext({ storageState: authState })
     const page1 = await ctx1.newPage()
     const page2 = await ctx2.newPage()
 
-    // 先登录
-    await page1.goto('/tickets')
-    await page2.goto('/tickets')
+    // domcontentloaded：本应用挂载即建 SSE/WebSocket 长连接，'load' 可能一直不触发
+    // （同款说明见 e2e/auth.setup.ts）
+    await page1.goto('/tickets', { waitUntil: 'domcontentloaded' })
+    await page2.goto('/tickets', { waitUntil: 'domcontentloaded' })
 
-    // 进入同一个工单详情
+    // 进入同一个工单详情。硬断言而非 if：e2e 腿第 10 步已灌入常驻工单，
+    // 链接不可见就是真坏了；用 if 包住的话这个用例会静默退化成「只断言 body 可见」的空壳。
     const ticketLink1 = page1.locator('a[href*="/tickets/"]').first()
-    if (await ticketLink1.isVisible()) {
-      const href = await ticketLink1.getAttribute('href') || ''
-      const ticketId = href.split('/').pop()
+    await expect(ticketLink1).toBeVisible()
+    const href = (await ticketLink1.getAttribute('href')) || ''
+    const ticketId = href.split('/').pop()
+    expect(ticketId).toBeTruthy()
 
-      await page1.goto(`/tickets/${ticketId}`)
-      await page2.goto(`/tickets/${ticketId}`)
+    await page1.goto(`/tickets/${ticketId}`, { waitUntil: 'domcontentloaded' })
+    await page2.goto(`/tickets/${ticketId}`, { waitUntil: 'domcontentloaded' })
 
-      // 窗口1 编辑
-      await page1.waitForTimeout(1000)
-      const editBtn1 = page1.locator('button:has-text("编辑"), button:has-text("回复"), .reply-btn').first()
-      if (await editBtn1.isVisible()) {
-        await editBtn1.click()
-      }
-
-      // 窗口2 也尝试编辑
-      await page2.waitForTimeout(500)
-      const editBtn2 = page2.locator('button:has-text("编辑"), button:has-text("回复"), .reply-btn').first()
-      if (await editBtn2.isVisible()) {
-        await editBtn2.click()
-      }
-
-      // 验收：两窗口都不该崩溃
-      await expect(page1.locator('body')).toBeVisible()
-      await expect(page2.locator('body')).toBeVisible()
+    // 窗口1 编辑
+    await page1.waitForTimeout(1000)
+    const editBtn1 = page1.locator('button:has-text("编辑"), button:has-text("回复"), .reply-btn').first()
+    if (await editBtn1.isVisible()) {
+      await editBtn1.click()
     }
+
+    // 窗口2 也尝试编辑
+    await page2.waitForTimeout(500)
+    const editBtn2 = page2.locator('button:has-text("编辑"), button:has-text("回复"), .reply-btn').first()
+    if (await editBtn2.isVisible()) {
+      await editBtn2.click()
+    }
+
+    // 验收：两窗口都不该崩溃
+    await expect(page1.locator('body')).toBeVisible()
+    await expect(page2.locator('body')).toBeVisible()
 
     await ctx1.close()
     await ctx2.close()
