@@ -27,7 +27,9 @@ export default defineConfig({
     // 2 fork 钉死（本机 16G 满载 + 生产栈/浏览器/dev 后端并行实测：默认/3 fork
     // 出现 worker 被 OOM 杀（22 文件团灭）、2 fork 全量稳绿，代价约 +1min）。
     maxWorkers: 2,
-    include: ['src/**/*.{test,spec}.ts'],
+    // e2e/helpers 下的 *.test.ts 是**辅助件的单测**（vitest 跑，不启浏览器）：
+    // 登录诊断的失败分支在 CI 的 e2e 腿里永远走不到，只能这样才证得实。
+    include: ['src/**/*.{test,spec}.ts', 'e2e/helpers/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

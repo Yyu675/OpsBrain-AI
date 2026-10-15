@@ -1,4 +1,6 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
+
+import { loginViaForm } from './helpers/login'
 
 /**
  * 角色权限矩阵走查（R0-3）
@@ -15,15 +17,7 @@ import { test, expect, type Page } from '@playwright/test'
  * 本套件断言的是**前端防线**；后端补齐 viewer 守卫前不要据此以为服务端也拦了。
  */
 
-const loginAs = async (page: Page, username: string, password: string) => {
-  await page.goto('/login', { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => localStorage.clear())
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.locator('input[placeholder="用户名"]').fill(username)
-  await page.locator('input[placeholder="密码"]').fill(password)
-  await page.locator('button[type="submit"].login-btn').click()
-  await expect(page).toHaveURL(/localhost:5173\/$/, { timeout: 15_000 })
-}
+const loginAs = loginViaForm
 
 test.describe('角色权限矩阵', () => {
   test.describe('operator（OPS 运维工程师）', () => {

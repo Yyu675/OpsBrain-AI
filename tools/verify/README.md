@@ -18,6 +18,7 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | `closed_loop_drill.py` | 六条核心链路的端到端契约 | 见下节「业务闭环实弹」 |
 | `rbac_walkthrough.py` | `OpsWriteGuard` + 类级 RBAC 门控 | 见下节「权限矩阵实弹」 |
 | `monitoring_audit.py` | 指标名 / 规则 / 看板 / 抓取面四方对账 | 见下节「监控面静态对账」 |
+| `ci_summary.py` | 演练证据 JSON → 一行 CI 通知 | 见下节「结论怎么变成可读证据」 |
 | `selftest_scrape_face.py`（本地件，见 `.local-verify/scripts/`） | 闭环演练的 Z-监控面 判据自测 | 用桩服务模拟「正确/裸奔/凭据错/文件缺」四种后端，确认这个哨兵本身不会永远 PASS |
 
 ## 业务闭环实弹（`closed_loop_drill.py`）
@@ -73,12 +74,29 @@ python3 tools/verify/rbac_walkthrough.py --base http://localhost:8088/ai \
     --account admin:admin123:ADMIN [--account ops:<pwd>:OPS] [--account viewer:<pwd>:VIEWER] [--json /tmp/rbac.json]
 ```
 
+## 结论怎么变成可读证据（`ci_summary.py`）
+
+托管 runner 的作业日志归档在 azure blob 域，开发沙箱 egress 不通
+（`gh run view --log` 与 artifact 下载都是 EOF，实测）——**绿案的结论本来无处可读**，
+只能靠「红案回帖」。`ci_summary.py` 把演练证据 JSON 压成一行 workflow 命令
+（`::notice::` / `::error::`），落成 check-run annotations，
+`gh api repos/.../check-runs/<id>/annotations` 即可读回。
+
+```bash
+python3 tools/verify/ci_summary.py --kind closed-loop --json /tmp/closed-loop.json --log /tmp/closed-loop.log
+python3 tools/verify/ci_summary.py --kind rbac        --json /tmp/rbac.json        --log /tmp/rbac.log
+# 退出码：0=证据显示全过；1=有失败**或缺证据**（缺证据按失败处理——静默跳过比红更坏）
+```
+
+CI 侧接在 `.github/workflows/ci.yml` 的 e2e 腿：演练步与走查步各跑一次，
+失败行会带断点（`[阶段]跳名: 现场`），不必翻日志就知道断在哪。
+
 ## 发布回退实弹（`scripts/rollback-drill.sh`）
 
 DoD#6 的「后端版本回退 <5min」：两种模式（沙箱无 Docker 时用 `artifact`，两个发布目录切换；
 生产用 `docker`，双 tag + `compose up -d`）。版本身份**用契约差异证伪**（新版独有端点在新版必须存在、
 旧版必须不存在）——只看 HTTP 200 会误判：旧版也有通配路由，两版都回 200。
-| `closed_loop_drill.py` | 六条核心链路的端到端契约 | 真告警 → 归一化 → 建单 → 双向溯源 → 诊断（四路证据 + 充分度语义）→ 处置五连 → 恢复穿透 → 复盘沉淀；另含观察窗降噪与历史回放两个场景。41 跳硬闸，逐跳点名。方案说明见 `docs/09-operations/业务闭环能力验证方案.md` |
+| `closed_loop_drill.py` | 六条核心链路的端到端契约 | 真告警 → 归一化 → 建单 → 双向溯源 → 诊断（四路证据 + 充分度语义）→ 处置五连 → 恢复穿透 → 复盘沉淀；另含观察窗降噪与历史回放两个场景。44 跳逐跳点名（CI 本轮 PASS 42/44、硬失败 0）。方案说明见 `docs/09-operations/业务闭环能力验证方案.md` |
 | `rbac_walkthrough.py` | `OPS 写守卫 / ADMIN 专有面` 的实弹口径 | 14 个探针面 × N 账号（默认 ADMIN/OPS/VIEWER），判据**取自源码执法点**而非"跑出来什么抄什么"，不一致即红并逐行点名（DoD#7 第二列） |
 
 **相关脚本**（住在别处，但与上面几件是一套验证面）：`scripts/rollback-drill.sh`（DoD#6 版本回退实弹，

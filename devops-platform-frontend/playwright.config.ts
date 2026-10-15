@@ -22,7 +22,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: ['**/.auth/**'],
+  // helpers/ 放的是公用登录等辅助件（其单测由 vitest 跑，见 vitest.config.ts 的 include）——
+  // 默认 testMatch 会把 *.test.ts 也收进来当 e2e 用例，故显式排除。
+  testIgnore: ['**/.auth/**', '**/helpers/**'],
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false, // 共享同一后端与登录态，串行避免数据竞争
