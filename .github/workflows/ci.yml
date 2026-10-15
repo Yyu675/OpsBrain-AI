@@ -18,7 +18,7 @@ concurrency:
 jobs:
 
   workflow-refs:
-    name: 工作流依赖可解析（防「钉了不存在的 action 版本」）
+    name: 工作流自检（依赖可解析 + schedule 哨兵心跳）
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -50,6 +50,68 @@ jobs:
             fi
           done
           echo "共校验 $(echo "$refs" | wc -l) 个 action 引用"
+          exit $fail
+
+      - name: schedule 型工作流心跳检查（哨兵还活着吗）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # 为什么要有这一闸（批102 的教训）：vulnerability-scan.yml 因 action 版本钉错，
+          # 连续 5 周在 Set up job 阶段就失败、一次都没真扫过；而它只跑 schedule——
+          # **只跑 schedule 的门禁，它的红不在任何人日常视野里**。故把「哨兵还活着吗」
+          # 搬进 push 门禁来问。
+          #
+          # 分寸：漏洞扫描发现 HIGH/CRITICAL 时本就 exit-code=1（红可能是**真发现**），
+          # 所以「上次红」不能一律判死；只有**失败在 Set up job**（根本没跑起来）才算哑哨兵。
+          BASELINE=.github/workflow-heartbeat-baseline.json
+          fail=0
+          sched=$(grep -rlE '^[[:space:]]*schedule:' .github/workflows || true)
+          if [ -z "$sched" ]; then
+            echo "没有 schedule 型工作流，本闸无需检查"
+            exit 0
+          fi
+          for f in $sched; do
+            name=$(basename "$f")
+            # 各 workflow 可用注释声明自己的最大容忍间隔（默认 10 天）
+            max_age=$(sed -nE 's/.*heartbeat-max-age-days:[[:space:]]*([0-9]+).*/\1/p' "$f" | head -1)
+            max_age=${max_age:-10}
+
+            json=$(gh run list --workflow "$name" --limit 1 --json databaseId,conclusion,createdAt 2>/dev/null || echo '[]')
+            if [ "$(echo "$json" | jq 'length')" = "0" ]; then
+              echo "::error::schedule 型工作流 $name 从未运行过——等于哑哨兵（查 cron、默认分支、文件是否真落到 main）"
+              fail=1
+              continue
+            fi
+            rid=$(echo "$json" | jq -r '.[0].databaseId')
+            concl=$(echo "$json" | jq -r '.[0].conclusion')
+            created=$(echo "$json" | jq -r '.[0].createdAt')
+            age_days=$(( ( $(date +%s) - $(date -d "$created" +%s) ) / 86400 ))
+
+            # 已知欠账：同一 run 已登记在案就只警告（棘轮——老账认了，新账不许再欠）
+            known=""
+            if [ -f "$BASELINE" ]; then
+              known=$(jq -r --arg k "$name" --arg r "$rid" \
+                'if (.[$k] != null) and ((.[$k].run_id|tostring) == $r) then .[$k].reason else "" end' "$BASELINE")
+            fi
+
+            if [ "$age_days" -gt "$max_age" ]; then
+              msg="schedule 型工作流 $name 已 ${age_days} 天没跑（容忍 ${max_age} 天）——哨兵可能已停摆"
+              if [ -n "$known" ]; then echo "::warning::$msg（已知欠账：$known）"; else echo "::error::$msg"; fail=1; fi
+            fi
+
+            if [ "$concl" = "failure" ]; then
+              badstep=$(gh run view "$rid" --json jobs --jq '[.jobs[].steps[]|select(.conclusion=="failure")|.name]|join(",")' 2>/dev/null || echo "")
+              if echo "$badstep" | grep -qi "set up job"; then
+                msg="$name 上次运行（$rid，$created）失败在「$badstep」= 根本没跑起来，是哑哨兵"
+                if [ -n "$known" ]; then echo "::warning::$msg（已知欠账：$known）"; else echo "::error::$msg"; fail=1; fi
+              else
+                echo "::warning::$name 上次运行（$rid，$created）失败于「$badstep」——可能是真发现（漏洞扫描发现 HIGH/CRITICAL 即 exit 1），请人工看一眼，别当噪声"
+              fi
+            else
+              echo "ok   $name：上次 $concl（$created，${age_days} 天前，容忍 ${max_age} 天）"
+            fi
+          done
           exit $fail
   backend:
     name: 后端 · 编译与测试
