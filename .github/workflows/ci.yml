@@ -708,14 +708,13 @@ jobs:
         run: |
           set -o pipefail
           git fetch origin main
-          # prev 取哪个版本？在分支上 origin/main 就是「上一版」；**合并到 main 之后二者同版**，
-          # 拿它当 prev 等于自演空戏——首次合并后跑就红了（脚本会当场拒演）。
-          # 故在 main 上回退一格取 HEAD^：那才是真正的上一版。
-          if [ "$(git rev-parse origin/main)" = "$(git rev-parse HEAD)" ]; then
-            PREV_REF=HEAD^
-          else
-            PREV_REF=origin/main
-          fi
+          # prev 取哪个版本？不能想当然取 origin/main：
+          #   · 在 main 上，origin/main == HEAD，同版自切毫无意义（PR #3 合并后首跑就红了）；
+          #   · 在分支上，若本批只改脚本/CI/文档，origin/main 与 HEAD 的**构建物完全相同**
+          #     （实测 src/+pom 差异 0 文件），照样演不出两版。
+          # 故取「本轮工作线之前的那一版」＝ merge-base(origin/main, HEAD)；在 main 上它等于 HEAD，再退一格取 HEAD^。
+          PREV_REF=$(git merge-base origin/main HEAD)
+          [ "$PREV_REF" = "$(git rev-parse HEAD)" ] && PREV_REF=HEAD^
           echo "prev=$PREV_REF（$(git rev-parse --short "$PREV_REF")） cur=HEAD（$(git rev-parse --short HEAD)）"
           git worktree add /tmp/prev "$PREV_REF"
           (cd /tmp/prev && ./mvnw -B -ntp -DskipTests compile 2>&1 | tail -3)
@@ -728,7 +727,7 @@ jobs:
           rc=${PIPESTATUS[0]}
           # 结论压成 annotation（沙箱读不到作业日志，见 tools/verify/ci_summary.py 的由来）。
           # 先去 ANSI 色码：脚本输出带颜色，落到 annotation 里会变成 ^[[0;32m 这种乱码。
-          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/rollback-drill.log | grep -aE "回滚耗时|构建物指纹|两版构建物清单完全一致" \
+          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/rollback-drill.log | grep -aE "回滚耗时|构建物指纹|指纹相同|无法证明" \
             | sed "s/^/::$( [ $rc -eq 0 ] && echo notice || echo error )::/" || true
           git worktree remove /tmp/prev --force || true
           exit $rc

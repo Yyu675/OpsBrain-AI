@@ -164,8 +164,19 @@ if [ "$MODE" = "artifact" ]; then
   [ "$PREV" != "$CUR" ] || die "--prev 与 --cur 指向同一目录，演的不是两版本"
   FP_PREV=$(build_fingerprint "$PREV"); FP_CUR=$(build_fingerprint "$CUR")
   echo "  构建物指纹 prev=$FP_PREV cur=$FP_CUR"
-  [ "$FP_PREV" != "$FP_CUR" ] || die "两版构建物清单完全一致（指纹 $FP_CUR）→ 回退演练无意义。若在 main 上跑，prev 应取 HEAD^ 而非 origin/main（合并后二者同版）"
-  ok "前置：两版构建物指纹不同 → 确有两个不同版本可切"
+  SAME_BUILD=0
+  if [ "$FP_PREV" = "$FP_CUR" ]; then
+    # 不 die：改脚本/CI/文档的提交**不产生新的构建物**，两版指纹本就相同。
+    # 这种情况「切到了另一版」无法证明，但 DoD#6 的**时间与健康**判据照样可测（切换→重启→探活）。
+    # 关键是别静默：每次都在 annotation 里点名，免得它变成一条永远在放水的闸。
+    SAME_BUILD=1
+    bad "两版构建物指纹相同（$FP_CUR）→ 本轮**无法证明**切到了另一版"
+    info "常见原因：本次改动不涉及编译产物（脚本/CI/文档）。要证身份需两个不同构建；"
+    info "若 prev 取的是 origin/main 而当前就在 main 上，应改取 HEAD^（合并后二者同版）。"
+    info "仍执行切换/重启/探活/计时（DoD#6 的时间与健康判据不受影响）。"
+  else
+    ok "前置：两版构建物指纹不同 → 确有两个不同版本可切"
+  fi
 
   info "0) 清场并启动当前版本（v_cur）"
   stop_app
@@ -214,7 +225,11 @@ if [ "$MODE" = "artifact" ]; then
   echo
   echo "=== 演练结论 ==="
   if [ "$ROLL_S" -lt "$LIMIT_SECONDS" ]; then
-    echo -e "  ${GREEN}回滚耗时 ${ROLL_S}s < ${LIMIT_SECONDS}s —— DoD#6「后端版本回退 <5min」判据满足${NC}"
+    if [ "$SAME_BUILD" = "1" ]; then
+      echo -e "  ${YELLOW}回滚耗时 ${ROLL_S}s < ${LIMIT_SECONDS}s —— 时间/健康判据满足，但两版构建物相同、版本身份本轮未证${NC}"
+    else
+      echo -e "  ${GREEN}回滚耗时 ${ROLL_S}s < ${LIMIT_SECONDS}s —— DoD#6「后端版本回退 <5min」判据满足${NC}"
+    fi
     exit 0
   fi
   echo -e "  ${RED}回滚耗时 ${ROLL_S}s ≥ ${LIMIT_SECONDS}s —— 判据不满足${NC}"
