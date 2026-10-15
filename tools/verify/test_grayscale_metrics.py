@@ -227,14 +227,18 @@ class TestCollectGlue(unittest.TestCase):
     def test_取数器三个出口都返三元组(self):
         """首版崩溃的根因：q() 返二元组，调用方按三元组解包。"""
         self.assertEqual(len(grayscale_metrics.Taker(None, None, "b", None).q("select 1")), 3)
-        # psql 指向必然失败的可执行文件 → 走 returncode != 0 出口
-        self.assertEqual(len(grayscale_metrics.Taker("/usr/bin/false", "postgresql://x", "b", None)
-                             .q("select 1")), 3)
-        # 走成功出口（/bin/echo 会把参数打回来）
-        out = grayscale_metrics.Taker("/bin/echo", "postgresql://x", "b", None).q("select 1")
-        self.assertEqual(len(out), 3)
-        self.assertTrue(out[0])
-        self.assertIsNone(out[2])
+        # 不依赖 /usr/bin/false 或 /bin/echo：单测本身也要能在 Windows 跑。
+        t = grayscale_metrics.Taker("psql.exe", "postgresql://x", "b", None)
+        with mock.patch.object(grayscale_metrics.subprocess, "run") as run:
+            run.return_value = mock.Mock(returncode=1, stdout="", stderr="SQL error")
+            self.assertEqual(t.q("select 1"), (False, None, "ERR: SQL error"))
+            run.return_value = mock.Mock(returncode=0, stdout="1\n", stderr="")
+            self.assertEqual(t.q("select 1"), (True, "1", None))
+            run.side_effect = FileNotFoundError("psql missing")
+            out = t.q("select 1")
+            self.assertEqual(len(out), 3)
+            self.assertFalse(out[0])
+            self.assertIn("FileNotFoundError", out[2])
 
     def test_单行SQL失败只让该行降级不影响其它行(self):
         taker = FakeTaker({"sys_alert": (False, None, "ERR: column \"severity\" does not exist"),
