@@ -79,32 +79,19 @@ class ActuatorScrapeTokenHttpTest {
     }
 
     /**
-     * 现场快照——全部走公开 API。
-     * <p>下面四行是一条判定链，任何一环断掉都能一眼看出是哪一环：
-     * <ol>
-     *   <li>{@code PrometheusMeterRegistry} 类不在类路径 → 依赖缺件；</li>
-     *   <li>类在但没有注册器 Bean → 自动配置没生效（Clock/开关/排除）；</li>
-     *   <li>有注册器但没有端点 Bean → {@code @ConditionalOnAvailableEndpoint} 没过（enabled/exposure）；</li>
-     *   <li>有端点 Bean 但路径没进 handler mapping → 映射或顺序问题。</li>
-     * </ol>
+     * 现场快照——<b>刻意拼成一行</b>：CI 的失败诊断回帖按行截取断言消息，多行消息会被截断
+     * （本轮为此白丢了一轮往返：只看到 MeterRegistry 只有 SimpleMeterRegistry，看不到
+     * 后半段的注册器/端点 Bean）。一行里按判定链顺序放全部关键事实：
+     * <pre>
+     *   类在路径 → 注册器 Bean → Clock Bean → 三个 export 开关 → 端点 Bean → 已注册路径
+     * </pre>
+     * 任何一环断掉都能一眼定位，不必再往返一次。
      */
     private String diagnostics() {
-        StringBuilder sb = new StringBuilder("\n【现场】");
-        sb.append("\n- exposure.include=")
-                .append(context.getEnvironment().getProperty("management.endpoints.web.exposure.include"));
+        org.springframework.core.env.Environment env = context.getEnvironment();
         Map<String, MeterRegistry> registries = context.getBeansOfType(MeterRegistry.class);
-        sb.append("\n- MeterRegistry Bean=").append(registries.isEmpty() ? "（无 —— 计量器未装配）" : registries.values()
-                .stream().map(r -> r.getClass().getSimpleName()).distinct().toList());
-        sb.append("\n- micrometer-registry-prometheus 类在类路径=")
-                .append(isClassPresent("io.micrometer.prometheusmetrics.PrometheusMeterRegistry"));
-        sb.append("\n- prometheus-metrics-core（传递依赖）类在类路径=")
-                .append(isClassPresent("io.prometheus.metrics.model.registry.PrometheusRegistry"));
-        boolean hasPrometheusRegistry = registries.values().stream()
-                .anyMatch(r -> "PrometheusMeterRegistry".equals(r.getClass().getSimpleName()));
-        sb.append("\n- Prometheus 注册器 Bean=").append(hasPrometheusRegistry ? "在" : "**不在**");
-        sb.append("\n- prometheus 端点 Bean=")
-                .append(context.containsBean("prometheusScrapeEndpoint") || context.containsBean("prometheusEndpoint")
-                        ? "在" : "**不在**（则 404 是「端点不存在」，不是「闸门装错了」）");
+        List<String> registryNames = registries.values().stream()
+                .map(r -> r.getClass().getSimpleName()).distinct().toList();
         List<String> endpoints = context.getBeansOfType(
                         org.springframework.boot.actuate.endpoint.web.servlet.WebMvcEndpointHandlerMapping.class)
                 .values().stream()
@@ -112,8 +99,17 @@ class ActuatorScrapeTokenHttpTest {
                 .map(Object::toString)
                 .distinct()
                 .toList();
-        sb.append("\n- 已注册的 actuator 端点路径=").append(endpoints.isEmpty() ? "（一个都没有）" : endpoints);
-        return sb.toString();
+        return "【现场】exposure=" + env.getProperty("management.endpoints.web.exposure.include")
+                + " | registries=" + (registryNames.isEmpty() ? "无" : registryNames)
+                + " | 类在路径[prom=" + isClassPresent("io.micrometer.prometheusmetrics.PrometheusMeterRegistry")
+                + ",core=" + isClassPresent("io.prometheus.metrics.model.registry.PrometheusRegistry") + "]"
+                + " | ClockBean=" + (context.getBeanNamesForType(java.time.Clock.class).length > 0)
+                + " | export开关[prom=" + env.getProperty("management.prometheus.metrics.export.enabled")
+                + ",defaults=" + env.getProperty("management.defaults.metrics.export.enabled")
+                + ",simple=" + env.getProperty("management.simple.metrics.export.enabled") + "]"
+                + " | prom端点Bean=" + (context.containsBean("prometheusScrapeEndpoint")
+                        || context.containsBean("prometheusEndpoint"))
+                + " | actuator路径=" + (endpoints.isEmpty() ? "（一个都没有）" : endpoints);
     }
 
     private static boolean isClassPresent(String name) {
