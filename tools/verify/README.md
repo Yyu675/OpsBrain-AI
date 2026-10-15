@@ -19,7 +19,44 @@ CI 之外的第二条验证通道：沙箱/离线机器装不上 Maven 依赖（
 | `rbac_walkthrough.py` | `OpsWriteGuard` + 类级 RBAC 门控 | 见下节「权限矩阵实弹」 |
 | `monitoring_audit.py` | 指标名 / 规则 / 看板 / 抓取面四方对账 | 见下节「监控面静态对账」 |
 | `ci_summary.py` | 演练证据 JSON → 一行 CI 通知 | 见下节「结论怎么变成可读证据」 |
+| `grayscale_metrics.py` | 灰度台账 §三 六行的**取数口径**（DoD「真实值班质量数」） | 见下节「灰度台账取数」。配套 `test_grayscale_metrics.py`（25 例口径单测）。**已进 CI**（e2e 腿，排在 RBAC 之后） |
 | `selftest_scrape_face.py` | 闭环演练 Z-监控面 哨兵的**自证** | 桩服务六态（正确/裸奔/凭据错/端点在但无业务指标/指标排在 4KB 之后/令牌文件缺）逐一核对判词，确认哨兵不会永远 PASS。**已进 CI**（e2e 腿，排在闭环演练之前）。2026-10-15 前是 `.local-verify/scripts/` 的本地件——沙箱重置即丢失、别人复现不了，故收进仓库 |
+
+## 灰度台账取数（`grayscale_metrics.py`）
+
+台账 §三 有六个数据槽位要按周填。**Week1（10-06~10-12）填不出来**，台账如实记了「不可回溯，属实际缺口」。
+根因不是忘了记，而是**没有取数口径**——所以 Week2 若还靠手记，会变成第二个不可回溯的窗口。
+
+```bash
+python3 tools/verify/grayscale_metrics.py --from 2026-10-13 --to 2026-10-19 \
+    --psql psql --pgurl postgresql://devops:***@localhost:25432/devops_knowledge_db \
+    --base http://localhost:8088/ai --scrape-token-file /tmp/e2e-scrape-token \
+    --json /tmp/grayscale.json
+```
+
+输出是台账可直接粘的表格，每行都带**来源/口径**便于复核。六行的出处：
+
+| 台账行 | 来源 | 要点 |
+| --- | --- | --- |
+| 连续 0-P1 天数 | `sys_alert.false_positive` + `level` | 按 `false_positive_marked_at` 落窗；要的是**尾部连续段**，中间断一天即重新起算 |
+| ACK 演练次数 | **人工登记** | DoD#3 要求真人 + 真渠道，系统不可派生——工具只留槽位并说明原因，不猜 |
+| 通知送达率 | Prometheus `opsbrain_notify_delivery_total{result}` | **不是数据库表**（台账原写「读 notify_delivery 口径」易误导，已订正） |
+| 诊断触发率/产报率 | `sys_effectiveness_snapshot` 增量 | 快照列是**累计值**，必须「末读数 − 窗口前读数」，**不能 SUM** |
+| 修复时长对比 | `sys_devops_ticket.mitigated_at − create_time` | 工单创建列叫 `create_time`（不是 created_at） |
+| 自愈执行次数 | `sys_healing_execution` | 按 `created_at` 计数，成功 = `status='SUCCEEDED'` |
+
+**为什么配了 25 例口径单测**：这个工具的错法是「安静地给出错的数」——比崩掉危险得多（台账要拿它关 DoD）。
+单测钉住的四处最易错口径，全部**变异验证过**（注入错误实现 → 单测红）：
+
+| 注入的错误 | 后果（若不测） |
+| --- | --- |
+| 累计列用 SUM | 数字翻好几倍，看着还挺像样 |
+| 连续天数算成「窗口内合格天数总和」 | 中间破功一天仍报 6 天，DoD 会被误判达标 |
+| Prometheus 指标名按前缀匹配 | `_created` 序列（1.76e9）混进分子，送达率变天文数字**且不报错** |
+| 分母 0 时报 100% | 一次通知都没发却显示送达率 100% |
+
+> 第三处是变异测试当场抓出来的**测试自身缺口**：初版断言用的夹具里没有同前缀序列，
+> 删掉前缀守卫测试照样绿——等于没测。补了 `_created` 序列的夹具后才真正咬住。
 
 ## 业务闭环实弹（`closed_loop_drill.py`）
 

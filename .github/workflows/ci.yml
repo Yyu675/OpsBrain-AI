@@ -794,6 +794,28 @@ jobs:
             --json /tmp/rbac.json --log /tmp/rbac.log || rc=1
           exit $rc
 
+      - name: 灰度台账取数（DoD「真实值班质量数」的可复跑口径 + 口径单测）
+        run: |
+          set -o pipefail
+          # 先跑口径单测：这个工具的错法是「安静地给出错的数」（累计列被 SUM、
+          # 连续天数算成总和、_created 序列混进计数），比崩掉危险得多——台账要拿它关 DoD。
+          python3 tools/verify/test_grayscale_metrics.py 2>&1 | tail -4
+          rc=${PIPESTATUS[0]}
+          set +e
+          # 再对真库跑一遍：本沙箱无 psql/docker，SQL 里的列名只有在真迁移库上才验得了
+          python3 tools/verify/grayscale_metrics.py \
+            --from "$(date -u -d '7 days ago' +%F)" --to "$(date -u +%F)" \
+            --psql psql \
+            --pgurl "postgresql://devops:devops_password@localhost:25432/devops_knowledge_db" \
+            --base http://localhost:8088/ai \
+            --scrape-token-file /tmp/e2e-scrape-token \
+            --json /tmp/grayscale.json 2>&1 | tee /tmp/grayscale.log
+          rc2=${PIPESTATUS[0]}
+          # 结论压成 annotation（沙箱读不到作业日志）；先去 ANSI 免乱码
+          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/grayscale.log | grep -aE '^(=== |\| |未取到|提示)' \
+            | sed "s/^/::$( [ $rc2 -eq 0 ] && echo notice || echo error )::/" || true
+          [ "$rc" -eq 0 ] && [ "$rc2" -eq 0 ] || exit 1
+
       - name: 发布回退实弹（DoD#6：真两版本切换 + 身份证伪 + 计时）
         # 验证矩阵里最后一个「只靠人工」的面，现在进门禁。
         # 做法：把 origin/main 编成「旧版」、本分支产物当「新版」，跑 rollback-drill.sh 的
