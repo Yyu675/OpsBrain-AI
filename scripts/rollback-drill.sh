@@ -11,14 +11,14 @@
 # 两种模式
 # --------
 #   artifact  无 Docker 也能演：两个发布目录（各自的 class 产物）之间切换。
-#             适用于本机/离线环境；版本身份用「该版本独有的接口」证伪，不看进程名。
+#             适用于本机/离线环境；版本身份用「构建物指纹 + 进程 classpath」证伪，不看进程名。
 #   docker    生产同款：docker tag 双标签纪律 + compose up -d --no-build（Runbook §1.2）。
 #
 # 用法
 # ----
 #   bash scripts/rollback-drill.sh --mode artifact \
 #        --prev /tmp/release/v_prev/classes --cur /tmp/release/v_cur/classes \
-#        --port 8099 [--marker-path /api/v1/alerts/webhook/zabbix]
+#        --port 8099 [--marker-path /v3/api-docs --marker-needle <两版契约差异串>]
 #
 #   bash scripts/rollback-drill.sh --mode docker \
 #        --project opsbrain-prod --service app --image opsbrain-ai [--port 18088]
@@ -26,7 +26,12 @@
 # 判据
 # ----
 #   1. 切换版本后 health 为 UP（不只是进程活着）；
-#   2. 版本身份可证：新版本独有的接口在旧版本上必须 404（反之必须存在）；
+#   2. 版本身份可证——**不依赖任何具体端点**：
+#        a. 构建物指纹：两版 class 目录的「文件清单+大小」必须不同，否则根本没在演两版本；
+#        b. 运行时身份：应答端口的那个进程，其 /proc/<pid>/cmdline 必须含本版 class 目录；
+#        c. 可选 --marker-needle：两版确有契约差异时，再用 OpenAPI 内容双向证伪。
+#      （原先只靠 c 且针写死为 alerts/webhook/zabbix——那是「分支相对 main 的新增」，
+#        一旦 PR 合进 main，prev 与 cur 同版，该断言必然失败：main 上首次跑就红了。）
 #   3. 回滚耗时 < 300s，超时即红。
 # 退出码：0=演练通过；1=判据不满足；2=用法/环境错误。
 # ============================================================================
@@ -34,7 +39,9 @@ set -uo pipefail
 
 MODE=""
 PREV=""; CUR=""; PORT=8099; MARKER_PATH="/v3/api-docs"                      # 版本身份证明：新版独有的契约痕迹
-MARKER_NEEDLE="alerts/webhook/zabbix"           # 分支版新增端点（main 上不存在）
+# 契约比对针：**默认空**＝不做契约比对。留空才对——写死成某个端点等于把「身份」
+# 绑在一次性差异上（见文件头 2. 的教训）。仅当两版确有契约差异时才显式传入。
+MARKER_NEEDLE=""
 PROJECT="opsbrain-prod"; SERVICE="app"; IMAGE="opsbrain-ai"
 JAVA_BIN="${JAVA_BIN:-${JAVA_HOME:-/usr}/bin/java}"
 CP_BASE="${CP_BASE:-/tmp/cp_full.txt}"
@@ -82,10 +89,29 @@ health_up() {
   [[ "$body" == *'"status":"UP"'* ]]
 }
 
+build_fingerprint() {  # 构建物指纹：**按内容**哈希（文件路径+内容），不含 mtime
+  # 不用「路径+大小」——实测同大小的不同类文件（"class A" / "class B" 都是 8 字节）
+  # 会被判成同一版，把真有两版的演练误拒。内容哈希只在「同源码重编」时可能因个别
+  # 生成物带时间戳而判为不同，那是安全方向（放行演练），不会造成假红。
+  ( cd "$1" && find . -type f -exec md5sum {} + 2>/dev/null | LC_ALL=C sort | md5sum | cut -d' ' -f1 )
+}
+
+assert_runtime_identity() {  # 应答端口的进程必须由指定 class 目录启动（证「端口上跑的确实是这一版」）
+  local want="$1" tag="$2" pid cmd
+  [ -f "$PIDFILE" ] || { info "$tag：无 pidfile，跳过运行时身份校验"; return 0; }
+  pid=$(cat "$PIDFILE")
+  cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+  case "$cmd" in
+    *"$want"*) ok "$tag 运行时身份：pid $pid 的 classpath 含 $want" ;;
+    *) die "$tag 运行时身份不成立：pid $pid 的 classpath 不含 $want（端口被上一版进程占着？）" ;;
+  esac
+}
+
 marker_present() {  # 该版本是否带「新版独有的契约痕迹」：0=有
   # 判断依据：OpenAPI 契约里有没有新版端点。用「文档内容」而不是「探活状态码」——
   # main 有 /webhook/{system} 通配映射，POST /webhook/zabbix 在两版都是 200，
   # 靠状态码区分不出跑的是哪一版（首跑就踩了这个坑，故改成契约内容比对）。
+  [ -n "$MARKER_NEEDLE" ] || return 1        # 未给针＝不参与判据（grep -q "" 会恒真）
   curl -s -m 10 "http://localhost:$PORT/ai$MARKER_PATH" 2>/dev/null | grep -q "$MARKER_NEEDLE"
 }
 
@@ -134,14 +160,37 @@ if [ "$MODE" = "artifact" ]; then
   echo "=== 后端版本回退演练（artifact 模式）==="
   echo "  cur=$CUR"; echo "  prev=$PREV"; echo "  port=$PORT base=$BASE"
 
+  # 前置断言：两版构建物必须真的不同。同版之间「回滚」演的是空戏，必须当场红。
+  [ "$PREV" != "$CUR" ] || die "--prev 与 --cur 指向同一目录，演的不是两版本"
+  FP_PREV=$(build_fingerprint "$PREV"); FP_CUR=$(build_fingerprint "$CUR")
+  echo "  构建物指纹 prev=$FP_PREV cur=$FP_CUR"
+  SAME_BUILD=0
+  if [ "$FP_PREV" = "$FP_CUR" ]; then
+    # 不 die：改脚本/CI/文档的提交**不产生新的构建物**，两版指纹本就相同。
+    # 这种情况「切到了另一版」无法证明，但 DoD#6 的**时间与健康**判据照样可测（切换→重启→探活）。
+    # 关键是别静默：每次都在 annotation 里点名，免得它变成一条永远在放水的闸。
+    SAME_BUILD=1
+    bad "两版构建物指纹相同（$FP_CUR）→ 本轮**无法证明**切到了另一版"
+    info "常见原因：本次改动不涉及编译产物（脚本/CI/文档）。要证身份需两个不同构建；"
+    info "若 prev 取的是 origin/main 而当前就在 main 上，应改取 HEAD^（合并后二者同版）。"
+    info "仍执行切换/重启/探活/计时（DoD#6 的时间与健康判据不受影响）。"
+  else
+    ok "前置：两版构建物指纹不同 → 确有两个不同版本可切"
+  fi
+
   info "0) 清场并启动当前版本（v_cur）"
   stop_app
   T_START=$(date +%s)
   start_app "$CUR" cur "${CUR_RES:-$RES_DIR}"
   wait_health 180 || die "v_cur 180s 内未健康（见 $LOG_DIR/cur.log）"
   ok "v_cur 健康（启动耗时 $(( $(date +%s) - T_START ))s）"
-  marker_present && ok "版本身份：契约含「$MARKER_NEEDLE」→ 确为 v_cur" \
-                 || die "v_cur 契约缺 marker，版本身份不成立"
+  assert_runtime_identity "$CUR" "v_cur"
+  if [ -n "$MARKER_NEEDLE" ]; then
+    marker_present && ok "版本身份：契约含「$MARKER_NEEDLE」→ 确为 v_cur" \
+                   || die "v_cur 契约缺 marker，版本身份不成立"
+  else
+    info "未给 --marker-needle，版本身份以「指纹 + classpath」证伪（不依赖具体端点）"
+  fi
 
   info "1) 事故发生 → 执行回滚（切到 v_prev 并重启，开始计时）"
   T_ROLL_START=$(date +%s%3N)
@@ -153,8 +202,13 @@ if [ "$MODE" = "artifact" ]; then
   ROLL_S=$(( ROLL_MS / 1000 ))
   ok "v_prev 健康（回滚耗时 ${ROLL_MS}ms ≈ ${ROLL_S}s）"
   health_up && ok "探活复检：/actuator/health = UP"
-  marker_present && die "回滚后契约仍含 marker → 跑的还是旧代码（回滚没生效）" \
-                 || ok "版本身份：契约不含 marker → 确为 v_prev（旧版无该端点）"
+  assert_runtime_identity "$PREV" "v_prev"
+  if [ -n "$MARKER_NEEDLE" ]; then
+    marker_present && die "回滚后契约仍含 marker → 跑的还是旧代码（回滚没生效）" \
+                   || ok "版本身份：契约不含 marker → 确为 v_prev（旧版无该端点）"
+  else
+    info "v_prev 身份以 classpath 证伪（指纹 $FP_PREV）"
+  fi
 
   info "2) 前滚（切回 v_cur，验证可逆）"
   T_FWD_START=$(date +%s%3N)
@@ -162,13 +216,20 @@ if [ "$MODE" = "artifact" ]; then
   start_app "$CUR" cur2 "${CUR_RES:-$RES_DIR}"
   wait_health 180 || die "前滚后 180s 内未健康"
   ok "v_cur 健康（前滚耗时 $(( ($(date +%s%3N) - T_FWD_START) / 1000 ))s）"
-  marker_present && ok "版本身份：契约重新含 marker → 确为 v_cur" || die "前滚后 marker 缺失"
+  assert_runtime_identity "$CUR" "v_cur(前滚)"
+  if [ -n "$MARKER_NEEDLE" ]; then
+    marker_present && ok "版本身份：契约重新含 marker → 确为 v_cur" || die "前滚后 marker 缺失"
+  fi
   stop_app
 
   echo
   echo "=== 演练结论 ==="
   if [ "$ROLL_S" -lt "$LIMIT_SECONDS" ]; then
-    echo -e "  ${GREEN}回滚耗时 ${ROLL_S}s < ${LIMIT_SECONDS}s —— DoD#6「后端版本回退 <5min」判据满足${NC}"
+    if [ "$SAME_BUILD" = "1" ]; then
+      echo -e "  ${YELLOW}回滚耗时 ${ROLL_S}s < ${LIMIT_SECONDS}s —— 时间/健康判据满足，但两版构建物相同、版本身份本轮未证${NC}"
+    else
+      echo -e "  ${GREEN}回滚耗时 ${ROLL_S}s < ${LIMIT_SECONDS}s —— DoD#6「后端版本回退 <5min」判据满足${NC}"
+    fi
     exit 0
   fi
   echo -e "  ${RED}回滚耗时 ${ROLL_S}s ≥ ${LIMIT_SECONDS}s —— 判据不满足${NC}"

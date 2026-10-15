@@ -697,7 +697,7 @@ jobs:
             --json /tmp/rbac.json --log /tmp/rbac.log || rc=1
           exit $rc
 
-      - name: 发布回退实弹（DoD#6：真两版本切换 + 契约证伪 + 计时）
+      - name: 发布回退实弹（DoD#6：真两版本切换 + 身份证伪 + 计时）
         # 验证矩阵里最后一个「只靠人工」的面，现在进门禁。
         # 做法：把 origin/main 编成「旧版」、本分支产物当「新版」，跑 rollback-drill.sh 的
         # artifact 模式——切换 → 重启 → 探活 → 前滚，全程计时并断言 <300s。
@@ -708,7 +708,22 @@ jobs:
         run: |
           set -o pipefail
           git fetch origin main
-          git worktree add /tmp/prev FETCH_HEAD
+          # prev 取哪个版本？两个坑都踩过了：
+          #   1) 不能无条件用 main 的 tip——在 main 上它就是 HEAD，同版自切（PR #3 合并后首跑就红）；
+          #   2) **checkout@v4 是浅克隆（fetch-depth=1）**：`origin/main` 这个 ref 根本不存在、
+          #      `git merge-base` 与 `HEAD^` 都 fatal（本机浅克隆实测）。所以只能用 FETCH_HEAD，
+          #      要拿它的父提交必须先 --deepen。
+          git fetch --deepen=2 origin main 2>/dev/null || true
+          if [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ]; then
+            PREV_REF=FETCH_HEAD^     # 就在 main 上：上一版 = main 的父提交
+          else
+            PREV_REF=FETCH_HEAD      # 在分支上：main 的 tip 就是「上一版」
+          fi
+          # 兜底：深克隆失败/父提交拿不到时退回 FETCH_HEAD——宁可「身份不可证」（脚本会响亮警告），
+          # 也不要让这一步因为取不到 ref 而整步红。
+          git rev-parse --verify "$PREV_REF^{commit}" >/dev/null 2>&1 || PREV_REF=FETCH_HEAD
+          echo "prev=$PREV_REF（$(git rev-parse --short "$PREV_REF")） cur=HEAD（$(git rev-parse --short HEAD)）"
+          git worktree add /tmp/prev "$PREV_REF"
           (cd /tmp/prev && ./mvnw -B -ntp -DskipTests compile 2>&1 | tail -3)
           ./mvnw -B -ntp -q dependency:build-classpath -Dmdep.outputFile=/tmp/cp_full.txt
           set +e
@@ -719,7 +734,7 @@ jobs:
           rc=${PIPESTATUS[0]}
           # 结论压成 annotation（沙箱读不到作业日志，见 tools/verify/ci_summary.py 的由来）。
           # 先去 ANSI 色码：脚本输出带颜色，落到 annotation 里会变成 ^[[0;32m 这种乱码。
-          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/rollback-drill.log | grep -a "回滚耗时" \
+          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/rollback-drill.log | grep -aE "回滚耗时|构建物指纹|指纹相同|无法证明" \
             | sed "s/^/::$( [ $rc -eq 0 ] && echo notice || echo error )::/" || true
           git worktree remove /tmp/prev --force || true
           exit $rc
