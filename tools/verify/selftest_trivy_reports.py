@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""真实 Trivy 重复扫描对照；故意有漏洞的 POM 只生成于临时目录。
+"""真实 Trivy 单次扫描+同源门禁自证；故意有漏洞的 POM 只生成于临时目录。
 
-不把二次扫描的空报告当作全量证据。记录扫描顺序/输出路径/缓存维度的结果，
-缺二进制/数据库/JSON 都失败，不 skip。诊断夹具不是本仓生产漏洞报告。
+默认受控 Maven 429 注入，验证重扫静默丢失与离线门禁保全；--matrix 可选重跑
+历史对照，逐包/路径比发现与包覆盖，不只认指定 CVE。缺二进制/库/JSON 都失败，
+不 skip。诊断夹具不是本仓生产漏洞报告，也不能证明历史 HTTP 状态。
 """
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,19 @@ def finding_ids(report):
             for v in result.get("Vulnerabilities", [])}
 
 
+def finding_keys(report):
+    """同 CVE 在不同包/版本/路径出现也必须逐项保全，不能只比 ID 总数。"""
+    return {tuple([result.get("Target", "")] + [str(v.get(k, "")) for k in
+            ("VulnerabilityID", "PkgID", "PkgName", "InstalledVersion", "PkgPath")])
+            for result in report.get("Results", []) for v in result.get("Vulnerabilities", [])}
+
+
+def package_keys(report):
+    return {tuple([result.get("Target", "")] + [str(p.get(k, "")) for k in
+            ("ID", "Name", "Version", "FilePath")])
+            for result in report.get("Results", []) for p in result.get("Packages", [])}
+
+
 def run_scan(binary, target, output, *, fixed_only, memory, exit_code):
     cmd = [binary, "fs", "--no-progress", "--scanners", "vuln", "--severity", "HIGH,CRITICAL",
            "--exit-code", str(exit_code), "--format", "json", "--output", str(output)]
@@ -43,7 +57,7 @@ def run_scan(binary, target, output, *, fixed_only, memory, exit_code):
         raise RuntimeError(f"扫描未产证据：rc={result.returncode}，{result.stderr[-1200:]}")
     report = json.loads(output.read_text(encoding="utf-8"))
     ids = finding_ids(report)
-    return {"rc": result.returncode, "ids": sorted(ids), "targets": [r.get("Target") for r in report.get("Results", [])]}
+    return {"rc": result.returncode, "ids": sorted(ids), "findings": sorted(finding_keys(report)), "packages": sorted(package_keys(report)), "targets": [r.get("Target") for r in report.get("Results", [])]}
 
 
 def investigate(binary):
@@ -68,7 +82,8 @@ def investigate(binary):
                                           fixed_only=fixed_only, memory=memory, exit_code=code)
             row = {"case": name, "inside": inside, "memory": memory, "reverse": reverse, **results}
             row["consistent"] = (CVE in results["gate"]["ids"] and
-                                 set(results["gate"]["ids"]).issubset(results["full"]["ids"]))
+                                 set(map(tuple, results["gate"]["findings"])).issubset(map(tuple, results["full"]["findings"])) and
+                                 set(map(tuple, results["gate"]["packages"])) == set(map(tuple, results["full"]["packages"])))
             row["consistent"] &= results["gate"]["rc"] == 1 and results["full"]["rc"] == 0
             matrix.append(row)
     return matrix
@@ -130,14 +145,17 @@ def controlled_probe(binary):
                                    "--format", "json", "--output", str(root / "gate.json"),
                                    str(root / "candidate.json")], capture_output=True, text=True, timeout=30)
             result = json.loads((root / "gate.json").read_text())
-            expected = finding_ids(gate)
-            actual = finding_ids(result)
-            if proc.returncode != 1 or CVE not in actual or expected != actual:
+            expected = finding_keys(gate)
+            actual = finding_keys(result)
+            actual_ids = finding_ids(result)
+            if proc.returncode != 1 or CVE not in actual_ids or expected != actual:
                 raise RuntimeError(f"同源门禁丢发现或未红：rc={proc.returncode}，{proc.stderr[-1000:]}")
+            if package_keys(gate) != package_keys(result):
+                raise RuntimeError("convert 包清单发生变化")
             if len(requests) != before_convert:
                 raise RuntimeError("convert 意外重解析 Maven，不能声称离线同源")
             return {"healthy_full": healthy, "injected_429_full": degraded,
-                    "same_source_gate": {"rc": proc.returncode, "ids": sorted(actual)},
+                    "same_source_gate": {"rc": proc.returncode, "ids": sorted(actual_ids)},
                     "maven_requests_during_convert": len(requests) - before_convert,
                     "kept_vulnerabilities": manifest["kept_vulnerabilities"],
                     "notice": "已复现解析失败返回0且丢传递发现；不等于已证明历史网络状态"}

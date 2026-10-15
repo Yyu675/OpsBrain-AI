@@ -70,6 +70,13 @@ class TestTrivyPolicy(unittest.TestCase):
             with self.assertRaises(ValueError):
                 derive(doc)
 
+    def test_无漏洞身份的损坏对象不许变绿(self):
+        for value in ({}, {"VulnerabilityID": None}, {"VulnerabilityID": ""}):
+            doc = fixture()
+            doc["Results"][0]["Vulnerabilities"] = [value]
+            with self.assertRaisesRegex(ValueError, "VulnerabilityID"):
+                derive(doc)
+
     def test_各发现字段不接受错误类型(self):
         for field in ("Vulnerabilities", "Packages", "Secrets", "Misconfigurations", "Licenses"):
             for value in ({"bad": 1}, [1]):

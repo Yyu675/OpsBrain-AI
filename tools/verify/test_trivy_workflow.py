@@ -49,6 +49,16 @@ sys.exit(int(os.environ['FAKE_STATUS']))
                                   cwd=tmp, env=env, capture_output=True, text=True, timeout=15)
         return proc
 
+    def test_生产只允许一次fs且convert由同一报告派生(self):
+        import re
+        workflow = yaml.safe_load((ROOT / ".github/workflows/vulnerability-scan.yml").read_text())
+        scripts = [s.get("run", "") for s in workflow["jobs"]["trivy-repo-scan"]["steps"]]
+        commands = "\n".join(scripts)
+        self.assertEqual(len(re.findall(r"^\s*trivy fs\b", commands, re.M)), 1)
+        self.assertEqual(len(re.findall(r"^\s*trivy convert\b", commands, re.M)), 1)
+        self.assertIn("--input /tmp/trivy-report.json", commands)
+        self.assertIn("/tmp/trivy-policy-input.json", commands)
+
     def test_零退出与有效报告才绿(self):
         proc = self.run_gate(0, True)
         self.assertEqual(proc.returncode, 0, proc.stderr)

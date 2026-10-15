@@ -45,6 +45,8 @@ def derive(report, required_targets=()):
             continue
         selected = []
         for vuln in result["Vulnerabilities"]:
+            if not isinstance(vuln.get("VulnerabilityID"), str) or not vuln["VulnerabilityID"]:
+                raise ValueError("漏洞缺 VulnerabilityID，拒绝将损坏发现当作未知状态豁免")
             status = vuln.get("Status", "unknown")
             if not isinstance(status, str) or status not in STATUSES:
                 raise ValueError(f"不支持的漏洞 Status：{status!r}，需复核工具契约")
