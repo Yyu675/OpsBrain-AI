@@ -16,6 +16,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  workflow-refs:
+    name: 工作流依赖可解析（防「钉了不存在的 action 版本」）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验所有 uses 的 ref 真实存在（tag 或 branch 必须存在）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # 为什么要有这一闸：vulnerability-scan.yml 曾把 trivy-action 钉成 @0.28.0
+          # （真实 tag 是 v0.28.0），于是它**连续 5 周在 Set up job 阶段就失败、一次都没真扫过**。
+          # 而它只在 schedule/dispatch 上跑、不进 push 门禁 → 没人看得见。
+          # 这类坏钉本地查不出来（YAML 合法、语法没错），只能拿真 API 验。
+          refs=$(grep -rhoE 'uses: *[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[^ ]+' .github/workflows \
+                   | sed -E 's/^[[:space:]]*uses:[[:space:]]*//' | sort -u)
+          [ -n "$refs" ] || { echo "::error::一个 action 引用都没扫到——grep 模式失效了？"; exit 1; }
+          fail=0
+          for u in $refs; do
+            repo="${u%@*}"; ref="${u##*@}"
+            if gh api "repos/$repo/git/ref/tags/$ref" --silent 2>/dev/null \
+               || gh api "repos/$repo/git/ref/heads/$ref" --silent 2>/dev/null; then
+              echo "ok   $u"
+            else
+              echo "::error::无法解析 action 版本：$u —— tag 与 branch 都不存在（该工作流会在 Set up job 阶段直接失败；若它只跑 schedule，就是一次都没真跑过的哑哨兵）"
+              fail=1
+            fi
+          done
+          echo "共校验 $(echo "$refs" | wc -l) 个 action 引用"
+          exit $fail
   backend:
     name: 后端 · 编译与测试
     runs-on: ubuntu-latest
