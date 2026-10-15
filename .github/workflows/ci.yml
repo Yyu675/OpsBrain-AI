@@ -468,9 +468,13 @@ jobs:
           # 规模行压成 annotation：后端腿早有「Tests run: …」可对账，前端一直没有，
           # 于是 README 里写死的「N 文件 / N 例」漂了没人发现（批105 实测：写的是
           # 106/1855，实为 107/1863）。数字要能从权威源复核——手抄就会抄错。
+          # 只匹配这两行汇总，别顺手匹配 failed：首版把 `failed` 也收进来，真 runner 上
+          # 一堆 "[Vue warn]: ... type check failed" 把 annotation 配额（每级 10 条）占满，
+          # **真正的汇总行反被挤掉**——噪声不只是难看，它会顶掉信号。
           LVL=notice; [ "$rc" -eq 0 ] || LVL=error
           sed -r 's/\x1B\[[0-9;]*m//g' /tmp/vitest.log \
-            | grep -aE 'Test Files|^[[:space:]]*Tests[[:space:]]|failed' \
+            | grep -aE 'Test Files|^[[:space:]]*Tests[[:space:]]' \
+            | head -4 \
             | awk -v p="::${LVL}::前端测试汇总 " '{ sub(/^[[:space:]]+/, ""); print p $0 }' || true
           exit $rc
 
