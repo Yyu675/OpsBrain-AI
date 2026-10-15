@@ -93,6 +93,27 @@ class TestRuntimePatches(unittest.TestCase):
         bom, probe = fixture()
         self.assertTrue(all(v["sha256"] == "a" * 64 and v["byte_matched_packaged"] for v in verify(bom, probe)["verified_variants"]))
 
+    def test_Tomcat部分修补不隐藏剩余漏洞(self):
+        bom, probe = fixture()
+        remaining = {"PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL", "VulnerabilityID": "CVE-2026-65182"}
+        probe["findings"].append(remaining)
+        result = verify(bom, probe)
+        self.assertEqual(result["partial_target_hc_rows"], 1)
+        self.assertEqual(result["remaining_hc_rows"], 2)
+        self.assertEqual(result["partial_targets"]["org.apache.tomcat.embed"]["remaining_findings"], [remaining])
+        self.assertNotIn("org.apache.tomcat.embed", result["zero_hc_groups"])
+        self.assertFalse(result["full_security_passed"])
+        probe["findings"].append({**remaining, "VulnerabilityID": "CVE-2026-43515"})
+        with self.assertRaisesRegex(ValueError, "9条仍有残留"):
+            verify(bom, probe)
+
+    def test_新完成组三组任何HC不得残留(self):
+        for group in ("io.micrometer", "org.apache.opennlp", "org.jsoup"):
+            bom, probe = fixture()
+            probe["findings"].append({"PkgName": group + ":probe", "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
+            with self.assertRaises(ValueError):
+                verify(bom, probe)
+
     def invoke(self, root, severity="HIGH,CRITICAL"):
         argv = ["guard", "--sbom", str(root / "bom.json"), "--experiment", str(root / "probe.json"),
                 "--json", str(root / "out.json"), "--scan-severity", severity]

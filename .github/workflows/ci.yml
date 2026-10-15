@@ -42,6 +42,7 @@ jobs:
           python3 tools/verify/test_sbom_runtime_probe.py
           python3 tools/verify/test_sbom_workflow.py
           python3 tools/verify/test_verify_runtime_patches.py
+          python3 tools/verify/test_maven_patch_availability.py
           python3 tools/verify/test_maven_scan_coverage.py
           python3 tools/verify/test_maven_coverage_workflow.py
           python3 tools/verify/test_trivy_policy.py
@@ -296,6 +297,32 @@ jobs:
           print('::notice::Tika 3.0.0真实负对照：StAX安全断言1失败/0错误；修补版随后必须通过完整clean verify，非线上利用性证明')
           PYTEST
 
+      - name: OpenNLP 旧版三类安全负对照（字典XXE/扩展初始化/模型计数）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.OpenNlpSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/opennlp-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Dopennlp.version=2.5.4 \
+            '-Dtest=OpenNlpSecurityCompatibilityTest#dictionaryExternalEntityCannotReadHttp+untrustedExtensionCannotRunStaticInitializer+negativeModelCountsFailBeforeArrayAllocation' test > /tmp/opennlp-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import shutil, sys, xml.etree.ElementTree as ET
+          path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.OpenNlpSecurityCompatibilityTest.xml'
+          root = ET.parse(path).getroot()
+          assert sys.argv[1] == '1', '旧版必须是安全断言失败而非编译/下载故障'
+          assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['3', '3', '0', '0']
+          expected = {'dictionaryExternalEntityCannotReadHttp', 'untrustedExtensionCannotRunStaticInitializer', 'negativeModelCountsFailBeforeArrayAllocation'}
+          assert {c.get('name') for c in root.findall('testcase')} == expected
+          assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
+          cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+          assert any(p.endswith('/opennlp-tools-2.5.4.jar') for p in cp)
+          assert not any(p.endswith('/opennlp-tools-2.5.9.jar') for p in cp)
+          shutil.copyfile(path, '/tmp/opennlp-negative-control.xml')
+          print('::notice::OpenNLP 2.5.4真实安全负对照3失败/0错误/0跳过；修补版随后必须完整clean verify通过，非线上可达性证明')
+          PYTEST
+
       - name: 编译与测试
         # AI_MODE=MOCK：不调真实模型，CI 不烧额度也不依赖外网
         env:
@@ -441,6 +468,8 @@ jobs:
             target/surefire-reports/
             /tmp/tika-negative-control.xml
             /tmp/tika-negative-control.log
+            /tmp/opennlp-negative-control.xml
+            /tmp/opennlp-negative-control.log
           if-no-files-found: ignore
           retention-days: 7
 

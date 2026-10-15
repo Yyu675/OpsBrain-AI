@@ -260,3 +260,9 @@ ECJ=/path/to/ecj.jar
 `verify_runtime_patches.py --sbom … --experiment … --scan-severity HIGH,CRITICAL --json …` 在原生实验之后验证Tika3.2.2全模块（core+standard-package双入口，不导入会覆盖Boot其他库的完整Tika BOM）、Netty4.1.137.Final（tcnative独立版本流，但不豁免其HC）；目标模块未绑定实际Boot字节、必需模块/扫描覆盖/同源SHA缺失、混版、残余目标HC都失败并删除陈旧输出。9例行为/CLI自测：`python3 tools/verify/test_verify_runtime_patches.py`。这是本批补丁验收，不替代全量漏洞门禁；其`full_security_passed=false`表示不签发整体安全证明。逐目标variant SHA256/实际字节绑定分片注解可恢复并验SHA，超容失败，不静默丢证。后续升级须同步调整本批精确版本验收约束。后端CI另有真实Tika3.0.0 StAX负对照（恰好1失败、0错误、旧core classpath），随后修补版全量clean verify，XML/log单独留档。Tomcat10.1.58候选在真实CI报Central缺core/el/websocket，已撤回不可交付覆盖；保留原实装漏洞，另批评估源码自建/可复现供应。
 
 批116同源实证：`docs/09-operations/evidence/runtime-patches-2026-10-16.json`（50个目标variant逐SHA绑定、原生58→37、保留红码1）；三方BOM越线/降级曾真实判红，最终改core+standard-package双入口，完整Tika BOM未保留。9例专项、10类注入-还原均检出；含注解截断/超容负对照。最终HEAD检查与追加Office回归见PR19，不把首轮快照当最终HEAD绿。
+
+### 批117 官方供应与明确部分修补
+
+`maven_patch_availability.py --checkout-sha <40位SHA> --json <输出>` 向官方Central GET实际POM/JAR、校验坐标/ZIP目录并记录字节SHA；仅404可记not_found，网络/503/坏内容退出2且清除陈旧输出，分片可恢复。POM/JAR可取不代表传递解析或漏洞已修；真实Maven和Boot证据另验。供应8例、运行补丁11例，11个扫描/工作流脚本合计109例。
+
+补丁闸扩展到Micrometer1.15.12、OpenNLP2.5.9、jsoup1.23.2完成组，保留Tika/Netty约束；Tomcat10.1.57是**部分修补**：正向要求本次应消失的9条CVE，不改写原始报告/原生码，不忽略需58的余量；输出`zero_hc_groups`、`partial_targets.remaining_findings`与整体`remaining_hc_rows`，不能把完成组0当Tomcat整组0或安全放行。OpenNLP旧版三类真实安全断言负对照另在backend CI执行，随后全量clean verify；真SQL/HTTP/CLI不跳。
