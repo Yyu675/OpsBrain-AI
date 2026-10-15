@@ -39,6 +39,7 @@ jobs:
           python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
           python3 tools/verify/test_workflow_refs.py
           python3 tools/verify/test_trivy_summary.py
+          python3 tools/verify/test_trivy_workflow.py
           python3 tools/verify/workflow_refs.py
 
       - name: schedule 型工作流心跳检查（哨兵还活着吗）
