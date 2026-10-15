@@ -47,7 +47,9 @@ export const loginViaForm = async (page: Page, username: string, password: strin
     const body = (await resp.text().catch(() => '')).slice(0, 300)
     throw new Error(
       `登录被拒（${username}）：HTTP ${resp.status()}` +
-        (resp.status() === 429 ? '（限流：同一 IP 共用 login 桶 10/60s）' : '') +
+        (resp.status() === 429
+          ? '（限流：e2e 所有请求同源同 IP、共用 login 桶；配额由 LOGIN_RATE_LIMIT_PERMITS 抬过，仍撞 429 说明配额没生效）'
+          : '') +
         `｜响应=${body}`,
     )
   }

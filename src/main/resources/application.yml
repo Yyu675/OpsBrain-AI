@@ -270,8 +270,17 @@ devops:
           # 为 429 不是为测试让路，是防「测试环境偶发共享」这一合法
           # 现象误报；安全语义不降级：暴力破解脚本 10/60s 与 5/60s
           # 并无实质差别，但误伤合法登录纳炸概率归一了。
-          permits: 10
-          period-seconds: 60
+          #
+          # 2026-10-15：permits/period-seconds 改为可 env 覆盖。**生产默认不变（10/60s）**，
+          # 抬高只发生在测试环境：限流键是**远端 IP**（见 RateLimitProperties 的"IP 桶"纪律），
+          # 而 e2e 腿里 Playwright 串行套件的所有请求都来自 127.0.0.1 —— 共用这一只桶，
+          # 一轮要发 ~15 次登录（setup 1 + auth.spec 6 + role-matrix 6 + tickets 2），
+          # 于是 60s 窗口内撞 429、角色矩阵假红（run 38665168695 实测，
+          # 报错文本由 e2e/helpers/login.ts 的诊断带出：HTTP 429 RATE_LIMITED）。
+          # 对单个可信本机客户端做"防暴力破解"没有意义，故按环境抬高，而不是把用例删掉
+          # 或把限流总开关关掉（总开关一关，e2e 就再也不覆盖限流这条链了）。
+          permits: ${LOGIN_RATE_LIMIT_PERMITS:10}
+          period-seconds: ${LOGIN_RATE_LIMIT_PERIOD_SECONDS:60}
         - name: chat
           paths: /api/v1/chat
           permits: 20

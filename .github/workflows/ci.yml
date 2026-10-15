@@ -558,6 +558,11 @@ jobs:
           # 下一「指标抓取面实弹」步用同一个文件 curl。文件生成在启动之前，
           # 否则守卫按「未配置」处理（fail-closed）。
           SCRAPE_TOKEN_FILE: /tmp/e2e-scrape-token
+          # 登录限流抬配额：本作业所有请求同源同 IP，共用 login 规则那只桶（10/60s），
+          # 而串行 Playwright 一轮要发 ~15 次登录 → 撞 429 让角色矩阵假红
+          # （run 38665168695 实测：HTTP 429 RATE_LIMITED）。抬配额而不是关总开关：
+          # 限流这条链仍在工作、仍可被 e2e 覆盖。生产默认仍是 10/60s。
+          LOGIN_RATE_LIMIT_PERMITS: '200'
         run: |
           printf '%s' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > /tmp/e2e-scrape-token
           chmod 600 /tmp/e2e-scrape-token
