@@ -45,7 +45,11 @@ def summarize(report):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", required=True, type=Path)
+    ap.add_argument("--log", type=Path, help="CLI 诊断日志（不是报告匹配正文）")
     args = ap.parse_args()
+    if args.log and args.log.is_file():
+        diagnostic = args.log.read_text(encoding="utf-8", errors="replace")[-3000:]
+        print(f"::notice::Trivy CLI 诊断：{escape(diagnostic)}")
     try:
         report = json.loads(args.json.read_text(encoding="utf-8"))
         lines = summarize(report)
