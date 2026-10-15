@@ -254,3 +254,9 @@ ECJ=/path/to/ecj.jar
   `DiagnosisOrchestratorTest`、Flyway 迁移链）只能在 CI 或本地 `./mvnw verify` 里跑。
 - ECJ 的 `-source 19` 是它能接受的最高版本，与项目 `maven.compiler.release=21` 有差异；
   探针只用 17 以内的语法，因此不影响结论，但**不要**用它替代真实编译做发布判断。
+
+### 批116 两组运行时补丁验收
+
+`verify_runtime_patches.py --sbom … --experiment … --scan-severity HIGH,CRITICAL --json …` 在原生实验之后验证Tika3.2.2全模块（core+standard-package双入口，不导入会覆盖Boot其他库的完整Tika BOM）、Netty4.1.137.Final（tcnative独立版本流，但不豁免其HC）；目标模块未绑定实际Boot字节、必需模块/扫描覆盖/同源SHA缺失、混版、残余目标HC都失败并删除陈旧输出。9例行为/CLI自测：`python3 tools/verify/test_verify_runtime_patches.py`。这是本批补丁验收，不替代全量漏洞门禁；其`full_security_passed=false`表示不签发整体安全证明。逐目标variant SHA256/实际字节绑定分片注解可恢复并验SHA，超容失败，不静默丢证。后续升级须同步调整本批精确版本验收约束。后端CI另有真实Tika3.0.0 StAX负对照（恰好1失败、0错误、旧core classpath），随后修补版全量clean verify，XML/log单独留档。Tomcat10.1.58候选在真实CI报Central缺core/el/websocket，已撤回不可交付覆盖；保留原实装漏洞，另批评估源码自建/可复现供应。
+
+批116同源实证：`docs/09-operations/evidence/runtime-patches-2026-10-16.json`（50个目标variant逐SHA绑定、原生58→37、保留红码1）；三方BOM越线/降级曾真实判红，最终改core+standard-package双入口，完整Tika BOM未保留。9例专项、10类注入-还原均检出；含注解截断/超容负对照。最终HEAD检查与追加Office回归见PR19，不把首轮快照当最终HEAD绿。

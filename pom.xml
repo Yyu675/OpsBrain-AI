@@ -18,6 +18,9 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- 批116：同主线可解析补丁（Tomcat候选10.1.58 Central缺构件，另批交付）；原生 SBOM 发现的传递 HIGH/CRITICAL，不改变扫描豁免。 -->
+        <tika.version>3.2.2</tika.version>
+        <netty.version>4.1.137.Final</netty.version>
         <!-- CVE-2026-22731/22733：Boot 同 3.5 线升至 3.5.12，不跨 4.x。 -->
         <!-- CVE-2026-54291/42198：JDBC 最小补丁线；覆盖 Boot 的托管版本。 -->
         <postgresql.version>42.7.12</postgresql.version>
@@ -66,6 +69,19 @@
     <!-- 用 LangChain4j BOM 统一托管所有 langchain4j-* 子模块版本，避免版本错配 -->
     <dependencyManagement>
         <dependencies>
+            <!-- 只管理两处 Tika 入口；standard-package 的同版父 POM 统一其全部 parser。
+                 不导入 tika-bom：继承的第三方管理项会覆盖 Boot（实测拉入 Netty 4.2.3）。
+                 原生补丁闸对所有 Tika/Netty variant + Boot 字节强校验，不能只补 core。 -->
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-core</artifactId>
+                <version>${tika.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-parsers-standard-package</artifactId>
+                <version>${tika.version}</version>
+            </dependency>
             <dependency>
                 <groupId>dev.langchain4j</groupId>
                 <artifactId>langchain4j-bom</artifactId>

@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-16",
+  "candidate": "org.apache.tomcat.embed:10.1.58",
+  "applied": false,
+  "decision": "撤回不可解析覆盖，维持10.1.52与原12条HC；源码自建/可复现供应另批，非漏洞豁免",
+  "source_tag": {
+    "url": "https://github.com/apache/tomcat/tree/10.1.58",
+    "object": {
+      "sha": "96f28aed7efb331abb67b55319072e9de3240e6f",
+      "type": "commit",
+      "url": "https://api.github.com/repos/apache/tomcat/git/commits/96f28aed7efb331abb67b55319072e9de3240e6f"
+    }
+  },
+  "ci_failure": {
+    "run": 38794159655,
+    "head_sha": "e3e797071510f9bfb270c51f288f570b18e2554e",
+    "step": "迁移校验与空库全量建账",
+    "source_comment": "https://github.com/Yyu675/OpsBrain-AI/commit/e3e797071510f9bfb270c51f288f570b18e2554e#commitcomment-205157005",
+    "observed_resolution_errors": [
+      "[ERROR] dependency: org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.58 (compile)",
+      "[ERROR] \tCould not find artifact org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.58 in central (https://repo.maven.apache.org/maven2)",
+      "[ERROR] dependency: org.apache.tomcat.embed:tomcat-embed-websocket:jar:10.1.58 (compile)",
+      "[ERROR] \tCould not find artifact org.apache.tomcat.embed:tomcat-embed-websocket:jar:10.1.58 in central (https://repo.maven.apache.org/maven2)",
+      "[ERROR] dependency: org.apache.tomcat.embed:tomcat-embed-el:jar:10.1.58 (compile)",
+      "[ERROR] \tCould not find artifact org.apache.tomcat.embed:tomcat-embed-el:jar:10.1.58 in central (https://repo.maven.apache.org/maven2)"
+    ]
+  },
+  "boundary": "源码标签存在不证明Central构件可用；此证据只证明该轮真实解析失败，不断言未来仍不存在；未把失败当完成回归"
+}
