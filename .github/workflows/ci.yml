@@ -460,7 +460,19 @@ jobs:
         run: npm run audit:tokens
 
       - name: 单元测试
-        run: npm run test
+        run: |
+          set -o pipefail
+          set +e
+          npm run test 2>&1 | tee /tmp/vitest.log | tail -25
+          rc=${PIPESTATUS[0]}
+          # 规模行压成 annotation：后端腿早有「Tests run: …」可对账，前端一直没有，
+          # 于是 README 里写死的「N 文件 / N 例」漂了没人发现（批105 实测：写的是
+          # 106/1855，实为 107/1863）。数字要能从权威源复核——手抄就会抄错。
+          LVL=notice; [ "$rc" -eq 0 ] || LVL=error
+          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/vitest.log \
+            | grep -aE 'Test Files|^[[:space:]]*Tests[[:space:]]|failed' \
+            | awk -v p="::${LVL}::前端测试汇总 " '{ sub(/^[[:space:]]+/, ""); print p $0 }' || true
+          exit $rc
 
       - name: 死代码检测（门禁）
         # 退出条件已达成（批次 19-26 / 报告 122~129）：存量经四波清零——
