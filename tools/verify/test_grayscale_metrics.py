@@ -49,8 +49,8 @@ class TestCumulativeDelta(unittest.TestCase):
     def test_窗口增量是末读数减窗口前读数(self):
         self.assertEqual(cumulative_delta(120, 100), 20)
 
-    def test_窗口前无快照时末读数即增量(self):
-        self.assertEqual(cumulative_delta(42, None), 42)
+    def test_窗口前无快照不可从零起算(self):
+        self.assertIsNone(cumulative_delta(42, None))
 
     def test_无末读数返回None而不是0(self):
         # 0 会被当成「本期零诊断」写进台账——那是谎报，必须区分「没数」
@@ -108,6 +108,11 @@ class TestParseCounter(unittest.TestCase):
     def test_注释行不参与(self):
         self.assertEqual(parse_counter("# opsbrain_notify_delivery_total{result=\"ok\"} 999\n",
                                        "opsbrain_notify_delivery_total", "result", "ok"), None)
+
+
+    def test_标签名必须完整匹配且可带时间戳(self):
+        text = 'm{not_result="ok"} 99\nm{result="ok"} 2 1234567890\n'
+        self.assertEqual(parse_counter(text, "m", "result", "ok"), 2)
 
 
 class TestRate(unittest.TestCase):
@@ -208,7 +213,7 @@ class TestCollectGlue(unittest.TestCase):
 
     def _run(self, taker):
         rows = []
-        ok = grayscale_metrics.collect(taker, self.FROM, self.TO, rows)
+        ok = grayscale_metrics.collect(taker, self.FROM, self.TO, rows, today=dt.date(2026, 10, 20))
         return ok, rows
 
     def test_有库有抓取面时六行全出且判为完整(self):
@@ -263,13 +268,25 @@ class TestCollectGlue(unittest.TestCase):
         self.assertEqual(rows[2]["value"], "95.0%（95/100）")
 
 
+    def test_抓取面不暴露指标不能判取数完整(self):
+        ok, rows = self._run(FakeTaker(prom=(True, "# no samples")))
+        self.assertFalse(ok)
+        self.assertTrue(rows[2]["failed"])
+        self.assertIn("无数据", rows[2]["value"])
+
+    def test_只有失败回执时送达率为零(self):
+        ok, rows = self._run(FakeTaker(prom=(True, 'opsbrain_notify_delivery_total{result="error"} 2')))
+        self.assertTrue(ok)
+        self.assertEqual(rows[2]["value"], "0.0%（0/2）")
+
+
 class TestSqlShape(unittest.TestCase):
     """静态守卫：口径最容易写错的是列名与聚合方式，写错不报错、只给错数。"""
 
     def _sqls(self):
         taker = FakeTaker({"sys_devops_ticket": "", "sys_healing_execution": "0|0"})
         rows = []
-        grayscale_metrics.collect(taker, dt.date(2026, 10, 13), dt.date(2026, 10, 19), rows)
+        grayscale_metrics.collect(taker, dt.date(2026, 10, 13), dt.date(2026, 10, 19), rows, today=dt.date(2026, 10, 20))
         return taker.sqls
 
     def test_告警分级用level不是severity(self):
@@ -288,13 +305,20 @@ class TestSqlShape(unittest.TestCase):
             self.assertNotIn("SUM(", s.upper())
 
 
+class FixedClock(dt.datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 10, 15, 12, tzinfo=dt.timezone.utc)
+
+
 class TestMainExitCodes(unittest.TestCase):
     """main() 的退出码是 CI 唯一读得到的判词，必须逐个钉住。"""
 
     def _main(self, argv):
         import io
         import contextlib
-        with mock.patch.object(sys, "argv", ["grayscale_metrics.py"] + argv):
+        with mock.patch.object(sys, "argv", ["grayscale_metrics.py"] + argv), \
+                mock.patch.object(grayscale_metrics.dt, "datetime", FixedClock):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = grayscale_metrics.main()
@@ -327,6 +351,94 @@ class TestMainExitCodes(unittest.TestCase):
             rc, out = self._main(["--from", "2026-10-13", "--to", "2026-10-19"])
         self.assertEqual(rc, 3)
         self.assertIn("::error::取数器内部异常", out)
+
+
+class TestWindowAndEvidence(unittest.TestCase):
+    _main = TestMainExitCodes._main
+    def test_未来和当天截到昨天(self):
+        for end in (dt.date(2026, 10, 15), dt.date(2026, 10, 19)):
+            self.assertEqual(grayscale_metrics.observation_window(
+                dt.date(2026, 10, 13), end, dt.date(2026, 10, 15)), dt.date(2026, 10, 14))
+
+    def test_起点尚未结束则拒绝且不取数(self):
+        with mock.patch.object(grayscale_metrics, "collect") as collect:
+            rc, out = self._main(["--from", "2026-10-15", "--to", "2026-10-19"])
+        self.assertEqual(rc, 2)
+        self.assertIn("尚无完整日期", out)
+        collect.assert_not_called()
+
+    def test_历史窗口不截断(self):
+        self.assertEqual(grayscale_metrics.observation_window(
+            dt.date(2026, 10, 6), dt.date(2026, 10, 12), dt.date(2026, 10, 15)), dt.date(2026, 10, 12))
+
+    def test_collect直接调用也不能把未来计为七天(self):
+        rows = []
+        t = FakeTaker({"sys_healing_execution": "0|0"})
+        grayscale_metrics.collect(t, dt.date(2026, 10, 13), dt.date(2026, 10, 19), rows,
+                                  today=dt.date(2026, 10, 15))
+        self.assertIn("2 个完整日期", rows[0]["value"])
+        self.assertNotIn("—— 达标", rows[0]["value"])
+        self.assertTrue(all("2026-10-19" not in sql for sql in t.sqls))
+        self.assertIn("进程累计", rows[2]["source"])
+        self.assertIn("告警转单率", rows[3]["value"])
+        self.assertNotIn("触发率 ", rows[3]["value"])
+
+    def test_JSON区分请求窗口实际窗口与验收(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "metrics.json"
+            with mock.patch.object(grayscale_metrics, "Taker", return_value=FakeTaker()):
+                rc, out = self._main(["--from", "2026-10-13", "--to", "2026-10-19", "--json", str(path)])
+            data = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(rc, 0)
+        self.assertEqual(data["requested_window"]["to"], "2026-10-19")
+        self.assertEqual(data["window"]["to"], "2026-10-14")
+        self.assertFalse(data["window_closed"])
+        self.assertTrue(data["collection_complete"])
+        self.assertIsNone(data["gate_passed"])
+        self.assertIn("2026-10-15", data["collected_at"])
+        self.assertIn("窗口进行中", out)
+
+    def test_缺快照或负增量不得伪装零(self):
+        for value in (None, -1, float("nan")):
+            t = mock.Mock()
+            t.num.return_value = (True, value, None)
+            ok, result, err = grayscale_metrics.snapshot_delta(t, "alerts_total",
+                                                              dt.date(2026, 10, 13), dt.date(2026, 10, 14))
+            self.assertFalse(ok)
+            self.assertIsNone(result)
+            self.assertIn("ERR:", err)
+            sql = t.num.call_args.args[0]
+            self.assertNotIn("COALESCE", sql)
+            self.assertIn("BETWEEN", sql)
+
+    def test_psql选项显式数据库且禁止个人配置(self):
+        with mock.patch.object(grayscale_metrics.subprocess, "run") as run:
+            run.return_value = mock.Mock(returncode=0, stdout="1", stderr="")
+            self.assertEqual(grayscale_metrics.Taker("psql.exe", "postgresql://db", "b", None).q("select 1"),
+                             (True, "1", None))
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[cmd.index("-d") + 1], "postgresql://db")
+        self.assertIn("-X", cmd)
+        self.assertIn("ON_ERROR_STOP=1", cmd)
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(run.call_args.kwargs["env"]["PGCLIENTENCODING"], "UTF8")
+
+    def test_stdout兼容GBK与无reconfigure(self):
+        stream = mock.Mock()
+        with mock.patch.object(sys, "stdout", stream):
+            grayscale_metrics.configure_stdout()
+        stream.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+        import io
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            grayscale_metrics.configure_stdout()
+
+    def test_markdown单元格管道不破坏列(self):
+        text = render_table([{"name": "指标", "value": "1|2", "source": "ok|error"}])
+        self.assertIn(r"1\|2", text)
+        self.assertIn(r"ok\|error", text)
 
 
 if __name__ == "__main__":
