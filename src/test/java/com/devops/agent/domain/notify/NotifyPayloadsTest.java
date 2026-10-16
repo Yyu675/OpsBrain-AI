@@ -83,9 +83,7 @@ class NotifyPayloadsTest {
         @DisplayName("告警中与P0/P1标红 warning，监控恢复标绿 info，P2标灰 comment")
         void wecomMarkdownAdaptsNativeColors() throws Exception {
             NotifyMessage normalMsg = NotifyMessage.normal("告警标题",
-                    "- **当前状态**：告警中（PROBLEM）
-- **告警等级**：P1 严重级（High）
-- **说明**：业务异常");
+                    "- **当前状态**：告警中（PROBLEM）\n- **告警等级**：P1 严重级（High）\n- **说明**：业务异常");
             byte[] bytes = NotifyPayloads.wecomPayload(normalMsg, new com.fasterxml.jackson.databind.ObjectMapper());
             String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
 
@@ -93,8 +91,7 @@ class NotifyPayloadsTest {
             assertTrue(json.contains("<font color=\"warning\">P1 严重级（High）</font>"));
 
             NotifyMessage resolvedMsg = NotifyMessage.normal("恢复标题",
-                    "- **当前状态**：监控恢复（OK）
-- **告警等级**：P2 一般严重（Average）");
+                    "- **当前状态**：监控恢复（OK）\n- **告警等级**：P2 一般严重（Average）");
             byte[] resBytes = NotifyPayloads.wecomPayload(resolvedMsg, new com.fasterxml.jackson.databind.ObjectMapper());
             String resJson = new String(resBytes, java.nio.charset.StandardCharsets.UTF_8);
 
