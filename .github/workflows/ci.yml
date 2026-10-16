@@ -271,6 +271,38 @@ jobs:
                   sys.exit(1)
           PY
 
+      - name: Junrar旧版有界双红负对照（不运行旧版恶意归档无限循环）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.JunrarSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/junrar-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Djunrar.version=7.5.5 \
+            '-Dtest=JunrarSecurityCompatibilityTest#outOfRangeInstructionPointerIsRejected+executorHonorsRejectedJumpWithinBoundedFetches' test > /tmp/junrar-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import pathlib, shutil, sys, xml.etree.ElementTree as ET
+          path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.JunrarSecurityCompatibilityTest.xml'
+          try:
+              root = ET.parse(path).getroot()
+              assert sys.argv[1] == '1'
+              assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['2', '2', '0', '0']
+              assert {c.get('name') for c in root.findall('testcase')} == {'outOfRangeInstructionPointerIsRejected', 'executorHonorsRejectedJumpWithinBoundedFetches'}
+              assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
+              cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+              assert any(p.endswith('/junrar-7.5.5.jar') for p in cp)
+              assert not any(p.endswith('/junrar-7.6.1.jar') for p in cp)
+              shutil.copyfile(path, '/tmp/junrar-negative-control.xml')
+          except Exception:
+              tail = '\n'.join(pathlib.Path('/tmp/junrar-negative-control.log').read_text(errors='replace').splitlines()[-100:])[-30000:]
+              if pathlib.Path(path).exists():
+                  tail += '\n' + ET.tostring(ET.parse(path).getroot(), encoding='unicode')[-20000:]
+              print('::error::Junrar负对照诊断 ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              raise
+          print('::notice::Junrar7.5.5真实有界安全负对照2失败/0错误/0跳过；旧JAR实核，旧VM最多五次取指即硬退出，无恶意归档死循环；修补版随后完整clean verify，非线上可达性证明')
+          PYTEST
+
       - name: BC旧版五红负对照（计数器/名称约束/ASN.1，不把下载编译错误当红测）
         run: |
           set -euo pipefail
@@ -508,6 +540,8 @@ jobs:
             /tmp/opennlp-negative-control.log
             /tmp/bc-negative-control.xml
             /tmp/bc-negative-control.log
+            /tmp/junrar-negative-control.xml
+            /tmp/junrar-negative-control.log
           if-no-files-found: ignore
           retention-days: 7
 

@@ -24,8 +24,8 @@ def component(name, version):
 
 def fixture():
     # BC期望独立于被测策略常量，删错REQUIRED/VERSIONS不能让夹具跟着少模块、造成同源假绿。
-    names = REQUIRED | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
-    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
+    names = REQUIRED | {"com.github.junrar:junrar"} | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "7.6.1" if n == "com.github.junrar:junrar" else "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
     experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
                   "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
                   "native_gate_rc": 1, "checkout_sha": "b" * 40}
@@ -152,6 +152,35 @@ class TestRuntimePatches(unittest.TestCase):
             exclusions = {(e.findtext("m:groupId", namespaces=ns), e.findtext("m:artifactId", namespaces=ns))
                           for e in d.findall("m:exclusions/m:exclusion", ns)}
             self.assertIn(("org.eclipse.angus", "angus-activation"), exclusions)
+
+    def test_Junrar缺件混版字节与HC均不能绿(self):
+        for fault in ("missing", "version", "bytes", "hc"):
+            bom, probe = fixture()
+            name = "com.github.junrar:junrar"
+            c = next(c for c in bom["components"] if c["group"] + ":" + c["name"] == name)
+            if fault == "missing":
+                bom["components"].remove(c)
+            elif fault == "version":
+                c.update(component(name, "7.5.5"))
+                next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["variant"][1] = "7.5.5"
+            elif fault == "bytes":
+                next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["sha256"] = "b" * 64
+            else:
+                probe["findings"].append({"PkgName": name, "Severity": "HIGH", "VulnerabilityID": "CVE-2026-97370"})
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                verify(bom, probe)
+        result = verify(*fixture())
+        self.assertIn("com.github.junrar", result["zero_hc_groups"])
+        self.assertEqual(next(v["version"] for v in result["verified_variants"] if v["name"] == "com.github.junrar:junrar"), "7.6.1")
+
+    def test_Junrar属性必须接到实际DM入口(self):
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+        root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
+        self.assertEqual(root.findtext("m:properties/m:junrar.version", namespaces=ns), "7.6.1")
+        matches = [d for d in root.findall("m:dependencyManagement/m:dependencies/m:dependency", ns)
+                   if d.findtext("m:groupId", namespaces=ns) == "com.github.junrar" and d.findtext("m:artifactId", namespaces=ns) == "junrar"]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].findtext("m:version", namespaces=ns), "${junrar.version}")
 
     def invoke(self, root, severity="HIGH,CRITICAL"):
         argv = ["guard", "--sbom", str(root / "bom.json"), "--experiment", str(root / "probe.json"),
