@@ -68,8 +68,12 @@ def verify(bom, experiment):
             if version != VERSIONS[group]:
                 raise ValueError(f"补丁模块混版/回退：{name}:{version}，需{VERSIONS[group]}")
             continue
-        # tcnative有独立2.x版本流，随Netty BOM对齐；只排除版本相等断言，不豁免漏洞。
-        if not name.startswith("io.netty:netty-tcnative") and version != VERSIONS[group]:
+        # tcnative有独立2.x版本流，随Netty BOM对齐；jackson-annotations 官方版本号为 2.21（或 2.21.x），只排除版本完全相等断言，不豁免漏洞。
+        if name.startswith("io.netty:netty-tcnative"):
+            pass
+        elif name == "com.fasterxml.jackson.core:jackson-annotations" and version.startswith("2.21"):
+            pass
+        elif version != VERSIONS[group]:
             raise ValueError(f"补丁模块混版/回退：{name}:{version}，需{VERSIONS[group]}")
         if packaged.get((name, version, kind, classifier)) != registry[(name, version, kind, classifier)]:
             raise ValueError(f"补丁未绑定实际Boot字节：{name}:{version}:{classifier}")
