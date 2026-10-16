@@ -125,8 +125,9 @@ public final class AlertNotifyTemplate {
 
         StringBuilder md = header(title.toString());
 
-        // ① 状态与影响先行：明确告知当前告警状态（降低认知门槛），紧接人话摘要与影响面
+        // ① 状态与影响先行：明确告知当前告警状态与等级（降低认知门槛），紧接人话摘要与影响面
         line(md, "当前状态", "告警中（PROBLEM）");
+        line(md, "告警等级", formatLevel(alert.getLevel()));
         line(md, "摘要", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.SUMMARY));
         line(md, "影响", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.IMPACT));
 
@@ -224,6 +225,7 @@ public final class AlertNotifyTemplate {
 
         StringBuilder md = header(title.toString());
         line(md, "当前状态", "监控恢复（OK）");
+        line(md, "告警等级", formatLevel(alert.getLevel()));
         line(md, "摘要", AlertAnnotationKeys.valueOf(originalAnnotations, AlertAnnotationKeys.SUMMARY));
 
         // 对称定位硬核事实（恢复主机、恢复地址与监控项目）
@@ -526,6 +528,24 @@ public final class AlertNotifyTemplate {
      * 工单状态中文本地化（降低一线值班人员认知门槛）。
      * <p>主显中文，保留原英文括号对照，方便同时满足初级值班易读与老工程师原值对账。</p>
      */
+
+    /**
+     * 告警级别中文标签化（降低认知门槛：P0~P4 映射为人话级别说明）。
+     */
+    static String formatLevel(String level) {
+        if (level == null || level.isBlank()) {
+            return null;
+        }
+        return switch (level.trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "P0", "DISASTER" -> "P0 灾难级（Disaster）";
+            case "P1", "HIGH" -> "P1 严重级（High）";
+            case "P2", "AVERAGE" -> "P2 一般严重（Average）";
+            case "P3", "WARNING" -> "P3 警告级（Warning）";
+            case "P4", "INFO", "INFORMATION" -> "P4 提示级（Info）";
+            default -> level.trim();
+        };
+    }
+
     static String formatTicketStatus(String status) {
         if (status == null || status.isBlank()) {
             return null;

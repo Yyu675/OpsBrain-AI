@@ -501,6 +501,7 @@ class AlertNotifyTemplateTest {
 
             assertThat(firingMd)
                     .contains("**当前状态**：告警中（PROBLEM）")
+                    .contains("**告警等级**：P2 一般严重（Average）")
                     .contains("**告警主机**：primera01")
                     .contains("**告警地址**：10.210.44.11")
                     .contains("**监控项目**：HPE Primera: Get errors")
@@ -517,6 +518,7 @@ class AlertNotifyTemplateTest {
             assertThat(resolvedMd)
                     .contains("[已恢复] P2")
                     .contains("**当前状态**：监控恢复（OK）")
+                    .contains("**告警等级**：P2 一般严重（Average）")
                     .contains("**恢复主机**：primera01")
                     .contains("**恢复地址**：10.210.44.11")
                     .contains("**监控项目**：HPE Primera: Get errors")
