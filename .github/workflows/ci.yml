@@ -286,6 +286,7 @@ jobs:
           try:
               path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.BouncyCastleSecurityCompatibilityTest.xml'
               root = ET.parse(path).getroot()
+              print('::notice::BC负对照计数 ' + str({k: root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')}))
               assert sys.argv[1] == '1', '旧BC必须安全断言失败而非下载/编译错误'
               assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['5', '5', '0', '0']
               expected = {'gostCounterDoesNotRepeatAfterByteWrap', 'excludedEmailCannotEscapeWithTrailingDot', 'excludedUriCannotEscapeWithTrailingDot', 'directoryConstraintMustMatchInitialPrefix', 'lazyAsn1RetainsDepthBudget'}
@@ -297,8 +298,11 @@ jobs:
                   assert not any(p.endswith('/' + artifact + '-jdk18on-1.85.jar') for p in cp), '不得混修补版'
               shutil.copyfile(path, '/tmp/bc-negative-control.xml')
           except Exception:
-              for line in pathlib.Path('/tmp/bc-negative-control.log').read_text(errors='replace').splitlines()[-100:]:
-                  print('::error::BC负对照诊断 ' + line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              # GitHub每step注解有条数上限，整段合成一条，不能只留下开头编译warning而丢真正失败。
+              tail = '\n'.join(pathlib.Path('/tmp/bc-negative-control.log').read_text(errors='replace').splitlines()[-100:])[-30000:]
+              if pathlib.Path(path).exists():
+                  tail += '\n' + ET.tostring(ET.parse(path).getroot(), encoding='unicode')[-20000:]
+              print('::error::BC负对照诊断 ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
               raise
           print('::notice::BC1.81真实安全负对照5失败/0错误/0跳过；三模块旧版classpath实核，修补版随后完整clean verify；非线上可达性证明')
           PYTEST

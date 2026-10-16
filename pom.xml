@@ -89,6 +89,22 @@
                 <artifactId>tika-parsers-standard-package</artifactId>
                 <version>${tika.version}</version>
             </dependency>
+            <!-- Boot3.5不管理BC，只有属性不会生效（原生实扫抓到仍是1.81）；三入口显式DM。 -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcutil-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
             <!-- OpenNLP字典/模型加载安全补丁，不引入第三方整张BOM。 -->
             <dependency>
                 <groupId>org.apache.opennlp</groupId>

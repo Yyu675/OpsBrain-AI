@@ -22,7 +22,9 @@ def component(name, version):
 
 
 def fixture():
-    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, VERSIONS[n.split(":")[0]]) for n in sorted(REQUIRED)]}
+    # BC期望独立于被测策略常量，删错REQUIRED/VERSIONS不能让夹具跟着少模块、造成同源假绿。
+    names = REQUIRED | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on")}
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
     experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
                   "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
                   "native_gate_rc": 1, "checkout_sha": "b" * 40}
@@ -122,6 +124,8 @@ class TestRuntimePatches(unittest.TestCase):
                 c = next(c for c in bom["components"] if c["group"] + ":" + c["name"] == name)
                 if fault == "version":
                     c.update(component(name, "1.81"))
+                    # SBOM/Boot都真实为旧版，隔离版本守卫，不能靠哈希不匹配误打误撞判红。
+                    next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["variant"][1] = "1.81"
                 elif fault == "missing":
                     bom["components"].remove(c)
                 elif fault == "bytes":
