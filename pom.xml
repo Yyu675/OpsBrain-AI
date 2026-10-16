@@ -399,6 +399,17 @@
         </dependency>
 
         <!-- ================= 测试 ================= -->
+        <!-- bcjmail的可选Jakarta Mail API在应用运行树中不存在；仅供真实S/MIME签名回归，不能扩大生产依赖。 -->
+        <dependency>
+            <groupId>jakarta.mail</groupId>
+            <artifactId>jakarta.mail-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>angus-mail</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- 经典命名：spring-boot-starter-test（含 JUnit 5、AssertJ、Mockito 等） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
