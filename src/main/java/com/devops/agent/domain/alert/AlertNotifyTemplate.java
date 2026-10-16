@@ -125,7 +125,8 @@ public final class AlertNotifyTemplate {
 
         StringBuilder md = header(title.toString());
 
-        // ① 影响先行：summary（人话摘要）与 impact（影响面）是「要不要现在爬起来」的答案
+        // ① 状态与影响先行：明确告知当前告警状态（降低认知门槛），紧接人话摘要与影响面
+        line(md, "当前状态", "告警中（PROBLEM）");
         line(md, "摘要", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.SUMMARY));
         line(md, "影响", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.IMPACT));
 
@@ -175,7 +176,7 @@ public final class AlertNotifyTemplate {
         if (ticketId != null && !ticketId.isBlank()) {
             line(md, "关联工单", ticketId);
             line(md, "负责人", nz(assignee, "待分配，请值班人员认领"));
-            line(md, "工单状态", ticketStatus);
+            line(md, "工单状态", formatTicketStatus(ticketStatus));
         } else {
             line(md, "建单状态", nz(ticketHint, "尚未建单（观察窗内或未达建单级别）"));
         }
@@ -222,6 +223,7 @@ public final class AlertNotifyTemplate {
         title.append(titlePart(nz(alert.getAlertName(), "告警")));
 
         StringBuilder md = header(title.toString());
+        line(md, "当前状态", "监控恢复（OK）");
         line(md, "摘要", AlertAnnotationKeys.valueOf(originalAnnotations, AlertAnnotationKeys.SUMMARY));
 
         // 对称定位硬核事实（恢复主机、恢复地址与监控项目）
@@ -258,7 +260,7 @@ public final class AlertNotifyTemplate {
         boolean hasTicket = alert.getTicketId() != null && !alert.getTicketId().isBlank();
         if (hasTicket) {
             line(md, "关联工单", alert.getTicketId());
-            line(md, "工单状态", ticketStatus);
+            line(md, "工单状态", formatTicketStatus(ticketStatus));
             if (otherActive != null && otherActive > 0) {
                 md.append("\n监控侧该告警已解除，但同一工单下仍有 ").append(otherActive)
                         .append(" 条活跃告警——**不要据此关闭整张工单**，请逐条核对。\n");
@@ -516,6 +518,25 @@ public final class AlertNotifyTemplate {
             case Evidence.Type.LOGS -> "日志";
             case Evidence.Type.KNOWLEDGE -> "知识库";
             default -> plain(type, 30);
+        };
+    }
+
+
+    /**
+     * 工单状态中文本地化（降低一线值班人员认知门槛）。
+     * <p>主显中文，保留原英文括号对照，方便同时满足初级值班易读与老工程师原值对账。</p>
+     */
+    static String formatTicketStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+        return switch (status.trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "PENDING" -> "待分配（未认领 PENDING）";
+            case "PROCESSING" -> "处置中（PROCESSING）";
+            case "RESOLVED" -> "已恢复待验证（RESOLVED）";
+            case "CLOSED" -> "已闭环（CLOSED）";
+            case "VOID" -> "已作废（VOID）";
+            default -> status.trim();
         };
     }
 

@@ -348,7 +348,7 @@ class AlertNotifyTemplateTest {
                     "sre-oncall", "PROCESSING", BASE, null).markdown();
 
             assertThat(md).contains("**关联工单**：TK-2026-0001", "**负责人**：sre-oncall",
-                    "**工单状态**：PROCESSING");
+                    "**工单状态**：处置中（PROCESSING）");
         }
 
         @Test
@@ -500,6 +500,7 @@ class AlertNotifyTemplateTest {
             String firingMd = firingMsg.markdown();
 
             assertThat(firingMd)
+                    .contains("**当前状态**：告警中（PROBLEM）")
                     .contains("**告警主机**：primera01")
                     .contains("**告警地址**：10.210.44.11")
                     .contains("**监控项目**：HPE Primera: Get errors")
@@ -515,6 +516,7 @@ class AlertNotifyTemplateTest {
 
             assertThat(resolvedMd)
                     .contains("[已恢复] P2")
+                    .contains("**当前状态**：监控恢复（OK）")
                     .contains("**恢复主机**：primera01")
                     .contains("**恢复地址**：10.210.44.11")
                     .contains("**监控项目**：HPE Primera: Get errors")
