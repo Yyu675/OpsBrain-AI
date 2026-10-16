@@ -24,8 +24,11 @@ def component(name, version):
 
 def fixture():
     # BC期望独立于被测策略常量，删错REQUIRED/VERSIONS不能让夹具跟着少模块、造成同源假绿。
-    names = REQUIRED | {"com.github.junrar:junrar"} | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
-    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "7.6.1" if n == "com.github.junrar:junrar" else "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
+    spring = {"org.springframework:" + a for a in ("spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support",
+              "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging", "spring-orm", "spring-oxm",
+              "spring-tx", "spring-web", "spring-webmvc", "spring-websocket")}
+    names = spring | REQUIRED | {"com.github.junrar:junrar"} | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "6.2.19" if n.startswith("org.springframework:") else "7.6.1" if n == "com.github.junrar:junrar" else "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
     experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
                   "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
                   "native_gate_rc": 1, "checkout_sha": "b" * 40}
@@ -35,6 +38,46 @@ def fixture():
 
 
 class TestRuntimePatches(unittest.TestCase):
+    def test_Spring全族四故障独立检出(self):
+        modules = ("spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support", "spring-core",
+                   "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging", "spring-orm", "spring-oxm", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket")
+        for module in modules:
+            for fault in ("missing", "version", "bytes"):
+                bom, probe = fixture()
+                c = next(c for c in bom["components"] if c["name"] == module)
+                if fault == "missing": bom["components"].remove(c)
+                elif fault == "version":
+                    c.update(component("org.springframework:" + module, "6.2.17"))
+                    row = next(r for r in probe["packaged_libraries"] if r["variant"][0] == "org.springframework:" + module)
+                    row["variant"][1] = "6.2.17"  # 隔离版本守卫；SBOM与Boot保持旧版一致
+                else:
+                    next(r for r in probe["packaged_libraries"] if r["variant"][0] == "org.springframework:" + module)["sha256"] = "b" * 64
+                with self.subTest(module=module, fault=fault), self.assertRaises(ValueError): verify(bom, probe)
+        for cve in ("CVE-2026-41850", "CVE-2026-41842", "CVE-2026-41845"):
+            bom, probe = fixture()
+            probe["findings"].append({"PkgName": "org.springframework:spring-webmvc", "Severity": "HIGH", "VulnerabilityID": cve})
+            with self.subTest(cve=cve), self.assertRaisesRegex(ValueError, "Spring.*3条"): verify(bom, probe)
+
+    def test_Spring部分修补不豁免跨线及新发现(self):
+        bom, probe = fixture()
+        probe["findings"] = [{"PkgName": "org.springframework:spring-webmvc", "Severity": s, "VulnerabilityID": c}
+                             for c, s in (("CVE-2026-47884", "CRITICAL"), ("CVE-2026-47890", "CRITICAL"), ("CVE-NEW", "HIGH"))]
+        result = verify(bom, probe)
+        self.assertEqual(result["partial_targets"]["org.springframework"]["remaining_findings"], probe["findings"])
+        self.assertEqual(result["partial_target_hc_rows"], 3)
+        self.assertEqual(result["remaining_hc_rows"], 3)
+        self.assertNotIn("org.springframework", result["zero_hc_groups"])
+        self.assertFalse(result["full_security_passed"])
+        self.assertEqual(result["native_gate_rc"], 1)
+
+    def test_Spring使用Boot原Framework入口不换平台(self):
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+        root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
+        self.assertEqual(root.findtext("m:properties/m:spring-framework.version", namespaces=ns), "6.2.19")
+        self.assertEqual(root.findtext("m:parent/m:artifactId", namespaces=ns), "spring-boot-starter-parent")
+        self.assertEqual(root.findtext("m:parent/m:version", namespaces=ns), "3.5.12")
+        self.assertFalse(root.findall("m:dependencyManagement/m:dependencies/m:dependency[m:groupId='org.springframework']", ns))
+
     def test_仅目标组通过不能冒充整体安全(self):
         result = verify(*fixture())
         self.assertTrue(result["target_groups_passed"])
@@ -101,7 +144,8 @@ class TestRuntimePatches(unittest.TestCase):
         remaining = {"PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL", "VulnerabilityID": "CVE-2026-65182"}
         probe["findings"].append(remaining)
         result = verify(bom, probe)
-        self.assertEqual(result["partial_target_hc_rows"], 1)
+        self.assertEqual(result["partial_target_hc_rows"], 2)
+        self.assertEqual(len(result["partial_targets"]["org.apache.tomcat.embed"]["remaining_findings"]), 1)
         self.assertEqual(result["remaining_hc_rows"], 2)
         self.assertEqual(result["partial_targets"]["org.apache.tomcat.embed"]["remaining_findings"], [remaining])
         self.assertNotIn("org.apache.tomcat.embed", result["zero_hc_groups"])
