@@ -45,6 +45,8 @@ public class BusinessMetrics {
     private final MeterRegistry registry;
     private final Counter alertReceived;
     private final Counter alertDedup;
+    private final Counter observationSuppressed;
+    private final Counter stormAggregated;
     private final Timer ticketAutoCreateOk;
     private final Timer ticketAutoCreateFailed;
     private final Timer diagnosisCompleted;
@@ -88,6 +90,10 @@ public class BusinessMetrics {
                 .description("告警信号到达数（webhook 每条有效信号）").register(registry);
         this.alertDedup = Counter.builder("opsbrain.alert_dedup_total")
                 .description("重复告警命中数（去重生效：计次而非新建）").register(registry);
+        this.observationSuppressed = Counter.builder("opsbrain.observation_suppressed_total")
+                .description("自愈观察窗抑制拦截数（观察级暂缓建单降噪量）").register(registry);
+        this.stormAggregated = Counter.builder("opsbrain.storm_aggregated_total")
+                .description("风暴模式聚合抑制数（突发风暴降噪合并量）").register(registry);
         this.ticketAutoCreateOk = Timer.builder("opsbrain.ticket_autocreate_seconds")
                 .tag("result", "ok").description("告警自动建单耗时（成功）").register(registry);
         this.ticketAutoCreateFailed = Timer.builder("opsbrain.ticket_autocreate_seconds")
@@ -136,8 +142,51 @@ public class BusinessMetrics {
         alertReceived.increment();
     }
 
+    public void incAlertReceived(String severity, String source) {
+        alertReceived.increment();
+        if (severity != null || source != null) {
+            Counter.builder("opsbrain.alert_received_total")
+                    .tag("severity", severity != null ? severity : "UNKNOWN")
+                    .tag("source", source != null ? source : "unknown")
+                    .description("告警信号到达数（分级与来源细分）")
+                    .register(registry)
+                    .increment();
+        }
+    }
+
     public void incAlertDedup() {
         alertDedup.increment();
+    }
+
+    public void incAlertDedup(String severity, String source) {
+        alertDedup.increment();
+        if (severity != null || source != null) {
+            Counter.builder("opsbrain.alert_dedup_total")
+                    .tag("severity", severity != null ? severity : "UNKNOWN")
+                    .tag("source", source != null ? source : "unknown")
+                    .description("重复告警命中数（分级与来源细分）")
+                    .register(registry)
+                    .increment();
+        }
+    }
+
+    public void incObservationSuppressed() {
+        observationSuppressed.increment();
+    }
+
+    public void incObservationSuppressed(String level) {
+        observationSuppressed.increment();
+        if (level != null && !level.isBlank()) {
+            Counter.builder("opsbrain.observation_suppressed_total")
+                    .tag("level", level)
+                    .description("自愈观察窗抑制拦截数（按级别细分）")
+                    .register(registry)
+                    .increment();
+        }
+    }
+
+    public void incStormAggregated() {
+        stormAggregated.increment();
     }
 
     /** 渠道送达回执（doSend 收尾调用）：与 notifyOutcome 的「受理」互补——渠道亲口确认才算送达。 */
