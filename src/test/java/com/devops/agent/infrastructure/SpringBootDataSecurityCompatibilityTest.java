@@ -15,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.system.ApplicationTemp;
 import org.springframework.data.mapping.context.AbstractMappingContext;
 import org.springframework.data.mapping.model.BasicPersistentEntity;
+import org.springframework.data.mapping.model.Property;
 import org.springframework.data.mapping.model.SimpleTypeHolder;
 import org.springframework.data.util.TypeInformation;
 import org.springframework.util.ConcurrentLruCache;
@@ -36,20 +37,21 @@ class SpringBootDataSecurityCompatibilityTest {
 
     static class MinimalMappingContext extends AbstractMappingContext<BasicPersistentEntity<Object, SampleProperty>, SampleProperty> {
         @Override
-        protected <T> BasicPersistentEntity<Object, SampleProperty> createPersistentEntity(TypeInformation<T> typeInformation) {
-            return new BasicPersistentEntity<>(typeInformation);
+        @SuppressWarnings("unchecked")
+        protected <S> BasicPersistentEntity<Object, SampleProperty> createPersistentEntity(TypeInformation<S> typeInformation) {
+            return new BasicPersistentEntity<Object, SampleProperty>((TypeInformation<Object>) typeInformation);
         }
 
         @Override
-        protected SampleProperty createPersistentProperty(org.springframework.data.mapping.model.Property property,
+        protected SampleProperty createPersistentProperty(Property property,
                                                           BasicPersistentEntity<Object, SampleProperty> owner,
                                                           SimpleTypeHolder simpleTypeHolder) {
-            return null;
+            return new SampleProperty(property, owner, simpleTypeHolder);
         }
     }
 
     static class SampleProperty extends org.springframework.data.mapping.model.AnnotationBasedPersistentProperty<SampleProperty> {
-        public SampleProperty(org.springframework.data.mapping.model.Property property,
+        public SampleProperty(Property property,
                               org.springframework.data.mapping.PersistentEntity<?, SampleProperty> owner,
                               SimpleTypeHolder simpleTypeHolder) {
             super(property, owner, simpleTypeHolder);
