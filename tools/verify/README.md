@@ -272,3 +272,9 @@ ECJ=/path/to/ecj.jar
 BC1.85必须显式管理`bcprov/bcpkix/bcutil/bcjmail-jdk18on`四入口（Boot3.5.12不托管，只有属性不生效）；四模块官方POM/JAR实际供应、全部Boot SHA及零HC共同验收，不只看core。POM供应协议兼容合法无namespace，但仍严验坐标，不允许继承父artifactId。BC旧版五红负对照与修补版八项真实SDK/加密/MIME/PDF回归后，再完整clean verify。Mail API/Angus只test，排除测试路径抢占既有activation作用域，所有非BC runtime GAV/type/classifier与基线逐项比对。
 
 本地11套脚本113例（供应10、补丁13；BC四模块16故障子场景），十类唯一源码注入均检出后还原。原生本批前置实扫23已包含历史22之外Junrar新披露；不能把23→20写成22→19或“新增披露0”，也不能忽略Junrar。最终结果/门禁/SHA见PR21和`runtime-bc-patches-2026-10-16.json`，工程绿不代表20条剩余风险或灰度通过。
+
+### 批119 Junrar VM补丁
+
+Junrar7.6.1官方POM/JAR真实供应→唯一DM入口→SDK边界/有界解释器/实际RAR/Tika兼容→旧7.5.5双红且具体失败原因实核→完整clean verify→原生/Boot SHA。旧VM输入List最多第五次取指即硬退出，不执行恶意RAR死循环，不以计时/大循环判红；健康夹具固定官方提交/SHA并保留许可，只进test。
+
+11套检查器116例（供应11、补丁15），六类唯一源码注入检出还原。原生本批20→19，Junrar完成组HC0、66目标variant逐Boot字节，原65及所有非Junrar runtime GAV/type/classifier不变；19条余量、原生rc1、unknown1/incomplete保留，不替换生产输入、不加豁免、不扩大灰度。实际同源证据`runtime-junrar-patch-2026-10-16.json`及最终HEAD见PR22。

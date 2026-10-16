@@ -90,6 +90,11 @@ class TestAvailability(unittest.TestCase):
         bc = [c.args for c in call.call_args_list if c.args[0] == "org.bouncycastle"]
         self.assertEqual(bc, [("org.bouncycastle", a, "1.85") for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")])
 
+    def test_Junrar实际POM和JAR候选不可遗漏(self):
+        with mock.patch.object(probe, "tomcat_versions", return_value={"last_versions_up_to_10_1_58": ["10.1.57"]}), mock.patch.object(probe, "probe", return_value={}) as call:
+            probe.inspect()
+        self.assertEqual([c.args for c in call.call_args_list if c.args[0] == "com.github.junrar"], [("com.github.junrar", "junrar", "7.6.1")])
+
     def test_CLI网络失败响红且清除陈旧证据(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "probe.json"

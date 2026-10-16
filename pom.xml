@@ -28,6 +28,8 @@
         <jsoup.version>1.23.2</jsoup.version>
         <!-- 批118：BC全版本族同升，供应与全部实际模块均须核验；真实加密回归/原生/Boot字节再验收。 -->
         <bouncycastle.version>1.85</bouncycastle.version>
+        <!-- 批119：RAR4 VM越界跳转CPU死循环修补；官方供应/真实SDK/Boot字节共同验。 -->
+        <junrar.version>7.6.1</junrar.version>
         <!-- CVE-2026-22731/22733：Boot 同 3.5 线升至 3.5.12，不跨 4.x。 -->
         <!-- CVE-2026-54291/42198：JDBC 最小补丁线；覆盖 Boot 的托管版本。 -->
         <postgresql.version>42.7.12</postgresql.version>
@@ -109,6 +111,11 @@
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcjmail-jdk18on</artifactId>
                 <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.junrar</groupId>
+                <artifactId>junrar</artifactId>
+                <version>${junrar.version}</version>
             </dependency>
             <!-- OpenNLP字典/模型加载安全补丁，不引入第三方整张BOM。 -->
             <dependency>
