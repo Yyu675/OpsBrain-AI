@@ -4,7 +4,7 @@
   "batch": 122,
   "branch": "arena/fda07685-opsbrain-ai",
   "baseline_commit": "3dd5eab630d098f5728b75efed47eb06d76c161b",
-  "tested_commit": "6ec6f9fb0ada1dd0a4a7071c20b3eef5094e3914",
+  "tested_commit": "603e559db6717dbf268d0bbba912b78ae9aa5726",
   "baseline_hc_count": 10,
   "final_hc_count": 5,
   "high_count": 0,
@@ -17,19 +17,39 @@
     "CVE-2026-91777"
   ],
   "remaining_findings": [
-    {"VulnerabilityID": "CVE-2026-65182", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
-    {"VulnerabilityID": "CVE-2026-65905", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
-    {"VulnerabilityID": "CVE-2026-68525", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
-    {"VulnerabilityID": "CVE-2026-47884", "PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"},
-    {"VulnerabilityID": "CVE-2026-47890", "PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}
+    {
+      "VulnerabilityID": "CVE-2026-65182",
+      "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+      "Severity": "CRITICAL"
+    },
+    {
+      "VulnerabilityID": "CVE-2026-65905",
+      "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+      "Severity": "CRITICAL"
+    },
+    {
+      "VulnerabilityID": "CVE-2026-68525",
+      "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+      "Severity": "CRITICAL"
+    },
+    {
+      "VulnerabilityID": "CVE-2026-47884",
+      "PkgName": "org.springframework:spring-webmvc",
+      "Severity": "CRITICAL"
+    },
+    {
+      "VulnerabilityID": "CVE-2026-47890",
+      "PkgName": "org.springframework:spring-webmvc",
+      "Severity": "CRITICAL"
+    }
   ],
   "verified_variants_count": 95,
   "runs": {
-    "pr_ci": 38893112374,
-    "scan": 38893112408,
-    "push_ci": 38893106758
+    "pr_ci": 38894500857,
+    "scan": 38894500980,
+    "push_ci": 38894495181
   },
-  "scan_job_id": 116947245474,
+  "scan_job_id": 116951722754,
   "backend_tests": {
     "total": 2091,
     "failures": 0,
