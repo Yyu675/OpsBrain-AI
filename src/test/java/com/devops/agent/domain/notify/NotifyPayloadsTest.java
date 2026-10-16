@@ -74,4 +74,32 @@ class NotifyPayloadsTest {
             assertFalse(NotifyPayloads.accepted(200, "{\"message\":\"success\"}"));
         }
     }
+
+    @Nested
+    @DisplayName("企业微信 Markdown 富文本色值渲染")
+    class WeComMarkdownColor {
+
+        @Test
+        @DisplayName("告警中与P0/P1标红 warning，监控恢复标绿 info，P2标灰 comment")
+        void wecomMarkdownAdaptsNativeColors() throws Exception {
+            NotifyMessage normalMsg = NotifyMessage.normal("告警标题",
+                    "- **当前状态**：告警中（PROBLEM）
+- **告警等级**：P1 严重级（High）
+- **说明**：业务异常");
+            byte[] bytes = NotifyPayloads.wecomPayload(normalMsg, new com.fasterxml.jackson.databind.ObjectMapper());
+            String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+
+            assertTrue(json.contains("<font color=\"warning\">告警中（PROBLEM）</font>"));
+            assertTrue(json.contains("<font color=\"warning\">P1 严重级（High）</font>"));
+
+            NotifyMessage resolvedMsg = NotifyMessage.normal("恢复标题",
+                    "- **当前状态**：监控恢复（OK）
+- **告警等级**：P2 一般严重（Average）");
+            byte[] resBytes = NotifyPayloads.wecomPayload(resolvedMsg, new com.fasterxml.jackson.databind.ObjectMapper());
+            String resJson = new String(resBytes, java.nio.charset.StandardCharsets.UTF_8);
+
+            assertTrue(resJson.contains("<font color=\"info\">监控恢复（OK）</font>"));
+            assertTrue(resJson.contains("<font color=\"comment\">P2 一般严重（Average）</font>"));
+        }
+    }
 }
