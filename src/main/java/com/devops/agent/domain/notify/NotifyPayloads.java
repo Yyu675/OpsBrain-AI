@@ -78,7 +78,7 @@ public final class NotifyPayloads {
             return mapper.writeValueAsBytes(payload);
         }
         Map<String, Object> markdown = new LinkedHashMap<>();
-        markdown.put("content", "**" + msg.title() + "**\n" + msg.markdown());
+        markdown.put("content", "**" + msg.title() + "**\n" + adaptWeComMarkdown(msg.markdown()));
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("msgtype", "markdown");
         payload.put("markdown", markdown);
@@ -112,6 +112,24 @@ public final class NotifyPayloads {
                     httpStatus, body.length() > 200 ? body.substring(0, 200) + "…(截断)" : body);
             return false;
         }
+    }
+
+
+    /**
+     * 将通用 Markdown 中的状态/恢复标签转为企业微信原生带色字体。
+     * <p>企微 Markdown 支持标准 &lt;font color="warning/info/comment"&gt; 颜色标签：
+     * 告警中标红（warning），已恢复标绿（info），辅助状态标灰色（comment）。</p>
+     */
+    static String adaptWeComMarkdown(String rawMarkdown) {
+        if (rawMarkdown == null || rawMarkdown.isBlank()) {
+            return rawMarkdown;
+        }
+        return rawMarkdown
+                .replace("告警中（PROBLEM）", "<font color=\"warning\">告警中（PROBLEM）</font>")
+                .replace("监控恢复（OK）", "<font color=\"info\">监控恢复（OK）</font>")
+                .replace("P0 灾难级（Disaster）", "<font color=\"warning\">P0 灾难级（Disaster）</font>")
+                .replace("P1 严重级（High）", "<font color=\"warning\">P1 严重级（High）</font>")
+                .replace("P2 一般严重（Average）", "<font color=\"comment\">P2 一般严重（Average）</font>");
     }
 
     /** 判收专用：只读 errcode，不依赖调用方传入的 ObjectMapper（测试探针也能直接用） */
