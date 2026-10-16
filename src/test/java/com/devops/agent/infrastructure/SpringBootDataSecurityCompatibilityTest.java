@@ -131,7 +131,7 @@ class SpringBootDataSecurityCompatibilityTest {
         assertNotNull(cache);
         assertTrue(cache instanceof ConcurrentLruCache,
                 "propertyPaths cache must use ConcurrentLruCache to bound heap consumption");
-        assertEquals(512, ((ConcurrentLruCache<?, ?>) cache).size(),
+        assertEquals(512, ((ConcurrentLruCache<?, ?>) cache).capacity(),
                 "default capacity must be bounded to 512");
     }
 

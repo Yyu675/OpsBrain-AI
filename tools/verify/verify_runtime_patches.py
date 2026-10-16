@@ -23,11 +23,7 @@ SPRING_REMEDIATED = {"CVE-2026-41850", "CVE-2026-41842", "CVE-2026-41845"}
 SPRING_MODULES = {"spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support",
                   "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging",
                   "spring-orm", "spring-oxm", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket"}
-BOOT_MODULES = {"spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure",
-                "spring-boot-starter", "spring-boot-starter-actuator", "spring-boot-starter-aop",
-                "spring-boot-starter-data-jdbc", "spring-boot-starter-data-jpa", "spring-boot-starter-data-redis",
-                "spring-boot-starter-jdbc", "spring-boot-starter-json", "spring-boot-starter-logging",
-                "spring-boot-starter-tomcat", "spring-boot-starter-validation", "spring-boot-starter-web", "spring-boot-starter-websocket"}
+BOOT_MODULES = {"spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure"}
 DATA_MODULES = {"spring-data-commons", "spring-data-jdbc", "spring-data-jpa",
                 "spring-data-keyvalue", "spring-data-redis", "spring-data-relational"}
 REQUIRED = {"com.github.junrar:junrar", "org.bouncycastle:bcjmail-jdk18on", "org.bouncycastle:bcprov-jdk18on", "org.bouncycastle:bcpkix-jdk18on", "org.bouncycastle:bcutil-jdk18on",
