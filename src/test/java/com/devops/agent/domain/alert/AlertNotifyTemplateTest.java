@@ -466,5 +466,81 @@ class AlertNotifyTemplateTest {
             return new Evidence(status, type, "secret-raw-evidence", Map.of(), "ref", null,
                     Instant.parse("2026-10-14T01:00:00Z"));
         }
+
+        @Test
+        @DisplayName("企业真实通知对齐：支持主机/IP/监控项目与文本取值（吸收Zabbix实战截图样例）")
+        void enterpriseSampleFiringAndResolvedSymmetry() {
+            Alert alert = new Alert();
+            alert.setId(12002061L);
+            alert.setAlertName("HPE Primera: There are errors in requests to WSAPI");
+            alert.setLevel("P2");
+            alert.setService("storage-infra");
+            alert.setDescription("HPE Primera: There are errors in requests to WSAPI");
+            alert.setFirstOccurredAt(LocalDateTime.of(2026, 10, 13, 17, 37, 55));
+            alert.setResolvedAt(LocalDateTime.of(2026, 10, 13, 17, 38, 47));
+            alert.setTicketId("TK-20261013-0021");
+
+            Map<String, String> labels = Map.of(
+                    "host", "primera01",
+                    "instance", "10.210.44.11"
+            );
+            Map<String, String> annotations = Map.of(
+                    AlertAnnotationKeys.SUMMARY, "HPE Primera WSAPI请求报错",
+                    AlertAnnotationKeys.MONITOR_ITEM, "HPE Primera: Get errors",
+                    AlertAnnotationKeys.HOST_NAME, "primera01",
+                    AlertAnnotationKeys.TARGET_ADDRESS, "10.210.44.11",
+                    AlertAnnotationKeys.CURRENT_VALUE, "Failed to receive data: volumes : Error: cannot get URL: Timeout was reached.",
+                    AlertAnnotationKeys.IMPACT, "存储管理API超时，部分卷监控离线",
+                    AlertNotifyTemplate.START_TIME_ESTIMATED, "false"
+            );
+
+            // 触发卡断言
+            NotifyMessage firingMsg = AlertNotifyTemplate.firing(alert, labels, annotations, alert.getTicketId(),
+                    "oncall-sre", "PROCESSING", BASE, null);
+            String firingMd = firingMsg.markdown();
+
+            assertThat(firingMd)
+                    .contains("**告警主机**：primera01")
+                    .contains("**告警地址**：10.210.44.11")
+                    .contains("**监控项目**：HPE Primera: Get errors")
+                    .contains("**当前值**：Failed to receive data: volumes : Error: cannot get URL: Timeout was reached.")
+                    .contains("**影响**：存储管理API超时，部分卷监控离线")
+                    .contains("**关联工单**：TK-20261013-0021");
+
+            // 恢复卡断言：对称包含恢复主机、恢复地址、监控项，并精准计算 52/54 秒级持续时间（无估算污染）
+            NotifyMessage resolvedMsg = AlertNotifyTemplate.resolved(alert, labels, annotations,
+                    Map.of(AlertAnnotationKeys.CURRENT_VALUE, "WSAPI response OK (HTTP 200)"),
+                    false, "PROCESSING", 1L, BASE);
+            String resolvedMd = resolvedMsg.markdown();
+
+            assertThat(resolvedMd)
+                    .contains("[已恢复] P2")
+                    .contains("**恢复主机**：primera01")
+                    .contains("**恢复地址**：10.210.44.11")
+                    .contains("**监控项目**：HPE Primera: Get errors")
+                    .contains("**恢复取值**：WSAPI response OK (HTTP 200)")
+                    .contains("**本次持续**：不足 1 分钟")
+                    .contains("仍有 1 条活跃告警——**不要据此关闭整张工单**");
+        }
+
+        @Test
+        @DisplayName("诊断不足时卡片明确输出排查建议与引导，严禁将未采集视作正常")
+        void diagnosisInsufficientProvidesActionableGuidance() {
+            Alert alert = baseAlert();
+            List<Evidence> collected = List.of(
+                    evidence(Evidence.EvidenceStatus.FAILED, Evidence.Type.LOGS),
+                    evidence(Evidence.EvidenceStatus.FAILED, Evidence.Type.METRICS)
+            );
+
+            NotifyMessage diagMsg = AlertNotifyTemplate.diagnosis(alert, Map.of("host", "primera01"),
+                    EvidenceAggregator.aggregate(collected), "TK-DIAG-01", BASE);
+
+            String diagMd = diagMsg.markdown();
+            assertThat(diagMd)
+                    .contains("**诊断状态**：证据不足，暂无法形成可靠根因结论")
+                    .contains("**排查建议**：诊断数据源缺失或采集异常，请先核验监控探针、日志上报链路与权限，优先转人工研判")
+                    .contains("不要据此认定业务正常");
+            assertThat(diagMsg.urgent()).isFalse();
+        }
     }
 }

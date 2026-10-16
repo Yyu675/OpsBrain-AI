@@ -129,7 +129,24 @@ public final class AlertNotifyTemplate {
         line(md, "摘要", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.SUMMARY));
         line(md, "影响", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.IMPACT));
 
-        // ② 指标事实：当前值/阈值成对；持续时长从首次发生算到当前
+        // ② 定位硬核事实（吸收企业真实Zabbix等源实践）：主机、地址与监控项
+        String hostName = AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.HOST_NAME);
+        if (hostName == null) {
+            hostName = first(labels, "host", "hostname", "node");
+        }
+        String targetAddress = AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.TARGET_ADDRESS);
+        if (targetAddress == null) {
+            targetAddress = first(labels, "ip", "address");
+        }
+        String monitorItem = AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.MONITOR_ITEM);
+        if (monitorItem == null) {
+            monitorItem = first(annotations, "item_name");
+        }
+        line(md, "告警主机", hostName);
+        line(md, "告警地址", targetAddress);
+        line(md, "监控项目", monitorItem);
+
+        // ③ 指标事实：当前值/阈值成对；持续时长从首次发生算到当前
         String current = AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.CURRENT_VALUE);
         String threshold = AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.THRESHOLD);
         if (current != null && threshold != null) {
@@ -145,7 +162,7 @@ public final class AlertNotifyTemplate {
             line(md, "已发生", alert.getOccurrenceCount() + " 次");
         }
 
-        // ③ 现场与线索：description 是汇聚后的核心描述（alert 本体字段，恒有）
+        // ④ 现场与线索：description 是汇聚后的核心描述（alert 本体字段，恒有）
         line(md, "详情", nz(alert.getDescription(), null));
         line(md, "可能原因", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.LIKELY_CAUSE));
         line(md, "首步动作", AlertAnnotationKeys.valueOf(annotations, AlertAnnotationKeys.FIRST_ACTION));
@@ -206,6 +223,23 @@ public final class AlertNotifyTemplate {
 
         StringBuilder md = header(title.toString());
         line(md, "摘要", AlertAnnotationKeys.valueOf(originalAnnotations, AlertAnnotationKeys.SUMMARY));
+
+        // 对称定位硬核事实（恢复主机、恢复地址与监控项目）
+        String resHost = AlertAnnotationKeys.valueOf(originalAnnotations, AlertAnnotationKeys.HOST_NAME);
+        if (resHost == null) {
+            resHost = first(labels, "host", "hostname", "node");
+        }
+        String resAddress = AlertAnnotationKeys.valueOf(originalAnnotations, AlertAnnotationKeys.TARGET_ADDRESS);
+        if (resAddress == null) {
+            resAddress = first(labels, "ip", "address");
+        }
+        String resItem = AlertAnnotationKeys.valueOf(originalAnnotations, AlertAnnotationKeys.MONITOR_ITEM);
+        if (resItem == null) {
+            resItem = first(originalAnnotations, "item_name");
+        }
+        line(md, "恢复主机", resHost);
+        line(md, "恢复地址", resAddress);
+        line(md, "监控项目", resItem);
         line(md, "原告警说明", nz(alert.getDescription(), null));
 
         // 恢复取值：优先取恢复推送里的取值（回落值），没有则回落到触发时的当前值并标注来源差异
@@ -291,6 +325,11 @@ public final class AlertNotifyTemplate {
                     .map(e -> direction(e.evidenceType()) + "：" + statusText(e.status()))
                     .collect(Collectors.joining("；"));
             line(md, "取证概况", statuses);
+            if (result.sufficiency() == EvidenceAggregator.Sufficiency.INSUFFICIENT) {
+                line(md, "排查建议", "诊断数据源缺失或采集异常，请先核验监控探针、日志上报链路与权限，优先转人工研判");
+            } else if (result.sufficiency() == EvidenceAggregator.Sufficiency.WEAK) {
+                line(md, "排查建议", "证据链存在推断薄弱项，请人工核验关键异常时序与调用链后再执行根因处置");
+            }
         }
         md.append("\n请查看取证记录；证据不足时先核对对象、时间窗与采集覆盖，**不要据此认定业务正常**。\n");
         platformLinks(md, alert, baseUrl, firstValue(ticketId, alert.getTicketId()));
