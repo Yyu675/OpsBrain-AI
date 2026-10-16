@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.12</version>
+        <version>3.5.15</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -32,7 +32,7 @@
         <bouncycastle.version>1.85</bouncycastle.version>
         <!-- 批119：RAR4 VM越界跳转CPU死循环修补；官方供应/真实SDK/Boot字节共同验。 -->
         <junrar.version>7.6.1</junrar.version>
-        <!-- CVE-2026-22731/22733：Boot 同 3.5 线升至 3.5.12，不跨 4.x。 -->
+        <!-- 批121：Boot 协同维护线升至 3.5.15（天然搭载 Data 3.5.12 及 Framework 6.2.19），关闭 CVE-2026-40973/41695/41716，不跨 4.x。 -->
         <!-- CVE-2026-54291/42198：JDBC 最小补丁线；覆盖 Boot 的托管版本。 -->
         <postgresql.version>42.7.12</postgresql.version>
         <!-- MinIO 8.6.0 使用 OkHttp 5；Maven 需显式 JVM 构件，测试端同版本对齐。 -->

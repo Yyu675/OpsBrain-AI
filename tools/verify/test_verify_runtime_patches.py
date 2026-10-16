@@ -12,7 +12,7 @@ import unittest
 import xml.etree.ElementTree as ET
 from unittest import mock
 
-from verify_runtime_patches import REQUIRED, VERSIONS, evidence_frames, main, verify
+from verify_runtime_patches import REQUIRED, VERSIONS, BOOT_MODULES, DATA_MODULES, evidence_frames, main, verify
 
 
 def component(name, version):
@@ -28,7 +28,7 @@ def fixture():
               "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging", "spring-orm", "spring-oxm",
               "spring-tx", "spring-web", "spring-webmvc", "spring-websocket")}
     names = spring | REQUIRED | {"com.github.junrar:junrar"} | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
-    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "6.2.19" if n.startswith("org.springframework:") else "7.6.1" if n == "com.github.junrar:junrar" else "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "6.2.19" if n.startswith("org.springframework:") else "3.5.15" if n.startswith("org.springframework.boot:") else "3.5.12" if n.startswith("org.springframework.data:") else "7.6.1" if n == "com.github.junrar:junrar" else "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
     experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
                   "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
                   "native_gate_rc": 1, "checkout_sha": "b" * 40}
@@ -75,7 +75,7 @@ class TestRuntimePatches(unittest.TestCase):
         root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
         self.assertEqual(root.findtext("m:properties/m:spring-framework.version", namespaces=ns), "6.2.19")
         self.assertEqual(root.findtext("m:parent/m:artifactId", namespaces=ns), "spring-boot-starter-parent")
-        self.assertEqual(root.findtext("m:parent/m:version", namespaces=ns), "3.5.12")
+        self.assertEqual(root.findtext("m:parent/m:version", namespaces=ns), "3.5.15")
         self.assertFalse(root.findall("m:dependencyManagement/m:dependencies/m:dependency[m:groupId='org.springframework']", ns))
 
     def test_仅目标组通过不能冒充整体安全(self):
@@ -264,3 +264,23 @@ class TestRuntimePatches(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+    def test_SpringBoot及SpringData全族故障独立检出(self):
+        for name in (list(BOOT_MODULES)[:3] + list(DATA_MODULES)[:3]):
+            group = "org.springframework.boot" if name in BOOT_MODULES else "org.springframework.data"
+            coord = group + ":" + name
+            for fault in ("missing", "version", "bytes", "hc"):
+                bom, probe = fixture()
+                c = next(c for c in bom["components"] if c["name"] == name)
+                if fault == "missing":
+                    bom["components"].remove(c)
+                elif fault == "version":
+                    c.update(component(coord, "3.5.10"))
+                    row = next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)
+                    row["variant"][1] = "3.5.10"
+                elif fault == "bytes":
+                    next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)["sha256"] = "b" * 64
+                else:
+                    probe["findings"].append({"PkgName": coord, "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
+                with self.subTest(coord=coord, fault=fault), self.assertRaises(ValueError):
+                    verify(bom, probe)
