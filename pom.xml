@@ -404,11 +404,25 @@
             <groupId>jakarta.mail</groupId>
             <artifactId>jakarta.mail-api</artifactId>
             <scope>test</scope>
+            <!-- 防测试传递路径抢占原生产angus-activation的scope；运行树须逐GAV与基线一致。 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.angus</groupId>
+                    <artifactId>angus-activation</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.eclipse.angus</groupId>
             <artifactId>angus-mail</artifactId>
             <scope>test</scope>
+            <!-- 防测试传递路径抢占原生产angus-activation的scope；运行树须逐GAV与基线一致。 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.angus</groupId>
+                    <artifactId>angus-activation</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- 经典命名：spring-boot-starter-test（含 JUnit 5、AssertJ、Mockito 等） -->
         <dependency>
