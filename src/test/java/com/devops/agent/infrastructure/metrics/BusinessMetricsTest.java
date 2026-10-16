@@ -116,4 +116,29 @@ class BusinessMetricsTest {
                 .tags("level", "P2").counter().count()).isEqualTo(1.0);
         assertThat(registry.get("opsbrain.storm_aggregated_total").counter().count()).isEqualTo(1.0);
     }
+
+    @Test
+    @DisplayName("诊断各路证据收集状态打点（kind/status细分计数）")
+    void diagnosisEvidenceStatusCounters() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BusinessMetrics m = new BusinessMetrics(
+                registry,
+                mock(DevOpsTicketRepository.class),
+                mock(AlertRepository.class),
+                mock(ApprovalRequestRepository.class));
+
+        m.recordDiagnosisEvidence("metrics", "SUCCESS");
+        m.recordDiagnosisEvidence("logs", "FAILED");
+        m.recordDiagnosisEvidence("knowledge", "NO_DATA");
+        m.recordDiagnosisEvidence(null, null);
+
+        assertThat(registry.get("opsbrain.diagnosis_evidence_status_total")
+                .tags("kind", "metrics", "status", "SUCCESS").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.diagnosis_evidence_status_total")
+                .tags("kind", "logs", "status", "FAILED").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.diagnosis_evidence_status_total")
+                .tags("kind", "knowledge", "status", "NO_DATA").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.diagnosis_evidence_status_total")
+                .tags("kind", "unknown", "status", "UNKNOWN").counter().count()).isEqualTo(1.0);
+    }
 }
