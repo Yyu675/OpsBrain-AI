@@ -292,7 +292,7 @@ public final class AlertNotifyTemplate {
         String title = "⬆️ " + base.title();
         // 级别变化行插在标题之后、摘要之前——它是这条卡与触发卡唯一的差异事实
         int firstBlank = base.markdown().indexOf("\n\n");
-        String change = "- **级别**：" + nz(prevLevel, "?") + " → " + nz(alert.getLevel(), "?") + "\n";
+        String change = "- **级别**：" + nz(formatLevel(prevLevel), "?") + " → " + nz(formatLevel(alert.getLevel()), "?") + "\n";
         String md = firstBlank < 0
                 ? base.markdown() + change
                 : base.markdown().substring(0, firstBlank + 2) + change + base.markdown().substring(firstBlank + 2);
