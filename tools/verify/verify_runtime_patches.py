@@ -14,7 +14,7 @@ from trivy_summary import escape
 VERSIONS = {"org.apache.tika": "3.2.2", "io.netty": "4.1.137.Final",
             "io.micrometer": "1.15.12", "org.apache.opennlp": "2.5.9", "org.jsoup": "1.23.2",
             "org.apache.tomcat.embed": "10.1.57", "org.bouncycastle": "1.85", "com.github.junrar": "7.6.1",
-            "org.springframework": "6.2.19", "org.springframework.boot": "3.5.15", "org.springframework.data": "3.5.12"}
+            "org.springframework": "6.2.19", "org.springframework.boot": "3.5.15", "org.springframework.data": "3.5.12", "com.fasterxml.jackson.core": "2.21.7"}
 ZERO_HC_GROUPS = set(VERSIONS) - {"org.apache.tomcat.embed", "org.springframework"}
 # 正向列出本次必须关闭的9条；不是剩余漏洞忽略表，原生报告/门禁完整保留。
 TOMCAT_REMEDIATED = {"CVE-2026-41293", "CVE-2026-43512", "CVE-2026-43515", "CVE-2026-29129",
@@ -40,6 +40,8 @@ REQUIRED = {"com.github.junrar:junrar", "org.bouncycastle:bcjmail-jdk18on", "org
 REQUIRED |= {"org.springframework:" + name for name in SPRING_MODULES}
 REQUIRED |= {"org.springframework.boot:" + name for name in BOOT_MODULES}
 REQUIRED |= {"org.springframework.data:" + name for name in DATA_MODULES}
+JACKSON_CORE_MODULES = {"jackson-core", "jackson-databind"}
+REQUIRED |= {"com.fasterxml.jackson.core:" + name for name in JACKSON_CORE_MODULES}
 
 
 def verify(bom, experiment):
@@ -90,7 +92,7 @@ def verify(bom, experiment):
             "partial_target_hc_rows": len(tomcat_findings) + len(spring_findings),
             "partial_targets": {"org.apache.tomcat.embed": {"required_absent_cves": sorted(TOMCAT_REMEDIATED), "remaining_findings": tomcat_findings}, "org.springframework": {"required_absent_cves": sorted(SPRING_REMEDIATED), "remaining_findings": spring_findings}}, "remaining_hc_rows": len(experiment["findings"]),
             "native_gate_rc": experiment.get("native_gate_rc"), "full_security_passed": False,
-            "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup/BC/Junrar/Boot/Data完成组清零；Tomcat仅验九条、Spring仅验三条关闭，剩余发现完整保留；非整体安全/灰度放行"}
+            "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup/BC/Junrar/Boot/Data/Jackson完成组清零；Tomcat仅验九条、Spring仅验三条关闭，剩余发现完整保留；非整体安全/灰度放行"}
 
 
 def evidence_frames(payload):

@@ -262,9 +262,6 @@ class TestRuntimePatches(unittest.TestCase):
                 self.assertFalse((root / "out.json").exists())
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
     def test_SpringBoot及SpringData全族故障独立检出(self):
         for name in ("spring-boot", "spring-boot-starter-web", "spring-data-commons", "spring-data-jpa"):
             group = "org.springframework.boot" if name in BOOT_MODULES else "org.springframework.data"
@@ -286,3 +283,29 @@ if __name__ == "__main__":
                     probe["findings"].append({"PkgName": coord, "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
                 with self.subTest(coord=coord, fault=fault), self.assertRaises(ValueError):
                     verify(bom, probe)
+
+
+    def test_Jackson全族故障独立检出(self):
+        for name in ("jackson-core", "jackson-databind"):
+            coord = "com.fasterxml.jackson.core:" + name
+            for fault in ("missing", "version", "bytes", "hc"):
+                bom, probe = fixture()
+                c = next(c for c in bom["components"] if c["name"] == name)
+                if fault == "missing":
+                    bom["components"].remove(c)
+                elif fault == "version":
+                    c.update(component(coord, "2.21.4"))
+                    row = next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)
+                    row["variant"][1] = "2.21.4"
+                elif fault == "bytes":
+                    next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)["sha256"] = "b" * 64
+                else:
+                    probe["findings"].append({"PkgName": coord, "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
+                with self.subTest(coord=coord, fault=fault), self.assertRaises(ValueError):
+                    verify(bom, probe)
+        result = verify(*fixture())
+        self.assertIn("com.fasterxml.jackson.core", result["zero_hc_groups"])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

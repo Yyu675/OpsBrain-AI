@@ -118,6 +118,16 @@ def inspect(get=fetch):
                      "spring-data-keyvalue", "spring-data-redis", "spring-data-relational"):
         candidates.append(probe("org.springframework.data", artifact, "3.5.12", get=get))
     candidates.append(probe("org.springframework.data", "spring-data-bom", "2025.0.12", "pom", get))
+    # 批122：Jackson 2.21.7 同线修补官方供应探测。
+    for artifact in ("jackson-core", "jackson-databind"):
+        candidates.append(probe("com.fasterxml.jackson.core", artifact, "2.21.7", get=get))
+    candidates.append(probe("com.fasterxml.jackson.core", "jackson-annotations", "2.21", get=get))
+    for artifact in ("jackson-dataformat-toml", "jackson-dataformat-yaml"):
+        candidates.append(probe("com.fasterxml.jackson.dataformat", artifact, "2.21.7", get=get))
+    for artifact in ("jackson-datatype-jdk8", "jackson-datatype-jsr310"):
+        candidates.append(probe("com.fasterxml.jackson.datatype", artifact, "2.21.7", get=get))
+    candidates.append(probe("com.fasterxml.jackson.module", "jackson-module-parameter-names", "2.21.7", get=get))
+    candidates.append(probe("com.fasterxml.jackson", "jackson-bom", "2.21.7", "pom", get))
     return {"schema_version": 1, "repository": BASE, "tomcat_metadata": metadata, "candidates": candidates,
             "boundary": "200且有效POM/JAR只证明本轮可获取，不证明传递解析/二进制兼容/漏洞已修；404保留，网络/坏内容失败，不自动选版本或加豁免"}
 
