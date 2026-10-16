@@ -1,0 +1,1169 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 批 64:失败步借 commit comment 回帖取证(沙箱侧读 CDN 日志被墙)
+  pull-requests: write  # 4-3.5：PR 评论贴评测对比结果
+
+# 同一分支的新提交取消尚在跑的旧任务，避免排队浪费
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  workflow-refs:
+    name: 工作流自检（依赖可解析 + schedule 哨兵心跳）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 递归校验所有 uses（含 composite 内部与完整 SHA）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 为什么要有这一闸：vulnerability-scan.yml 曾把 trivy-action 钉成 @0.28.0
+          # （真实 tag 是 v0.28.0），于是它**连续 5 周在 Set up job 阶段就失败、一次都没真扫过**。
+          # 而它只在 schedule/dispatch 上跑、不进 push 门禁 → 没人看得见。
+          # 这类坏钉本地查不出来（YAML 合法、语法没错），只能拿真 API 验。
+          # 批110：只校验最外层 tag 会漏掉内部 setup-trivy 坏钉；只读 API 递归查元数据。
+          python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+          python3 tools/verify/test_workflow_refs.py
+          python3 tools/verify/test_trivy_summary.py
+          python3 tools/verify/test_sbom_runtime_probe.py
+          python3 tools/verify/test_sbom_workflow.py
+          python3 tools/verify/test_verify_runtime_patches.py
+          python3 tools/verify/test_maven_patch_availability.py
+          python3 tools/verify/test_maven_scan_coverage.py
+          python3 tools/verify/test_maven_coverage_workflow.py
+          python3 tools/verify/test_trivy_policy.py
+          python3 tools/verify/test_selftest_trivy_reports.py
+          python3 tools/verify/test_trivy_workflow.py
+          python3 tools/verify/workflow_refs.py
+
+      - name: schedule 型工作流心跳检查（哨兵还活着吗）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # 为什么要有这一闸（批102 的教训）：vulnerability-scan.yml 因 action 版本钉错，
+          # 连续 5 周在 Set up job 阶段就失败、一次都没真扫过；而它只跑 schedule——
+          # **只跑 schedule 的门禁，它的红不在任何人日常视野里**。故把「哨兵还活着吗」
+          # 搬进 push 门禁来问。
+          #
+          # 分寸：漏洞扫描发现 HIGH/CRITICAL 时本就 exit-code=1（红可能是**真发现**），
+          # 所以「上次红」不能一律判死；只有**失败在 Set up job**（根本没跑起来）才算哑哨兵。
+          BASELINE=.github/workflow-heartbeat-baseline.json
+          fail=0
+          sched=$(grep -rlE '^[[:space:]]*schedule:' .github/workflows || true)
+          if [ -z "$sched" ]; then
+            echo "没有 schedule 型工作流，本闸无需检查"
+            exit 0
+          fi
+          for f in $sched; do
+            name=$(basename "$f")
+            # 各 workflow 可用注释声明自己的最大容忍间隔（默认 10 天）
+            max_age=$(sed -nE 's/.*heartbeat-max-age-days:[[:space:]]*([0-9]+).*/\1/p' "$f" | head -1)
+            max_age=${max_age:-10}
+
+            # 进行中的 PR 自证不能盖住上一次失败；只看已完成结果。
+            json=$(gh run list --workflow "$name" --status completed --limit 1 --json databaseId,conclusion,createdAt 2>/dev/null || echo '[]')
+            if [ "$(echo "$json" | jq 'length')" = "0" ]; then
+              echo "::error::schedule 型工作流 $name 从未运行过——等于哑哨兵（查 cron、默认分支、文件是否真落到 main）"
+              fail=1
+              continue
+            fi
+            rid=$(echo "$json" | jq -r '.[0].databaseId')
+            concl=$(echo "$json" | jq -r '.[0].conclusion')
+            created=$(echo "$json" | jq -r '.[0].createdAt')
+            age_days=$(( ( $(date +%s) - $(date -d "$created" +%s) ) / 86400 ))
+
+            # 已知欠账：同一 run 已登记在案就只警告（棘轮——老账认了，新账不许再欠）
+            known=""
+            if [ -f "$BASELINE" ]; then
+              known=$(jq -r --arg k "$name" --arg r "$rid" \
+                'if (.[$k] != null) and ((.[$k].run_id|tostring) == $r) then .[$k].reason else "" end' "$BASELINE")
+            fi
+
+            if [ "$age_days" -gt "$max_age" ]; then
+              msg="schedule 型工作流 $name 已 ${age_days} 天没跑（容忍 ${max_age} 天）——哨兵可能已停摆"
+              if [ -n "$known" ]; then echo "::warning::$msg（已知欠账：$known）"; else echo "::error::$msg"; fail=1; fi
+            fi
+
+            if [ "$concl" = "failure" ]; then
+              badstep=$(gh run view "$rid" --json jobs --jq '[.jobs[].steps[]|select(.conclusion=="failure")|.name]|join(",")' 2>/dev/null || echo "")
+              if echo "$badstep" | grep -qi "set up job"; then
+                msg="$name 上次运行（$rid，$created）失败在「$badstep」= 根本没跑起来，是哑哨兵"
+                if [ -n "$known" ]; then echo "::warning::$msg（已知欠账：$known）"; else echo "::error::$msg"; fail=1; fi
+              else
+                echo "::warning::$name 上次运行（$rid，$created）失败于「$badstep」——可能是真发现（漏洞扫描发现 HIGH/CRITICAL 即 exit 1），请人工看一眼，别当噪声"
+              fi
+            elif [ "$concl" != "success" ]; then
+              echo "::error::$name 上次完成状态为 $concl，不当作健康心跳"
+              fail=1
+            else
+              echo "ok   $name：上次 $concl（$created，${age_days} 天前，容忍 ${max_age} 天）"
+            fi
+          done
+          exit $fail
+  backend:
+    name: 后端 · 编译与测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # 三个测试类需要真实 Spring 上下文（@SpringBootTest）：
+    #   DevopsPlatformBackendApplicationTests / HybridRetrieverIntegrationTest
+    #   / KnowledgeDocRepositorySortTest
+    # 它们跑在 dev profile 上，因此这里的端口与口令必须与
+    # application-dev.yml、docker-compose.dev.yml 完全一致，否则连不上。
+    #   PostgreSQL: 25432 / devops / devops_password / devops_knowledge_db
+    #   Redis:      26379 / devops_redis_pwd
+    # 只起这两个（不用 docker-compose.dev.yml 整套）——MinIO/Prometheus/Adminer
+    # 在 CI 里用不到，起了只拖慢。
+    services:
+      postgres:
+        image: ankane/pgvector:v0.5.1
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops_password
+          POSTGRES_DB: devops_knowledge_db
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d devops_knowledge_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.0-alpine
+        ports:
+          - 26379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 校验 Maven Wrapper 可用
+        # mvnw 曾长期未提交，导致 clone 下来无法开箱构建。
+        # 这一步保证它不会再次丢失或丢掉可执行位。
+        run: |
+          test -x ./mvnw || { echo "::error::mvnw 缺失或没有可执行权限"; exit 1; }
+          ./mvnw -B -ntp --version
+
+      - name: 迁移校验与空库全量建账（Flyway migrate+validate，路线图步骤 0-1.6/0-1 验收）
+        id: flywaycheck
+        # 双保险的内层：应用启动 validate-on-migrate=true 是运行时防线（防 prod 库漂移）；
+        # 本步骤用一次性零障库走「migrate→validate→库账」完整三段，证明:
+        #   ① 仓库内迁移空库一次建出全部表（批 69 收敛后即 V1 单文件，路线图 0-1 验收第一条）;
+        #   ② flyway:validate 对已应用账逐项 checksum 核验（0-1 验收第三条的 CI 面）;
+        #   ③ 与后段「初始化数据库 Schema」走的主库物理隔离(取 scratch 名义),
+        #      互不干扰、可重跑。
+        run: |
+          set -o pipefail
+          {
+          PGPASSWORD=devops_password psql -h localhost -p 25432 -U devops -d postgres \
+            -c "DROP DATABASE IF EXISTS flyway_ci_scratch;" -c "CREATE DATABASE flyway_ci_scratch;"
+          ./mvnw -B -ntp flyway:migrate \
+            -Dflyway.url=jdbc:postgresql://localhost:25432/flyway_ci_scratch \
+            -Dflyway.user=devops -Dflyway.password=devops_password
+          ./mvnw -B -ntp flyway:validate \
+            -Dflyway.url=jdbc:postgresql://localhost:25432/flyway_ci_scratch \
+            -Dflyway.user=devops -Dflyway.password=devops_password
+          TABLES=$(PGPASSWORD=devops_password psql -h localhost -p 25432 -U devops -d flyway_ci_scratch -tA \
+            -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';")
+          echo "::notice::空库全量建账表数=$TABLES"
+          [ "$TABLES" -ge 33 ] || { echo "::error::空库 migrate 后表数 $TABLES < 33(期望 V1 单文件全建账)"; exit 1; }
+          } 2>&1 | tee /tmp/flyway-check.log
+
+      - name: Flyway 步失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道，批 64）
+        if: failure() && steps.flywaycheck.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-flyway-diag -->"
+            echo "### 🔴 后端腿「迁移校验与空库全量建账」步骤取证（批 64 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -120 /tmp/flyway-check.log 2>/dev/null || echo "(日志文件缺失——步骤在 tee 前即炸,如网络/psql 客户端缺位)"
+            echo '```'
+          } > /tmp/flyway-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/flyway-diag.md --silent || true
+
+      - name: 初始化数据库 Schema
+        # @SpringBootTest 不建表（JPA ddl-auto 非 create），需先执行建表脚本。
+        # 批 69 迁移收敛后 V1__baseline.sql 即全量（33 表，原 V2~V11 已折叠进
+        # 基线，sql/ 目录只有数据脚本），单文件执行即可；后续新增 V{n}__ 时
+        # 需要在 Flyway 步骤（上方 scratch 库 migrate）之后让应用自行迁移，
+        # 此步只保底 V1。
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f src/main/resources/db/migration/V1__baseline.sql
+
+      - name: Redis 密码配置
+        # dev profile 期望 Redis 有密码，而官方镜像默认无密码。
+        # 用 CONFIG SET 在运行时设上，避免为此单独构建镜像。
+        #
+        # 2026-10-13 修复（本步曾让后端腿与端到端腿双双停在 exit 127）：
+        # 原实现 `apt-get install redis-tools || true` + `redis-cli ...`，
+        # 镜像上 apt 装不上时 `|| true` 把失败吞成静默，随后 redis-cli 不存在 →
+        # command not found(127)，编译与测试步被整体跳过（main 38399771034 同款）。
+        # 改为 python3 直连 RESP：runner 恒有 python3，零 apt、零外部网络依赖。
+        run: |
+          python3 - <<'PY'
+          import socket, sys
+
+
+          def read_reply(sock):
+              """读到回复行结束（RESP 简单字符串/错误都以一个 \r\n 收尾）。
+
+              不能单次 recv 就判定成败：TCP 分段时 `+OK` 可能只到达 `+O`，
+              于是「密码已生效」被误报为未生效（本地 mock 验证时实测撞到）。
+              """
+              buf = b''
+              while not buf.endswith(b'\r\n'):
+                  chunk = sock.recv(256)
+                  if not chunk:
+                      break
+                  buf += chunk
+              return buf
+
+
+          def cmd(sock, *parts):
+              payload = ('*%d\r\n' % len(parts)).encode()
+              for part in parts:
+                  raw = part.encode()
+                  payload += b'$%d\r\n%s\r\n' % (len(raw), raw)
+              sock.sendall(payload)
+              return read_reply(sock)
+
+
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              print('CONFIG SET requirepass ->', cmd(s, 'CONFIG', 'SET', 'requirepass', 'devops_redis_pwd').strip())
+          # 新连接必须真正 AUTH 才通——「密码已生效」的可证伪检查（而非只看退出码）
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              auth = cmd(s, 'AUTH', 'devops_redis_pwd')
+              ping = cmd(s, 'PING')
+              print('AUTH ->', auth.strip(), '| PING ->', ping.strip())
+              if b'+OK' not in auth or b'+PONG' not in ping:
+                  print('::error::Redis 密码未生效，dev profile 后端会连不上')
+                  sys.exit(1)
+          PY
+
+      - name: Spring6.2.17真实四红负对照（小输入、精确失败原因、非接口或耗时红）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.SpringFrameworkSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/spring-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Dspring-framework.version=6.2.17 \
+            '-Dtest=SpringFrameworkSecurityCompatibilityTest' test > /tmp/spring-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import pathlib, shutil, sys, xml.etree.ElementTree as ET
+          path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.SpringFrameworkSecurityCompatibilityTest.xml'
+          try:
+              root = ET.parse(path).getroot()
+              assert sys.argv[1] == '1'
+              assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['7', '4', '0', '0']
+              reasons = {
+                  'templateLiteralDelimitersAreEscaped': 'template literal delimiters must be escaped',
+                  'contentVersionRemovalPreservesParentDirectory': 'only the last version suffix may be removed',
+                  'unsafeVersionedPathNeverReachesResourceLookup': 'unsafe derived path must be rejected',
+                  'spelOperationBudgetRejectsAtExactBoundary': 'ten operations must hit the configured budget',
+              }
+              cases = {c.get('name'): c for c in root.findall('testcase')}
+              healthy = {'ordinaryScriptTextRetainsEscapingContract', 'healthySpelEvaluationStillWorksAboveBoundary',
+                         'actualVersionedStaticResourceHandlerServesBytesAndRejectsWrongDigest'}
+              assert set(cases) == set(reasons) | healthy
+              assert all(cases[name].find('failure') is None for name in healthy)
+              for name, reason in reasons.items():
+                  failure = cases[name].find('failure')
+                  assert failure is not None and failure.get('type') == 'org.opentest4j.AssertionFailedError'
+                  assert reason in failure.get('message', '')
+              cp = next(p.get('value') for p in root.findall('properties/property') if p.get('name') == 'java.class.path').split(':')
+              for module in ('aop', 'aspects', 'beans', 'context', 'context-support', 'core', 'expression', 'jcl', 'jdbc', 'messaging', 'orm', 'oxm', 'test', 'tx', 'web', 'webmvc', 'websocket'):
+                  assert any(p.endswith('/spring-' + module + '-6.2.17.jar') for p in cp), module
+                  assert not any(p.endswith('/spring-' + module + '-6.2.19.jar') for p in cp), module
+              shutil.copyfile(path, '/tmp/spring-negative-control.xml')
+          except Exception:
+              tail = '\n'.join(pathlib.Path('/tmp/spring-negative-control.log').read_text(errors='replace').splitlines()[-100:])[-30000:]
+              print('::error::Spring旧版负对照未得到真实四红：' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              raise
+          print('::notice::Spring6.2.17真实安全负对照7例/4失败/0错误/0跳过；三项健康对照、四个具体失败原因及全17模块旧classpath实核，小输入不用耗时或大循环；修补版随后完整clean verify，非线上可达性证明')
+          PYTEST
+
+      - name: Junrar旧版有界双红负对照（不运行旧版恶意归档无限循环）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.JunrarSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/junrar-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Djunrar.version=7.5.5 \
+            '-Dtest=JunrarSecurityCompatibilityTest#outOfRangeInstructionPointerIsRejected+executorHonorsRejectedJumpWithinBoundedFetches' test > /tmp/junrar-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import pathlib, shutil, sys, xml.etree.ElementTree as ET
+          path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.JunrarSecurityCompatibilityTest.xml'
+          try:
+              root = ET.parse(path).getroot()
+              assert sys.argv[1] == '1'
+              assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['2', '2', '0', '0']
+              assert {c.get('name') for c in root.findall('testcase')} == {'outOfRangeInstructionPointerIsRejected', 'executorHonorsRejectedJumpWithinBoundedFetches'}
+              assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
+              cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+              cases = {c.get('name'): c for c in root.findall('testcase')}
+              assert '越界IP不能伪报跳转成功' in cases['outOfRangeInstructionPointerIsRejected'].find('failure').get('message', '')
+              assert 'fixture instruction-fetch fuse exceeded' in cases['executorHonorsRejectedJumpWithinBoundedFetches'].find('failure').get('message', '')
+              assert any(p.endswith('/junrar-7.5.5.jar') for p in cp)
+              assert not any(p.endswith('/junrar-7.6.1.jar') for p in cp)
+              shutil.copyfile(path, '/tmp/junrar-negative-control.xml')
+          except Exception:
+              tail = '\n'.join(pathlib.Path('/tmp/junrar-negative-control.log').read_text(errors='replace').splitlines()[-100:])[-30000:]
+              if pathlib.Path(path).exists():
+                  tail += '\n' + ET.tostring(ET.parse(path).getroot(), encoding='unicode')[-20000:]
+              print('::error::Junrar负对照诊断 ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              raise
+          print('::notice::Junrar7.5.5真实有界安全负对照2失败/0错误/0跳过；旧JAR实核，旧VM最多五次取指即硬退出，无恶意归档死循环；修补版随后完整clean verify，非线上可达性证明')
+          PYTEST
+
+      - name: BC旧版五红负对照（计数器/名称约束/ASN.1，不把下载编译错误当红测）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.BouncyCastleSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/bc-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Dbouncycastle.version=1.81 \
+            '-Dtest=BouncyCastleSecurityCompatibilityTest#gostCounterDoesNotRepeatAfterByteWrap+excludedEmailCannotEscapeWithTrailingDot+excludedUriCannotEscapeWithTrailingDot+directoryConstraintMustMatchInitialPrefix+lazyAsn1RetainsDepthBudget' test > /tmp/bc-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import pathlib, shutil, sys, xml.etree.ElementTree as ET
+          try:
+              path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.BouncyCastleSecurityCompatibilityTest.xml'
+              root = ET.parse(path).getroot()
+              print('::notice::BC负对照计数 ' + str({k: root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')}))
+              assert sys.argv[1] == '1', '旧BC必须安全断言失败而非下载/编译错误'
+              assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['5', '5', '0', '0']
+              expected = {'gostCounterDoesNotRepeatAfterByteWrap', 'excludedEmailCannotEscapeWithTrailingDot', 'excludedUriCannotEscapeWithTrailingDot', 'directoryConstraintMustMatchInitialPrefix', 'lazyAsn1RetainsDepthBudget'}
+              assert {c.get('name') for c in root.findall('testcase')} == expected
+              assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
+              cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+              for artifact in ('bcprov', 'bcpkix', 'bcutil', 'bcjmail'):
+                  assert any(p.endswith('/' + artifact + '-jdk18on-1.81.jar') for p in cp), '旧版四模块必须对齐'
+                  assert not any(p.endswith('/' + artifact + '-jdk18on-1.85.jar') for p in cp), '不得混修补版'
+              shutil.copyfile(path, '/tmp/bc-negative-control.xml')
+          except Exception:
+              # GitHub每step注解有条数上限，整段合成一条，不能只留下开头编译warning而丢真正失败。
+              tail = '\n'.join(pathlib.Path('/tmp/bc-negative-control.log').read_text(errors='replace').splitlines()[-100:])[-30000:]
+              if pathlib.Path(path).exists():
+                  tail += '\n' + ET.tostring(ET.parse(path).getroot(), encoding='unicode')[-20000:]
+              print('::error::BC负对照诊断 ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              raise
+          print('::notice::BC1.81真实安全负对照5失败/0错误/0跳过；四模块旧版classpath实核，修补版随后完整clean verify；非线上可达性证明')
+          PYTEST
+
+      - name: Tika 旧版本真实负对照（不能把编译/下载失败当安全断言失败）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.TikaParserSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/tika-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Dtika.version=3.0.0 \
+            '-Dtest=TikaParserSecurityCompatibilityTest#externalDtdsAndEntitiesAreDisabled' test > /tmp/tika-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import shutil, sys, xml.etree.ElementTree as ET
+          path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.TikaParserSecurityCompatibilityTest.xml'
+          root = ET.parse(path).getroot()
+          case = root.find('testcase')
+          assert sys.argv[1] == '1', '旧版必须真实红测，而不是下载/编译等失败'
+          assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['1', '1', '0', '0']
+          assert case.get('name') == 'externalDtdsAndEntitiesAreDisabled'
+          assert case.find('failure').get('type') == 'org.opentest4j.AssertionFailedError'
+          cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+          assert any(p.endswith('/tika-core-3.0.0.jar') for p in cp), '负对照未加载旧版Tika'
+          assert not any(p.endswith('/tika-core-3.2.2.jar') for p in cp), '负对照混入修补后core'
+          shutil.copyfile(path, '/tmp/tika-negative-control.xml')
+          print('::notice::Tika 3.0.0真实负对照：StAX安全断言1失败/0错误；修补版随后必须通过完整clean verify，非线上利用性证明')
+          PYTEST
+
+      - name: OpenNLP 旧版三类安全负对照（字典XXE/扩展初始化/模型计数）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.OpenNlpSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/opennlp-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Dopennlp.version=2.5.4 \
+            '-Dtest=OpenNlpSecurityCompatibilityTest#dictionaryExternalEntityCannotReadHttp+untrustedExtensionCannotRunStaticInitializer+negativeModelCountsFailBeforeArrayAllocation' test > /tmp/opennlp-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import shutil, sys, xml.etree.ElementTree as ET
+          path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.OpenNlpSecurityCompatibilityTest.xml'
+          root = ET.parse(path).getroot()
+          assert sys.argv[1] == '1', '旧版必须是安全断言失败而非编译/下载故障'
+          assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['3', '3', '0', '0']
+          expected = {'dictionaryExternalEntityCannotReadHttp', 'untrustedExtensionCannotRunStaticInitializer', 'negativeModelCountsFailBeforeArrayAllocation'}
+          assert {c.get('name') for c in root.findall('testcase')} == expected
+          assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
+          cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+          assert any(p.endswith('/opennlp-tools-2.5.4.jar') for p in cp)
+          assert not any(p.endswith('/opennlp-tools-2.5.9.jar') for p in cp)
+          shutil.copyfile(path, '/tmp/opennlp-negative-control.xml')
+          print('::notice::OpenNLP 2.5.4真实安全负对照3失败/0错误/0跳过；修补版随后必须完整clean verify通过，非线上可达性证明')
+          PYTEST
+
+      - name: 编译与测试
+        # AI_MODE=MOCK：不调真实模型，CI 不烧额度也不依赖外网
+        env:
+          AI_MODE: MOCK
+          SPRING_PROFILES_ACTIVE: dev
+          # 开启 Schema 自检的严格模式：迁移漏执行会让 @SpringBootTest 直接失败，
+          # 而不是等到运行时用户点检索才发现
+          SCHEMA_FAIL_FAST: 'true'
+        # tee 留档：下一「失败诊断回帖」步从 /tmp/mvn-verify.log 取材。
+        #
+        # ⚠️ 必须显式 `set -o pipefail`（2026-10-13 实测修正）：
+        # 此前这里写着「GitHub 默认 bash 带 pipefail——mvn 退出码不被 tee 吞掉」，
+        # 那是错的。GitHub Actions 未显式声明 shell 时用 `bash -e {0}`：
+        # 有 -e，但**没有 -o pipefail**，管道退出码 = 最后一个命令，而 tee 恒返回 0。
+        # 后果：./mvnw verify 失败（甚至 12 个红测）时 step 仍被判定 success，
+        # 整个后端腿谎报绿——两轮注入-还原反例（注入缺陷、无条件 fail() 探针）
+        # 都没能让本腿变红，根因即此；那一轮 CI 日志里已白纸黑字
+        # 写着 `Tests run: 1924, Failures: 12, Errors: 1`，门禁却全绿。
+        # 依据：GitHub Docs「Exit codes」——`set -eo pipefail` 仅在显式
+        # `shell: bash` 时启用，默认不启用。
+        run: |
+          set -o pipefail
+          ./mvnw -B -ntp verify 2>&1 | tee /tmp/mvn-verify.log
+          # 绿色也留一条汇总注解：沙箱读不到作业日志（azure blob 被墙），
+          # 「本腿真的跑了 N 个测试」只有注解这一条可读证据道——
+          # 这正是本批「假绿」教训的延伸：门禁不但要真红，绿也要可证。
+          grep -aE 'Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$' /tmp/mvn-verify.log \
+            | tail -1 | sed 's/^/::notice::后端测试汇总 /' || true
+
+      - name: OpenAPI 快照新鲜度（门禁 · 批88）
+        # target/openapi.json 由上一步 mvn verify 内的 OpenApiSchemaIntegrationTest
+        # 每次导出（当次代码活体反射）；对账随库快照 path/method + schema 属性集。
+        # 后端改契约没跑 api:refresh → 此步红——apiContract（前端↔快照）与
+        # fieldContract（手写↔生成）都站在快照上，底不新鲜则两闸空转。
+        run: node tools/ci/check-openapi-freshness.js
+
+      - name: 失败诊断回帖（沙箱日志取证道 · 批 45 红案催生）
+        # 背景：托管 runner 日志归档在 azure blob，开发沙箱 egress 不通该域，
+        # gh api/gh run view --log 都取不到失败日志（批 45 红案两度空跑）。
+        # PR 评论走 api.github.com 是沙箱唯一稳定通道——失败时把编译错误
+        # 指纹 + 红测报告摘要 + maven 日志尾段回帖本 PR，取证不求日志。
+        # 只有失败时执行，绿案零开销零噪声；本步常驻不拆。
+        #
+        # 2026-10-13：原条件 `failure() && github.event_name == 'pull_request'`
+        # 在本仓实测拿不到任何东西——本分支的 Actions 只产生 push 事件运行
+        # （PR #3 无 pull_request 运行），于是后端腿红了也无人能读。
+        # 现改为：push/dispatch 走 commit comment，PR 事件额外再回帖 PR（保持原通道）。
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "<!-- opsbrain-red-diagnosis -->"
+            echo "### 🔴 后端腿失败诊断（tee 取证道）"
+            echo
+            echo "**编译错误指纹**："
+            echo '```'
+            (grep -E "\[ERROR\]|cannot find symbol|COMPILATION ERROR" /tmp/mvn-verify.log | head -25) || echo "(无编译错误——为测试阶段红)"
+            echo '```'
+            echo
+            echo "**失败用例清单**（surefire 的 `<<< FAILURE!` 行就是用例全名）："
+            echo '```'
+            (grep -h -E "<<< (FAILURE|ERROR)!" target/surefire-reports/*.txt 2>/dev/null | head -20) || true
+            echo '```'
+            echo
+            echo "**失败摘要**："
+            echo '```'
+            (grep -h -E "^Tests run.*(Failures: [1-9]|Errors: [1-9])" target/surefire-reports/*.txt 2>/dev/null | head -20) || echo "(无 SUMMARY 行)"
+            echo '```'
+            echo
+            echo "**mvn 日志尾段**："
+            echo '```'
+            tail -50 /tmp/mvn-verify.log
+            echo '```'
+          } > /tmp/red-diag.md
+          # commit comment：push / workflow_dispatch 运行时唯一可读通道（沙箱读不了 blob 日志）
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
+            -F body=@/tmp/red-diag.md --silent || true
+          # PR 评论：pull_request 事件时保留原通道（本仓暂无此类运行，条件不满足即跳过）
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md || true
+          fi
+
+      - name: 评测指标基线对比（S4-3 CI 回归门禁）
+        # 接线批次 18（报告 121）。契约层指标由 AgentEvaluationTest 常驻落盘
+        # （MOCK 下同样覆盖）；RAG/LLM 层指标在 EVAL_RAG/EVAL_LLM 门内——
+        # eval_compare 只比双侧共有指标，层缺席不判负（语义见报告 118 §一）。
+        # 本步骤依赖 ubuntu-latest 托管 runner 预装的 node——评测工具链本来
+        # 就是 node 单文件脚本，不为此引 setup-node 增加供应链面。
+        # 前置（4-3.2 首跑即基线）：tools/audit/eval_baseline.json 须由
+        # EVAL_RAG 真实窗口首跑生成并人工 --update 提交后，本门禁才真正亮剑；
+        # 无基线时对比按首跑语义 rc=0 放行并打印引导，不会误红门禁。
+        # ⚠️ 同「编译与测试」：默认 shell 无 pipefail，tee 会吞掉对比脚本
+        # 的非零退出码，让回归门禁形同虚设——显式开启（2026-10-13 修正）。
+        run: |
+          set -o pipefail
+          node tools/audit/eval_compare.js \
+            --current target/eval-metrics.json \
+            --baseline tools/audit/eval_baseline.json | tee eval-compare.txt
+
+      - name: 贴评测对比到 PR（4-3.5）
+        # 只在本 job 是 PR 触发时执行；marker 幂等：同一 PR 反复 push 更新同一条
+        # 评论而不是堆积（对比是「最近一次状态」不是流水账——审计语义）。
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const file = 'eval-compare.txt'
+            const body = fs.existsSync(file)
+              ? fs.readFileSync(file, 'utf8').trim()
+              : '（基线对比 step 未产出输出——查看本 job 日志）'
+            const marker = '<!-- opsbrain-eval-compare -->'
+            const text = marker + '\n### 📊 评测指标 vs 基线（S4-3）\n\n```\n' + body + '\n```'
+            const { owner, repo } = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 })
+            const prev = comments.data.find(c => c.body.includes(marker))
+            if (prev) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: prev.id, body: text })
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: text })
+            }
+
+      - name: 上传评测指标
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-eval-metrics
+          path: |
+            target/eval-metrics.json
+            eval-compare.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            target/surefire-reports/
+            /tmp/tika-negative-control.xml
+            /tmp/tika-negative-control.log
+            /tmp/opennlp-negative-control.xml
+            /tmp/opennlp-negative-control.log
+            /tmp/bc-negative-control.xml
+            /tmp/bc-negative-control.log
+            /tmp/spring-negative-control.xml
+            /tmp/spring-negative-control.log
+            /tmp/junrar-negative-control.xml
+            /tmp/junrar-negative-control.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend:
+    name: 前端 · 类型/规范/测试/构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: devops-platform-frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: devops-platform-frontend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 依赖漏洞审计（门禁）
+        # S5-3.3（批次 36 / 报告 139）：prod 依赖 HIGH+ 即红；dev 依赖不在门禁口径
+        # （构建侧风险等位较低、变异噪声高）——全量含 dev 的账本随 Trivy 周巡件。
+        # 2026-09-08 量：prod 0 / 全量 0，门禁从干净地板起步，回弹即出警。
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: 生成物新鲜度（门禁 · 批88）
+        # 快照改了没跑 gen、或 generated/ 被手改 → 此步红。
+        # orval 经 scripts/gen-api.mjs 的 ajv hook 运行，路径全部相对 cwd，
+        # Linux CI 与 Windows 本机同一套；或 v7.21.0 由 lock 锁定 → 生成幂等。
+        run: npm run gen:check
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 代码规范
+        run: npm run lint
+
+      - name: CSS 令牌对账（门禁）
+        # 2026-09-27：「引用了但从未定义」的幽灵令牌曾真实存在（--color-danger 等
+        # 6 个）——var() 未定义时浏览器静默回退，样式坏了而无人知晓。
+        # 本步对账 var() 引用 vs 定义集合，幽灵令牌即红。
+        run: npm run audit:tokens
+
+      - name: 单元测试
+        run: |
+          set -o pipefail
+          set +e
+          npm run test 2>&1 | tee /tmp/vitest.log | tail -25
+          rc=${PIPESTATUS[0]}
+          # 规模行压成 annotation：后端腿早有「Tests run: …」可对账，前端一直没有，
+          # 于是 README 里写死的「N 文件 / N 例」漂了没人发现（批105 实测：写的是
+          # 106/1855，实为 107/1863）。数字要能从权威源复核——手抄就会抄错。
+          # 只匹配这两行汇总，别顺手匹配 failed：首版把 `failed` 也收进来，真 runner 上
+          # 一堆 "[Vue warn]: ... type check failed" 把 annotation 配额（每级 10 条）占满，
+          # **真正的汇总行反被挤掉**——噪声不只是难看，它会顶掉信号。
+          LVL=notice; [ "$rc" -eq 0 ] || LVL=error
+          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/vitest.log \
+            | grep -aE 'Test Files|^[[:space:]]*Tests[[:space:]]' \
+            | head -4 \
+            | awk -v p="::${LVL}::前端测试汇总 " '{ sub(/^[[:space:]]+/, ""); print p $0 }' || true
+          exit $rc
+
+      - name: 死代码检测（门禁）
+        # 退出条件已达成（批次 19-26 / 报告 122~129）：存量经四波清零——
+        # duplicate/exports/types 三域真账归零，21 条 @public 假阳逐条存证
+        # 随证据注释，codemirror 17 依赖从「侥幸传递」归位正式声明。
+        # 本步自此转正为正式门禁：新增死代码/未声明依赖即红。
+        id: knipgate
+        run: |
+          set -o pipefail
+          npm run knip 2>&1 | tee /tmp/knip.log
+      - name: knip 门禁失败时回 commit 取证帖（同款 tee 道）
+        if: failure() && steps.knipgate.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-knip-diag -->"
+            echo "### 🔴 前端腿 knip 门禁取证（批 67 修红 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -120 /tmp/knip.log 2>/dev/null || echo "(日志缺失)"
+            echo '```'
+          } > /tmp/knip-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/knip-diag.md --silent || true
+
+      - name: 生产构建
+        run: npm run build
+
+      - name: 体积预算（门禁）
+        # F-4（批次 32 / 报告 135）：F-2 语言包裁剪的省线之上立闸——总量/单件
+        # 双维超 budget 即红，防体积静默回弹。口径=未压缩字节（与构建产物同源）。
+        # 预算源 tools/audit/bundle_budget.json；抬预算用 --update + commit 写理由。
+        run: node ../tools/audit/check_bundle_budget.js
+
+  e2e:
+    name: 端到端 · 关键链路冒烟（真实浏览器 + 真实后端）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # 2026-09-27：e2e（Playwright 42 例）从「本机手跑」转正为 CI 门禁。
+    # 用例自带 setup/teardown（E2E_PW_ 前缀标记清理），不污染共享库。
+    # 服务端口/口令与 backend 腿、application-dev.yml 同口径。
+    services:
+      postgres:
+        image: ankane/pgvector:v0.5.1
+        env:
+          POSTGRES_USER: devops
+          POSTGRES_PASSWORD: devops_password
+          POSTGRES_DB: devops_knowledge_db
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U devops -d devops_knowledge_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.0-alpine
+        ports:
+          - 26379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 初始化数据库 Schema
+        # 与 backend 腿同口径：V1 保底建账，后续 V{n} 由应用启动时 Flyway 自迁移
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db -v ON_ERROR_STOP=1 -f src/main/resources/db/migration/V1__baseline.sql
+
+      - name: Redis 密码配置
+        run: |
+          python3 - <<'PY'
+          import socket, sys
+
+
+          def read_reply(sock):
+              """读到回复行结束（RESP 简单字符串/错误都以一个 \r\n 收尾）。
+
+              不能单次 recv 就判定成败：TCP 分段时 `+OK` 可能只到达 `+O`，
+              于是「密码已生效」被误报为未生效（本地 mock 验证时实测撞到）。
+              """
+              buf = b''
+              while not buf.endswith(b'\r\n'):
+                  chunk = sock.recv(256)
+                  if not chunk:
+                      break
+                  buf += chunk
+              return buf
+
+
+          def cmd(sock, *parts):
+              payload = ('*%d\r\n' % len(parts)).encode()
+              for part in parts:
+                  raw = part.encode()
+                  payload += b'$%d\r\n%s\r\n' % (len(raw), raw)
+              sock.sendall(payload)
+              return read_reply(sock)
+
+
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              print('CONFIG SET requirepass ->', cmd(s, 'CONFIG', 'SET', 'requirepass', 'devops_redis_pwd').strip())
+          # 新连接必须真正 AUTH 才通——「密码已生效」的可证伪检查（而非只看退出码）
+          with socket.create_connection(('localhost', 26379), timeout=10) as s:
+              auth = cmd(s, 'AUTH', 'devops_redis_pwd')
+              ping = cmd(s, 'PING')
+              print('AUTH ->', auth.strip(), '| PING ->', ping.strip())
+              if b'+OK' not in auth or b'+PONG' not in ping:
+                  print('::error::Redis 密码未生效，dev profile 后端会连不上')
+                  sys.exit(1)
+          PY
+
+      - name: 后端打包（跳过测试——测试在 backend 腿已跑）
+        id: e2epackage
+        # tee 留档：失败时由下一「打包失败取证」步回帖 commit comment 取材。
+        # ⚠️ 同后端腿：默认 shell 是 `bash -e {0}`，不含 pipefail，
+        # tee 会把 mvn 的非零退出码吞掉——必须显式开启（2026-10-13 修正）。
+        run: |
+          set -o pipefail
+          ./mvnw -B -ntp -DskipTests package 2>&1 | tee /tmp/e2e-package.log
+
+      - name: 打包失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道）
+        # 与「Flyway 步失败时回 commit 取证帖」同款：托管 runner 的作业日志归档在
+        # azure blob，开发沙箱 egress 不通该域（gh run view --log 与 artifact 下载
+        # 在沙箱里都是 EOF），这条 commit comment 是唯一能读到真实报错的通道。
+        # 只有本步失败时执行，绿案零开销零噪声。
+        if: failure() && steps.e2epackage.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-e2e-package-diag -->"
+            echo "### 🔴 端到端腿「后端打包」步骤取证（批 64 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo '```'
+            tail -100 /tmp/e2e-package.log 2>/dev/null || echo "(日志文件缺失——步骤在 tee 前即炸，如 wrapper 下载失败)"
+            echo '```'
+          } > /tmp/e2e-package-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/e2e-package-diag.md --silent || true
+
+      - name: 启动 Prometheus 桩（监控中心的 e2e 数据源）
+        # 监控中心是「代理查询」设计：数据不在 OpsBrain 里，页面数据全靠后端转调
+        # Prometheus；数据源不在时后端按契约返回 50020 / HTTP 503，浏览器控制台于是
+        # 出现 "Failed to load resource ... 503"，而 navigation.spec 的
+        # 「访问 /monitoring 渲染正常且无控制台错误」把控制台错误算作失败
+        # （2026-10-14 实测 38432764009 / 38432769846 同一条用例同红）。
+        # 这不是产品缺陷，是本作业只起了 pg/redis、缺监控数据源——用桩补齐环境，
+        # 断言不放宽。桩的来由与契约见 tools/seed/prom-stub.py。
+        run: |
+          nohup python3 tools/seed/prom-stub.py --port 29090 > /tmp/prom-stub.log 2>&1 &
+          for i in $(seq 1 10); do
+            sleep 1
+            if curl -sf http://localhost:29090/-/healthy > /dev/null; then break; fi
+          done
+          # 可证伪的健康检查：/healthy 要通，且查询端点必须回「合法空结果」而不是 404/500
+          python3 - <<'PY'
+          import json, sys, urllib.request
+
+          def get(path):
+              with urllib.request.urlopen('http://localhost:29090' + path, timeout=5) as r:
+                  return r.status, json.loads(r.read().decode())
+
+          try:
+              code, body = get('/api/v1/query?query=up')
+          except Exception as e:  # 桩没起来 → 直接失败，不做「跳过这段」的软化
+              print('::error::Prometheus 桩不可用：%s' % e)
+              sys.exit(1)
+          empty = body.get('data', {}).get('result')
+          if code != 200 or body.get('status') != 'success' or empty != []:
+              print('::error::Prometheus 桩响应不符契约：%s %s' % (code, body))
+              sys.exit(1)
+          print('Prometheus 桩就绪：/healthy 200；/api/v1/query -> success + 空结果')
+          PY
+
+      - name: 启动后端（dev + MOCK AI，不烧额度不依赖外网）
+        env:
+          AI_MODE: MOCK
+          SPRING_PROFILES_ACTIVE: dev
+          # 指标抓取面令牌（2026-10-15）：与生产同一套口径——应用从文件读令牌，
+          # 下一「指标抓取面实弹」步用同一个文件 curl。文件生成在启动之前，
+          # 否则守卫按「未配置」处理（fail-closed）。
+          SCRAPE_TOKEN_FILE: /tmp/e2e-scrape-token
+          # 登录限流抬配额：本作业所有请求同源同 IP，共用 login 规则那只桶（10/60s），
+          # 而串行 Playwright 一轮要发 ~15 次登录 → 撞 429 让角色矩阵假红
+          # （run 38665168695 实测：HTTP 429 RATE_LIMITED）。抬配额而不是关总开关：
+          # 限流这条链仍在工作、仍可被 e2e 覆盖。生产默认仍是 10/60s。
+          LOGIN_RATE_LIMIT_PERMITS: '200'
+        run: |
+          printf '%s' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > /tmp/e2e-scrape-token
+          chmod 600 /tmp/e2e-scrape-token
+          nohup java -jar target/*.jar > /tmp/e2e-backend.log 2>&1 &
+          # 两段等待：端口应答 ≠ 就绪。health 是 K8s 探针契约，也是后续每一步
+          # （抓取面实弹 / 种子 / 闭环演练 / RBAC / Playwright）的隐含前提。
+          # 此前只等「端口应答」，于是抓取面步偶发撞上 health 仍为 503 的窗口
+          # （run 38666117982 实测），把「还没就绪」误报成「探针端点被拦」——
+          # 方向完全不同（一个该等，一个该改闸门），所以现在就等到位。
+          for i in $(seq 1 40); do
+            sleep 3
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8088/ai/api/v1/auth/login" -X POST || true)
+            if [ "$code" != "000" ]; then echo "端口应答 after ~$((i*3))s (http=$code)"; break; fi
+          done
+          hcode=000
+          for i in $(seq 1 40); do
+            hcode=$(curl -s -o /tmp/e2e-health.json -w '%{http_code}' "http://localhost:8088/ai/actuator/health" || true)
+            if [ "$hcode" = "200" ]; then echo "health UP after ~$((i*3))s"; exit 0; fi
+            sleep 3
+          done
+          # show-details: always → 直接看哪个组件 DOWN，不必靠猜
+          echo "::error::后端 120s 内 health 未 UP（最后 HTTP $hcode）；组件明细："
+          cat /tmp/e2e-health.json 2>/dev/null; echo
+          tail -80 /tmp/e2e-backend.log; exit 1
+
+      - name: 指标抓取面实弹（真 jar + 真 HTTP：裸抓 401 / 带令牌 200 且含 opsbrain_）
+        # 为什么单开这一步：@SpringBootTest 里 spring-boot-test-autoconfigure 的
+        # ObservabilityContextCustomizerFactory 会**默认关掉指标导出**
+        # （注入 management.defaults.metrics.export.enabled=false），于是 Prometheus 注册器与
+        # /actuator/prometheus 端点在测试上下文里根本不存在——「抓取面在生产形态下真的通吗」
+        # 是集成测试结构上证明不了的事（本轮正是这么翻的车：测试里 404，一度误判成端点缺失）。
+        # 这里用与生产同一份 application.yml、同一个 java -jar 起进程，curl 四发定案：
+        # 裸抓必须 401、带令牌必须 200 且真含 opsbrain_ 业务指标、同令牌读不了 info、
+        # 探针不带凭据仍 200。四条任一不成立，监控面就是坏的（且大多是静默坏）。
+        run: |
+          BASE=http://localhost:8088/ai
+          TOKEN=$(cat /tmp/e2e-scrape-token)
+          anon=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/actuator/prometheus")
+          echo "裸抓 /actuator/prometheus → $anon（期望 401）"
+          [ "$anon" = "401" ] || { echo "::error::裸抓应 401（200 = 指标面裸奔：内部拓扑与依赖可达性匿名可读），实际 $anon"; exit 1; }
+          tok=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/actuator/prometheus")
+          # 不做 head 截断：Prometheus 文本按指标族名排序，应用族 opsbrain_* 排在
+          # jvm_/http_/logback_ 之后；曾经 4KB 窗口的把关方式会把「明明抓得到」判成失败
+          # （2026-10-15 演练探针实撞一次）。这里取全量再数行，顺带把字节数写进日志。
+          body=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/actuator/prometheus")
+          bytes=$(printf '%s' "$body" | wc -c)
+          cnt=$(printf '%s' "$body" | grep -c '^opsbrain_' || true)
+          echo "带令牌 /actuator/prometheus → $tok｜读取 ${bytes} 字节｜opsbrain_* 行数=$cnt"
+          [ "$tok" = "200" ] || { echo "::error::带令牌应 200（否则 Prometheus 抓不到：up{job=opsbrain} 恒 0 → 宕机规则常亮误报），实际 $tok"; exit 1; }
+          [ "$cnt" -gt 0 ] || { echo "::error::抓得到但没有任何 opsbrain_* 业务指标——计量器没接上，等于没接监控"; exit 1; }
+          info=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/actuator/info")
+          echo "同令牌 /actuator/info → $info（期望 401：最小权限，抓取钥匙只开一扇门）"
+          [ "$info" = "401" ] || { echo "::error::抓取令牌不该能读 /actuator/info，实际 $info"; exit 1; }
+          health=$(curl -s -o /tmp/e2e-health-late.json -w '%{http_code}' "$BASE/actuator/health")
+          echo "无凭据 /actuator/health → $health（期望 200：K8s 探针契约）"
+          if [ "$health" != "200" ]; then
+            # 401/403 = 被闸门拦（探针契约破了，该改闸门）；503 = 应用自报 DOWN
+            # （组件问题，该查组件）。两种「不通」混成一句话会让人改错地方
+            # ——上一版就把它一律说成「探针端点被拦」，而实际是 503。
+            case "$health" in
+              401|403) echo "::error::探针端点被闸门拦（$health）：无凭据必须可读 health，否则 Pod 永远 NotReady" ;;
+              *) echo "::error::health 非 200（$health）——不是被拦，是应用自报状态；组件明细："
+                 cat /tmp/e2e-health-late.json 2>/dev/null; echo ;;
+            esac
+            exit 1
+          fi
+          echo "::notice::指标抓取面实弹通过（生产形态 · 真 jar · 无测试上下文覆盖）"
+
+      - name: 灌入 e2e 种子数据（故障FAQ库 + faq-test-doc + 常驻工单）
+        # 存量 6 例红的根因修复（取证见 721fff5 的 `opsbrain-e2e-run-diag` 帖）：
+        # 本作业此前只 psql 灌 V1 基线（V2..V15 由后端启动时 Flyway 补），
+        # **库里没有任何业务数据**，而 tickets.spec / knowledge-v2.spec 的用例
+        # 建立在「dev 库常驻 1 张工单 / 人工联调造出的 FAQ 库」之上——
+        # 在全新库上必红。数据制备交由版本化的 tools/seed/e2e-seed.sql（幂等），
+        # 放后端起来之后（迁移已就位）；脚本自带回读校验，缺数据即非零退出，
+        # 避免 6 例各红一次再靠人猜「是数据没有还是功能坏了」。
+        env:
+          PGPASSWORD: devops_password
+        run: |
+          set -o pipefail
+          psql -h localhost -p 25432 -U devops -d devops_knowledge_db \
+               -v ON_ERROR_STOP=1 -f tools/seed/e2e-seed.sql 2>&1 | tee /tmp/e2e-seed.log
+
+      - name: 监控哨兵自测（证明 Z-监控面 判据不会永远 PASS）
+        # 哨兵的坏法通常是「恒 PASS」——那比没有哨兵更坏：让人以为监控面有人看着。
+        # 桩服务六态（正确 / 裸奔 / 凭据错 / 端点在但无业务指标 / 指标排在 4KB 之后 /
+        # 令牌文件缺失）逐一核对判词。本机变异验证过：把「裸奔必须 401」判据改成恒真
+        # → 5/6 退出 1；还原历史上那次单次 4KB 读的 bug → far 态红。
+        # 放在闭环演练之前：哨兵不可信时，演练的 Z 组结论就一文不值。
+        run: |
+          set +e
+          python3 tools/verify/selftest_scrape_face.py --json /tmp/scrape-face-selftest.json \
+            2>&1 | tee /tmp/scrape-face-selftest.log
+          rc=${PIPESTATUS[0]}
+          grep -a "汇总" /tmp/scrape-face-selftest.log \
+            | sed "s/^/::$( [ $rc -eq 0 ] && echo notice || echo error )::/" || true
+          exit $rc
+
+      - name: 业务闭环实弹演练（真 jar + 真 pg：三场景逐跳硬闸）
+        # 为什么进 CI（2026-10-15）：这条链上一轮是「本机人工跑过一次、结果写进文档」——
+        # 不可复现、不可回归。而本腿本来就备齐了演练需要的一切：真 jar + 真 pg（25432）
+        # + redis + prom 桩 + 种子数据；脚本又是「硬闸逐跳点名」设计，天生适合当门禁。
+        # 放在 Playwright 之前：即使浏览器用例后面红了，闭环证据也已经拿到（数据不冲突：
+        # FAQ 库那组 1200/300/50 是知识库行上的自定义参数，演练建的手册落在默认库）。
+        run: |
+          set +e
+          python3 tools/verify/closed_loop_drill.py \
+            --base http://localhost:8088/ai --account admin:admin123 \
+            --psql psql \
+            --pgurl "postgresql://devops:devops_password@localhost:25432/devops_knowledge_db" \
+            --scrape-token-file /tmp/e2e-scrape-token \
+            --json /tmp/closed-loop.json 2>&1 | tee /tmp/closed-loop.log
+          rc=${PIPESTATUS[0]}
+          python3 tools/verify/ci_summary.py --kind closed-loop \
+            --json /tmp/closed-loop.json --log /tmp/closed-loop.log || rc=1
+          exit $rc
+
+      - name: RBAC 权限矩阵实弹走查（14 探针面 × 三角色 = 42 格）
+        # 判据取自源码执法点（类级 @SaCheckRole / OpsWriteGuard 资源级守卫），
+        # 不是「跑出来什么抄什么」——那只能证明代码与它自己一致。
+        # 账号来自上一步的 e2e 种子（e2e_operator/e2e_viewer），口令与 role-matrix.spec 同源。
+        # 结论同样压成 ::notice::（沙箱读不到托管 runner 的作业日志，见 tools/verify/ci_summary.py）。
+        run: |
+          set +e
+          python3 tools/verify/rbac_walkthrough.py --base http://localhost:8088/ai \
+            --account admin:admin123:ADMIN \
+            --account 'e2e_operator:E2E_OP_Pwd2026!:OPS' \
+            --account 'e2e_viewer:E2E_VW_Pwd2026!:VIEWER' \
+            --json /tmp/rbac.json 2>&1 | tee /tmp/rbac.log
+          rc=${PIPESTATUS[0]}
+          python3 tools/verify/ci_summary.py --kind rbac \
+            --json /tmp/rbac.json --log /tmp/rbac.log || rc=1
+          exit $rc
+
+      - name: 灰度台账取数（DoD「真实值班质量数」的可复跑口径 + 口径单测）
+        run: |
+          set -o pipefail
+          # 先跑口径单测：这个工具的错法是「安静地给出错的数」（累计列被 SUM、
+          # 连续天数算成总和、_created 序列混进计数），比崩掉危险得多——台账要拿它关 DoD。
+          set +e
+          python3 tools/verify/test_grayscale_metrics.py 2>&1 | tee /tmp/gm-unit.log | tail -4
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            # 沙箱读不到作业日志：单测红了要把失败名压成 annotation，否则只剩一个 exit code
+            grep -aE '^(FAIL|ERROR|Ran |FAILED|OK)' /tmp/gm-unit.log | sed 's/^/::error::口径单测 /' || true
+          fi
+          set +e
+          # 真迁移库 + 真后端抓取面；随机 schema 克隆四张真实表后灌手算夹具。
+          # 新装 CI 库没有历史快照，不能将其当 0 基线；夹具也绝不是灰度生产证据。
+          # 缺库/抓取面即失败，无跳过；退出清理 schema，不改业务行或业务序列。
+          POSTGRES_PG_URL="postgresql://devops:devops_password@localhost:25432/devops_knowledge_db" \
+          GM_BASE=http://localhost:8088/ai GM_SCRAPE_TOKEN_FILE=/tmp/e2e-scrape-token \
+            python3 tools/verify/test_grayscale_metrics_pg.py 2>&1 | tee /tmp/grayscale.log
+          rc2=${PIPESTATUS[0]}
+          # 结论压成 annotation；先去 ANSI 免乱码
+          CLEAN=$(sed -r 's/\x1B\[[0-9;]*m//g' /tmp/grayscale.log)
+          BODY=$(printf '%s\n' "$CLEAN" | grep -aE '^(=== |\| |未取到|提示|::error::|::notice::|Traceback|  File |[A-Za-z_]*Error|FAIL|ERROR|Ran |FAILED|OK)' || true)
+          if [ -z "$BODY" ]; then
+            # 首轮教训：工具在打出任何判词前就崩了，annotation 里只剩
+            # 「Process completed with exit code 1」，根因（解包元数不匹配）完全隐形。
+            # 所以兜底把日志尾巴顶上来——没有结论时，日志本身就是结论。
+            BODY=$(printf '%s\n' "$CLEAN" | tail -15)
+          fi
+          LVL=notice; [ "$rc2" -eq 0 ] || LVL=error
+          printf '%s\n' "$BODY" | sed "s|^|::${LVL}::取数(rc=${rc2}) |"
+          [ "$rc" -eq 0 ] && [ "$rc2" -eq 0 ] || exit 1
+
+      - name: 发布回退实弹（DoD#6：真两版本切换 + 身份证伪 + 计时）
+        # 验证矩阵里最后一个「只靠人工」的面，现在进门禁。
+        # 做法：把 origin/main 编成「旧版」、本分支产物当「新版」，跑 rollback-drill.sh 的
+        # artifact 模式——切换 → 重启 → 探活 → 前滚，全程计时并断言 <300s。
+        # 版本身份用**契约差异**证伪：新版独有的 /alerts/webhook/zabbix 端点在新版必须存在、
+        # 旧版必须没有（只看 HTTP 200 会误判——main 有 /webhook/{system} 通配映射，两版都回 200）。
+        # 两个前提本轮核对过：main 与本分支 pom.xml **完全相同**（故可共用一份依赖 classpath）、
+        # 迁移文件同为 18 个（故旧版跑在同一个库上不会被 Flyway 校验挡住）。
+        run: |
+          set -o pipefail
+          git fetch origin main
+          # prev 取哪个版本？两个坑都踩过了：
+          #   1) 不能无条件用 main 的 tip——在 main 上它就是 HEAD，同版自切（PR #3 合并后首跑就红）；
+          #   2) **checkout@v4 是浅克隆（fetch-depth=1）**：`origin/main` 这个 ref 根本不存在、
+          #      `git merge-base` 与 `HEAD^` 都 fatal（本机浅克隆实测）。所以只能用 FETCH_HEAD，
+          #      要拿它的父提交必须先 --deepen。
+          git fetch --deepen=2 origin main 2>/dev/null || true
+          if [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ]; then
+            PREV_REF=FETCH_HEAD^     # 就在 main 上：上一版 = main 的父提交
+          else
+            PREV_REF=FETCH_HEAD      # 在分支上：main 的 tip 就是「上一版」
+          fi
+          # 兜底：深克隆失败/父提交拿不到时退回 FETCH_HEAD——宁可「身份不可证」（脚本会响亮警告），
+          # 也不要让这一步因为取不到 ref 而整步红。
+          git rev-parse --verify "$PREV_REF^{commit}" >/dev/null 2>&1 || PREV_REF=FETCH_HEAD
+          echo "prev=$PREV_REF（$(git rev-parse --short "$PREV_REF")） cur=HEAD（$(git rev-parse --short HEAD)）"
+          git worktree add /tmp/prev "$PREV_REF"
+          (cd /tmp/prev && ./mvnw -B -ntp -DskipTests compile 2>&1 | tail -3)
+          ./mvnw -B -ntp -q dependency:build-classpath -Dmdep.outputFile=/tmp/cp_full.txt
+          set +e
+          CP_BASE=/tmp/cp_full.txt bash scripts/rollback-drill.sh --mode artifact \
+            --prev /tmp/prev/target/classes --cur target/classes \
+            --prev-res /tmp/prev/src/main/resources --cur-res src/main/resources \
+            --port 8099 2>&1 | tee /tmp/rollback-drill.log
+          rc=${PIPESTATUS[0]}
+          # 结论压成 annotation（沙箱读不到作业日志，见 tools/verify/ci_summary.py 的由来）。
+          # 先去 ANSI 色码：脚本输出带颜色，落到 annotation 里会变成 ^[[0;32m 这种乱码。
+          sed -r 's/\x1B\[[0-9;]*m//g' /tmp/rollback-drill.log | grep -aE "回滚耗时|构建物指纹|指纹相同|无法证明" \
+            | sed "s/^/::$( [ $rc -eq 0 ] && echo notice || echo error )::/" || true
+          git worktree remove /tmp/prev --force || true
+          exit $rc
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: devops-platform-frontend/package-lock.json
+
+      - name: 前端依赖
+        working-directory: devops-platform-frontend
+        run: npm ci
+
+      - name: 安装 Playwright Chromium
+        working-directory: devops-platform-frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: 启动前端 dev server（/ai 代理到后端 8088）
+        working-directory: devops-platform-frontend
+        run: |
+          nohup npx vite --port 5173 > /tmp/e2e-vite.log 2>&1 &
+          for i in $(seq 1 20); do
+            sleep 2
+            if curl -sf -o /dev/null http://localhost:5173/; then echo "vite up after ~$((i*2))s"; exit 0; fi
+          done
+          echo "::error::vite 40s 未起来"; tail -40 /tmp/e2e-vite.log; exit 1
+
+      - name: 跑 e2e（登录 + 导航 + 重定向 + 搜索 + 工单流）
+        id: e2erun
+        working-directory: devops-platform-frontend
+        # tee 留档：失败时由下一「e2e 失败取证」步回帖 commit comment 取材。
+        # ⚠️ 同后端腿：默认 shell 是 `bash -e {0}`，不含 pipefail，
+        # tee 会把 playwright 的非零退出码吞掉——必须显式开启（2026-10-13 修正）。
+        run: |
+          set +e
+          npx playwright test 2>&1 | tee /tmp/e2e-run.log
+          rc=${PIPESTATUS[0]}
+          # 绿案与红案都要能在沙箱侧读到结论：作业日志在 egress 不通的域上，
+          # check-run annotations 是唯一读得到的通道。此前汇总写在 playwright 之后，
+          # 而 `bash -e` + pipefail 让**红案在汇总行之前就中断**——于是红案反而
+          # 零 annotation（run 38667020710 实测：失败却没有任何可读线索）。
+          # 现在无论红绿都先出汇总，红案带失败用例名 + 首条报错（由 ci_summary 解析）。
+          python3 ../tools/verify/ci_summary.py --kind playwright --log /tmp/e2e-run.log || rc=1
+          exit $rc
+
+      - name: 失败时上传 Playwright 报告取证
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: devops-platform-frontend/playwright-report/
+          retention-days: 7
+
+      - name: e2e 失败时回 commit 取证帖（沙箱读 CDN 日志被墙的回帖道）
+        # artifact（playwright-report）落在 azure blob，沙箱 egress 不通该域，
+        # 下载是 EOF——回帖带 e2e 输出尾段 + 后端启动日志尾段，
+        # 让「是应用没起来还是断言不过」在沙箱侧可直接判读。
+        # 条件放宽为「本作业任一步失败」：种子步/前端依赖步红时同样要留痕
+        # （此前只认 e2erun，种子步红会静默——没有日志通道就又要靠猜）。
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "<!-- opsbrain-e2e-run-diag -->"
+            echo "### 🔴 端到端腿失败取证（批 64 tee 道）"
+            echo "SHA: $GITHUB_SHA"
+            echo
+            echo "**种子数据日志尾段**："
+            echo '```'
+            tail -20 /tmp/e2e-seed.log 2>/dev/null || echo "(无种子日志——本步未跑到或种子步在 tee 前即炸)"
+            echo '```'
+            echo
+            echo "**playwright 输出尾段**："
+            echo '```'
+            tail -60 /tmp/e2e-run.log 2>/dev/null || echo "(日志缺失)"
+            echo '```'
+            echo
+            echo "**后端启动/运行日志尾段**："
+            echo '```'
+            tail -40 /tmp/e2e-backend.log 2>/dev/null || echo "(后端日志缺失)"
+            echo '```'
+            echo
+            echo "**后端日志里的数据源/错误线索（503 / 50020 / Prometheus）**："
+            echo '```'
+            (grep -aE "503|50020|MetricsUnavailable|Prometheus" /tmp/e2e-backend.log 2>/dev/null | tail -20) || true
+            echo '```'
+            echo
+            echo "**前端 dev server 日志尾段（代理失败、依赖优化器 503 都在这里）**："
+            echo '```'
+            tail -20 /tmp/e2e-vite.log 2>/dev/null || echo "(vite 日志缺失)"
+            echo '```'
+            echo
+            echo "**Prometheus 桩日志尾段**："
+            echo '```'
+            tail -10 /tmp/prom-stub.log 2>/dev/null || echo "(桩日志缺失)"
+            echo '```'
+            echo
+            echo "**失败用例名（report 摘要）**："
+            echo '```'
+            (grep -aE "✘|✓|failed|passed|Error:|expect\(" /tmp/e2e-run.log 2>/dev/null | tail -30) || true
+            echo '```'
+          } > /tmp/e2e-run-diag.md
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/e2e-run-diag.md --silent || true

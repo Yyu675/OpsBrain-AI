@@ -1,0 +1,507 @@
+package com.devops.agent.domain.tools;
+
+import com.devops.agent.application.runtime.ToolRuntimeManager;
+import com.devops.agent.domain.evidence.Evidence;
+import com.devops.agent.domain.evidence.MetricsEvidenceCollector;
+import com.devops.agent.domain.evidence.MetricsQueryCatalog;
+import com.devops.agent.domain.evidence.ChangesEvidenceCollector;
+import com.devops.agent.domain.evidence.LogsEvidenceCollector;
+import com.devops.agent.domain.biz.entity.TicketEnums;
+import com.devops.agent.domain.biz.service.TicketService;
+import com.devops.agent.domain.rag.Retriever;
+import com.devops.agent.domain.tools.ToolRiskLevel;
+import dev.langchain4j.agent.tool.P;
+import dev.langchain4j.agent.tool.Tool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import java.lang.reflect.Method;
+import java.util.List;
+
+/**
+ * M6 - 白名单工具模块(L2 幻觉防护)
+ * <p>
+ * 职责: 只暴露两个 @Tool,物理隔离 Shell/文件系统
+ * ⚠️ 必须交给 Spring IOC 托管,通过 .tools(devOpsToolsBean) 注入
+ * 严禁 new DevOpsTools(),否则 @Autowired 字段为 null
+ * <p>
+ * MVP-3: 集成 @ToolMeta 元数据 + ToolRuntimeManager 治理
+ * </p>
+ *
+ * @author OpsBrain AI
+ * @since 2026-07-15
+ */
+@Component
+public class DevOpsTools {
+
+    private static final Logger log = LoggerFactory.getLogger(DevOpsTools.class);
+
+    /**
+     * 检索能力按接口注入，而非具体的 pgvector 实现。
+     * <p>工具层只需要「给我几段相关知识」，不该知道知识存在
+     * pgvector 还是 Milvus——换后端时本类一行不用改。</p>
+     */
+    @Autowired
+    private Retriever retriever;
+
+    @Autowired
+    private TicketService ticketService;
+
+    @Autowired
+    private ToolParameterValidator validator;
+
+    @Autowired
+    private ToolRuntimeManager toolRuntimeManager;
+
+    @Autowired
+    private com.devops.agent.domain.tools.executor.OpsExecutorRegistry opsExecutorRegistry;
+
+    /** S1-1：指标取证装配器（业务逻辑全在 collector，工具层只做治理装配）。 */
+    @Autowired
+    private MetricsEvidenceCollector metricsEvidenceCollector;
+
+    @Autowired
+    private MetricsQueryCatalog metricsQueryCatalog;
+
+    /** S1-2：变更取证装配器。 */
+    @Autowired
+    private ChangesEvidenceCollector changesEvidenceCollector;
+
+    /** S1-3：日志取证装配器。 */
+    @Autowired
+    private LogsEvidenceCollector logsEvidenceCollector;
+
+    /**
+     * 工具1: 检索运维知识库
+     * <p>
+     * L4 熔断: Retriever 实现内部已做 Score < 0.73 过滤
+     * 元数据: READ_ONLY、幂等、可重试、无需审批
+     * </p>
+     *
+     * @param keyword 精炼检索关键词(从用户问题提取)
+     * @return 检索到的知识片段,若无匹配返回兜底话术
+     */
+    @Tool("检索 K8s/阿里云 SLB 等运维手册文档切片")
+    @ToolMeta(
+            name = "searchDevOpsKnowledge",
+            description = "检索 K8s/阿里云 SLB 等运维手册文档切片",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#keyword",
+            requiresApproval = false,
+            timeoutMs = 10000,
+            maxRetries = 2
+    )
+    public String searchDevOpsKnowledge(@P("精炼检索关键词") String keyword) {
+        log.info("[Tool] searchDevOpsKnowledge 被调用,keyword={}", keyword);
+
+        // L3 Schema 校验
+        try {
+            validator.validateSearchKeyword(keyword);
+        } catch (IllegalArgumentException e) {
+            log.warn("[Tool] 检索关键词校验失败: {}", e.getMessage());
+            throw e; // 抛给 LangChain4j,触发模型自愈重试
+        }
+
+        // 通过 ToolRuntimeManager 执行（治理：幂等、超时、重试、熔断、审计）
+        try {
+            // 用 getDeclaredMethod 而非 getMethod：后者只找 public 方法，
+            // 内部实现方法一旦改为包级私有就会抛 NoSuchMethodException，
+            // 且被下方 catch 包装成「检索工具执行失败」——模型连续重试全失败，
+            // 最终给出不含知识库内容的泛泛回答，用户无从察觉检索没跑通。
+            Method method = DevOpsTools.class.getDeclaredMethod("searchDevOpsKnowledgeInternal", String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool("searchDevOpsKnowledge", this, method, new Object[]{keyword});
+        } catch (NoSuchMethodException e) {
+            // 方法签名不匹配属编码错误，必须显式区别于运行时故障
+            log.error("[Tool] 检索内部方法签名不匹配，这是编码错误: {}", e.getMessage());
+            throw new IllegalStateException("检索工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] searchDevOpsKnowledge 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("检索工具执行失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 内部检索实现（业务逻辑，无治理代码）
+     */
+    // 必须是 public：ToolRuntimeManager 用 Class.getMethod() 反射调用，
+    // 而 getMethod 只能找到 public 方法。包级私有会抛 NoSuchMethodException，
+    // 被包装为「检索工具执行失败」——模型会连续重试数次仍全部失败，
+    // 最终给出不含任何知识库内容的泛泛回答，且用户无从察觉检索根本没跑通。
+    public String searchDevOpsKnowledgeInternal(String keyword) {
+        // 调用混合检索(内部已做 L4 熔断)。
+        // 用 retrieveWithSource 而非 retrieve：后者丢弃 doc_title/section_header，
+        // 导致下面拼出的片段没有出处，模型无法满足 System Prompt 的
+        // 强制溯源要求，进而误答「知识库暂无相关文档」——
+        // 即便检索实际已命中。详见 RetrievedChunk 类注释。
+        // C1 权限过滤：范围取自 AgentKnowledgeScopeHolder。
+        // 工具通常运行在模型 HTTP 回调线程，取不到上下文时会退化为
+        // 「仅 PUBLIC」而非放行全部——失败方向必须朝更严，理由见该类注释。
+        com.devops.agent.domain.rag.KnowledgeScope scope =
+                com.devops.agent.domain.rag.AgentKnowledgeScopeHolder.getOrRestrictive();
+        List<com.devops.agent.domain.rag.RetrievedChunk> chunks =
+                retriever.retrieveWithSource(keyword, 3, scope);
+
+        if (chunks == null) {
+            // 检索链路故障（向量化/检索服务不可用）——不是「无文档」。
+            // 必须与 L4 熔断的「无相关文档」话术区分：前者是链路故障，
+            // 引导用户重试；后者才引导用户补文档。伪装成无文档会误导排查方向。
+            log.error("[Tool] 检索服务暂不可用,keyword={}（链路故障，非内容缺失）", keyword);
+            return "⚠️ 知识库检索服务暂不可用，请稍后重试。\n" +
+                    "（本次是检索链路故障，并非知识库中没有相关内容，请勿据此下结论）";
+        }
+
+        if (chunks.isEmpty()) {
+            // L4 熔断兜底话术
+            String fallback = String.format(
+                    "📚 抱歉,知识库中未找到与 '%s' 高度相关的文档(相似度 < 0.73)。\n" +
+                            "建议:\n" +
+                            "1. 尝试换用更通用的关键词(如'K8s Pod'、'SLB 健康检查')\n" +
+                            "2. 若为紧急故障,可直接提工单转人工排查\n" +
+                            "3. 检查是否存在知识库文档遗漏,可联系运维团队补充文档",
+                    keyword);
+            log.warn("[Tool] L4 熔断触发,keyword={} 未命中高相似度文档", keyword);
+            return fallback;
+        }
+
+        // 拼接检索结果。
+        // 每个片段前置出处标签，且格式与 System Prompt 要求的
+        // 【来源：文档标题 - 章节】完全一致——让模型可以直接照抄，
+        // 而非自行拼装（自行拼装容易编造章节名）。
+        StringBuilder result = new StringBuilder();
+        result.append("📚 检索到以下知识片段（共 ").append(chunks.size()).append(" 段）:\n\n");
+        for (int i = 0; i < chunks.size(); i++) {
+            var c = chunks.get(i);
+            result.append(String.format("【片段 %d】%s%n%s%n%n", i + 1, c.citation(), c.text()));
+        }
+        result.append("💡 以上是知识库的真实内容，请基于它作答。\n")
+              .append("每条建议后附上对应片段的来源标签（已在片段标题处给出，直接引用即可）。\n")
+              .append("⚠️ 检索已命中上述文档，不要回答「知识库暂无相关文档」。");
+
+        log.info("[Tool] searchDevOpsKnowledge 返回 {} 个片段 | 出处={}",
+                chunks.size(),
+                chunks.stream().map(com.devops.agent.domain.rag.RetrievedChunk::docTitle).distinct().toList());
+        return result.toString();
+    }
+
+    /**
+     * 工具2: 提交运维工单（Single Writer 模式）
+     * <p>
+     * <b>本工具不写库</b>。它只做参数校验并产出结构化草稿
+     * （{@link TicketDraft}），由编排层作为唯一写入者落库。
+     * 见 {@link TicketDraft} 类注释了解此设计解决的三个问题。
+     * </p>
+     * <p>
+     * L3 Schema 校验：参数不合格抛 IllegalArgumentException，
+     * 触发模型自愈重试。
+     * </p>
+     *
+     * @param title       工单标题
+     * @param priority    优先级 [P0/P1/P2/P3]
+     * @param module      故障模块 [K8S/ALIYUN_SLB/MYSQL/NETWORK/OTHER]
+     * @param description 故障描述与堆栈摘要
+     * @return 提交确认文本（含供编排层解析的草稿标记块）
+     */
+    /**
+     * S1-1：指标取证工具（路线图 §5.2）。
+     * <p>
+     * 三态归属（绝不静默）：数据源未启用→UNAVAILABLE；Prometheus 故障/熔断→FAILED；
+     * 连通但查不到序列→NO_DATA；有数据→SUCCESS（异常可为空清单）。
+     * 治理归 @ToolMeta（ToolRuntimeManager 执行），业务归 MetricsEvidenceCollector，
+     * 本方法只做装配与参数边界校验。
+     * </p>
+     *
+     * @param service 服务名（白名单：字母/数字/点/下划线/中划线，≤128）
+     * @param range   时间窗 30m/2h/1d，默认 30m，上限 7d
+     * @param metrics 指标名逗号分隔，留空查目录默认全部
+     */
+    @Tool("查询服务在告警时间窗内的监控指标，识别异常指标用于故障取证")
+    @ToolMeta(
+            name = "queryServiceMetrics",
+            description = "查询服务在时间窗内的监控指标（CPU/内存/错误率/P99 目录可配），IQR 异常检测，返回四态证据",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#service + '_' + #range + '_' + #metrics",
+            requiresApproval = false,
+            timeoutMs = 15000,
+            maxRetries = 1,
+            compensationAction = ""
+    )
+    public String queryServiceMetrics(@P("服务名，如 order-service（只允许字母数字/点/下划线/中划线）") String service,
+                                      @P("时间窗，如 30m / 2h / 1d，默认 30m，上限 7d") String range,
+                                      @P("可选：指标名逗号分隔，如 cpu,memory；留空查目录默认全部") String metrics) {
+        log.info("[Tool] queryServiceMetrics 被调用,service={}, range={}, metrics={}", service, range, metrics);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod(
+                    "queryServiceMetricsInternal", String.class, String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool(
+                    "queryServiceMetrics", this, method, new Object[]{service, range, metrics});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryServiceMetrics 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("指标取证工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryServiceMetrics 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询服务指标失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 内部实现：参数白名单 → 采集 → 稳定序列化（无治理代码）。 */
+    public String queryServiceMetricsInternal(String service, String range, String metrics) {
+        try {
+            metricsQueryCatalog.requireValidService(service);
+        } catch (IllegalArgumentException e) {
+            return "参数错误: " + e.getMessage()
+                    + "（服务名只允许字母/数字/点/下划线/中划线；合法指标: "
+                    + String.join(",", metricsQueryCatalog.availableMetrics()) + "）";
+        }
+        Evidence evidence = metricsEvidenceCollector.collect(service, range, metrics);
+        return "【指标取证结果】" + evidence.toToolPayload();
+    }
+
+    /**
+     * S1-2：变更取证工具（路线图 §5.3，「根因定位性价比最高的单一方向」）。
+     * <p>
+     * NO_DATA（查过、确实没有）与 FAILED（查不了）语义严格区分；
+     * 时间相关性按分档评分（变更离现在越近分越高）。
+     * </p>
+     */
+    @Tool("查询服务在告警前时间窗内的变更记录（发布/配置/扩缩容），用于根因关联")
+    @ToolMeta(
+            name = "queryRecentChanges",
+            description = "查询 sys_change_event 中告警前窗口内的变更事件并做时间相关性评分；NO_DATA 为有效排除证据",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#service + '_' + #range",
+            requiresApproval = false,
+            timeoutMs = 10000,
+            maxRetries = 1,
+            compensationAction = ""
+    )
+    public String queryRecentChanges(@P("服务名，如 order-service") String service,
+                                     @P("告警前时间窗，如 2h / 30m / 1d，默认 2h，上限 7d") String range) {
+        log.info("[Tool] queryRecentChanges 被调用,service={}, range={}", service, range);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod(
+                    "queryRecentChangesInternal", String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool(
+                    "queryRecentChanges", this, method, new Object[]{service, range});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryRecentChanges 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("变更取证工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryRecentChanges 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询服务变更失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 内部实现：参数白名单 → 采集 → 稳定序列化。 */
+    public String queryRecentChangesInternal(String service, String range) {
+        try {
+            metricsQueryCatalog.requireValidService(service);
+        } catch (IllegalArgumentException e) {
+            return "参数错误: " + e.getMessage();
+        }
+        Evidence evidence = changesEvidenceCollector.collect(service, range);
+        return "【变更取证结果】" + evidence.toToolPayload();
+    }
+
+    /**
+     * S1-3：日志取证工具（路线图 §5.4）。
+     * <p>
+     * 样本一律经 PromptInjectionGuard（LOG_CONTENT 通道）检测并包裹
+     * {@code <untrusted_log>}；单次载荷预算 2000 字符，超量自动摘要化；
+     * 数据源未启用=UNAVAILABLE（默认配置即为未启用——部署形态如实报告）。
+     * </p>
+     */
+    @Tool("查询服务在告警时间窗内的日志（默认 ERROR 级），聚合为错误模式用于故障取证")
+    @ToolMeta(
+            name = "queryServiceLogs",
+            description = "查询 Loki 日志并做 Drain-lite 模式聚类；样本限 3 条/模式并经注入检测包裹；载荷 ≤2000 字符",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#service + '_' + #range + '_' + #level + '_' + #keyword",
+            requiresApproval = false,
+            timeoutMs = 12000,
+            maxRetries = 1,
+            compensationAction = ""
+    )
+    public String queryServiceLogs(@P("服务名，如 order-service") String service,
+                                   @P("时间窗，如 30m / 2h / 1d，默认 30m，上限 7d") String range,
+                                   @P("日志级别：ERROR / WARN / INFO / DEBUG / ALL，默认 ERROR") String level,
+                                   @P("可选：内容过滤关键词，如 timeout、OutOfMemory") String keyword) {
+        log.info("[Tool] queryServiceLogs 被调用,service={}, range={}, level={}, keyword={}",
+                service, range, level, keyword);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod(
+                    "queryServiceLogsInternal", String.class, String.class, String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool(
+                    "queryServiceLogs", this, method, new Object[]{service, range, level, keyword});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryServiceLogs 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("日志取证工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryServiceLogs 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询服务日志失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 内部实现：参数白名单 → 采集 → 稳定序列化。 */
+    public String queryServiceLogsInternal(String service, String range, String level, String keyword) {
+        try {
+            metricsQueryCatalog.requireValidService(service);
+        } catch (IllegalArgumentException e) {
+            return "参数错误: " + e.getMessage();
+        }
+        // 签名统一为 (service, range, level, keyword)——双串参位置曾在两边各错一次，
+        // 教训：多字符串参数必须签名与调用同序锚定，注释放这不再删除。
+        Evidence evidence = logsEvidenceCollector.collect(service, range, level, keyword);
+        return "【日志取证结果】" + evidence.toToolPayload();
+    }
+
+    @Tool("用户需要开工单/上报二级运维时调用")
+    @ToolMeta(
+            name = "createDevOpsTicket",
+            description = "用户需要开工单/上报二级运维时调用",
+            riskLevel = ToolRiskLevel.CONTROLLED_WRITE,
+            idempotent = true,
+            idempotencyKey = "#title + '_' + #priority + '_' + #module",
+            requiresApproval = false, // P0 优先级由编排层在写前动态判断
+            compensationAction = "voidTicket",
+            timeoutMs = 15000,
+            maxRetries = 1
+    )
+    public String createDevOpsTicket(
+            @P("工单标题") String title,
+            @P("优先级：P0=生产宕机/核心业务不可用，P1=影响业务但有临时方案，P2=需处理但不紧急，P3=优化建议") String priority,
+            @P("故障模块 [K8S/ALIYUN_SLB/MYSQL/NETWORK/OTHER]") String module,
+            @P("故障描述与堆栈摘要") String description) {
+
+        log.info("[Tool] createDevOpsTicket 被调用,title={}, priority={}, module={}", title, priority, module);
+
+        // L3 Schema 校验：失败抛给 LangChain4j 触发模型自愈重试
+        try {
+            validator.validateTicketParams(title, priority, module, description);
+        } catch (IllegalArgumentException e) {
+            log.warn("[Tool] 工单参数校验失败: {}", e.getMessage());
+            throw e;
+        }
+
+        // 归一化到四档 P0~P3（兼容模型传入的旧值 HIGH/MEDIUM/LOW 与 URGENT 别名）
+        String normalizedPriority = TicketEnums.Priority.normalize(priority);
+        String normalizedModule = module.trim().toUpperCase();
+
+        // P0 优先级标记为需审批，由编排层决定是否在写前拦截。
+        // B0 前此处判定 "HIGH"，四档迁移后 HIGH 不再是合法值——
+        // 若不改，审批标记会永久为 false，一个安全阀门静默失效。
+        boolean needsApproval = TicketEnums.Priority.P0.equals(normalizedPriority);
+        if (needsApproval) {
+            log.warn("[Tool] P0 优先级工单已标记需审批 | title={}", title);
+        }
+
+        TicketDraft draft = new TicketDraft(
+                title.trim(), normalizedPriority, normalizedModule,
+                description.trim(), needsApproval);
+
+        log.info("[Tool] 工单草稿已产出（未落库，待编排层写入）| title={} | needsApproval={}",
+                title, needsApproval);
+
+        // 返回给模型的文本：明确告知工单号由系统分配，禁止编造。
+        // 这消除了一条幻觉路径——此前模型能看到真实工单号，可能复述错误。
+        return String.format("""
+                ✅ 工单提交成功，正在创建。
+
+                标题: %s
+                优先级: %s
+                模块: %s
+
+                ⚠️ 工单号由系统分配后直接展示给用户，你无需也不要提供工单号。
+                请仅告知用户工单已提交，二级运维团队将在 30 分钟内响应。
+                %s""",
+                title, normalizedPriority, normalizedModule, draft.toMarkerBlock());
+    }
+
+    /**
+     * 补偿动作：作废工单
+     * <p>
+     * 对应 {@code @ToolMeta.compensationAction = "voidTicket"}，
+     * 由 {@code SagaCompensationManager} 在同 Saga 后续步骤失败时反射调用。
+     * </p>
+     * <p>
+     * 约定：补偿方法签名必须为 {@code (String businessKey) -> String}。
+     * </p>
+     * <p>
+     * <b>不是</b>物理删除：状态置 VOID 并追加补偿原因，保留审计痕迹，
+     * 且使补偿本身可重试（幂等）。
+     * </p>
+     *
+     * @param ticketNo 工单号（Saga 记录的 businessKey）
+     * @return 补偿结果描述
+     * @throws IllegalStateException 工单不存在时抛出，触发 MANUAL_INTERVENTION_REQUIRED
+     */
+    public String voidTicket(String ticketNo) {
+        log.warn("↩️ [Tool] 补偿动作：作废工单 | ticketNo={}", ticketNo);
+        // 异常向上抛出，由 SagaCompensationManager 捕获并标记补偿失败
+        return ticketService.voidTicket(ticketNo, "Saga 自动补偿：同事务后续步骤失败");
+    }
+
+    /**
+     * 工具3: 查询 K8s Pod 状态（V1.2 第一个真实执行器，D1 适配器模式）
+     * <p>
+     * 只读动作（READ_ONLY_DIAGNOSTIC）：无副作用、免审批、幂等。
+     * 走 {@code OpsExecutorRegistry} → {@code K8sOpsExecutor}（适配器模式），
+     * 治理链路（白名单/风险分级/记录/审计）与目标系统解耦。
+     * 未配置 K8s 集群时返回明确提示，系统不崩溃。
+     * </p>
+     *
+     * @param namespace K8s 命名空间
+     * @param podName   Pod 名称
+     * @return Pod 状态摘要（phase/restartCount/容器状态）
+     */
+    @Tool("查询 K8s Pod 状态（只读诊断）")
+    @ToolMeta(
+            name = "queryPodStatus",
+            description = "查询 K8s Pod 的实时状态（phase/重启次数/容器状态），只读诊断动作",
+            riskLevel = ToolRiskLevel.READ_ONLY,
+            idempotent = true,
+            idempotencyKey = "#namespace + '_' + #podName",
+            requiresApproval = false,
+            timeoutMs = 15000,
+            maxRetries = 1
+    )
+    public String queryPodStatus(@P("K8s 命名空间，如 prod") String namespace,
+                                 @P("Pod 名称") String podName) {
+        log.info("[Tool] queryPodStatus 被调用,namespace={}, pod={}", namespace, podName);
+        try {
+            Method method = DevOpsTools.class.getDeclaredMethod("queryPodStatusInternal", String.class, String.class);
+            method.setAccessible(true);
+            return (String) toolRuntimeManager.executeTool("queryPodStatus", this, method, new Object[]{namespace, podName});
+        } catch (NoSuchMethodException e) {
+            log.error("[Tool] queryPodStatus 内部方法签名不匹配（编码错误）: {}", e.getMessage());
+            throw new IllegalStateException("查询工具装配错误: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("[Tool] queryPodStatus 执行异常: {}", e.getMessage(), e);
+            throw new RuntimeException("查询 Pod 状态失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 内部实现：经执行器注册表调用 K8s 适配器（业务逻辑，无治理代码）
+     */
+    public String queryPodStatusInternal(String namespace, String podName) {
+        var result = opsExecutorRegistry.resolve("k8s").execute(
+                com.devops.agent.domain.tools.executor.OpsCommand.of(
+                        "k8s", "queryPodStatus",
+                        java.util.Map.of("namespace", namespace, "pod", podName)));
+        if (result.isSuccess()) {
+            return "【K8s Pod 状态查询结果】\n" + result.summary()
+                    + "\n\n详细字段: " + result.data();
+        }
+        return "⚠️ 查询失败: " + result.errorMessage();
+    }
+}

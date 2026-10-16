@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+import contextlib
+import base64
+import zlib
+import hashlib
+import io
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+from unittest import mock
+
+from verify_runtime_patches import REQUIRED, VERSIONS, BOOT_MODULES, DATA_MODULES, evidence_frames, main, verify
+
+
+def component(name, version):
+    group, artifact = name.split(":")
+    return {"group": group, "name": artifact, "version": version,
+            "purl": f"pkg:maven/{group}/{artifact}@{version}?type=jar",
+            "hashes": [{"alg": "SHA-256", "content": "a" * 64}]}
+
+
+def fixture():
+    # BC期望独立于被测策略常量，删错REQUIRED/VERSIONS不能让夹具跟着少模块、造成同源假绿。
+    spring = {"org.springframework:" + a for a in ("spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support",
+              "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging", "spring-orm", "spring-oxm",
+              "spring-tx", "spring-web", "spring-webmvc", "spring-websocket")}
+    names = spring | REQUIRED | {"com.github.junrar:junrar"} | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "6.2.19" if n.startswith("org.springframework:") else "3.5.15" if n.startswith("org.springframework.boot:") else "3.5.12" if n.startswith("org.springframework.data:") else "7.6.1" if n == "com.github.junrar:junrar" else "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
+    experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
+                  "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
+                  "native_gate_rc": 1, "checkout_sha": "b" * 40}
+    experiment["packaged_libraries"] = [{"variant": [c["group"] + ":" + c["name"], c["version"], "jar", ""],
+                                         "sha256": c["hashes"][0]["content"]} for c in bom["components"]]
+    return bom, experiment
+
+
+class TestRuntimePatches(unittest.TestCase):
+    def test_Spring全族四故障独立检出(self):
+        modules = ("spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support", "spring-core",
+                   "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging", "spring-orm", "spring-oxm", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket")
+        for module in modules:
+            for fault in ("missing", "version", "bytes"):
+                bom, probe = fixture()
+                c = next(c for c in bom["components"] if c["name"] == module)
+                if fault == "missing": bom["components"].remove(c)
+                elif fault == "version":
+                    c.update(component("org.springframework:" + module, "6.2.17"))
+                    row = next(r for r in probe["packaged_libraries"] if r["variant"][0] == "org.springframework:" + module)
+                    row["variant"][1] = "6.2.17"  # 隔离版本守卫；SBOM与Boot保持旧版一致
+                else:
+                    next(r for r in probe["packaged_libraries"] if r["variant"][0] == "org.springframework:" + module)["sha256"] = "b" * 64
+                with self.subTest(module=module, fault=fault), self.assertRaises(ValueError): verify(bom, probe)
+        for cve in ("CVE-2026-41850", "CVE-2026-41842", "CVE-2026-41845"):
+            bom, probe = fixture()
+            probe["findings"].append({"PkgName": "org.springframework:spring-webmvc", "Severity": "HIGH", "VulnerabilityID": cve})
+            with self.subTest(cve=cve), self.assertRaisesRegex(ValueError, "Spring.*3条"): verify(bom, probe)
+
+    def test_Spring部分修补不豁免跨线及新发现(self):
+        bom, probe = fixture()
+        probe["findings"] = [{"PkgName": "org.springframework:spring-webmvc", "Severity": s, "VulnerabilityID": c}
+                             for c, s in (("CVE-2026-47884", "CRITICAL"), ("CVE-2026-47890", "CRITICAL"), ("CVE-NEW", "HIGH"))]
+        result = verify(bom, probe)
+        self.assertEqual(result["partial_targets"]["org.springframework"]["remaining_findings"], probe["findings"])
+        self.assertEqual(result["partial_target_hc_rows"], 3)
+        self.assertEqual(result["remaining_hc_rows"], 3)
+        self.assertNotIn("org.springframework", result["zero_hc_groups"])
+        self.assertFalse(result["full_security_passed"])
+        self.assertEqual(result["native_gate_rc"], 1)
+
+    def test_Spring使用Boot原Framework入口不换平台(self):
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+        root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
+        self.assertEqual(root.findtext("m:properties/m:spring-framework.version", namespaces=ns), "6.2.19")
+        self.assertEqual(root.findtext("m:parent/m:artifactId", namespaces=ns), "spring-boot-starter-parent")
+        self.assertEqual(root.findtext("m:parent/m:version", namespaces=ns), "3.5.15")
+        self.assertFalse(root.findall("m:dependencyManagement/m:dependencies/m:dependency[m:groupId='org.springframework']", ns))
+
+    def test_仅目标组通过不能冒充整体安全(self):
+        result = verify(*fixture())
+        self.assertTrue(result["target_groups_passed"])
+        self.assertEqual(result["remaining_hc_rows"], 1)
+        self.assertFalse(result["full_security_passed"])
+        self.assertEqual(result["native_gate_rc"], 1)
+
+    def test_缺目标及扫描覆盖不能绿(self):
+        bom, probe = fixture()
+        bom["components"].pop()
+        with self.assertRaises(ValueError):
+            verify(bom, probe)
+        bom, probe = fixture()
+        probe["counts"]["sbom_missing_from_scan"] = 1
+        with self.assertRaises(ValueError):
+            verify(bom, probe)
+
+    def test_其他Tika模块混版也必须红(self):
+        bom, probe = fixture()
+        bom["components"].append(component("org.apache.tika:tika-parser-xml-module", "3.0.0"))
+        with self.assertRaisesRegex(ValueError, "混版"):
+            verify(bom, probe)
+
+    def test_版本对齐但仍有目标漏洞也必须红(self):
+        bom, probe = fixture()
+        probe["findings"].append({"PkgName": "org.apache.tika:tika-core", "Severity": "HIGH"})
+        with self.assertRaisesRegex(ValueError, "仍有"):
+            verify(bom, probe)
+
+    def test_tcnative独立版本不是漏洞豁免(self):
+        bom, probe = fixture()
+        bom["components"].append(component("io.netty:netty-tcnative-classes", "2.0.75.Final"))
+        probe["packaged_libraries"].append({"variant": ["io.netty:netty-tcnative-classes", "2.0.75.Final", "jar", ""], "sha256": "a" * 64})
+        verify(bom, probe)
+        probe["findings"].append({"PkgName": "io.netty:netty-tcnative-classes", "Severity": "HIGH"})
+        with self.assertRaises(ValueError):
+            verify(bom, probe)
+
+    def test_SBOM已补但Boot仍旧字节不能绿(self):
+        bom, probe = fixture()
+        probe["packaged_libraries"][0]["sha256"] = "b" * 64
+        with self.assertRaisesRegex(ValueError, "实际Boot字节"):
+            verify(bom, probe)
+        probe.pop("packaged_libraries")
+        with self.assertRaises(ValueError):
+            verify(bom, probe)
+
+    def test_补丁字节证据分片完整可验且超容不静默丢证(self):
+        payload = json.dumps({"hashes": [hashlib.sha256(str(i).encode()).hexdigest() for i in range(150)]}).encode()
+        frames = evidence_frames(payload)
+        self.assertGreater(len(frames), 1)
+        self.assertEqual([f["part"] for f in frames], list(range(1, len(frames) + 1)))
+        self.assertTrue(all(f["parts"] == len(frames) and len(f["data"]) <= 2700 for f in frames))
+        decoded = zlib.decompress(base64.b64decode("".join(f["data"] for f in frames)))
+        self.assertEqual(decoded, payload)
+        self.assertEqual(frames[0]["sha256"], hashlib.sha256(decoded).hexdigest())
+        with self.assertRaises(ValueError):
+            evidence_frames(json.dumps([hashlib.sha256(str(i).encode()).hexdigest() for i in range(1000)]).encode())
+        bom, probe = fixture()
+        self.assertTrue(all(v["sha256"] == "a" * 64 and v["byte_matched_packaged"] for v in verify(bom, probe)["verified_variants"]))
+
+    def test_Tomcat部分修补不隐藏剩余漏洞(self):
+        bom, probe = fixture()
+        remaining = {"PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL", "VulnerabilityID": "CVE-2026-65182"}
+        probe["findings"].append(remaining)
+        result = verify(bom, probe)
+        self.assertEqual(result["partial_target_hc_rows"], 2)
+        self.assertEqual(len(result["partial_targets"]["org.apache.tomcat.embed"]["remaining_findings"]), 1)
+        self.assertEqual(result["remaining_hc_rows"], 2)
+        self.assertEqual(result["partial_targets"]["org.apache.tomcat.embed"]["remaining_findings"], [remaining])
+        self.assertNotIn("org.apache.tomcat.embed", result["zero_hc_groups"])
+        self.assertFalse(result["full_security_passed"])
+        probe["findings"].append({**remaining, "VulnerabilityID": "CVE-2026-43515"})
+        with self.assertRaisesRegex(ValueError, "9条仍有残留"):
+            verify(bom, probe)
+
+    def test_新完成组三组任何HC不得残留(self):
+        for group in ("io.micrometer", "org.apache.opennlp", "org.jsoup"):
+            bom, probe = fixture()
+            probe["findings"].append({"PkgName": group + ":probe", "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
+            with self.assertRaises(ValueError):
+                verify(bom, probe)
+
+    def test_BC全版本族不能混版缺件假字节或留HC(self):
+        for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on"):
+            for fault in ("version", "missing", "bytes", "hc"):
+                bom, probe = fixture()
+                name = "org.bouncycastle:" + artifact
+                c = next(c for c in bom["components"] if c["group"] + ":" + c["name"] == name)
+                if fault == "version":
+                    c.update(component(name, "1.81"))
+                    # SBOM/Boot都真实为旧版，隔离版本守卫，不能靠哈希不匹配误打误撞判红。
+                    next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["variant"][1] = "1.81"
+                elif fault == "missing":
+                    bom["components"].remove(c)
+                elif fault == "bytes":
+                    next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["sha256"] = "b" * 64
+                else:
+                    probe["findings"].append({"PkgName": name, "Severity": "CRITICAL", "VulnerabilityID": "CVE-PROBE"})
+                with self.subTest(artifact=artifact, fault=fault), self.assertRaises(ValueError):
+                    verify(bom, probe)
+
+    def test_POM四入口生效且邮件夹具不得抢生产作用域(self):
+        root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+        self.assertEqual(root.findtext("m:properties/m:bouncycastle.version", namespaces=ns), "1.85")
+        dm = {d.findtext("m:artifactId", namespaces=ns): d for d in root.findall("m:dependencyManagement/m:dependencies/m:dependency", ns)
+              if d.findtext("m:groupId", namespaces=ns) == "org.bouncycastle"}
+        for artifact in ("bcprov", "bcpkix", "bcutil", "bcjmail"):
+            self.assertIn(artifact + "-jdk18on", dm)
+            self.assertEqual(dm[artifact + "-jdk18on"].findtext("m:version", namespaces=ns), "${bouncycastle.version}")
+        deps = {d.findtext("m:artifactId", namespaces=ns): d for d in root.findall("m:dependencies/m:dependency", ns)}
+        for artifact in ("jakarta.mail-api", "angus-mail"):
+            d = deps[artifact]
+            self.assertEqual(d.findtext("m:scope", namespaces=ns), "test")
+            exclusions = {(e.findtext("m:groupId", namespaces=ns), e.findtext("m:artifactId", namespaces=ns))
+                          for e in d.findall("m:exclusions/m:exclusion", ns)}
+            self.assertIn(("org.eclipse.angus", "angus-activation"), exclusions)
+
+    def test_Junrar缺件混版字节与HC均不能绿(self):
+        for fault in ("missing", "version", "bytes", "hc"):
+            bom, probe = fixture()
+            name = "com.github.junrar:junrar"
+            c = next(c for c in bom["components"] if c["group"] + ":" + c["name"] == name)
+            if fault == "missing":
+                bom["components"].remove(c)
+            elif fault == "version":
+                c.update(component(name, "7.5.5"))
+                next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["variant"][1] = "7.5.5"
+            elif fault == "bytes":
+                next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["sha256"] = "b" * 64
+            else:
+                probe["findings"].append({"PkgName": name, "Severity": "HIGH", "VulnerabilityID": "CVE-2026-97370"})
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                verify(bom, probe)
+        result = verify(*fixture())
+        self.assertIn("com.github.junrar", result["zero_hc_groups"])
+        self.assertEqual(next(v["version"] for v in result["verified_variants"] if v["name"] == "com.github.junrar:junrar"), "7.6.1")
+
+    def test_Junrar属性必须接到实际DM入口(self):
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+        root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
+        self.assertEqual(root.findtext("m:properties/m:junrar.version", namespaces=ns), "7.6.1")
+        matches = [d for d in root.findall("m:dependencyManagement/m:dependencies/m:dependency", ns)
+                   if d.findtext("m:groupId", namespaces=ns) == "com.github.junrar" and d.findtext("m:artifactId", namespaces=ns) == "junrar"]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].findtext("m:version", namespaces=ns), "${junrar.version}")
+
+    def invoke(self, root, severity="HIGH,CRITICAL"):
+        argv = ["guard", "--sbom", str(root / "bom.json"), "--experiment", str(root / "probe.json"),
+                "--json", str(root / "out.json"), "--scan-severity", severity]
+        with mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()):
+            return main()
+
+    def prepare(self, root):
+        bom, probe = fixture()
+        raw = json.dumps(bom).encode()
+        (root / "bom.json").write_bytes(raw)
+        probe["input_sha256"] = {"sbom": hashlib.sha256(raw).hexdigest()}
+        (root / "probe.json").write_text(json.dumps(probe))
+
+    def test_CLI哈希绑定及整体安全仍不通过(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.prepare(root)
+            self.assertEqual(self.invoke(root), 0)
+            out = json.loads((root / "out.json").read_text())
+            self.assertEqual(out["sha256"]["experiment"], hashlib.sha256((root / "probe.json").read_bytes()).hexdigest())
+            self.assertFalse(out["full_security_passed"])
+
+    def test_不接受低口径及哈希漂移并清除陈旧证据(self):
+        for mode in ("severity", "hash", "missing"):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                self.prepare(root)
+                (root / "out.json").write_text("stale green")
+                if mode == "hash":
+                    (root / "bom.json").write_bytes((root / "bom.json").read_bytes() + b"\n")
+                elif mode == "missing":
+                    (root / "probe.json").unlink()
+                self.assertEqual(self.invoke(root, "LOW" if mode == "severity" else "HIGH,CRITICAL"), 1)
+                self.assertFalse((root / "out.json").exists())
+
+
+    def test_SpringBoot及SpringData全族故障独立检出(self):
+        for name in ("spring-boot", "spring-boot-starter-web", "spring-data-commons", "spring-data-jpa"):
+            group = "org.springframework.boot" if name in BOOT_MODULES else "org.springframework.data"
+            coord = group + ":" + name
+            for fault in ("missing", "version", "bytes", "hc"):
+                bom, probe = fixture()
+                c = next(c for c in bom["components"] if c["name"] == name)
+                if fault == "missing":
+                    bom["components"].remove(c)
+                elif fault == "version":
+                    c.update(component(coord, "3.5.10"))
+                    row = next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)
+                    row["variant"][1] = "3.5.10"
+                elif fault == "bytes":
+                    if name.startswith("spring-boot-starter"):
+                        continue
+                    next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)["sha256"] = "b" * 64
+                else:
+                    probe["findings"].append({"PkgName": coord, "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
+                with self.subTest(coord=coord, fault=fault), self.assertRaises(ValueError):
+                    verify(bom, probe)
+
+
+    def test_Jackson全族故障独立检出(self):
+        for name in ("jackson-core", "jackson-databind"):
+            coord = "com.fasterxml.jackson.core:" + name
+            for fault in ("missing", "version", "bytes", "hc"):
+                bom, probe = fixture()
+                c = next(c for c in bom["components"] if c["name"] == name)
+                if fault == "missing":
+                    bom["components"].remove(c)
+                elif fault == "version":
+                    c.update(component(coord, "2.21.4"))
+                    row = next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)
+                    row["variant"][1] = "2.21.4"
+                elif fault == "bytes":
+                    next(r for r in probe["packaged_libraries"] if r["variant"][0] == coord)["sha256"] = "b" * 64
+                else:
+                    probe["findings"].append({"PkgName": coord, "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
+                with self.subTest(coord=coord, fault=fault), self.assertRaises(ValueError):
+                    verify(bom, probe)
+        result = verify(*fixture())
+        self.assertIn("com.fasterxml.jackson.core", result["zero_hc_groups"])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

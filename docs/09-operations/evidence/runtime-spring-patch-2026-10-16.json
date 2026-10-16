@@ -1,0 +1,2227 @@
+{
+  "date": "2026-10-16",
+  "pr": 23,
+  "verified_code_head": "b227399079b5a9478ab5ea76400e9d08f0c8508c",
+  "runs": {
+    "push_ci": 38869393684,
+    "pr_ci": 38869398347,
+    "scan": 38869398349
+  },
+  "proof": {
+    "job": 116869779522,
+    "checkout_sha": "391af473810f82bd0d272b6957f36cbf7a73608a",
+    "frames": {
+      "native": {
+        "part": 1,
+        "parts": 1,
+        "codec": "zlib+base64",
+        "full_sha256": "d98ab01d7250e90f82df54dea3c381dfe11dc939fd7867b640064c69427a70a5",
+        "sha256": "4c9c651802d402f5ea79cd3e489a23e372db7ee19e9a011af65cdf15ee55aa1a"
+      },
+      "coverage": {
+        "part": 1,
+        "parts": 4,
+        "codec": "zlib+base64",
+        "sha256": "043d2a5fcf1a8d6eeaf5c21af06c1d0925fd9814a7f2b32f68291f6888a9a78f"
+      },
+      "patch": {
+        "part": 1,
+        "parts": 3,
+        "codec": "zlib+base64",
+        "sha256": "8d2a3be5dc4bcdf79520383eef29e7b80340f94e81f059f8e57687d54afca287"
+      },
+      "supply": {
+        "part": 1,
+        "parts": 3,
+        "codec": "zlib+base64",
+        "sha256": "1058ab2ac6b5e7e581455d2fbfc4e7f11bbddf6a9d325ee4804b27dda07db4e2"
+      }
+    },
+    "native": {
+      "schema_version": 1,
+      "input_candidate_complete": false,
+      "status": "incomplete",
+      "production_gate_replaced": false,
+      "counts": {
+        "runtime_gavs": 292,
+        "runtime_variants": 297,
+        "sbom_gavs": 296,
+        "sbom_variants": 301,
+        "scanned_gavs": 296,
+        "runtime_missing_from_sbom": 0,
+        "sbom_missing_from_scan": 0,
+        "packaged_libraries": 288,
+        "packaged_hash_matched": 287,
+        "packaged_unknown": 1,
+        "finding_rows": 16,
+        "unique_cves": 16,
+        "fixed_rows": 16,
+        "packaged_finding_rows": 16
+      },
+      "native_gate_rc": 1,
+      "findings": [
+        {
+          "VulnerabilityID": "CVE-2026-68494",
+          "PkgName": "com.fasterxml.jackson.core:jackson-core",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.8, 2.21.4",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-89407",
+          "PkgName": "com.fasterxml.jackson.core:jackson-core",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.11, 2.21.7, 2.22.3",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-89425",
+          "PkgName": "com.fasterxml.jackson.core:jackson-core",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.21.7, 2.22.3, 2.18.11",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-54512",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.8, 3.1.4, 2.21.4",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-54513",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.8, 2.21.4, 3.1.4",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-68497",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.10, 2.21.6, 2.22.2",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-91776",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.11, 2.21.7, 2.22.3",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-91777",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.21.7, 2.18.11, 2.22.3",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-65182",
+          "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+          "InstalledVersion": "10.1.57",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-65905",
+          "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+          "InstalledVersion": "10.1.57",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-68525",
+          "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+          "InstalledVersion": "10.1.57",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-40973",
+          "PkgName": "org.springframework.boot:spring-boot",
+          "InstalledVersion": "3.5.12",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "4.0.6, 3.5.14",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41695",
+          "PkgName": "org.springframework.data:spring-data-commons",
+          "InstalledVersion": "3.5.10",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "4.0.6, 3.5.12",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41716",
+          "PkgName": "org.springframework.data:spring-data-commons",
+          "InstalledVersion": "3.5.10",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "4.0.6, 3.5.12",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-47884",
+          "PkgName": "org.springframework:spring-webmvc",
+          "InstalledVersion": "6.2.19",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "7.0.9",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-47890",
+          "PkgName": "org.springframework:spring-webmvc",
+          "InstalledVersion": "6.2.19",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "7.0.9",
+          "byte_matched_packaged": true
+        }
+      ],
+      "runtime_missing_from_sbom": [],
+      "sbom_extra_to_runtime": [
+        [
+          "jakarta.activation:jakarta.activation-api",
+          "2.1.4",
+          "jar",
+          ""
+        ],
+        [
+          "jakarta.xml.bind:jakarta.xml.bind-api",
+          "4.0.4",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework:spring-core",
+          "6.2.19",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework:spring-jcl",
+          "6.2.19",
+          "jar",
+          ""
+        ]
+      ],
+      "sbom_extra_packaging_evidence": [
+        {
+          "variant": [
+            "jakarta.activation:jakarta.activation-api",
+            "2.1.4",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        },
+        {
+          "variant": [
+            "jakarta.xml.bind:jakarta.xml.bind-api",
+            "4.0.4",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        },
+        {
+          "variant": [
+            "org.springframework:spring-core",
+            "6.2.19",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        },
+        {
+          "variant": [
+            "org.springframework:spring-jcl",
+            "6.2.19",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        }
+      ],
+      "sbom_missing_from_scan": [],
+      "runtime_not_packaged": [
+        [
+          "org.projectlombok:lombok",
+          "1.18.44",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-actuator",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-aop",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-data-jdbc",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-data-jpa",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-data-redis",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-jdbc",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-json",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-logging",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-tomcat",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-validation",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-web",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-websocket",
+          "3.5.12",
+          "jar",
+          ""
+        ]
+      ],
+      "packaged_unknown": [
+        {
+          "path": "BOOT-INF/lib/spring-boot-jarmode-tools-3.5.12.jar",
+          "sha256": "9d7a4adde84942a79026e689b6b19ab819ec8df59fe07bad87f239393410d323",
+          "reason": "SBOM 无匹配字节"
+        }
+      ],
+      "boundary": "独立实验非生产放行；Boot库按SBOM SHA256绑定，不按文件名猜；只核SBOM扫描GAV，不证明scanner逐classifier覆盖；新增发现不是已修补/已确认可利用",
+      "checkout_sha": "391af473810f82bd0d272b6957f36cbf7a73608a",
+      "input_sha256": {
+        "tree": "b063b311685415cc19dfde883b08082062aec97141c63a4937887e5d48207397",
+        "sbom": "fc8058a8f24da5487be5848a9a08ab9dbb79e4137953f9d818a531e90d062f82",
+        "report": "b7c38fe62c6e87027af9dbab112535b5efa42f1da83c2c4283314f73ce7bbbe8",
+        "gate": "b7c38fe62c6e87027af9dbab112535b5efa42f1da83c2c4283314f73ce7bbbe8",
+        "gate_rc": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "boot_jar": "696a556b02808ca6679f1dd0f36997e4d38a8c3498dbffd03a08d461543ab1a0"
+      }
+    },
+    "patch": {
+      "schema_version": 1,
+      "target_groups_passed": true,
+      "versions": {
+        "org.apache.tika": "3.2.2",
+        "io.netty": "4.1.137.Final",
+        "io.micrometer": "1.15.12",
+        "org.apache.opennlp": "2.5.9",
+        "org.jsoup": "1.23.2",
+        "org.apache.tomcat.embed": "10.1.57",
+        "org.bouncycastle": "1.85",
+        "com.github.junrar": "7.6.1",
+        "org.springframework": "6.2.19"
+      },
+      "verified_variants": [
+        {
+          "name": "com.github.junrar:junrar",
+          "version": "7.6.1",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "bafdea12be5407898b4b6ba5487d8f9021e8edeae2d6da746f65b8e2f95f021d",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.micrometer:micrometer-commons",
+          "version": "1.15.12",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "4b779cf7acb0534bb1f8e964f25200037ecb3944368f859a630fa637d6d5d7c0",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.micrometer:micrometer-core",
+          "version": "1.15.12",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "30f6136353e39bc067b26745a6c31b0b6e419d8ff59c05b5364d7c1d4b78083e",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.micrometer:micrometer-jakarta9",
+          "version": "1.15.12",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "08bfce8241e9de35906a24afd9ee942e0c71784231762dc3984bf794ba269251",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.micrometer:micrometer-observation",
+          "version": "1.15.12",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "54483e68ed44af1bb0c36d1df2235d36f233e459d52f5a3be3e69813827a6300",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.micrometer:micrometer-registry-otlp",
+          "version": "1.15.12",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "8465186760cd9c20ef4d7619e981488bd30c442f7fd50abfdf38e3f00c210639",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.micrometer:micrometer-registry-prometheus",
+          "version": "1.15.12",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "3ef9c07789b8f2a904f304df33b6c0a72dfd4d7dd77a585e5ec9516231305181",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-buffer",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "f474b14c7734f15e0540394cb6f39d67777b7581a42919e4ac89d253d4efd929",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-codec",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "9987b6a660b0a6b1f0d791485dae33180b3d1c63687c006fe6d3fd025e9e3798",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-codec-dns",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "2d9a33ce41bd9f6f607df95039e42518a1fca16f83c9bbfe72beb57df6e2489f",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-codec-http",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "0535bb5a736472bef5c948d15eb273c4ab9f796656fc7c5d6b982ad92bddbd49",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-codec-http2",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "576ddcfb51b78e86f145c9a52b60e500b1a1d5a257cafec8aa5416ffba044b49",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-codec-socks",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "4a6190e08988c058bfeef2b5965e71946439c771abf721c68f4039b4e7b023e8",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-common",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "d31926b01adcc07af86f5e27b81b6d6c115df17d366e835d1fc3f5a1924e7e52",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-handler",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "d0e4c6ee4779f59f6ab2fb5d388e4f57147c82270164b37945764bb9bda96a44",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-handler-proxy",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "843de10c4cef34cbc1a5344090f1b57db532fbebf141559862da675f6b656df4",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-resolver",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "b4cf2aeedd9fc7c8c439bbfe574f63cfe5b83392e88bbc07ca0e8424b7cff955",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-resolver-dns",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "898d63ca62ed68ff46543c5344f969424b417f1e8d082fe2bb0181ba10144194",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-resolver-dns-classes-macos",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "92d0a542954475f563ea58221d864884ba6753c50c1f17985b1045e990bf094c",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-resolver-dns-native-macos",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "osx-x86_64",
+          "sha256": "bc8a5616ab33f0e640bc6174eea770ccfca8ed0e9891ff3bb3ae638255bc006e",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-tcnative-boringssl-static",
+          "version": "2.0.81.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "d22dfe44e11aab6f9cc36c83b621e9b925a830e15fce2fa40483079d748207a9",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-tcnative-boringssl-static",
+          "version": "2.0.81.Final",
+          "type": "jar",
+          "classifier": "linux-aarch_64",
+          "sha256": "2b1a88756257580f6526611376313d4cb7a28f4a0f2533f2efee088c65f5e27b",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-tcnative-boringssl-static",
+          "version": "2.0.81.Final",
+          "type": "jar",
+          "classifier": "linux-x86_64",
+          "sha256": "9c7ce1e5965a9cd2a9bc57c602f3917e3994279e9c701953e8f6c6aefb76f431",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-tcnative-boringssl-static",
+          "version": "2.0.81.Final",
+          "type": "jar",
+          "classifier": "osx-aarch_64",
+          "sha256": "821cb6b8c61b4d6a45d1c834675ca34252da92a6892ca4bc7e5ee433502bc23d",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-tcnative-boringssl-static",
+          "version": "2.0.81.Final",
+          "type": "jar",
+          "classifier": "osx-x86_64",
+          "sha256": "09497e2ac9b752076e8e53798dc1faa3f8b4a89d6cdafc58d15a9689b1dc4858",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-tcnative-boringssl-static",
+          "version": "2.0.81.Final",
+          "type": "jar",
+          "classifier": "windows-x86_64",
+          "sha256": "62e2f26901d2d61a24d81e549fdf3833228fa8f861ba0abfdaf15af1451dab47",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-tcnative-classes",
+          "version": "2.0.81.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "b317bff5c41fea5a2c2eefebcc25c5ee486726c93e580200bc4c9ec7fc33e1f2",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-transport",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "6251adc2a2921572382732a2db188d4f4f2251fd6ebb49c5d44bbf33d6bfb1a7",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-transport-classes-epoll",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "55049554b799dc8e53bf234fffa36e001f7b5b65c32994b9bd59fc6356f1c52f",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-transport-classes-kqueue",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "88d0ac216f9c7be690a9d0157778570d6f4c61f885863da1fccec7fcaee35557",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-transport-native-epoll",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "linux-x86_64",
+          "sha256": "185db6053e0e9573d36fa4eb6567b26139afaa4daa7bf5a068e661568304542b",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-transport-native-kqueue",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "osx-x86_64",
+          "sha256": "29f96e4f350df9467e5cf49e83c0be27a094a6a1f6dfc1bf0e0be9af84333729",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "io.netty:netty-transport-native-unix-common",
+          "version": "4.1.137.Final",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "8056e7637f9948f953314894cf995ab664711b66c73c4cd5b593ae84f0b1048c",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.opennlp:opennlp-tools",
+          "version": "2.5.9",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "bc2d28082607b211fdf3185c1496ea8e130fa1fe1bead85622d38487920017e2",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-core",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "a34ba35d675f5a9733e3b60d5782edd8636a5c7785ac5e1c44125d025d57ad1f",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-apple-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "02385a1228ce85b44228653296d5d43b2cc6e45fc2d16989231b484a2a0f5cd4",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-audiovideo-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "fad2cab974c5864ebbf119b221b98f75000be084b94ccd821296c0be09d45253",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-cad-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "89eb4d9824cbe910214ad8d94668a6518025d1589449d650c8eb2d75d127fb71",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-code-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "6c66415c48ab68df5a7ba5a3375fb668763480ec6e246603a8777d36c13c7823",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-crypto-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "5a9371bcd0567b275ae714344e26d3f57bdbd95c226c5aa573f2cfbf9493f489",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-digest-commons",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "3a73ee1540e472b340c9df578af03fb2ccb9c37388e152681e3050dee71e3580",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-font-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "cb309e4a04ca9e37feacd3696900cf14e821701c515cae41ce10afde1e3bb235",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-html-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "598b9639bfc53acf4327bdbbdd62c86531b67f9fd2ced97828dd18789ab424c4",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-image-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "e00d97ab64a331b87c4a512dc9b14cfc5e4c601cb5e9284f5c60633f36b6b536",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-mail-commons",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "c571b95c004fc87779ea4a02d4adc92ffbdf56e818a481b562c1342f1bb1fa51",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-mail-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "345b04cd4ef7b27e9572527ed2d9d0c371840d621231861417131cfc8c74481d",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-microsoft-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "e773f4834587285b5f0a1af4cdac80de9610276e560fe1465f10e150128deb53",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-miscoffice-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "bebe1f56ac457485ba43d842042d1917fb12404fdc43f4589e58cb6b3109f5db",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-news-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "c63a3505ed00b2d25dda36711e6f95eab0a7c6fe048e191e3053abcafa0ad171",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-ocr-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "bef4eb3a36d1974a79acfc51f5d6340b195484d9daacb1541bc718fd1b270aa3",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-pdf-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "014cf5920257eb23824f0b2a22154586f5d8d370e9128854b63ff2524b695c50",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-pkg-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "602d20b04ce7e1a15919a99cc9ccd679d0641e963a4b33a9cd52a8841561e0d1",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-text-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "5f82360f2a595012a0d44d829763429af9fe710f976afda4274b3f2f350501b6",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-webarchive-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "aeb52a11559afd7d130e924c2a544cc2d0e20690c0a8f9b96e44494c3c1e1666",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-xml-module",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "9f5319ed616f814eff578f2b256e831b2aa56cb694864deed7cda94c3f74021c",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-xmp-commons",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "ab07e31b971f2442f2100db302317fb4964bbdbb1c6959499882e2e016ba5043",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parser-zip-commons",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "609006e0c9d67ac70e9d33e536dd6edc13f7cca5ddff91824bc61f42ff4409d1",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tika:tika-parsers-standard-package",
+          "version": "3.2.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "817b82c948315f7015846a1cad53c679d5ef5a628e7241eea53977c2c1a9c1ba",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tomcat.embed:tomcat-embed-core",
+          "version": "10.1.57",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "9e230f12579c8c7158df5cbae0479fb93c81a1f1c33c5d56e75605e2074a4fa7",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tomcat.embed:tomcat-embed-el",
+          "version": "10.1.57",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "d0d0b86ec9d466ccaa8acf948a8c6564f09e21dcccc385805df248a053a3b449",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.apache.tomcat.embed:tomcat-embed-websocket",
+          "version": "10.1.57",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "335c00fad89e389fe041cad16d22bc83e6ef746571442b3dc5e2a8f0388bad21",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.bouncycastle:bcjmail-jdk18on",
+          "version": "1.85",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "05e7f20cfeea3b8b896109c37a620784a3e73dc17c12c5b0fa2d570acee5811e",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.bouncycastle:bcpkix-jdk18on",
+          "version": "1.85",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "c9f82b2d4e99c4bbdfccf684e52cc06ea06a0b567bfd0d08f9c5a3f417055996",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.bouncycastle:bcprov-jdk18on",
+          "version": "1.85",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "20af26bf6060bb8005cc2389916812c1e0e998dc48d2ced7131b89461b54cff7",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.bouncycastle:bcutil-jdk18on",
+          "version": "1.85",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "590f55ed5d68529239898a4a5c4f730b6e37f45d1cfa3fbe51f8485abe32c42d",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.jsoup:jsoup",
+          "version": "1.23.2",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "e9d8c856856680427f096d156f02a414289985c930998fcb519ce5be39b42003",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-aop",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "a11b93539d80b02caf76171db2da96df39abebbfef49a2fadd6dda0779f2e20b",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-aspects",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "4b323ae36dd6d5a7c0ca2f134ac83fa2d16628ee8205e96ff6965ec0f35ea142",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-beans",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "846dc8f30a639a36eb551ee99a30469be4d11bd285ca9daf164d98321571b404",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-context",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "ead4b645f94a7f665f00093eaafde634e97b34524294de653b51e43e0b3fc4a4",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-context-support",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "f99b9158ca52c8c2309663ae112f2c7ae10b1696b2350f401ee771a22722f7cc",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-core",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "52146689e71a911c92bac26677d73c692512a739893a57710cc233591756bff6",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-expression",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "d710a44417d890353895b341a722d7d08199e2b7da52f0a11c0e92571e1d6e19",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-jcl",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "9994478bcea1423b8892d4eb0db942c94da0090167c3c684050c1eaef04491d0",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-jdbc",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "c81fd8aca952aac243d9327af12596c2058012c9d3784f1313477a6d2cc56306",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-messaging",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "9b063aad34a6876a640976c6657ab25cb2bf6c41e2eafaa5a7e50ccf3234390c",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-orm",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "32c1221bfb2eac7a73beee46da4150a6d941aa90f00228d0a2c80a5772c5c03d",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-oxm",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "a208114b98e48dc23010beab422b8f69c1d518ec27ce194d2ecead75d0898a0b",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-tx",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "34a1b6f5d87ef4cca6849e1bc70a0f965eec6476737b3cae73ff2561a266ef73",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-web",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "ca88e364ecebee61163e2260e8a20584138eca74e28a050d6a2ef6302bad2f2d",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-webmvc",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "134f42320cedd31f54f683d2ca9936a4e015c011fb1882a31fa7213e2d8c7e94",
+          "byte_matched_packaged": true
+        },
+        {
+          "name": "org.springframework:spring-websocket",
+          "version": "6.2.19",
+          "type": "jar",
+          "classifier": "",
+          "sha256": "ee8bbae1c3889e16e2ec540310612597a3f573c03a113a7b0bd721b7690cf1e1",
+          "byte_matched_packaged": true
+        }
+      ],
+      "verified_variants_count": 82,
+      "target_hc_rows": 0,
+      "zero_hc_groups": [
+        "com.github.junrar",
+        "io.micrometer",
+        "io.netty",
+        "org.apache.opennlp",
+        "org.apache.tika",
+        "org.bouncycastle",
+        "org.jsoup"
+      ],
+      "partial_target_hc_rows": 5,
+      "partial_targets": {
+        "org.apache.tomcat.embed": {
+          "required_absent_cves": [
+            "CVE-2026-29129",
+            "CVE-2026-34483",
+            "CVE-2026-34487",
+            "CVE-2026-41284",
+            "CVE-2026-41293",
+            "CVE-2026-42498",
+            "CVE-2026-43512",
+            "CVE-2026-43513",
+            "CVE-2026-43515"
+          ],
+          "remaining_findings": [
+            {
+              "VulnerabilityID": "CVE-2026-65182",
+              "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+              "InstalledVersion": "10.1.57",
+              "Severity": "CRITICAL",
+              "Status": "fixed",
+              "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+              "byte_matched_packaged": true
+            },
+            {
+              "VulnerabilityID": "CVE-2026-65905",
+              "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+              "InstalledVersion": "10.1.57",
+              "Severity": "CRITICAL",
+              "Status": "fixed",
+              "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+              "byte_matched_packaged": true
+            },
+            {
+              "VulnerabilityID": "CVE-2026-68525",
+              "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+              "InstalledVersion": "10.1.57",
+              "Severity": "CRITICAL",
+              "Status": "fixed",
+              "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+              "byte_matched_packaged": true
+            }
+          ]
+        },
+        "org.springframework": {
+          "required_absent_cves": [
+            "CVE-2026-41842",
+            "CVE-2026-41845",
+            "CVE-2026-41850"
+          ],
+          "remaining_findings": [
+            {
+              "VulnerabilityID": "CVE-2026-47884",
+              "PkgName": "org.springframework:spring-webmvc",
+              "InstalledVersion": "6.2.19",
+              "Severity": "CRITICAL",
+              "Status": "fixed",
+              "FixedVersion": "7.0.9",
+              "byte_matched_packaged": true
+            },
+            {
+              "VulnerabilityID": "CVE-2026-47890",
+              "PkgName": "org.springframework:spring-webmvc",
+              "InstalledVersion": "6.2.19",
+              "Severity": "CRITICAL",
+              "Status": "fixed",
+              "FixedVersion": "7.0.9",
+              "byte_matched_packaged": true
+            }
+          ]
+        }
+      },
+      "remaining_hc_rows": 16,
+      "native_gate_rc": 1,
+      "full_security_passed": false,
+      "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup/BC/Junrar完成组清零；Tomcat仅验九条、Spring仅验三条关闭，剩余发现完整保留；非整体安全/灰度放行",
+      "checkout_sha": "391af473810f82bd0d272b6957f36cbf7a73608a",
+      "sha256": {
+        "sbom": "fc8058a8f24da5487be5848a9a08ab9dbb79e4137953f9d818a531e90d062f82",
+        "experiment": "d98ab01d7250e90f82df54dea3c381dfe11dc939fd7867b640064c69427a70a5"
+      }
+    },
+    "supply": {
+      "schema_version": 1,
+      "repository": "https://repo.maven.apache.org/maven2/",
+      "tomcat_metadata": {
+        "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/maven-metadata.xml",
+        "sha256": "24a720bfda974e267d1979da7d14e9540d3f953877e8fa7d1ff328a782c5c585",
+        "last_versions_up_to_10_1_58": [
+          "10.1.49",
+          "10.1.50",
+          "10.1.52",
+          "10.1.53",
+          "10.1.54",
+          "10.1.55",
+          "10.1.56",
+          "10.1.57"
+        ]
+      },
+      "candidates": [
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-core:10.1.56",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.56/tomcat-embed-core-10.1.56.pom",
+              "http_status": 200,
+              "bytes": 1737,
+              "sha256": "aa7c5c6c8c28c1570d2a1dab8f8c392d554f83be08aa99f46f46bdbd96ee5b2b"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.56/tomcat-embed-core-10.1.56.jar",
+              "http_status": 200,
+              "bytes": 3694241,
+              "sha256": "db6e95e846192c2bf24ebc0e9ee140ba60462bebbf96d6a079896bea02182443"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-el:10.1.56",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.56/tomcat-embed-el-10.1.56.pom",
+              "http_status": 200,
+              "bytes": 1506,
+              "sha256": "0a24354147566a6d52528da1d0f8aebc0e08cae938b29f11aaeaeafd0d3d80cf"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.56/tomcat-embed-el-10.1.56.jar",
+              "http_status": 200,
+              "bytes": 265819,
+              "sha256": "164066134f1c21d4117218e5475d38869043ceb523afdac033fe6e539f750c70"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-websocket:10.1.56",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.56/tomcat-embed-websocket-10.1.56.pom",
+              "http_status": 200,
+              "bytes": 1743,
+              "sha256": "7d0353917e36563d096770164ffbf4968dc58035b9e7a8535868212802738567"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.56/tomcat-embed-websocket-10.1.56.jar",
+              "http_status": 200,
+              "bytes": 285329,
+              "sha256": "ddec0460ef1cae013d3c1fe4c0e663bdc2d4410cc8bd42e08a754e8f04091994"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-core:10.1.57",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.57/tomcat-embed-core-10.1.57.pom",
+              "http_status": 200,
+              "bytes": 1737,
+              "sha256": "a649e2977149e18fc6e1bd4f6a769b2e494536d4308490b9d1edf15f7ce6e6a7"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.57/tomcat-embed-core-10.1.57.jar",
+              "http_status": 200,
+              "bytes": 3698204,
+              "sha256": "9e230f12579c8c7158df5cbae0479fb93c81a1f1c33c5d56e75605e2074a4fa7"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-el:10.1.57",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.57/tomcat-embed-el-10.1.57.pom",
+              "http_status": 200,
+              "bytes": 1506,
+              "sha256": "34493a973b5b3eaed4a3e8a398337671b9538e847465c4124d36e5366bd7effd"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.57/tomcat-embed-el-10.1.57.jar",
+              "http_status": 200,
+              "bytes": 265819,
+              "sha256": "d0d0b86ec9d466ccaa8acf948a8c6564f09e21dcccc385805df248a053a3b449"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-websocket:10.1.57",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.57/tomcat-embed-websocket-10.1.57.pom",
+              "http_status": 200,
+              "bytes": 1743,
+              "sha256": "8fe453074eb396ada3170552049ad100a7a334f7eaab65d7c70e793035b8253b"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.57/tomcat-embed-websocket-10.1.57.jar",
+              "http_status": 200,
+              "bytes": 285844,
+              "sha256": "335c00fad89e389fe041cad16d22bc83e6ef746571442b3dc5e2a8f0388bad21"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-core:10.1.58",
+          "packaging": "jar",
+          "availability": "not_found",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.58/tomcat-embed-core-10.1.58.pom",
+              "http_status": 404
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/10.1.58/tomcat-embed-core-10.1.58.jar",
+              "http_status": 404
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-el:10.1.58",
+          "packaging": "jar",
+          "availability": "not_found",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.58/tomcat-embed-el-10.1.58.pom",
+              "http_status": 404
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-el/10.1.58/tomcat-embed-el-10.1.58.jar",
+              "http_status": 404
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.tomcat.embed:tomcat-embed-websocket:10.1.58",
+          "packaging": "jar",
+          "availability": "not_found",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.58/tomcat-embed-websocket-10.1.58.pom",
+              "http_status": 404
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/tomcat/embed/tomcat-embed-websocket/10.1.58/tomcat-embed-websocket-10.1.58.jar",
+              "http_status": 404
+            }
+          ]
+        },
+        {
+          "coordinate": "io.micrometer:micrometer-bom:1.15.12",
+          "packaging": "pom",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/io/micrometer/micrometer-bom/1.15.12/micrometer-bom-1.15.12.pom",
+              "http_status": 200,
+              "bytes": 8614,
+              "sha256": "5fd5d8aae19fe6c2eac4b62a966b837976dc6814efbe126e7aa5afadb32e52b1"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.apache.opennlp:opennlp-tools:2.5.9",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/opennlp/opennlp-tools/2.5.9/opennlp-tools-2.5.9.pom",
+              "http_status": 200,
+              "bytes": 5874,
+              "sha256": "38a5c7a61d0512edd7e0aa5d566596d16f4fd0a952639e20853cfd71208109cf"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/apache/opennlp/opennlp-tools/2.5.9/opennlp-tools-2.5.9.jar",
+              "http_status": 200,
+              "bytes": 1396264,
+              "sha256": "bc2d28082607b211fdf3185c1496ea8e130fa1fe1bead85622d38487920017e2"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.jsoup:jsoup:1.23.2",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/jsoup/jsoup/1.23.2/jsoup-1.23.2.pom",
+              "http_status": 200,
+              "bytes": 23761,
+              "sha256": "3ff28beafd484e9c345e0749d697d2aa31f29ace54b5d4da4e8375e6d8fe1802"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/jsoup/jsoup/1.23.2/jsoup-1.23.2.jar",
+              "http_status": 200,
+              "bytes": 537806,
+              "sha256": "e9d8c856856680427f096d156f02a414289985c930998fcb519ce5be39b42003"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.bouncycastle:bcprov-jdk18on:1.85",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk18on/1.85/bcprov-jdk18on-1.85.pom",
+              "http_status": 200,
+              "bytes": 1160,
+              "sha256": "a48e978d6b24c183c4832f5c49d71c1f84156b99c6fa9a410aafb373a254be7c"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk18on/1.85/bcprov-jdk18on-1.85.jar",
+              "http_status": 200,
+              "bytes": 10321819,
+              "sha256": "20af26bf6060bb8005cc2389916812c1e0e998dc48d2ced7131b89461b54cff7"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.bouncycastle:bcpkix-jdk18on:1.85",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcpkix-jdk18on/1.85/bcpkix-jdk18on-1.85.pom",
+              "http_status": 200,
+              "bytes": 1522,
+              "sha256": "9b052b0cb85cb7d8bb0956afcc74f31c814f1c67e03498e1ca74f8fe8611d957"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcpkix-jdk18on/1.85/bcpkix-jdk18on-1.85.jar",
+              "http_status": 200,
+              "bytes": 1315409,
+              "sha256": "c9f82b2d4e99c4bbdfccf684e52cc06ea06a0b567bfd0d08f9c5a3f417055996"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.bouncycastle:bcutil-jdk18on:1.85",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcutil-jdk18on/1.85/bcutil-jdk18on-1.85.pom",
+              "http_status": 200,
+              "bytes": 1344,
+              "sha256": "9f1c79a12a7c03d78860e05750dcc44e855e20205c7af7cffbf29a69448d85ea"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcutil-jdk18on/1.85/bcutil-jdk18on-1.85.jar",
+              "http_status": 200,
+              "bytes": 718812,
+              "sha256": "590f55ed5d68529239898a4a5c4f730b6e37f45d1cfa3fbe51f8485abe32c42d"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.bouncycastle:bcjmail-jdk18on:1.85",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcjmail-jdk18on/1.85/bcjmail-jdk18on-1.85.pom",
+              "http_status": 200,
+              "bytes": 1376,
+              "sha256": "c1f464537055a476c06fa8aeb35ca4f48125812f6cc92e331a93c2c37e5d62af"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/bouncycastle/bcjmail-jdk18on/1.85/bcjmail-jdk18on-1.85.jar",
+              "http_status": 200,
+              "bytes": 95881,
+              "sha256": "05e7f20cfeea3b8b896109c37a620784a3e73dc17c12c5b0fa2d570acee5811e"
+            }
+          ]
+        },
+        {
+          "coordinate": "com.github.junrar:junrar:7.6.1",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/com/github/junrar/junrar/7.6.1/junrar-7.6.1.pom",
+              "http_status": 200,
+              "bytes": 1437,
+              "sha256": "0f528906b068d4574a028b85b7e2f1db1e8621a2475a272822a82d608ee5081d"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/com/github/junrar/junrar/7.6.1/junrar-7.6.1.jar",
+              "http_status": 200,
+              "bytes": 165413,
+              "sha256": "bafdea12be5407898b4b6ba5487d8f9021e8edeae2d6da746f65b8e2f95f021d"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-aop:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-aop/6.2.19/spring-aop-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2209,
+              "sha256": "c27a6385a8ba4f01f226bee38d6c97ac6b697e06e59bd6f38a3538218848ac98"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-aop/6.2.19/spring-aop-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 420259,
+              "sha256": "a11b93539d80b02caf76171db2da96df39abebbfef49a2fadd6dda0779f2e20b"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-aspects:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-aspects/6.2.19/spring-aspects-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2036,
+              "sha256": "efc3d6c224d9aad2f9cdfa161216dc06bddd71cf6e3a14178ba395bf428b5341"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-aspects/6.2.19/spring-aspects-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 49790,
+              "sha256": "4b323ae36dd6d5a7c0ca2f134ac83fa2d16628ee8205e96ff6965ec0f35ea142"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-beans:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-beans/6.2.19/spring-beans-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2030,
+              "sha256": "bd2c451646f1e2cb0df22485aff498f5cde979aedb117f9bb54f01100e9bdb43"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-beans/6.2.19/spring-beans-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 891594,
+              "sha256": "846dc8f30a639a36eb551ee99a30469be4d11bd285ca9daf164d98321571b404"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-context:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-context/6.2.19/spring-context-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2784,
+              "sha256": "9ffe29ed9203202a564114a6b4d86d7b88914ab4c97ed2c162844892e921503b"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-context/6.2.19/spring-context-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 1359997,
+              "sha256": "ead4b645f94a7f665f00093eaafde634e97b34524294de653b51e43e0b3fc4a4"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-context-support:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-context-support/6.2.19/spring-context-support-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2436,
+              "sha256": "bdd22839c0b9370f6b0bd3bb3748a6a98f1c3a35cc6d5439eeaa46a2153072c3"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-context-support/6.2.19/spring-context-support-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 175412,
+              "sha256": "f99b9158ca52c8c2309663ae112f2c7ae10b1696b2350f401ee771a22722f7cc"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-core:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-core/6.2.19/spring-core-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2026,
+              "sha256": "e7dffe4f61be06ed3b4e811fc587a2e47bc59c4ba55563a2916d94de1dabcbc4"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-core/6.2.19/spring-core-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 1983775,
+              "sha256": "52146689e71a911c92bac26677d73c692512a739893a57710cc233591756bff6"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-expression:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-expression/6.2.19/spring-expression-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2077,
+              "sha256": "f3f99dfcd0b1229a15faaeda0fba11e3a25f85d01aa11737271a2bce854ef42a"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-expression/6.2.19/spring-expression-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 321254,
+              "sha256": "d710a44417d890353895b341a722d7d08199e2b7da52f0a11c0e92571e1d6e19"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-jcl:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-jcl/6.2.19/spring-jcl-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 1847,
+              "sha256": "cc00211d807821dae35df9dd361a08f9988db588eef76f07369e524e2032636e"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-jcl/6.2.19/spring-jcl-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 24495,
+              "sha256": "9994478bcea1423b8892d4eb0db942c94da0090167c3c684050c1eaef04491d0"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-jdbc:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-jdbc/6.2.19/spring-jdbc-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2394,
+              "sha256": "bb7fb057dbeb2e44bedc78c4abb27594f579c3f430c1c31ea87261dc3f66d8d9"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-jdbc/6.2.19/spring-jdbc-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 475809,
+              "sha256": "c81fd8aca952aac243d9327af12596c2058012c9d3784f1313477a6d2cc56306"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-messaging:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-messaging/6.2.19/spring-messaging-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2227,
+              "sha256": "a794bfe0f4eafb2afc3366ccb2d2de7b4ec8c193a6d4eb1d1d3ab89258950ef3"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-messaging/6.2.19/spring-messaging-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 618779,
+              "sha256": "9b063aad34a6876a640976c6657ab25cb2bf6c41e2eafaa5a7e50ccf3234390c"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-orm:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-orm/6.2.19/spring-orm-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2623,
+              "sha256": "6677added819f19ebf28396304a0466cf8857cc6d62c0222019436092fd53c15"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-orm/6.2.19/spring-orm-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 235232,
+              "sha256": "32c1221bfb2eac7a73beee46da4150a6d941aa90f00228d0a2c80a5772c5c03d"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-oxm:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-oxm/6.2.19/spring-oxm-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2440,
+              "sha256": "e452189292e5bbc34ff0bd2323c2d8ccacc72459ffc3a2fc3878c77eed3c67c8"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-oxm/6.2.19/spring-oxm-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 60063,
+              "sha256": "a208114b98e48dc23010beab422b8f69c1d518ec27ce194d2ecead75d0898a0b"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-test:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-test/6.2.19/spring-test-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2061,
+              "sha256": "5fdaf09aafa603c62fe9ce14e27d6d1677a2995edb4b0b0a0ba3c0e1c1973fe0"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-test/6.2.19/spring-test-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 1025409,
+              "sha256": "f1cb8549021f50630b4152291fdcde56786421b8448a5ab8bef9befe2ac86b37"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-tx:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-tx/6.2.19/spring-tx-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2224,
+              "sha256": "17fff13681d40905632d6d0187542ed5744daab09c64f5493002351848294f67"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-tx/6.2.19/spring-tx-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 289958,
+              "sha256": "34a1b6f5d87ef4cca6849e1bc70a0f965eec6476737b3cae73ff2561a266ef73"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-web:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-web/6.2.19/spring-web-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2399,
+              "sha256": "db4b8eaa596332f537a2b5d1cc5a31f50b2b7b7b448490acc7893ea0f9525966"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-web/6.2.19/spring-web-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 2096068,
+              "sha256": "ca88e364ecebee61163e2260e8a20584138eca74e28a050d6a2ef6302bad2f2d"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-webmvc:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-webmvc/6.2.19/spring-webmvc-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2963,
+              "sha256": "7ef11f14cf0d365c38b1b866359e506c7c93f993aa512ed6db656129bc992822"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-webmvc/6.2.19/spring-webmvc-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 1095229,
+              "sha256": "134f42320cedd31f54f683d2ca9936a4e015c011fb1882a31fa7213e2d8c7e94"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-websocket:6.2.19",
+          "packaging": "jar",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-websocket/6.2.19/spring-websocket-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 2416,
+              "sha256": "9f65c799d0d9aa443dbfbeba66c4a1313b9a03788d18c5776b9414105fc64e45"
+            },
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-websocket/6.2.19/spring-websocket-6.2.19.jar",
+              "http_status": 200,
+              "bytes": 445410,
+              "sha256": "ee8bbae1c3889e16e2ec540310612597a3f573c03a113a7b0bd721b7690cf1e1"
+            }
+          ]
+        },
+        {
+          "coordinate": "org.springframework:spring-framework-bom:6.2.19",
+          "packaging": "pom",
+          "availability": "available",
+          "files": [
+            {
+              "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-framework-bom/6.2.19/spring-framework-bom-6.2.19.pom",
+              "http_status": 200,
+              "bytes": 5839,
+              "sha256": "f07babdd95d4816109e4e545326a76bf09b5a2da980faeb2332554aaa4f8713d"
+            }
+          ]
+        }
+      ],
+      "boundary": "200且有效POM/JAR只证明本轮可获取，不证明传递解析/二进制兼容/漏洞已修；404保留，网络/坏内容失败，不自动选版本或加豁免",
+      "checkout_sha": "391af473810f82bd0d272b6957f36cbf7a73608a"
+    }
+  },
+  "baseline_before_dependency_change": {
+    "head": "405b9ae773e9c4a0382b2c88b2be67d92f99f715",
+    "run": 38868852358,
+    "job": 116868019888,
+    "pom_equal_main4e72ef8": true,
+    "native": {
+      "schema_version": 1,
+      "input_candidate_complete": false,
+      "status": "incomplete",
+      "production_gate_replaced": false,
+      "counts": {
+        "runtime_gavs": 292,
+        "runtime_variants": 297,
+        "sbom_gavs": 296,
+        "sbom_variants": 301,
+        "scanned_gavs": 296,
+        "runtime_missing_from_sbom": 0,
+        "sbom_missing_from_scan": 0,
+        "packaged_libraries": 288,
+        "packaged_hash_matched": 287,
+        "packaged_unknown": 1,
+        "finding_rows": 19,
+        "unique_cves": 19,
+        "fixed_rows": 19,
+        "packaged_finding_rows": 19
+      },
+      "native_gate_rc": 1,
+      "findings": [
+        {
+          "VulnerabilityID": "CVE-2026-68494",
+          "PkgName": "com.fasterxml.jackson.core:jackson-core",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.8, 2.21.4",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-89407",
+          "PkgName": "com.fasterxml.jackson.core:jackson-core",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.11, 2.21.7, 2.22.3",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-89425",
+          "PkgName": "com.fasterxml.jackson.core:jackson-core",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.21.7, 2.22.3, 2.18.11",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-54512",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.8, 3.1.4, 2.21.4",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-54513",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.8, 2.21.4, 3.1.4",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-68497",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.10, 2.21.6, 2.22.2",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-91776",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.18.11, 2.21.7, 2.22.3",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-91777",
+          "PkgName": "com.fasterxml.jackson.core:jackson-databind",
+          "InstalledVersion": "2.19.4",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "2.21.7, 2.18.11, 2.22.3",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-65182",
+          "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+          "InstalledVersion": "10.1.57",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-65905",
+          "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+          "InstalledVersion": "10.1.57",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-68525",
+          "PkgName": "org.apache.tomcat.embed:tomcat-embed-core",
+          "InstalledVersion": "10.1.57",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "11.0.25, 10.1.58, 9.0.121",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-40973",
+          "PkgName": "org.springframework.boot:spring-boot",
+          "InstalledVersion": "3.5.12",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "4.0.6, 3.5.14",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41695",
+          "PkgName": "org.springframework.data:spring-data-commons",
+          "InstalledVersion": "3.5.10",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "4.0.6, 3.5.12",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41716",
+          "PkgName": "org.springframework.data:spring-data-commons",
+          "InstalledVersion": "3.5.10",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "4.0.6, 3.5.12",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41850",
+          "PkgName": "org.springframework:spring-expression",
+          "InstalledVersion": "6.2.17",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "7.0.8, 6.2.19",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-47884",
+          "PkgName": "org.springframework:spring-webmvc",
+          "InstalledVersion": "6.2.17",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "7.0.9",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-47890",
+          "PkgName": "org.springframework:spring-webmvc",
+          "InstalledVersion": "6.2.17",
+          "Severity": "CRITICAL",
+          "Status": "fixed",
+          "FixedVersion": "7.0.9",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41842",
+          "PkgName": "org.springframework:spring-webmvc",
+          "InstalledVersion": "6.2.17",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "7.0.8, 6.2.19",
+          "byte_matched_packaged": true
+        },
+        {
+          "VulnerabilityID": "CVE-2026-41845",
+          "PkgName": "org.springframework:spring-webmvc",
+          "InstalledVersion": "6.2.17",
+          "Severity": "HIGH",
+          "Status": "fixed",
+          "FixedVersion": "7.0.8, 6.2.19",
+          "byte_matched_packaged": true
+        }
+      ],
+      "runtime_missing_from_sbom": [],
+      "sbom_extra_to_runtime": [
+        [
+          "jakarta.activation:jakarta.activation-api",
+          "2.1.4",
+          "jar",
+          ""
+        ],
+        [
+          "jakarta.xml.bind:jakarta.xml.bind-api",
+          "4.0.4",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework:spring-core",
+          "6.2.17",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework:spring-jcl",
+          "6.2.17",
+          "jar",
+          ""
+        ]
+      ],
+      "sbom_extra_packaging_evidence": [
+        {
+          "variant": [
+            "jakarta.activation:jakarta.activation-api",
+            "2.1.4",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        },
+        {
+          "variant": [
+            "jakarta.xml.bind:jakarta.xml.bind-api",
+            "4.0.4",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        },
+        {
+          "variant": [
+            "org.springframework:spring-core",
+            "6.2.17",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        },
+        {
+          "variant": [
+            "org.springframework:spring-jcl",
+            "6.2.17",
+            "jar",
+            ""
+          ],
+          "byte_matched_packaged": true,
+          "runtime_tree_paths": []
+        }
+      ],
+      "sbom_missing_from_scan": [],
+      "runtime_not_packaged": [
+        [
+          "org.projectlombok:lombok",
+          "1.18.44",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-actuator",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-aop",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-data-jdbc",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-data-jpa",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-data-redis",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-jdbc",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-json",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-logging",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-tomcat",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-validation",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-web",
+          "3.5.12",
+          "jar",
+          ""
+        ],
+        [
+          "org.springframework.boot:spring-boot-starter-websocket",
+          "3.5.12",
+          "jar",
+          ""
+        ]
+      ],
+      "packaged_unknown": [
+        {
+          "path": "BOOT-INF/lib/spring-boot-jarmode-tools-3.5.12.jar",
+          "sha256": "9d7a4adde84942a79026e689b6b19ab819ec8df59fe07bad87f239393410d323",
+          "reason": "SBOM 无匹配字节"
+        }
+      ],
+      "boundary": "独立实验非生产放行；Boot库按SBOM SHA256绑定，不按文件名猜；只核SBOM扫描GAV，不证明scanner逐classifier覆盖；新增发现不是已修补/已确认可利用",
+      "checkout_sha": "e15e527c4390295999e0470e8417898457e98bc9",
+      "input_sha256": {
+        "tree": "5efa1b6ec71634e879a492074f87fa666f2b8e8b1872b8e40a83b9ead3af8ae9",
+        "sbom": "af66e4f05a3b6148819d097c1fe20779d22bedfecc039604f46677a7db762c26",
+        "report": "7fa8e6740f0da3d85acb28e4d94a4165022ccf32b9c1f80c62fbf5875f93e677",
+        "gate": "7fa8e6740f0da3d85acb28e4d94a4165022ccf32b9c1f80c62fbf5875f93e677",
+        "gate_rc": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+        "boot_jar": "e36eb0f3fd48384551e3956e61d0600448426f76878c0249c6b6c8213639fb86"
+      }
+    },
+    "frames": {
+      "native": {
+        "part": 1,
+        "parts": 1,
+        "codec": "zlib+base64",
+        "full_sha256": "8e10039aca8a0fc35ad63e2b7c7b821acacd8c7216cc005ca9d06d8174167259",
+        "sha256": "fdbf75ed77009b794db01a9be793432291c7e8490db6ff208b5d538e6a4f23a2"
+      },
+      "coverage": {
+        "part": 1,
+        "parts": 4,
+        "codec": "zlib+base64",
+        "sha256": "0146343ffe29a1dac98f843e51766bf73839319ccb9bcfc9fc8e349e32df3123"
+      },
+      "patch": {
+        "part": 1,
+        "parts": 3,
+        "codec": "zlib+base64",
+        "sha256": "c0f071163262f05194bad0a4a61baea4e4e2e9bad50f33e2738d96add0e15b89"
+      }
+    }
+  },
+  "delta": {
+    "before": 19,
+    "after": 16,
+    "removed_cves": [
+      "CVE-2026-41842",
+      "CVE-2026-41845",
+      "CVE-2026-41850"
+    ],
+    "new_keys": 0,
+    "remaining_severity": {
+      "HIGH": 11,
+      "CRITICAL": 5
+    }
+  },
+  "verified_consistency": {
+    "all16_Spring_official_Central_JAR_SHA_equals_actual_Boot_SHA": true,
+    "previous66_variants_unchanged": true,
+    "all_non_Spring_runtime_GAV_type_classifier_unchanged": true
+  },
+  "boundary": "完整parts/codec/SHA校验；SBOM及experiment SHA交叉绑定。full JSON SHA仅由frame记录，未下载全库数组、不冒称artifact ZIP摘要。原生16条真实打包、rc1、Bootunknown1/incomplete/full_security_passed=false完整保留；Spring仅正向要求关闭三条，不豁免两条跨线CRITICAL及其他/新发现，不替换生产扫描输入、不扩大灰度。最终HEAD/合并后main独立验收见PR23。"
+}

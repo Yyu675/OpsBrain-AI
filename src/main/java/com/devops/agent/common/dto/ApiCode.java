@@ -1,0 +1,187 @@
+package com.devops.agent.common.dto;
+
+/**
+ * API 业务错误码表 —— {@link com.devops.agent.common.error.BizError} 的取值别名。
+ *
+ * <h3>与 BizError 的关系（必读）</h3>
+ * <p>
+ * <b>{@code BizError} 枚举是唯一权威码表</b>，前端
+ * {@code constants/bizCode.ts} 与它一一对应，并由
+ * {@code bizCode.contract.test.ts} 跨端校验。
+ * </p>
+ * <p>
+ * 本类<b>不定义新码</b>，只为 {@code ApiResponse.error(int, String)}
+ * 这个接收裸 int 的签名提供有名字的取值。每个常量的值都必须
+ * 等于 {@code BizError} 里同语义项的 {@code code}，
+ * 由 {@code ApiCodeContractTest} 逐项比对。
+ * </p>
+ * <p>
+ * <b>新增错误码请先加到 {@code BizError}</b>（那里才有 HTTP 状态映射、
+ * 重试语义与前端文案的配套），再按需在本类加别名。
+ * </p>
+ *
+ * <h3>为什么要有这个类</h3>
+ * <p>
+ * {@link ApiResponse} 的 javadoc 一直写着「非 0 见错误码表」，
+ * 但调用侧从来没用上——33 处 {@code ApiResponse.error(40400, ...)}
+ * 全是裸写的五位数字，散在 9 个文件里，与 {@code BizError} 各写各的。
+ * </p>
+ * <p>
+ * 裸数字的代价不是「不好看」，是两件具体的事：
+ * </p>
+ * <ol>
+ *   <li><b>没有唯一真相源</b>。新增一个错误分支时，写 40001 还是 40004
+ *       只能靠翻别处的代码猜。猜错了前端会走进错误的处理分支——
+ *       比如把「参数不合法」当成「资源不存在」，页面显示空状态而不是错误提示；</li>
+ *   <li><b>改不动</b>。想知道 40103 用在哪几处，只能全文搜数字，
+ *       而数字会撞上端口号、超时毫秒数、测试夹具里的无关常量。</li>
+ * </ol>
+ *
+ * <h3>本类只做「命名」，不改任何语义</h3>
+ * <p>
+ * 每个常量的值都与替换前的字面量<b>完全一致</b>，
+ * 前端契约（{@code api/types.ts} 等处同样硬编码了这些数字）不受影响。
+ * 这是有意的：语义调整（例如 40100 与 40101 的边界是否清晰）
+ * 需要拉上前端一起确认，与本次机械替换分开做，
+ * 免得一次改动里混着「重命名」和「改行为」两种性质的变更。
+ * </p>
+ *
+ * <h3>编码规则</h3>
+ * <ul>
+ *   <li>{@code 0} —— 成功；</li>
+ *   <li>{@code 4xxxx} —— 客户端侧问题（参数、鉴权、资源不存在）；</li>
+ *   <li>{@code 5xxxx} —— 服务端侧问题。</li>
+ * </ul>
+ * <p>
+ * 后三位在同一大类内递增，不复用已废弃的码——
+ * 复用会让老版本前端把新语义当成旧语义处理。
+ * </p>
+ *
+ * @author OpsBrain AI
+ * @since 2026-08-28
+ */
+public final class ApiCode {
+
+    private ApiCode() {
+    }
+
+    /** 成功。与 {@link ApiResponse#success} 写入的值一致 */
+    public static final int SUCCESS = 0;
+
+    // ==================== 4xxxx：客户端侧 ====================
+
+    /**
+     * 参数不合法。
+     *
+     * <p>请求本身到达了正确的端点，但入参过不了校验——
+     * 空值、格式错误、越界、业务规则不允许。前端应把 message 直接展示给用户，
+     * 因为这类错误用户改一下输入就能自己解决。</p>
+     */
+    public static final int BAD_REQUEST = 40001;
+
+    /**
+     * 资源不存在 —— 对应 {@code BizError.NOT_FOUND}。
+     *
+     * <p>与 {@link #BAD_REQUEST} 的分界：参数格式是对的，
+     * 但指向的对象查不到（已删除、ID 写错、超过保留期）。
+     * 前端渲染空状态页而非错误弹窗。</p>
+     *
+     * <p><b>注意值是 40400 而非 40004。</b>40004 在 {@code BizError} 里
+     * 是 {@code STATE_CONFLICT}（当前状态不允许该操作，HTTP 409），
+     * 语义完全不同——它说的是「对象在，但现在不能这么操作」，
+     * 而这里说的是「对象根本不存在」。两者用错会让前端把
+     * 「已作废的工单不能改状态」渲染成「工单不存在」的空页面。</p>
+     */
+    public static final int NOT_FOUND = 40400;
+
+    /**
+     * 当前状态不允许该操作 —— 对应 {@code BizError.STATE_CONFLICT}（HTTP 409）。
+     *
+     * <p>对象存在且参数合法，但它当前的状态不接受这个操作
+     * （如已作废的工单不能再变更状态）。前端应提示刷新查看最新状态，
+     * 而不是渲染成「不存在」。</p>
+     */
+    public static final int STATE_CONFLICT = 40004;
+
+    /**
+     * 端点已废弃。
+     *
+     * <p>老端点保留但不再工作，响应体里带上替代端点的路径。
+     * 单独占一个码而非复用 404：让前端能明确区分
+     * 「这个接口没了」与「这条数据没了」——前者需要发版升级，
+     * 后者是正常业务状态。</p>
+     */
+    public static final int ENDPOINT_DEPRECATED = 40010;
+
+    /**
+     * 审批单已被他人处理 —— 对应 {@code BizError.APPROVAL_ALREADY_DECIDED}。
+     *
+     * <p>与 {@link #STATE_CONFLICT} 分开：前端要提示「刷新查看最新决策」，
+     * 而不是笼统的「当前状态不允许该操作」。</p>
+     */
+    public static final int APPROVAL_ALREADY_DECIDED = 40102;
+
+    /**
+     * 登录失败。
+     *
+     * <p>用户名或密码错误。与 {@link #UNAUTHORIZED} 的分界：
+     * 这是<b>正在尝试登录</b>时失败，前端应停留在登录页显示错误；
+     * 而 40101 是<b>已登录状态失效</b>，前端应跳转登录页。</p>
+     */
+    public static final int LOGIN_FAILED = 40100;
+
+    /**
+     * 未登录或登录已失效。
+     *
+     * <p>包含三种情形：没带凭证、凭证过期、凭证对应的用户已停用。
+     * 三者对前端是同一个动作——跳转登录页，故共用一个码。</p>
+     */
+    public static final int UNAUTHORIZED = 40101;
+
+    /**
+     * 权限不足。
+     *
+     * <p>身份是有效的，但缺少所需角色或权限点。
+     * 与 {@link #UNAUTHORIZED} 的分界很重要：跳转登录页解决不了这个问题，
+     * 重新登录还是同一个账号。前端应显示「无权限」而非踢去登录。</p>
+     */
+    public static final int FORBIDDEN = 40103;
+
+    /** 提示词注入拦截 —— {@code BizError.PROMPT_INJECTION} */
+    public static final int PROMPT_INJECTION = 40003;
+
+    /** 请求超出配额限制 —— {@code BizError.QUOTA_EXCEEDED} */
+    public static final int QUOTA_EXCEEDED = 40005;
+
+    /** 问题过长，超出上下文窗口 —— {@code BizError.BUDGET_EXCEEDED} */
+    public static final int BUDGET_EXCEEDED = 40006;
+
+    /** 数据已被他人修改（乐观锁冲突）—— {@code BizError.OPTIMISTIC_LOCK} */
+    public static final int OPTIMISTIC_LOCK = 40009;
+
+    /** 内容重复 —— {@code BizError.DUPLICATE_CONTENT} */
+    public static final int DUPLICATE_CONTENT = 40021;
+
+    /** Webhook 鉴权失败 —— {@code BizError.WEBHOOK_UNAUTHORIZED} */
+    public static final int WEBHOOK_UNAUTHORIZED = 40104;
+
+    /** 操作被安全策略拦截 —— {@code BizError.SECURITY_BLOCKED} */
+    public static final int SECURITY_BLOCKED = 40301;
+
+    /** 请求过于频繁 —— {@code BizError.RATE_LIMITED} */
+    public static final int RATE_LIMITED = 42901;
+
+    // ==================== 5xxxx：服务端侧 ====================
+
+    /** SSE 连接异常 —— {@code BizError.SSE_CONNECTION_ERROR} */
+    public static final int SSE_CONNECTION_ERROR = 50002;
+
+
+    /**
+     * 服务端异常。
+     *
+     * <p>兜底码。用户改输入或重新登录都解决不了，
+     * 只能提示「稍后重试」并留下 traceId 供排查。</p>
+     */
+    public static final int INTERNAL_ERROR = 50001;
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-16",
+  "batch": 121,
+  "branch": "arena/5a93fadf-opsbrain-ai",
+  "baseline_commit": "17264fb12b968d135c004f5bcee2feb5005200b4",
+  "tested_commit": "c89f4190351b3cd73724ad04b40d6f92e1024d77",
+  "baseline_hc_count": 16,
+  "final_hc_count": 10,
+  "closed_cves": [
+    "CVE-2026-40973",
+    "CVE-2026-41695",
+    "CVE-2026-41716",
+    "CVE-2026-54512",
+    "CVE-2026-54513",
+    "CVE-2026-68494"
+  ],
+  "remaining_findings": [
+    {"VulnerabilityID": "CVE-2026-89407", "PkgName": "com.fasterxml.jackson.core:jackson-core", "Severity": "HIGH"},
+    {"VulnerabilityID": "CVE-2026-89425", "PkgName": "com.fasterxml.jackson.core:jackson-core", "Severity": "HIGH"},
+    {"VulnerabilityID": "CVE-2026-68497", "PkgName": "com.fasterxml.jackson.core:jackson-databind", "Severity": "HIGH"},
+    {"VulnerabilityID": "CVE-2026-91776", "PkgName": "com.fasterxml.jackson.core:jackson-databind", "Severity": "HIGH"},
+    {"VulnerabilityID": "CVE-2026-91777", "PkgName": "com.fasterxml.jackson.core:jackson-databind", "Severity": "HIGH"},
+    {"VulnerabilityID": "CVE-2026-65182", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-65905", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-68525", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-47884", "PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-47890", "PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}
+  ],
+  "verified_variants_count": 92,
+  "runs": {
+    "pr_ci": 38882976968,
+    "scan": 38882976944,
+    "push_ci": 38882971371
+  },
+  "scan_job_id": 116914015186,
+  "backend_tests": {
+    "total": 2087,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2
+  },
+  "e2e_tests": {
+    "passed": 60
+  },
+  "notice": "Boot 3.5.15 / Data 3.5.12 协同回补；完成组清零；Tomcat 3 CRITICAL + WebMVC 2 CRITICAL + Jackson 5 HIGH 严格保留，不扩大灰度"
+}

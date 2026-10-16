@@ -1,0 +1,801 @@
+spring:
+  application:
+    name: devops-platform-backend
+
+  profiles:
+    active: ${spring_profiles_active:dev}
+
+  # ==================== .env 直读（批 77）====================
+  # IDEA 直接启动不会加载 .env（run-dev.sh 的 source .env 帮不上 IDE 场景），
+  # 环境变量缺失时走 application.yml 占位默认值（qwen-plus/占位Key）→ 401 被
+  # 启动守卫拦截。此行让 Spring 自行读项目根 .env（KEY=VALUE 与 properties
+  # 兼容），IDEA/脚本/CI 三方一致：
+  #   - IDEA 直接启动：读到真实 Key 与模型名
+  #   - run-dev.sh：source 后的真实环境变量优先级更高，不受影响
+  #   - CI/生产（无 .env 文件）：optional: 前缀保证静默跳过不报错
+  config:
+    import: optional:file:.env[.properties]
+
+  # ==================== 异步请求超时（A2 修复）====================
+  # SSE（SseEmitter）走 Spring MVC 异步请求通道，受此值约束。
+  # 超时层级必须满足：MVC async > SSE emitter > 模型总超时，
+  # 否则内层还在正常工作，外层已经把连接掐断。
+  # 此前未配置，默认值随容器而定（Tomcat 常见 30s 或不限），
+  # 与 SSE 的 60s、reasoner 模型的 120s 三者互不协调。
+  mvc:
+    async:
+      request-timeout: ${MVC_ASYNC_TIMEOUT_MS:180000}
+
+  # 数据源配置（由 profile 具体化）
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    # P2-1：HikariCP 连接池优化（2026-09-14 批 86）
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}           # 最大连接数（默认 10 → 20）
+      minimum-idle: ${DB_MIN_IDLE:5}                  # 最小空闲连接（默认同 max → 5）
+      connection-timeout: 30000                        # 连接超时 30s
+      idle-timeout: 600000                             # 空闲连接存活 10 分钟
+      max-lifetime: 1800000                            # 连接最大生命周期 30 分钟（防 PG 服务端超时断连）
+      leak-detection-threshold: 60000                  # 连接泄漏检测阈值 60s（开发环境诊断用）
+
+  # ==================== Flyway（S0-1：迁移版本化） ====================
+  # 表结构唯一真相源 = classpath:db/migration/V{n}__描述.sql（AGENTS 3.5）。
+  # 应用启动时自动 migrate：空库执行 V1 基线建全表；已有库按版本表跳过。
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # 现存库（由旧 init.sql 时代建出、没有 flyway_schema_history 表）首次
+    # 启动时，把 V1 标记为“已应用”而不是重跑整份基线——否则 ALTER
+    # 即使幂等，CREATE TABLE 不带 IF NOT EXISTS 的语句也可能报错。
+    baseline-on-migrate: true
+    # 每次启动先校验已应用的迁移文件未被篡改（checksum 比对），
+    # 被手工改过的历史迁移会直接拒绝启动——宁可启动失败，不可带病运行。
+    validate-on-migrate: true
+
+  # Redis 配置（由 profile 具体化）
+  data:
+    redis:
+      database: 0
+      # P2-2：Lettuce 连接池优化（2026-09-14 批 86）
+      lettuce:
+        pool:
+          max-active: 20        # 最大活动连接数（默认 8 → 20）
+          max-idle: 10          # 最大空闲连接数（默认 8 → 10）
+          min-idle: 5           # 最小空闲连接数（默认 0 → 5，保持热连接）
+          max-wait: 3000        # 获取连接最大等待时间 3s（默认 -1 无限等待）
+        shutdown-timeout: 100   # 关闭超时 100ms（默认 100ms，保持）
+
+# ==================== Resilience4j（S0-3，路线图 §4.3）====================
+# 分工（AGENTS 3.7.5）：本层管「跨调用的熔断/限流状态」（数据源客户端级），
+# ToolRuntimeManager 管「单次工具执行的超时与重试」，两层不重叠。
+# 每个数据源客户端一个独立实例，互不被对方故障牵连。
+resilience4j:
+  circuitbreaker:
+    instances:
+      prometheus:
+        sliding-window-type: COUNT_BASED
+        # 依据：指标类查询属人工查看型流量，频率不高；10 次窗口配 5 次最小样本，
+        # 单点抖动（1~2 次失败）不会误开熔断，持续半坏（>=5 次里一半失败）才开。
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        # 依据：Prometheus 重启/网络抖动一般数十秒内恢复；30s 后自动放探测流量。
+        # 更短会把尚未恢复的实例淹没在探测里，更长则人为拉长不可用窗口。
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 2
+        # 自动转半开：不依赖「恰好有人发起查询」才开始探测恢复
+        automatic-transition-from-open-to-half-open-enabled: true
+        # 「集成未启用」是配置状态、不是数据源健康度：禁用即失败若也计数，
+        # 一个刻意关掉的实例会被误判「连续失败」而打开熔断，健康页显示「熔断中」
+        # 就成了误导。抛出型异常 MetricsIntegrationDisabledException 由这里排出统计
+        # （注解没有 ignoreExceptions 属性，忽略清单只能写在实例配置里）。
+        ignore-exceptions: com.devops.agent.infrastructure.metrics.MetricsIntegrationDisabledException
+      logs:
+        # S1-3（路线图 §5.4）：logs 实例槽接线——T14 挂账的恢复条件成就。
+        # 参数与 prometheus 同语义：人工查看型流量，容忍单点抖动、不拖垮现场；
+        # 未启用是部署形态，不吃失败预算（ignore-exceptions）。
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        ignore-exceptions: com.devops.agent.infrastructure.logs.LogsIntegrationDisabledException
+      # 预留实例槽：cmdb 客户端随阶段 1 后续工具落地时接挂（同形配置拍平即可）。
+  ratelimiter:
+    instances:
+      # chat 渠道配额：对话/诊断/工具调用共用（真实流量峰值受 SSE 并发约束，
+      # 每请求 1~N 次模型调用）。厂商常见 chat QPS 限制远高于 embedding 低档。
+      llm:
+        limit-for-period: 60
+        limit-refresh-period: 1s
+        timeout-duration: 10s
+      # embedding 渠道配额（方案 C 批 74 分治）：独立于 chat——
+      # 摄取/重建是批量顺序调用，与交互对话的突发互不挤占；
+      # 厂商 embedding QPS 档位普遍低于 chat，独立桶防「对话把
+      # 摄取配额吃光」的连带饿死。
+      llm-embedding:
+        limit-for-period: 30
+        limit-refresh-period: 1s
+        timeout-duration: 30s
+
+server:
+  port: 8088
+  servlet:
+    context-path: /ai
+  # GZIP 压缩（批88 P2：此前未配置，API 响应原样传输）
+  # 工单列表/告警列表等 JSON 响应通常在数十 KB，gzip 压缩比>70%，
+  # 单行配置即省带宽、降延迟。仅压缩 text/json/xml/javascript，
+  # 图片/PDF 等已完成压缩的二进制格式跳过。
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/javascript,application/json
+    min-response-size: 1024
+
+# ==================== 日志（A5：全链路 traceId）====================
+# %X{traceId} 从 MDC 读取，由 TraceIdFilter 在请求入口写入。
+# 没有它，日志里就无法把一次请求的所有行串起来——这是排障效率的地基。
+# 未经 Filter 的线程（定时任务/异步回调）若未用 TraceContext.wrap 搬运 MDC，
+# 此处会打印为空，属预期行为，可据此发现遗漏的跨线程传递点。
+logging:
+  pattern:
+    # %xEx：异常时打印完整堆栈（含类/方法/行号）——诊断要能定位到代码行，
+    # 缺它则异常日志只有一行消息，AI 无法定位到具体类/方法/行。
+    console: "%d{HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n%xEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n%xEx"
+
+spring.servlet.multipart:
+  # 单文件与单请求上限。与 devops.storage.attachment.max-file-size 保持一致，
+  # 二者不一致时以更小者生效：Tomcat 会在进入业务代码前直接拒绝。
+  max-file-size: 20MB
+  max-request-size: 20MB
+
+# ==================== Sa-Token 鉴权（方向三）====================
+sa-token:
+  # token 名称（前端请求头/参数名；登录接口会返回 tokenName 供前端使用）
+  token-name: satoken
+  # token 有效期（秒），默认 1 天。-1 为永不过期
+  timeout: 86400
+  # 最低活跃频率（秒），-1 不检查（用户长时间不操作也不强制失效）
+  active-timeout: -1
+  # 允许同一账号多端同时登录（true）；false 则新登录挤掉旧登录
+  is-concurrent: true
+  # 多人登录共用一个 token（false=每次登录生成新 token，更安全）
+  is-share: false
+  # token 风格：uuid
+  token-style: uuid
+  # 从请求头读 token（前后端分离主用）
+  is-read-header: true
+  # 从 query 参数读 token（SSE：EventSource 不支持自定义头，靠 ?satoken=xxx）
+  is-read-body: true
+  # 不从 Cookie 读（前后端分离，避免 CSRF；也不写 Cookie）
+  is-read-cookie: false
+  # 关闭 Sa-Token 启动 banner 日志
+  is-log: false
+
+# ==================== OpsBrain AI 自定义配置 ====================
+devops:
+  # ==================== Schema 自检 ====================
+  schema:
+    # 启动后校验关键列/表是否存在（迁移是否漏执行）。
+    # 本项目迁移靠人工按序执行、无版本表，"部署了新 JAR 但漏跑迁移"
+    # 是很难查的故障：缺 visibility 列会让知识检索整体报错，
+    # 而错误表象是「知识库暂不可用」，排查方向容易跑偏。
+    #
+    # 默认只告警不阻断（开发环境常只跑了部分迁移）。
+    # 生产建议置 true，让漏迁移在部署时立即暴露。
+    fail-fast: ${SCHEMA_FAIL_FAST:false}
+
+  # ==================== 审计（C5）====================
+  audit:
+    # 通用写操作审计总开关。仅拦 POST/PUT/PATCH/DELETE，
+    # 读操作量级高一到两个数量级且无审计价值，一律跳过。
+    # 关闭仅用于极端性能排查——L3/L4 阶段 AI 自动执行动作时，
+    # 审计是合规底线，不是可选项。
+    enabled: ${AUDIT_ENABLED:true}
+
+  # ==================== 安全（A6/D3）====================
+  security:
+    # 鉴权总开关。**默认 true，生产环境绝不可关闭**。
+    #
+    # 关闭后 /api/** 与 /actuator/** 全部免登录，且因为 Sa-Token 上下文里
+    # 没有会话，@SaCheckRole 的**角色判定也会一并失效**——
+    # 不是「少了一层登录」，是整条鉴权链被摘除。
+    #
+    # 提供这个开关是为了替代一种更糟的做法：直接注释掉 WebConfig 里的
+    # 拦截器注册（2026-08-26 发生过）。注释没有开关语义、review 时不显眼、
+    # 忘了恢复就随代码进生产。走配置至少做到：生产默认安全、
+    # 意图写在 yml 里可审计、关闭时启动日志打醒目 ERROR、
+    # 集成测试仍走真实鉴权链。
+    #
+    # 本地免登录预览用法：AUTH_ENABLED=false ./mvnw spring-boot:run
+    auth-enabled: ${AUTH_ENABLED:true}
+
+    # ==================== 指标抓取面令牌（2026-10-15）====================
+    # /actuator/** 需要登录是对的，但 Prometheus 不会登录：抓取恒 401 会让
+    # up{job="opsbrain"} 恒 0 → 宕机规则常亮误报，其余 6 条应用规则恒无数据。
+    # 因此给抓取方一把**最小的钥匙**：令牌只对 /actuator/prometheus 一个路径生效，
+    # 其余 actuator 端点（health 详情、bean、依赖地址）仍需登录。
+    #
+    # 默认空 = 关（fail-closed）：没配就是今天的行为（401），不会意外敞开。
+    # 建议用文件而非环境变量：与应用/Prometheus 两侧共用同一份文件，
+    # 轮换只改文件、不需要改 env 也不需要重启应用（Prometheus 亦支持热读）。
+    # 生成（幂等，已在则保留；--rotate 轮换）：bash scripts/monitoring-init-token.sh
+    # 产出 monitoring/secrets/scrape_token（已 gitignore），并打印三处挂法自测命令。
+    scrape-token:        ${SCRAPE_TOKEN:}
+    scrape-token-file:   ${SCRAPE_TOKEN_FILE:}
+
+    cors:
+      # 允许跨域的来源，逗号分隔。默认 * 仅供本地开发。
+      # ⚠️ 生产必须显式列举，例如：
+      #   CORS_ALLOWED_ORIGINS=https://ops.example.com,https://admin.example.com
+      # 因为本项目 allowCredentials=true，* 等价于「任意站点可携带用户凭证调用本站 API」。
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
+    # 受信任的反向代理地址前缀，逗号分隔。**默认空 = 不信任任何 X-Forwarded-For**。
+    #
+    # 为什么默认空：XFF 是客户端可任意伪造的请求头。无条件信任它会导致
+    #   ① 限流被绕过（每次换一个伪造 IP，限流键就换一个，计数永远不到阈值）；
+    #   ② 审计表里的来源 IP 可被写成任意值，事后追溯指向无辜机器。
+    # 直连部署时留空即可，行为等同于只用 TCP 层 remoteAddr（无法伪造）。
+    #
+    # 部署在 Nginx / K8s Ingress 之后时，配置为**代理的出口地址前缀**，例如：
+    #   TRUSTED_PROXIES=10.,127.0.0.1
+    # 只有当 remoteAddr 匹配这些前缀时，才会采信 XFF（并取最后一段——
+    # 左侧是客户端可伪造的部分，右侧由每一跳代理追加）。
+    trusted-proxies: ${TRUSTED_PROXIES:}
+
+    # ==================== API 入口限流（S5-3.5，批 45）====================
+    # 机制：RateLimitFilter 按（规则, 客户端IP）分桶发 resilience4j
+    # RateLimiter；timeoutDuration=ZERO——超员即 429，HTTP 层绝不排队
+    # （排队的延误会传染给 Servlet 线程，比拒绝更贵）。
+    #
+    # 两条出厂规则浓缩于登录与 AI 对话：
+    #   · login（5/60s）：登录是暴力破解与撞库的靶心——
+    #     它比谁都「不该快」，慢即是安全；合法用户几乎感知不到此闸；
+    #   · chat（20/60s）：AI 对话是烧钱的闸面（每次调用背后是模型
+    #     API 额度与延迟），此闸挡的是脚本误循环/误点击雪崩，不是真用户。
+    #
+    # 限流键 = ClientIpResolver 解析结果（XFF 辨伪归其管；直连部署下
+    # 即 TCP remoteAddr）。生产配 TRUSTED_PROXIES 后本滤自动生效——
+    # 与审计系统的 IP 口径同源，不留两本花名册。
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      rules:
+        - name: login
+          paths: /api/v1/auth/login
+          # 10 而非 5：Spring 测试上下文缓存会让多个共享同一上下文的
+          # 集成测试类共用一只限流滤件桶（累计登录可达 7 次/分钟）——
+          # 为 429 不是为测试让路，是防「测试环境偶发共享」这一合法
+          # 现象误报；安全语义不降级：暴力破解脚本 10/60s 与 5/60s
+          # 并无实质差别，但误伤合法登录纳炸概率归一了。
+          #
+          # 2026-10-15：permits/period-seconds 改为可 env 覆盖。**生产默认不变（10/60s）**，
+          # 抬高只发生在测试环境：限流键是**远端 IP**（见 RateLimitProperties 的"IP 桶"纪律），
+          # 而 e2e 腿里 Playwright 串行套件的所有请求都来自 127.0.0.1 —— 共用这一只桶，
+          # 一轮要发 ~15 次登录（setup 1 + auth.spec 6 + role-matrix 6 + tickets 2），
+          # 于是 60s 窗口内撞 429、角色矩阵假红（run 38665168695 实测，
+          # 报错文本由 e2e/helpers/login.ts 的诊断带出：HTTP 429 RATE_LIMITED）。
+          # 对单个可信本机客户端做"防暴力破解"没有意义，故按环境抬高，而不是把用例删掉
+          # 或把限流总开关关掉（总开关一关，e2e 就再也不覆盖限流这条链了）。
+          permits: ${LOGIN_RATE_LIMIT_PERMITS:10}
+          period-seconds: ${LOGIN_RATE_LIMIT_PERIOD_SECONDS:60}
+        - name: chat
+          paths: /api/v1/chat
+          permits: 20
+          period-seconds: 60
+        # P1-2：高成本端点限流（2026-09-14 批 86）
+        - name: file-upload
+          paths: /api/v1/tickets/*/attachments
+          permits: 30          # 每分钟最多 30 次文件上传（防带宽滥用）
+          period-seconds: 60
+        - name: knowledge-ingest
+          paths: /api/v1/knowledge-docs
+          permits: 10          # 每分钟最多 10 次知识库摄取（向量化成本高）
+          period-seconds: 60
+        - name: batch-reindex
+          paths: /api/v1/knowledge-docs/reindex/pending
+          permits: 2           # 每分钟最多 2 次批量重索引（资源密集型）
+          period-seconds: 60
+        - name: alert-webhook
+          paths: /api/v1/alerts/webhook
+          permits: 60          # 每分钟最多 60 次告警推送（WebhookGuard 已有 300/min，再加一层保护）
+          period-seconds: 60
+
+  ai:
+    # 双模开关：MOCK（开发期不调 API）/ REAL（生产模式）
+    mode: ${AI_MODE:MOCK}
+
+    # ==================== Agent 会话状态存储 ====================
+    # memory（默认）：进程内 ConcurrentHashMap + synchronized 互斥。
+    #   单实例部署用这个——不付 Redis 往返代价。
+    # redis：跨实例共享 + SET NX 分布式锁。
+    #   ⚠️ 多实例部署必须切到 redis。synchronized 是进程内锁，
+    #   多实例下两个实例可同时通过同一会话的状态校验，后写覆盖先写——
+    #   状态机里的 WAITING_APPROVAL 是高风险工单的审批闸门，
+    #   被冲掉后审批就被绕过，而且没有任何报错。
+    #
+    # 不做「检测到 Redis 就自动启用」：项目里 Redis 还承担缓存/限流/幂等，
+    # 单实例部署同样连着 Redis，自动启用会白白付出每次状态迁移的网络往返。
+    # 部署形态只有部署方知道，必须显式声明。
+    #
+    # 当前生效的后端会打进启动日志（backend=memory / redis），
+    # 「多实例却用着 memory」是一类典型配置事故，而它在单实例测试时看不出来。
+    session:
+      store: ${AGENT_SESSION_STORE:memory}
+      # 会话在 Redis 中的存活时长。需大于单次对话的最长耗时，
+      # 又不宜过长——过长会让已结束的会话长期占用内存。
+      ttl-minutes: ${AGENT_SESSION_TTL_MINUTES:60}
+
+    # ==================== 多渠道模型配置（方案 C，批 74）====================
+    # 三角色各自独立渠道：chat / embedding / reranker 可来自不同厂商不同端点。
+    # 走 channels.* 层级——devops.ai.chat.* 已被对话限流（rate-limit）占用，
+    # 模型渠道组与之天然分治不混层。
+    # 未配置的角色组自动回落到 ALIBABA_* 旧环境变量（兼容既有 .env 不破坏）。
+    channels:
+      # chat 渠道（回答模型 turbo+reasoner 同渠道——大小模型分流是选型不是渠道边界）
+      chat:
+        base-url: ${AI_CHAT_BASE_URL:${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}
+        api-key: ${AI_CHAT_API_KEY:${ALIBABA_API_KEY:your-alibaba-api-key-here}}
+        turbo-model: ${AI_CHAT_TURBO_MODEL:${ALIBABA_TURBO_MODEL:qwen-plus}}
+        reasoner-model: ${AI_CHAT_REASONER_MODEL:${ALIBABA_REASONER_MODEL:qwen-max}}
+        timeout-ms: ${AI_CHAT_TIMEOUT_MS:60000}
+        max-retries: ${AI_CHAT_MAX_RETRIES:2}
+
+      # embedding 渠道（可与 chat 不同厂商；维度必须与 vector.dimension 铁律一致）
+      embedding:
+        base-url: ${AI_EMBEDDING_BASE_URL:${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}
+        api-key: ${AI_EMBEDDING_API_KEY:${ALIBABA_API_KEY:your-alibaba-api-key-here}}
+        model: ${AI_EMBEDDING_MODEL:${ALIBABA_EMBEDDING_MODEL:text-embedding-v2}}
+        timeout-ms: ${AI_EMBEDDING_TIMEOUT_MS:60000}
+        max-retries: ${AI_EMBEDDING_MAX_RETRIES:2}
+
+      # reranker 渠道（代码规划占位，接入混合检索重排位时启用）
+      reranker:
+        base-url: ${AI_RERANKER_BASE_URL:${ALIBABA_BASE_URL:}}
+        api-key: ${AI_RERANKER_API_KEY:${ALIBABA_API_KEY:}}
+        model: ${AI_RERANKER_MODEL:}
+        timeout-ms: ${AI_RERANKER_TIMEOUT_MS:30000}
+
+    # 阿里云百炼配置（旧结构，保留兼容——上方三组未配时回落到这里）
+    alibaba:
+      api-key: ${ALIBABA_API_KEY:your-alibaba-api-key-here}
+      base-url: ${ALIBABA_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      # 主力模型（日常对话，快速响应）
+      turbo-model: ${ALIBABA_TURBO_MODEL:qwen-plus}
+      # 推理模型（复杂问题，可选）
+      reasoner-model: ${ALIBABA_REASONER_MODEL:qwen-max}
+      # Embedding 模型（1536 维）
+      embedding-model: ${ALIBABA_EMBEDDING_MODEL:text-embedding-v2}
+      # 超时配置（毫秒）
+      timeout: 60000
+      max-retries: 2
+
+    # 向量维度铁律（全链路统一）
+    vector:
+      dimension: 1536
+
+    # 模型指纹锁（方案 C 批 74）：embedding 模型变更检测——
+    # 换模型=旧向量语义空间作废，静默混用会返回垃圾检索结果（无任何报错）。
+    # 指纹 = base-url + model + dimension 的摘要；不一致时拒检索并要求重建。
+    model-fingerprint:
+      enabled: true
+
+    # 语义缓存配置
+    semantic-cache:
+      enabled: true
+      # 相似度阈值（>= 此值命中缓存）
+      similarity-threshold: 0.85
+      # 缓存 TTL（秒）
+      ttl: 3600
+      # 热查询缓存上限，超出后按 LRU 淘汰
+      max-hot-queries: 100
+
+    # 幻觉防护 L4 相似度熔断
+    hallucination:
+      # 0.73 → 0.60（2026-09-25，真实向量标定）：当前渠道嵌入模型
+      # （qwen3.7-text-embedding@1536）下，实测相关查询得分 0.67~0.81、
+      # 无关查询最高 0.53——0.73 会把「磁盘不足」「慢查询」这类有手册
+      # 对应的告警也熔断掉。0.60 落在两类分布的中间间隔里（无关上限
+      # 0.53 + 0.07 余量）。注意：此值与嵌入模型强绑定，换模型必须重测；
+      # 语料库规模显著增长后（切片数从几十涨到几千）也要重测。
+      min-similarity-score: 0.60
+
+    # ==================== SSE 流式推送（A2 修复）====================
+    # 超时层级铁律（不得倒挂）：
+    #   spring.mvc.async.request-timeout (180s)
+    #     > devops.ai.sse.timeout-ms      (150s)
+    #       > reasoner 模型总超时          (120s = alibaba.timeout * 2)
+    #         > turbo 模型超时             (60s  = alibaba.timeout)
+    #
+    # 此前 SseEmitter 硬编码 60s，而 reasoner 模型允许跑 120s，
+    # 导致「复杂堆栈分析」这一核心场景必然在 60s 被前端判超时，
+    # 而后端模型仍在计费运行。改配置项后三层对齐。
+    # ==================== 对话限流（C4）====================
+    # /chat/stream 是全项目最贵的端点：一次请求 = 一次真实 LLM 调用，
+    # 耗时数十秒、按 token 计费、占用一个异步线程直到结束。
+    # 无限流时一段循环脚本即可打爆额度、连接池与 Tomcat 异步容量。
+    #
+    # 20 次/分钟：正常人工提问远低于此（一次对话通常要读几十秒回答），
+    # 而脚本刷接口会立刻触顶。限流按 userId 而非 IP——
+    # 企业内网同一出口 NAT 后按 IP 会让一人刷爆全组。
+    chat:
+      rate-limit: ${CHAT_RATE_LIMIT:20}
+      rate-window-ms: 60000
+
+    sse:
+      # SSE 连接总超时（毫秒）。必须 > 最慢模型的总超时（reasoner 120s）。
+      timeout-ms: ${SSE_TIMEOUT_MS:150000}
+      # 心跳间隔（毫秒）。长时间无数据时，Nginx/网关等中间代理可能
+      # 按空闲超时主动断连（常见默认 60s）。定期发送 SSE 注释帧
+      # （": heartbeat"）保活，该帧不触发前端 onmessage，无副作用。
+      heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:15000}
+
+    # 文档索引配置（DocumentIndexer 读取）
+    index:
+      # 超时时间（毫秒），向量化 + 切片写入超时降级
+      timeout-ms: 60000
+      # 批量切片数，单次 JDBC batch 写入量
+      batch-size: 20
+
+    # 检索策略
+    retrieval:
+      # 混合检索（向量 + 关键词加权融合）。
+      # 默认关闭：content_tsv 需触发器维护，且中文分词依赖 PG 扩展
+      # （zhparser/pg_jieba）。未装扩展时 to_tsvector('simple', 中文)
+      # 几乎无效，启用会让关键词权重变成噪音。
+      hybrid-enabled: false
+      vector-weight: 0.65
+      keyword-weight: 0.35
+
+    # 知识库生命周期治理（P1-9）
+    knowledge:
+      # 复盘自动沉淀知识草稿（2026-09-24，飞轮最后一圈）。
+      # 首次保存复盘归档后异步生成一篇 DRAFT 状态知识文档——不发布、
+      # 不向量化、不进检索，由人工在知识库审核后再发布（AI 不替人决策）。
+      # 该工单已有回链文档（抽屉发过/草稿已建）时跳过，每工单至多一篇。
+      # 为什么默认开：生成成本是每工单至多一次 LLM 调用（失败回落结构化
+      # 模板，零成本），换来复盘数据不再依赖人工记得去点「沉淀」；
+      # REAL 模式在意这笔成本可关，沉淀抽屉的手动路径不受此开关影响。
+      postmortem-auto-draft-enabled: true
+
+      # 孤儿切片定时清理开关。孤儿切片由已停用的 /ingest 端点产生（doc_id IS NULL），
+      # 逃脱 deprecate/purge 治理却仍被检索命中。每日 03:17 清理。
+      # 数据迁移期间可临时关闭，避免误删由外部脚本补录但暂未归档的切片。
+      cleanup-orphan-enabled: true
+
+      # 保留期（R10 确认 2026-08-12）
+      retention:
+        # 废弃后保留多少天再归档。默认 90 天供审计窗口与撤销恢复。
+        # 超期后由 KnowledgeRetentionScheduler 定时扫描，正文转对象存储。
+        deprecated-days: 90
+        # 归档后保留多少天再物理删除。默认 365 天。
+        # 超期后由 KnowledgeRetentionScheduler 定时清理，级联删除历史/标签/切片。
+        archived-days: 365
+
+      # 保留期定时清理任务（R3-①）
+      cleanup:
+        # 总开关。关闭后全部定时清理任务跳过（日志级 debug）。
+        enabled: true
+        # 每次扫描最大处理数。限制单次事务工作量，避免大事务阻塞。
+        batch-size: 500
+        # 废弃→归档执行开关（P1 默认 false，仅统计不执行）。
+        # 归档需 P2-4 MinIO 存储落地方可使用（正文转对象存储），
+        # 且需先执行 migration_v10 补 archived_at/archive_path 列。
+        # 开启前请确认上述前提已满足，否则事务会因缺少列而失败。
+        archive-enabled: false
+
+# 高风险操作审批 (P1-3 Single Writer)
+    approval:
+      # HIGH 优先级工单是否需人工审批后才写库
+      # L1 阶段默认 false 保持现有体验；L3 引入审批工作流后置为 true
+      high-priority-ticket: false
+
+    # 健康检查开关（P1-7）
+    health:
+      # /api/v1/health/ai-model 探测会真实调用付费 LLM + embedding API，
+      # 每次拉取都产生计费。默认关闭，仅运维手动验证连通性时临时开启。
+      # /ping 与 /db 不调付费 API，始终开放，可被 K8s probe 高频拉取。
+      ai-model-enabled: false
+
+    # 上下文预算管理 (MVP-1)
+    context-window: 32000
+
+    # Token 预算（与 ContextBudgetManager 读取的 devops.ai.* 对齐）
+    reserved-response-tokens: 1500
+    system-prompt-tokens: 800
+
+    # 三层记忆架构 (P1-1)
+    memory:
+      # 热记忆：滑动窗口保留轮数（一轮 = 提问 + 回答）
+      hot-window-turns: 10
+      # 热记忆 TTL（分钟），静默超时后由归档任务持久化到温记忆
+      hot-ttl-minutes: 120
+
+      # ---- 冷记忆归档（B-2）----
+      # 归档总开关。默认关闭：归档会写对象存储并置 archived 标记，需运维显式启用。
+      archive-enabled: ${MEMORY_ARCHIVE_ENABLED:false}
+      # 保留天数：会话创建超过此天数且未归档者进入归档候选（按 create_time 判定，
+      # 非 update_time——否则长期续聊的老会话永不归档）
+      archive-after-days: 90
+      # 单轮归档上限，防长事务与内存堆积；剩余量下一轮继续（日志如实告知积压）
+      archive-batch-size: 200
+      # 归档执行时刻（6 位 cron）。默认每日 04:23——错开 :00/:30 与其他定时任务
+      # （孤儿切片 03:17、知识保留期 03:30/04:00），避免同时刻争抢数据库与对象存储连接。
+      # 配置化而非硬编码：运维需按业务低峰调整，验证时需临时提频。
+      archive-cron: ${MEMORY_ARCHIVE_CRON:0 23 4 * * *}
+
+      # ---- 对话原文保留期清理（B-2 收尾）----
+      # sys_agent_conversation_turn 存逐轮原文（用户常粘贴整段日志/堆栈），
+      # 体积比摘要大一到两个数量级，不清理会成为库里最大的表。
+      turn-retention:
+        # 默认开启（与归档默认关闭相反）：清理只依赖数据库无外部前置，
+        # 而不清理的后果会持续恶化。关闭它应是一次有意识的决定。
+        enabled: ${MEMORY_TURN_RETENTION_ENABLED:true}
+        # 保留天数。必须明显长于 archive-after-days(90)——原文要等会话被
+        # 冷归档、写进归档 JSON 之后才能删。配置短于「归档保留期+7 天安全余量」
+        # 时程序会自动抬升并 WARN，不会真的提前删除。
+        retention-days: 180
+        # 单批删除上限，防长事务锁表
+        batch-size: 500
+        # 单轮执行最大批数：500×20=10000 条/轮，够消化日常增量；
+        # 达上限时如实 WARN 报告积压，下一轮继续
+        max-batches-per-run: 20
+        # 每日 04:47，排在冷归档 04:23 之后——必须先归档再清理
+        cron: ${MEMORY_TURN_RETENTION_CRON:0 47 4 * * *}
+
+  # ==================== 告警接入（L2 实时监测） ====================
+  alert:
+    # 告警接收总开关。关闭后 AlertWebhookController 仍返回 200 但跳过处理。
+    # 用于运维期临时禁入，不改变 Prometheus 重试行为（非 200 会重试）。
+    enabled: true
+
+    # S2-1：自动诊断开关（新告警建单后异步触发证据聚合诊断编排）
+    auto-diagnose-enabled: true
+
+    # ==================== Webhook 端点防护（A6）====================
+    # /api/v1/alerts/webhook 在鉴权白名单内（Alertmanager 带不了 Sa-Token），
+    # 却直接写库并可触发自动建单，因此必须单独加固。
+    webhook:
+      # 共享密钥。请求需带 X-Webhook-Token 头且与此值一致。
+      # 留空 = 不校验（向后兼容既有 alertmanager.yml），仅打一次告警日志。
+      # ⚠️ 生产环境必须通过 ALERT_WEBHOOK_SECRET 设置，否则任何人都能灌入伪造告警。
+      # 配置后需同步在 monitoring/alertmanager.yml 的 webhook_configs 加：
+      #   http_config:
+      #     authorization: { type: Bearer, credentials: <secret> }
+      #   —— 或用 Alertmanager 支持的自定义 header 方式传 X-Webhook-Token。
+      secret: ${ALERT_WEBHOOK_SECRET:}
+      # HMAC-SHA256 签名密钥（可选，与 token/Bearer 并存；方案⑤，2026-10-01）。
+      # 配置后带 X-Webhook-Signature + X-Webhook-Timestamp 的请求走签名通道
+      # （canonical = ts + "." + body，±300s 防重放）；留空走原 token 链零破坏。
+      hmac-secret: ${ALERT_WEBHOOK_HMAC_SECRET:}
+      # 单来源 IP 在窗口内允许的最大推送次数；<=0 关闭限流。
+      # 300/分钟 是按「一次较大规模故障的告警量」留的余量：
+      # 正常业务远低于此，而告警风暴（网络分区可产生上万条）会被挡住。
+      rate-limit: ${ALERT_WEBHOOK_RATE_LIMIT:300}
+      rate-window-ms: 60000
+    # 自动建单开关。关闭后告警仍入库并去重，但不触发自动建单（Single Writer 契约 6.10）。
+    # 适合告警风暴时保护工单系统，风暴过后可手动补单。
+    auto-ticket-enabled: true
+    # 自动建单创建人标识（对齐 AlertService.ALERT_CREATOR "alert-bot"）
+    ticket-creator: alert-bot
+    # 告警聚合降噪（方向 E）：窗口内同 service+module 的不同告警聚合到同一工单，
+    # 避免一个故障源引发的多条告警各建一张工单刷屏。关闭则回退每条各建单。
+    aggregate-enabled: true
+    # 聚合时间窗口（分钟）
+    aggregate-window-minutes: 5
+
+    # ==================== 自愈观察窗（PRD FR-3.1） ====================
+    # 观察级告警不立即建单：窗口内 resolved 自愈的只留统计不留单，
+    # 到期未自愈由 AlertObservationScheduler 补建工单并补触发诊断。
+    # 目标：消掉「三分钟自己好」的瞬时抖动工单（经验值可去 40~60%）。
+    observation-enabled: true
+    # 观察级集合（逗号分隔）。P0/P1 高危永远立即建单——高危等不起一个窗口。
+    # 注意与 auto-ticket-min-level 的交集才有意义：低于门槛的级别本就不建单。
+    observation-levels: ${ALERT_OBSERVATION_LEVELS:P2,P3}
+    # 观察窗口（分钟）：告警首次发生后等这么久，未自愈才补建单
+    observation-window-minutes: ${ALERT_OBSERVATION_WINDOW_MINUTES:10}
+    # 观察窗扫描间隔（毫秒）。1 分钟一轮：补建延迟最坏 = 窗口 + 一个扫描周期
+    observation-scan-interval-ms: 60000
+    # 告警恢复 → 工单联动策略（方案②，2026-10-01 拍板 hint 默认）：
+    #   hint=活动流提示可关单（不改状态）/ auto=最后一条关联告警恢复自动 RESOLVED（有人动过则只提示）/ off=不联动
+    resolve-close-policy: ${ALERT_RESOLVE_CLOSE_POLICY:hint}
+    # 通知链静默看门狗（方案③）：扫描间隔即健康窗口（有发送 0 成功 → OpsBrainNotifySilent 元告警）
+    notify-watchdog:
+      enabled: ${ALERT_NOTIFY_WATCHDOG_ENABLED:true}
+      scan-interval-ms: ${ALERT_NOTIFY_WATCHDOG_SCAN_INTERVAL_MS:300000}
+
+    # ==================== 全局风暴模式（PRD FR-2.5） ====================
+    # 全局告警速率超阈值后进入风暴模式：P0/P1 高危照常建单，
+    # 其余告警入库但聚合成一条「风暴摘要事件」（整场风暴一张单）。
+    storm:
+      enabled: true
+      # 进入阈值：近 60 秒 firing 告警数。日常流量的 10 倍级，只在真实故障风暴触发
+      enter-rate-per-min: ${ALERT_STORM_ENTER_RATE:100}
+      # 退出阈值（迟滞带）：速率回落到此值以下才退出。两阈值之间的差值
+      # 防止速率在边界抖动时风暴摘要事件反复建单/恢复
+      exit-rate-per-min: ${ALERT_STORM_EXIT_RATE:20}
+
+  # ==================== L2 通知渠道（钉钉自定义机器人） ====================
+  notify:
+    # 平台可从通知群访问的 HTTPS 前端地址；空值不生成假链接，仅提示按事件/工单号查询。
+    # 支持部署路径前缀；不会使用外部 annotations 中未经验证的 URL。
+    public-base-url: ${OPSBRAIN_NOTIFY_PUBLIC_BASE_URL:}
+    # 默认只在工单/详情留诊断证据，避免一次故障告警后又因 NO_DATA 刷屏。
+    # 开启仅发送仍活跃事件的普通摘要，不 @所有人；生产故障首报强提醒保持现状。
+    diagnosis-completion-enabled: ${DIAGNOSIS_COMPLETION_NOTIFY_ENABLED:false}
+    dingtalk:
+      # 通知总开关。默认关闭——需运维填 webhook 后显式开启（改为 true 或设环境变量）。
+      # 关闭/未配 webhook 时 DingTalkNotifier 以 MOCK 方式仅打印日志，不阻塞主流程。
+      enabled: ${DINGTALK_NOTIFY_ENABLED:false}
+      # 钉钉群自定义机器人 Webhook URL。含敏感 access_token，只从环境变量读，不写入本文件。
+      webhook: ${DINGTALK_WEBHOOK:}
+      # 加签密钥（钉钉安全设置选「加签」时提供）。为空则不加签（用于「关键词」或「IP 白名单」模式）。
+      secret: ${DINGTALK_SECRET:}
+    wecom:
+      # 企业微信群机器人（批89·方案1：真送达钥匙——钉钉现网从未配真 key，
+      # configured:false 假发送态由企微渠道终结）。默认关；未配 webhook 时 MOCK 仅打印。
+      # DB 权威源语义：配置页保存过 sys_notify_channel 行即覆盖本段（热生效零重启，
+      # 与 DingTalkNotifier/WeComNotifier 每发送时 effective() 三层回落同链）。
+      # 安全设置按「自定义关键词/IP 白名单」交付（key 直连无签名）；加签模式待真实需求。
+      enabled: ${WECOM_NOTIFY_ENABLED:false}
+      webhook: ${WECOM_WEBHOOK:}
+
+  # ==================== 工单闭环（B1 首响 SLA） ====================
+  ticket:
+    # 首响超时扫描开关。关闭后已超时的工单不再被标记——
+    # 用于数据迁移/压测期间避免把大批历史工单一次性标成超时污染看板。
+    # 读取方：FirstResponseBreachScheduler.scanEnabled
+    response-breach-scan-enabled: true
+    # 扫描间隔（毫秒）。默认 2 分钟：P0 首响时限仅 15 分钟，
+    # 若按常规 5~10 分钟扫描，最坏情况超时后 10 分钟才发现，占时限 2/3，告警失去意义。
+    # 读取方：FirstResponseBreachScheduler 的 @Scheduled(fixedDelayString)
+    response-breach-scan-interval-ms: 120000
+
+  # ==================== 对象存储（工单附件） ====================
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:29000}
+      access-key: ${MINIO_ACCESS_KEY:devops_minio}
+      secret-key: ${MINIO_SECRET_KEY:devops_minio_pwd}
+      bucket: ${MINIO_BUCKET:devops-ticket-attachment}
+      # 冷记忆归档专用桶。与附件桶分离：两者保留期与访问模式不同，
+      # 混用会让对象生命周期策略无法分别配置。桶由归档任务启动时兜底创建（private）
+      archive-bucket: ${MINIO_ARCHIVE_BUCKET:devops-memory-archive}
+      # 知识库上传原件专用桶（V2）。与附件桶分离的理由同上：
+      # 知识原件是长期留存的审计资产，附件是工单上下文的短期材料。
+      # 桶由 KnowledgeUploadService 首次使用时兜底创建。
+      knowledge-bucket: ${MINIO_KNOWLEDGE_BUCKET:devops-knowledge-source}
+      # 预签名 URL 有效期（秒）。短有效期降低链接泄露风险，
+      # 又足够用户完成一次下载。
+      presign-expiry-seconds: 300
+
+    attachment:
+      # 单文件上限（字节），20MB。运维日志/配置/截图足够。
+      max-file-size: 20971520
+      # 单工单附件数上限，防止无节制堆积
+      max-count-per-ticket: 10
+      # 扩展名白名单（小写，不含点）。
+      # 用白名单而非黑名单：黑名单永远列不全可执行类型
+      # （.exe .bat .sh .jsp .php .dll .so .jar .msi .vbs .ps1 …），
+      # 漏一个即成上传后门。
+      allowed-extensions: log,txt,json,yaml,yml,xml,csv,md,conf,ini,properties,png,jpg,jpeg,gif,webp,pdf,zip,gz,tar,tgz
+
+
+  # ================= L2 指标数据源（Prometheus）=================
+  # 关键取舍：代理查询，不自建时序存储。
+  # 运维场景下 Prometheus 已是事实标准、用户本来就有；再存一份会出现
+  # 「两套数据对不上，以哪个为准」的无解问题，且副本必然滞后于源。
+  metrics:
+    prometheus:
+      # 默认对齐 docker-compose.dev.yml 的宿主机映射端口（容器内 9090 → 宿主 29090）
+      base-url: ${PROMETHEUS_BASE_URL:http://localhost:29090}
+      # 页面同步等待，超时必须短：一条写错的高基数 PromQL 可能跑几十秒，
+      # 不设超时会占满 Web 线程池，让监控页把主站一起拖垮
+      timeout-ms: ${PROMETHEUS_TIMEOUT_MS:5000}
+      # 关掉后 /api/v1/metrics/** 会返回 50020（数据源不可用），
+      # 而不是让页面卡在加载中——没有 Prometheus 的部署应显式关掉
+      enabled: ${PROMETHEUS_ENABLED:true}
+
+# ================= S1-1 指标取证：PromQL 查询目录 =================
+# 给 queryServiceMetrics 工具的「指标名 -> PromQL 模板」目录。
+# {service} 为服务名占位符，渲染前经白名单校验（只允许字母数字点划线下划线），
+# PromQL 注入在语法上不可能。
+# ⚠️ 默认值按常见 label 约定写：k8s/Cadvisor 用 pod=~"{service}.*"，
+#    Spring/Actuator 用 application="{service}"。现场 label 规范不同时
+#    必须改写——否则工具能连通但 NO_DATA，这是 1-1.4「PromQL 可粘贴复现」
+#    验收的前提。新增指标往目录里加一行即可，工具自动可见。
+    query-catalog:
+      # 关键：Map 字段名 templates 必须出现在键路径里——
+      # devops.metrics.query-catalog.cpu 这样的根键不会绑进 Map 字段，
+      # 会被 Binder 静默忽略（「绑定路径盲区」，把 catalog 掏空、史称
+      # available="" 案的最终根因；勿再把指标键挂在本层）。
+      templates:
+        cpu: 'sum(rate(container_cpu_usage_seconds_total{pod=~"{service}.*"}[5m]))'
+        memory: 'sum(container_memory_working_set_bytes{pod=~"{service}.*"})'
+        error-rate: 'sum(rate(http_server_requests_seconds_count{application="{service}",status=~"5.."}[5m]))'
+        latency-p99: 'histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application="{service}"}[5m])) by (le))'
+        # —— 2026-09-25 本机实测对齐（dev compose 环境真实 label 约定）——
+        # 上面四条按 k8s/Spring 约定写（生产面）；本机栈是 node-exporter + actuator，
+        # 两条抓取链都打了 service 静态标签（prometheus.yml），故按 service= 等值过滤。
+        # 服务名对不上时自动落空（NO_DATA 而非错数据）——这正是口径隔离。
+        host-cpu-usage-pct: '100 - (avg(rate(node_cpu_seconds_total{mode="idle",service="{service}"}[5m])) * 100)'
+        host-mem-usage-pct: '(1 - (node_memory_MemAvailable_bytes{service="{service}"} / node_memory_MemTotal_bytes{service="{service}"})) * 100'
+        app-jvm-heap-used-bytes: 'sum(jvm_memory_used_bytes{service="{service}",area="heap"})'
+        app-uptime-seconds: 'process_uptime_seconds{service="{service}"}'
+
+  # ================= S1-3 日志数据源（Loki）=================
+  # 2026-09-30 起默认启用（方案 B「日志证据 → 工单」）：取证明细要能进工单，
+  # 日志这条腿默认必须是通的。Loki 缺席时查询如实 FAILED（连不上≠查过没有），
+  # 诊断摘要/活动流会点名「LOGS: FAILED：日志查询失败…」，不再静默 UNAVAILABLE；
+  # 不接 Loki 的部署显式 LOKI_ENABLED=false 回到 UNAVAILABLE 语义（省掉无效探测）。
+  logs:
+    loki:
+      # compose 的 logs profile 已挂 Loki/Promtail（--profile logs up -d loki promtail）
+      base-url: ${LOKI_BASE_URL:http://localhost:23100}
+      timeout-ms: ${LOKI_TIMEOUT_MS:5000}
+      enabled: ${LOKI_ENABLED:true}
+      # LogQL 流选择器的 label 键。现场 label 约定不同（app/job/container/service_name）
+      # 时改这里 —— 与 metrics 的 query-catalog 同理：模板数据进配置，不进代码。
+      service-label: ${LOKI_SERVICE_LABEL:app}
+
+# ================= 自身可观测性（P2，2026-08-26 新增）=================
+# 系统监控别人的前提是先能监控自己：
+# - /actuator/health：K8s 探针 + 部署健康检查（含 DeepSeek/向量库可达性，见
+#   infrastructure/health 下自定义 HealthIndicator——这两个挂了系统表面正常、AI 全废）
+# - /actuator/prometheus：自身指标（工具调用耗时/失败率、Saga 补偿成功率、LLM 成本与 token）
+# - ⚠️ 安全：/actuator/** 不在 /api/** 下，WebConfig 必须显式加鉴权（见 WebConfig 注释）
+# ============================================================
+# API 文档（springdoc-openapi，P0-2）
+# ============================================================
+# 默认开启，便于开发与联调；生产由 application-prod.yml 关闭（见该文件）。
+#
+# ⚠️ 安全说明：Sa-Token 拦截器只管 /api/**，而 springdoc 的两个路径
+# （/v3/api-docs、/swagger-ui/**）不在其下 —— 也就是说它们**不受登录校验保护**。
+# 这是刻意接受的：开发环境需要免登录查文档；生产环境靠 enabled=false 整体关闭，
+# 比「放着端点再加鉴权」少一个出错面。
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /swagger-ui.html
+    # 按标签字母序排列，避免每次生成顺序漂移导致 diff 噪音
+    tags-sorter: alpha
+    operations-sorter: alpha
+  # 只扫业务包，排除 actuator 等框架端点
+  packages-to-scan: com.devops.agent.controller
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  # ==================== OTLP 指标导出（S5-1 尾件，批 52）====================
+  # micrometer-registry-otlp 已在 pom（版本 Boot BOM 托管）。默认停用：
+  # 没接 collector 就开启推流 = 周期连接错误刷日志 + 「指标有去处」的幻觉；
+  # 双注册器（prom 拉 + otlp 推）共存互不干扰，prom 契约（批 37 job）照旧。
+  # prod 开法：OTLP_EXPORT_ENABLED=true 且 OTLP_METRICS_URL 指到 collector。
+  otlp:
+    metrics:
+      export:
+        enabled: ${OTLP_EXPORT_ENABLED:false}
+        url: ${OTLP_METRICS_URL:http://localhost:4318}
+        # 60s 推一次：告警面在 prom 拉模型担纲，otlp 是画像/趋势用，
+        # 半分钟级的内耗对 2g 预算没有意义。
+        step: ${OTLP_EXPORT_STEP:60s}
+  # S0-3：熔断器状态汇入 /actuator/health（resilience4j-spring-boot3 自带
+  # CircuitBreakerHealthIndicator，这里是显式声明而非依赖默认值）
+  health:
+    circuitbreakers:
+      enabled: true
+  metrics:
+    tags:
+      application: opsbrain-ai

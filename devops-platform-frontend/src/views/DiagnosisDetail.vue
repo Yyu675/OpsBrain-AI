@@ -1,0 +1,193 @@
+<template>
+  <div class="diagnosis-detail">
+    <header class="diag-header">
+      <h2>诊断回放</h2>
+      <code class="trace-id">{{ traceId }}</code>
+      <span v-if="session.sufficiency" class="badge" :class="suffClass(session.sufficiency)">
+        {{ session.sufficiency }}
+      </span>
+    </header>
+
+    <!-- 三态兜底（审计批三 P1-5）：旧实现 onMounted 无 catch 无三态，
+         接口失败白屏 + 未捕获 rejection，用户无从重试 -->
+    <div v-if="loadState === 'loading'" class="empty-hint">诊断回放加载中…</div>
+    <div v-else-if="loadState === 'error'" class="empty-hint">
+      诊断回放加载失败。
+      <button class="retry-btn" @click="loadReplay">重试</button>
+    </div>
+
+    <template v-else>
+    <!-- MOCK 模式如实告知：语义检索是哈希假向量，知识证据恒 NO_DATA——
+         不标这句，「未启用」会被误读成「库里没有」（2026-09-25 实测踩过的坑） -->
+    <div v-if="aiMode === 'MOCK'" class="mock-banner">
+      当前为 MOCK 模式：语义检索使用假向量，知识证据不可用属预期。切 REAL 模式后重新诊断可见真实命中。
+    </div>
+    <p v-if="session.summary" class="summary">{{ session.summary }}</p>
+
+    <section class="evidence-section">
+      <h3>证据（{{ evidences.length }}）</h3>
+      <ul class="evidence-list">
+        <li v-for="ev in evidences" :key="ev.id" class="evidence-card" :class="'st-' + ev.status">
+          <div class="ev-head">
+            <span class="ev-type">{{ ev.evidence_type }}</span>
+            <span class="ev-status">{{ statusLabel(ev.status) }}</span>
+          </div>
+          <div class="ev-title">{{ ev.title }}</div>
+          <code v-if="ev.source_ref" class="ev-ref">{{ ev.source_ref }}</code>
+        </li>
+      </ul>
+      <p v-if="!evidences.length" class="empty-hint">无证据记录——孤证或已清理</p>
+    </section>
+
+    <section class="hypo-section">
+      <h3>根因假设（{{ hypotheses.length }}）</h3>
+      <ul class="hypo-list">
+        <li v-for="h in hypotheses" :key="h.id" class="hypo-card">
+          <div class="hypo-head">
+            <span class="rank">#{{ h.rank }}</span>
+            <span class="statement">{{ h.statement }}</span>
+          </div>
+          <div class="conf-bar">
+            <div class="conf-fill" :style="{ width: Math.round(h.confidence * 100) + '%' }"></div>
+            <span class="conf-text">{{ Math.round(h.confidence * 100) }}%</span>
+          </div>
+          <p v-if="h.reasoning" class="reasoning">{{ h.reasoning }}</p>
+          <p v-if="h.suggested_action" class="action">建议：{{ h.suggested_action }}</p>
+          <p v-if="h.evidence_ids" class="evlink">支撑证据：{{ h.evidence_ids }}</p>
+          <div class="feedback-row">
+            <button
+              v-for="f in feedbackOptions" :key="f.key"
+              class="fb-btn" :class="{ active: h.feedback === f.key }"
+              :disabled="fbBusy[h.id]"
+              @click="mark(h, f.key)">
+              {{ f.label }}
+            </button>
+          </div>
+        </li>
+      </ul>
+      <p v-if="!hypotheses.length" class="empty-hint">未见假设——规则基线判为「无物可说」或该会话已被终判</p>
+    </section>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { notify, handleServerError } from '@/utils/notify'
+import {
+  citedChunkIds,
+  fetchDiagnosisReplay,
+  postHypothesisFeedback,
+  type DiagnosisEvidenceView,
+  type DiagnosisHypothesisView,
+  type DiagnosisSessionView,
+  type HypothesisFeedback
+} from '../api/diagnosis'
+
+const route = useRoute()
+const traceId = String(route.params.traceId ?? '')
+
+/** 三态：加载中 / 失败（可重试） / 就绪（审计批三 P1-5 补齐） */
+const loadState = ref<'loading' | 'error' | 'done'>('loading')
+
+const session = ref<DiagnosisSessionView>({})
+const evidences = ref<DiagnosisEvidenceView[]>([])
+const hypotheses = ref<DiagnosisHypothesisView[]>([])
+const fbBusy = ref<Record<number, boolean>>({})
+const aiMode = ref<string | undefined>(undefined)
+
+const feedbackOptions: { key: HypothesisFeedback; label: string }[] = [
+  { key: 'HELPFUL', label: '有帮助' },
+  { key: 'PARTIAL', label: '部分正确' },
+  { key: 'WRONG', label: '错误' }
+]
+
+function statusLabel(status: string): string {
+  return ({ 'SUCCESS': '✅ 成功', 'NO_DATA': '⭕ 无数据', 'FAILED': '❌ 失败', 'UNAVAILABLE': '🚫 未启用' } as const)[status as never] || status
+}
+
+function suffClass(suff: string): string {
+  return suff === 'SUFFICIENT' ? 'suff-ok' : suff === 'WEAK' ? 'suff-weak' : 'suff-bad'
+}
+
+async function mark(h: DiagnosisHypothesisView, feedback: HypothesisFeedback) {
+  fbBusy.value[h.id] = true
+  try {
+    // 始终带上本次诊断引用的知识切片 id（#6 飞轮双保险）：
+    // 证据载荷里有 chunkId 就以它为准，没有则传空数组，后端按
+    // 「字段缺失才兜底」的契约走 citation 反查，两路互不覆盖。
+    await postHypothesisFeedback(h.id, feedback, citedChunkIds(evidences.value))
+    h.feedback = feedback
+  } catch (e) {
+    // 旧实现只有 try/finally：反馈 POST 失败成未捕获 rejection，
+    // 按钮转圈归零、无任何提示，反馈数据静默丢失（审计批三 P1-5）
+    handleServerError(e, { action: '反馈根因假设' })
+  } finally {
+    fbBusy.value[h.id] = false
+  }
+}
+
+async function loadReplay() {
+  loadState.value = 'loading'
+  try {
+    const replay = await fetchDiagnosisReplay(traceId)
+    session.value = replay.session
+    evidences.value = replay.evidences
+    hypotheses.value = replay.hypotheses
+    aiMode.value = replay.aiMode
+    loadState.value = 'done'
+  } catch (e) {
+    // 旧实现 onMounted 裸 await：接口失败白屏 + 二次未捕获 rejection
+    console.warn('[DiagnosisDetail] 回放加载失败', e)
+    loadState.value = 'error'
+  }
+}
+
+onMounted(loadReplay)
+void notify
+</script>
+
+<style scoped>
+.diagnosis-detail { padding: 20px; max-width: 1080px; margin: 0 auto; }
+.diag-header { display: flex; align-items: center; gap: 12px; }
+.trace-id { background: var(--surface-2); padding: 2px 10px; border-radius: 4px; font-size: 12px; }
+.badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.suff-ok { background: var(--success-subtle); color: var(--success); }
+.suff-weak { background: var(--warning-subtle); color: var(--warning); }
+.suff-bad { background: var(--danger-subtle); color: var(--danger); }
+.summary { background: var(--surface-2); padding: 12px; border-left: 3px solid var(--brand); margin: 12px 0; }
+.mock-banner {
+  background: var(--warning-subtle);
+  color: var(--warning);
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 12px 0;
+}
+.evidence-list, .hypo-list { list-style: none; padding: 0; display: grid; gap: 10px; }
+.evidence-card { border: 1px solid var(--border-1); border-radius: 8px; padding: 10px 12px; }
+.ev-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+.ev-type { font-weight: 600; text-transform: uppercase; color: var(--text-2); }
+.st-SUCCESS .ev-status { color: var(--success); }
+.st-FAILED .ev-status { color: var(--danger); }
+.st-NO_DATA .ev-status { color: var(--text-2); }
+.st-UNAVAILABLE .ev-status { color: var(--text-3); }
+.ev-title { font-size: 13px; }
+.ev-ref { font-size: 11px; color: var(--text-2); display: block; margin-top: 6px; white-space: pre-wrap; }
+.hypo-card { border: 1px solid var(--border-1); border-radius: 10px; padding: 14px; }
+.hypo-head { display: flex; gap: 10px; align-items: baseline; }
+.rank { font-weight: 700; color: var(--brand); }
+.statement { font-weight: 600; }
+.conf-bar { position: relative; height: 18px; background: var(--surface-active); border-radius: 9px; margin: 10px 0; overflow: hidden; }
+.conf-fill { height: 100%; background: linear-gradient(90deg, color-mix(in oklch, var(--brand) 55%, var(--surface-1)), var(--brand)); }
+.conf-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.reasoning, .action { font-size: 13px; color: var(--text-2); margin: 6px 0; }
+.evlink { font-family: monospace; font-size: 11px; color: var(--text-3); }
+.feedback-row { display: flex; gap: 8px; margin-top: 10px; }
+.fb-btn { border: 1px solid var(--border-2); background: var(--surface-1); border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.fb-btn.active { border-color: var(--brand); color: var(--brand); background: var(--brand-subtle); }
+.fb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.empty-hint { color: var(--text-3); font-size: 13px; }
+</style>

@@ -1,0 +1,114 @@
+/**
+ * 工单 AI 分析 API（策略 B）
+ *
+ * 从策略 A（复用 sys_ticket_reply role=ai，纯文本）演进到独立表：
+ * 保留结构化字段（reasons/commands/citations/confidence/cost）、多版本、用户反馈。
+ *
+ * 结构化字段由前端解析后传入——前端已有 parseStructuredAnalysis / extractCitationsFromText，
+ * content 是真相源，后端不重复实现解析器。
+ */
+
+import { API_ENDPOINTS } from '../config/api'
+import { http, unwrapBiz } from '../utils/http'
+
+/** 后端 sys_ticket_ai_analysis 记录 */
+interface TicketAiAnalysis {
+  id: number
+  ticketId: string
+  version: number
+  content: string
+  reasons: string[]
+  commands: string[]
+  citations: string[]
+  confidence: number | null
+  costRmb: number
+  /** null=未评价 / HELPFUL / UNHELPFUL */
+  feedback: string | null
+  feedbackAt: string | null
+  createTime: string
+}
+
+/** 保存分析的入参（结构化字段由前端解析） */
+interface SaveAnalysisPayload {
+  content: string
+  reasons: string[]
+  commands: string[]
+  citations: string[]
+  confidence: number | null
+  costRmb: number
+}
+
+/**
+ * 保存一次 AI 分析（version 由后端自增）
+ */
+export async function saveTicketAiAnalysis(
+  ticketId: string,
+  payload: SaveAnalysisPayload
+): Promise<TicketAiAnalysis> {
+  const raw = await http.post<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS(ticketId), payload)
+  return unwrapBiz<TicketAiAnalysis>(raw, 'AI 分析保存失败')
+}
+
+/**
+ * 查询工单最新 AI 分析（当前结论）
+ *
+ * @returns 分析记录；null 表示该工单尚无分析
+ */
+export async function fetchLatestTicketAiAnalysis(ticketId: string): Promise<TicketAiAnalysis | null> {
+  const raw = await http.get<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_LATEST(ticketId))
+  return unwrapBiz<TicketAiAnalysis | null>(raw, '查询 AI 分析失败')
+}
+
+/**
+ * 查询工单全部 AI 分析版本（version 倒序，供历史对比）。
+ *
+ * @public 与在用的 submitAiAnalysisFeedback 同域成对；后端 TICKET_AI_ANALYSIS_VERSIONS
+ * 路由在服务，「AI 分析历史对比」面板待接。
+ */
+export async function fetchTicketAiAnalysisVersions(ticketId: string): Promise<TicketAiAnalysis[]> {
+  const raw = await http.get<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_VERSIONS(ticketId))
+  const data = unwrapBiz<TicketAiAnalysis[]>(raw, '查询 AI 分析版本失败')
+  return Array.isArray(data) ? data : []
+}
+
+/**
+ * 记录 AI 分析反馈（有用 / 没用）——AI 准确率统计数据来源。
+ * <p>
+ * 后端（2026-09-24）在反馈时自取本分析 citations 解析出的被引 chunk，
+ * 回流写 sys_knowledge_boost，并把回流条数放进 data.knowledgeBoosted。
+ * 返回该计数供调用方展示「这条反馈影响了多少条知识的检索权重」——
+ * 0 = 该分析无引用或回流降级，不是失败。
+ * </p>
+ */
+export async function submitAiAnalysisFeedback(analysisId: number, helpful: boolean): Promise<number> {
+  const raw = await http.post<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_FEEDBACK(analysisId), { helpful })
+  const data = unwrapBiz<{ knowledgeBoosted?: number }>(raw, '反馈提交失败')
+  return data?.knowledgeBoosted ?? 0
+}
+
+/**
+ * AI 分析准确率统计（批次 27 恢复 export：4-4.1 AI 效果区真消费——
+ * 批 24 去化纪律的双向性范例：去化不是永别，需求出现即加回）。
+ *
+ * @public 消费面是「返回类型推断」：useAiAnalysisStatsQuery 不显式 import
+ * 本类型名（TS 由 queryFn 返回值推断），knip 看不见→假阳；批 29 在此定型
+ * 第四种豁免形态（返回类型推断消费）。
+ */
+export interface AiAnalysisStats {
+  total: number
+  rated: number
+  helpful: number
+  unhelpful: number
+  helpfulRate: number
+}
+
+/**
+ * AI 分析准确率统计（供数据概览展示）。
+ *
+ * @public 与同文件 submitAiAnalysisFeedback 构成「反馈→统计」闭环对；
+ * 后端统计路由在服务，概览页接入面待接。
+ */
+export async function fetchAiAnalysisStats(): Promise<AiAnalysisStats> {
+  const raw = await http.get<unknown>(API_ENDPOINTS.TICKET_AI_ANALYSIS_STATS)
+  return unwrapBiz<AiAnalysisStats>(raw, '查询 AI 分析统计失败')
+}

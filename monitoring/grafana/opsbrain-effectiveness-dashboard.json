@@ -1,0 +1,224 @@
+{
+  "title": "OpsBrain 效果看板(4-4 备用盘，Grafana 接入即用)",
+  "uid": "opsbrain-effectiveness",
+  "_meta": "批 64 F2:指标侧已全在 app(Prom 拉模型即可用,此盘是可视化副本——Grafana service 按手册 §10 可选启用并自动 provision)",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "工单总量 / 紧急未办水位(批 49 gauge)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opsbrain_tickets_total",
+          "legendFormat": "工单总量"
+        },
+        {
+          "refId": "B",
+          "expr": "opsbrain_tickets_urgent_pending",
+          "legendFormat": "紧急未办(P0/P1)"
+        },
+        {
+          "refId": "C",
+          "expr": "opsbrain_tickets_open",
+          "legendFormat": "在办工单 ({{priority}})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "告警累计 / 待审批水位",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "opsbrain_alerts_active",
+          "legendFormat": "活动告警"
+        },
+        {
+          "refId": "B",
+          "expr": "opsbrain_approvals_pending",
+          "legendFormat": "待审批"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "外部数据源熔断器状态(0-3;1=闭合,开半开即水位动作)",
+      "type": "state-timeline",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "resilience4j_circuitbreaker_state",
+          "legendFormat": "{{name}}={{state}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "数据源调用失败率(每分钟;4-4 验收点:'某数据源长期不可用'类退化的可发现面)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(resilience4j_circuitbreaker_calls_total{kind=\"failed\"}[1m])",
+          "legendFormat": "失败速率 {{name}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(resilience4j_circuitbreaker_calls_total[1m])",
+          "legendFormat": "总速率 {{name}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "agent 请求面:HTTP 速率与 p95(app 自监控)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(http_server_requests_seconds_count[1m])",
+          "legendFormat": "请求速率 {{uri}}"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m]))",
+          "legendFormat": "p95 {{uri}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "诊断时延 p95 / 诊断队列深度（opsbrain_*）",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, result) (rate(opsbrain_diagnosis_seconds_bucket[5m])))",
+          "legendFormat": "诊断 p95 · {{result}}",
+          "refId": "A"
+        },
+        {
+          "expr": "opsbrain_diagnosis_queue_depth",
+          "legendFormat": "诊断队列深度",
+          "refId": "B"
+        }
+      ],
+      "description": "2026-10-15 修正：本面板原查 devops_diagnosis_seconds / devops_tool_seconds —— 这两个指标名**全仓不存在**（代码里是 opsbrain_diagnosis_seconds，工具耗时指标从未实现），面板永远空白。死面板比没面板更坏：它让人以为诊断时延已被监控覆盖。现改查真指标，并把此前无人消费的opsbrain_diagnosis_queue_depth 接上（积压可见=诊断被堵住时能看出来）。"
+    },
+    {
+      "title": "告警链 RED 自监控（接收/去重/建单/诊断/受理/送达）",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(opsbrain_alert_received_total[5m]))",
+          "legendFormat": "信号到达"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(opsbrain_alert_dedup_total[5m]))",
+          "legendFormat": "去重命中"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(opsbrain_ticket_autocreate_seconds_count[5m]))",
+          "legendFormat": "自动建单"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (result) (rate(opsbrain_diagnosis_seconds_count[5m]))",
+          "legendFormat": "诊断-{{result}}"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (result) (rate(opsbrain_notify_total[5m]))",
+          "legendFormat": "通知受理-{{result}}"
+        },
+        {
+          "refId": "F",
+          "expr": "sum by (result) (rate(opsbrain_notify_delivery_total[5m]))",
+          "legendFormat": "通知送达-{{result}}"
+        },
+        {
+          "refId": "G",
+          "expr": "sum(rate(opsbrain_alert_time_fallback_total[5m]))",
+          "legendFormat": "告警时间回退"
+        },
+        {
+          "refId": "H",
+          "expr": "sum(rate(opsbrain_observation_suppressed_total[5m]))",
+          "legendFormat": "自愈观察抑制"
+        },
+        {
+          "refId": "I",
+          "expr": "sum(rate(opsbrain_storm_aggregated_total[5m]))",
+          "legendFormat": "风暴聚合抑制"
+        },
+        {
+          "refId": "J",
+          "expr": "sum by (kind, status) (rate(opsbrain_diagnosis_evidence_status_total[5m]))",
+          "legendFormat": "诊断证据-{{kind}}-{{status}}"
+        },
+        {
+          "refId": "K",
+          "expr": "opsbrain_notify_silent_seconds",
+          "legendFormat": "通知静默秒数"
+        },
+        {
+          "refId": "L",
+          "expr": "histogram_quantile(0.95, sum by (le, priority) (rate(opsbrain_ticket_resolved_seconds_bucket[5m])))",
+          "legendFormat": "解决耗时 p95 ({{priority}})"
+        }
+      ]
+    }
+  ]
+}

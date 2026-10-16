@@ -1,0 +1,300 @@
+package com.devops.agent.common.web;
+
+import com.devops.agent.common.exception.WebhookRejectedException;
+import com.devops.agent.infrastructure.cache.SlidingWindowRateLimiter;
+import jakarta.servlet.http.HttpServletRequest;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/**
+ * {@link WebhookGuard} 行为测试。
+ *
+ * <p>保护的契约：<b>免鉴权端点必须有替代防线</b>。
+ * {@code /api/v1/alerts/webhook} 直接写库并可触发自动建单，
+ * 一旦防护失效，任何人都能灌入伪造告警。</p>
+ */
+class WebhookGuardTest {
+
+    private SlidingWindowRateLimiter limiter;
+    private ClientIpResolver clientIpResolver;
+    private WebhookGuard guard;
+    private HttpServletRequest request;
+
+    @BeforeEach
+    void setUp() {
+        limiter = mock(SlidingWindowRateLimiter.class);
+        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong(), anyBoolean())).thenReturn(true);
+
+        request = mock(HttpServletRequest.class);
+        when(request.getRemoteAddr()).thenReturn("10.0.0.1");
+
+        // WebhookGuard 现在通过 ClientIpResolver 取客户端 IP（不再直接读 getRemoteAddr），
+        // 以免 X-Forwarded-For 被无条件信任导致限流可绕过。
+        // 这里桩成回落 getRemoteAddr，与「无可信代理」时的真实行为一致，
+        // 从而保持本测试原有的 IP 语义不变。
+        clientIpResolver = mock(ClientIpResolver.class);
+        when(clientIpResolver.resolve(any())).thenReturn("10.0.0.1");
+
+        guard = new WebhookGuard(limiter, clientIpResolver);
+        ReflectionTestUtils.setField(guard, "secret", "");
+        ReflectionTestUtils.setField(guard, "rateLimit", 300);
+        ReflectionTestUtils.setField(guard, "rateWindowMs", 60000L);
+        // 批 75 P1-2：默认 dev profile（无 active）——向后兼容语义的基线
+        org.springframework.mock.env.MockEnvironment devEnv =
+                new org.springframework.mock.env.MockEnvironment();
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                guard, "environment", devEnv);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                guard, "requireSecretInProd", true);
+    }
+
+    @Test
+    @DisplayName("未配置密钥时放行，保持对既有 alertmanager.yml 的向后兼容")
+    void allowsWhenSecretNotConfigured() {
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    /** MockEnvironment 无链式 setProperty（void 返回）——active profile 用专用 helper 设 */
+    private static org.springframework.mock.env.MockEnvironment newProdEnv() {
+        org.springframework.mock.env.MockEnvironment env = new org.springframework.mock.env.MockEnvironment();
+        env.setActiveProfiles("prod");
+        return env;
+    }
+
+    @Test
+    @DisplayName("批75 P1-2：prod profile 无密钥 = 拒绝处理（403），不再 WARN 放行")
+    void prodWithoutSecretIsRejected() {
+        org.springframework.mock.env.MockEnvironment prodEnv =
+                newProdEnv();
+        ReflectionTestUtils.setField(guard, "environment", prodEnv);
+        ReflectionTestUtils.setField(guard, "secret", "");
+
+        assertThatThrownBy(() -> guard.verify(request))
+                .isInstanceOf(WebhookRejectedException.class);
+    }
+
+    @Test
+    @DisplayName("批75 P1-2：prod profile 显式豁免开关（require-secret=false）仍放行——演练/调试通道")
+    void prodWithExplicitExemptionAllows() {
+        org.springframework.mock.env.MockEnvironment prodEnv =
+                newProdEnv();
+        ReflectionTestUtils.setField(guard, "environment", prodEnv);
+        ReflectionTestUtils.setField(guard, "secret", "");
+        ReflectionTestUtils.setField(guard, "requireSecretInProd", false);
+
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("批75 P1-2：prod profile 配了密钥则照常走密钥校验（有 token 放行/无 token 拒）")
+    void prodWithSecretFallsThroughToTokenCheck() {
+        org.springframework.mock.env.MockEnvironment prodEnv =
+                newProdEnv();
+        ReflectionTestUtils.setField(guard, "environment", prodEnv);
+        ReflectionTestUtils.setField(guard, "secret", "prod-secret");
+        when(request.getHeader("X-Webhook-Token")).thenReturn("prod-secret");
+
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("配置密钥后，携带正确 token 放行")
+    void allowsCorrectToken() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn("s3cr3t");
+
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("配置密钥后，缺少 token 抛 401——不建议重试，属配置错误")
+    void rejectsMissingToken() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn(null);
+
+        var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
+
+        assertEquals(401, ex.getHttpStatus());
+        assertEquals(0, ex.getRetryAfterSeconds(), "鉴权失败重试无意义，不应给 Retry-After");
+    }
+
+    @Test
+    @DisplayName("Authorization Bearer 兜底通道：Alertmanager 等监控栈发不了自定义头时仍可对接")
+    void allowsBearerTokenFallback() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn(null);
+        when(request.getHeader("Authorization")).thenReturn("Bearer s3cr3t");
+
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("Bearer 通道携带错误密钥同样拒绝——兜底不是开口")
+    void rejectsWrongBearerToken() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn(null);
+        when(request.getHeader("Authorization")).thenReturn("Bearer wrong");
+
+        var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
+
+        assertEquals(401, ex.getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("token 不匹配抛 401")
+    void rejectsWrongToken() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn("wrong");
+
+        var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
+
+        assertEquals(401, ex.getHttpStatus());
+    }
+
+    @Test
+    @DisplayName("触发限流抛 429 且带 Retry-After，让 Alertmanager 退避重投而非丢告警")
+    void rejectsWhenRateLimited() {
+        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong(), anyBoolean())).thenReturn(false);
+
+        var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
+
+        assertEquals(429, ex.getHttpStatus());
+        assertTrue(ex.getRetryAfterSeconds() > 0, "429 必须给出退避时长，否则告警可能永久丢失");
+    }
+
+    @Test
+    @DisplayName("限流先于密钥校验，使错误密钥的暴力尝试同样被挡住")
+    void rateLimitAppliesBeforeAuth() {
+        ReflectionTestUtils.setField(guard, "secret", "s3cr3t");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn("wrong");
+        when(limiter.tryAcquire(anyString(), anyString(), anyInt(), anyLong(), anyBoolean())).thenReturn(false);
+
+        var ex = assertThrows(WebhookRejectedException.class, () -> guard.verify(request));
+
+        assertEquals(429, ex.getHttpStatus(), "应先被限流拦下，而不是走到密钥比较");
+    }
+
+    /**
+     * 限流主体取自 {@link ClientIpResolver}，而不是自己解析 X-Forwarded-For。
+     *
+     * <p>这两个测试原本直接桩 {@code X-Forwarded-For} 头并断言首段被用作限流键——
+     * 那是<b>修复前</b>的行为，且正是当时的缺陷：无条件信任该头意味着
+     * 攻击者随手伪造一个就能换一个限流桶，限流形同虚设。</p>
+     *
+     * <p>修复后 IP 解析职责移入 {@code ClientIpResolver}（只有在请求来自
+     * 可信代理时才采信该头），其取舍由 {@code ClientIpResolverTest} 单独覆盖。
+     * 这里只需保证 WebhookGuard <b>确实走了解析器</b>——
+     * 若哪天有人图省事改回 {@code request.getRemoteAddr()}，本测试会失败。</p>
+     */
+    @Test
+    @DisplayName("限流主体来自 ClientIpResolver，而非自行解析请求头")
+    void usesResolverAsIdentity() {
+        when(clientIpResolver.resolve(request)).thenReturn("203.0.113.7");
+
+        guard.verify(request);
+
+        org.mockito.Mockito.verify(clientIpResolver).resolve(request);
+        org.mockito.Mockito.verify(limiter)
+                .tryAcquire(org.mockito.ArgumentMatchers.eq("webhook"),
+                        org.mockito.ArgumentMatchers.eq("203.0.113.7"), anyInt(), anyLong(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("不再直接读 X-Forwarded-For——伪造该头不能换限流桶")
+    void ignoresForgedForwardedForHeader() {
+        // 攻击者伪造头，但解析器（无可信代理配置）仍回落到真实 remoteAddr
+        when(request.getHeader("X-Forwarded-For")).thenReturn("1.2.3.4, 5.6.7.8");
+        when(clientIpResolver.resolve(request)).thenReturn("10.0.0.1");
+
+        guard.verify(request);
+
+        org.mockito.Mockito.verify(limiter)
+                .tryAcquire(anyString(), org.mockito.ArgumentMatchers.eq("10.0.0.1"),
+                        anyInt(), anyLong(), anyBoolean());
+    }
+
+    // ==================== 方案⑤ HMAC 签名通道 ====================
+
+    private static String hmacHex(String secret, String canonical) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    secret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] d = mac.doFinal(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** 构造带签名头与缓存 body 的请求（guard 以 instanceof 取缓存字节，故用真实 wrapper 类型 mock） */
+    private org.springframework.web.util.ContentCachingRequestWrapper signedRequest(
+            String ts, String body, String sig) {
+        org.springframework.web.util.ContentCachingRequestWrapper w =
+                mock(org.springframework.web.util.ContentCachingRequestWrapper.class);
+        when(w.getHeader(WebhookGuard.HMAC_TS_HEADER)).thenReturn(ts);
+        when(w.getHeader(WebhookGuard.HMAC_SIG_HEADER)).thenReturn(sig);
+        when(w.getContentAsByteArray())
+                .thenReturn(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        ReflectionTestUtils.setField(guard, "hmacSecret", "s3cr3t");
+        return w;
+    }
+
+    @Test
+    @DisplayName("方案⑤：合法签名 + 时间戳新鲜 → 放行（不依赖 token 头）")
+    void validHmacPasses() {
+        String ts = String.valueOf(System.currentTimeMillis() / 1000);
+        String body = "{\"alerts\":[],\"status\":\"firing\"}";
+        var req = signedRequest(ts, body, hmacHex("s3cr3t", ts + "." + body));
+        assertDoesNotThrow(() -> guard.verify(req));
+    }
+
+    @Test
+    @DisplayName("方案⑤：时间戳超 ±300s 容差 → 拒（重放窗口外）")
+    void expiredTimestampRejected() {
+        String ts = String.valueOf(System.currentTimeMillis() / 1000 - 400);
+        String body = "{}";
+        var req = signedRequest(ts, body, hmacHex("s3cr3t", ts + "." + body));
+        assertThrows(WebhookRejectedException.class, () -> guard.verify(req));
+    }
+
+    @Test
+    @DisplayName("方案⑤：hmacSecret 已配但调用方无签名头（Alertmanager 场景）→ token 通道共存放行")
+    void hmacConfiguredButUnsigned_tokenChannelCoexists() {
+        // 两个密钥语义不同、同时存在：secret=token 通道比对值；hmacSecret=签名通道密钥。
+        // Alertmanager v0.27 发不了自定义签名头——配了 hmacSecret 后它必须仍走 token 通。
+        ReflectionTestUtils.setField(guard, "hmacSecret", "unit-hmac-secret");
+        ReflectionTestUtils.setField(guard, "secret", "t3st-token");
+        when(request.getHeader(WebhookGuard.TOKEN_HEADER)).thenReturn("t3st-token");
+        // X-Webhook-Signature/Timestamp 未 stub → mock 默认 null → 不进 HMAC 块
+        assertDoesNotThrow(() -> guard.verify(request));
+    }
+
+    @Test
+    @DisplayName("方案⑤：body 被篡改 → 签名不匹配拒绝（完整性绑定）")
+    void tamperedBodyRejected() {
+        String ts = String.valueOf(System.currentTimeMillis() / 1000);
+        String body = "{\"alerts\":[{\"x\":1}]}";
+        var req = signedRequest(ts, body, hmacHex("s3cr3t", ts + "." + "{\"alerts\":[]}"));
+        assertThrows(WebhookRejectedException.class, () -> guard.verify(req));
+    }
+}

@@ -1,0 +1,59 @@
+# Staging 环境配置（批88 补建）
+#
+# 定位：介于 dev（本地可跑全栈）与 prod（无硬编码占位、安全默认 fail-closed）之间。
+#       staging 尽可能模拟 prod 的容器镜像/网络/密钥配置文件，
+#       但允许 MOCK 模式（无需 LLM API key）与调试端点的宽松限流，便于压测与演示。
+#
+# 用法：SPRING_PROFILES_ACTIVE=staging
+#        java -jar target/devops-platform-backend-*.jar --spring.profiles.active=staging
+#
+# 继承链：application.yml（基底）→ application-staging.yml（本文件 - 复写项）→ .env（环境变量最高优先级）
+spring:
+  config:
+    import: optional:file:.env[.properties]
+
+  datasource:
+    # staging 的 PG 通常与本机不同端口或独立实例，默认值对标 docker-compose.staging.yml。
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:25433/devops_platform}
+    username: ${SPRING_DATASOURCE_USERNAME:devops}
+    password: ${SPRING_DATASOURCE_PASSWORD:devops}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:26379}
+
+devops:
+  ai:
+    mode: ${AI_MODE:MOCK}
+    hallucination:
+      min-similarity-score: ${AI_L4_SCORE:0.73}
+
+  security:
+    auth-enabled: ${AUTH_ENABLED:true}
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:*,http://localhost:5173}
+
+  alert:
+    enabled: ${ALERT_ENABLED:true}
+    auto-ticket-enabled: ${AUTO_TICKET_ENABLED:true}
+    webhook:
+      secret: ${ALERT_WEBHOOK_SECRET:}
+      require-secret: ${REQUIRE_WEBHOOK_SECRET:false}
+      rate-limit: ${WEBHOOK_RATE_LIMIT:600}
+      rate-window-ms: ${WEBHOOK_RATE_WINDOW_MS:60000}
+
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:29000}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
+      bucket: ${MINIO_BUCKET:devops-ticket-attachment}
+
+logging:
+  level:
+    root: INFO
+    com.devops: DEBUG

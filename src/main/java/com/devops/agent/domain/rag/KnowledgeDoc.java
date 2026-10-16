@@ -1,0 +1,232 @@
+package com.devops.agent.domain.rag;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * 知识文档（当前版本）
+ * <p>
+ * 对应表 {@code sys_knowledge_doc}。历史版本在
+ * {@code sys_knowledge_doc_history}，只存原文不存向量——
+ * 理由见 {@link KnowledgeDocLifecycle} 第二节。
+ * </p>
+ *
+ * @author OpsBrain AI
+ * @since 2026-08-10
+ */
+public class KnowledgeDoc {
+
+    private Long id;
+
+    private String title;
+    private String category;
+    /** 分类真实关联 ID；category 保留为兼容展示字段。 */
+    private Long categoryId;
+    private String author;
+
+    /** Markdown 原文 */
+    private String content;
+
+    /** 摘要，列表页展示 */
+    private String summary;
+
+    // ==================== 版本与指纹 ====================
+
+    private Integer version;
+
+    /**
+     * SHA-256(归一化后的 content)
+     * <p>未变则跳过向量化——文档级全量重建策略的成本控制关键。</p>
+     */
+    private String contentHash;
+
+    /**
+     * SimHash 64 位指纹
+     * <p>检测跨文档近似重复（汉明距离 ≤ 10）。</p>
+     */
+    private Long simhash;
+
+    // ==================== 生命周期 ====================
+
+    /** DRAFT / PUBLISHED / DEPRECATED / ARCHIVED */
+    private String status;
+
+    /**
+     * 向量化状态：PENDING / INDEXED / FAILED / SKIPPED
+     */
+    private String indexStatus;
+
+    private String indexError;
+
+    private LocalDateTime indexedAt;
+
+    /** 当前版本切片数 */
+    private Integer chunkCount;
+
+    // ==================== 治理字段 ====================
+
+    private LocalDateTime effectiveAt;
+    private LocalDateTime expiredAt;
+
+    /** OFFICIAL / SOP / TICKET / BLOG */
+    private String knowledgeSource;
+
+    /**
+     * 源工单流水号（L1.5 来源回链）
+     * <p>
+     * 由工单复盘沉淀的文档记录源工单，便于反查「此工单已沉淀为哪些知识」。
+     * 非工单沉淀时为 null。
+     * </p>
+     * <p>
+     * <b>字符串工单号（TKT-yyyyMMdd-序号），不是数字</b>：原 Long 类型在
+     * V2 迁移前存不进 TKT 号——前端 Number('TKT-…') 得 NaN 序列化为 null，
+     * 回链恒空。工单主键的真相源是 {@code DevOpsTicket.id}（VARCHAR）。
+     * </p>
+     */
+    private String sourceTicketId;
+
+    /**
+     * 来源类型：TICKET / MANUAL / IMPORT 等
+     * <p>与 {@link #knowledgeSource} 区别：knowledgeSource 描述权威分级（SOP/官方），
+     * sourceType 描述录入渠道（由工单沉淀 / 手动新建 / 批量导入）。</p>
+     */
+    private String sourceType;
+
+    /**
+     * 可见性（C1）：PUBLIC / INTERNAL / RESTRICTED。
+     *
+     * <p><b>字段默认必须是 null，不能是 "PUBLIC"。</b>
+     * 本类同时充当「实体」与「更新补丁（patch）」两种角色，而 update 的合并逻辑是
+     * <b>只覆盖非空字段</b>。若这里默认 "PUBLIC"，那么任何构造出的 patch
+     * （如版本回滚的 {@code new KnowledgeDoc()}）都会携带一个看似显式的 PUBLIC，
+     * 把一篇 RESTRICTED 文档<b>静默降级为全员可见</b>——一次提权，且毫无痕迹。</p>
+     *
+     * <p>入库层面的默认由数据库列的 {@code DEFAULT 'PUBLIC'} 与
+     * Repository 的 null 兜底负责，与存量数据语义一致。</p>
+     */
+    private String visibility;
+
+    /** 归属部门（C1）：仅在 visibility=RESTRICTED 时参与可见性判定 */
+    private String ownerDept;
+
+    /**
+     * 所属知识库 ID（关联 sys_knowledge_base）。
+     * <p>
+     * 决定索引时使用的切片参数（{@link ChunkProfile} 随库配置）。
+     * 与 visibility 同理：<b>字段默认必须是 null</b>——本类兼任「更新补丁」，
+     * update 只覆盖非空字段，null 表示「不改归属」。
+     * 新建文档未指定时由 {@code KnowledgeBaseService.resolveForNewDoc} 落默认库。
+     * </p>
+     */
+    private Long kbId;
+
+    /** 上传原件文件名（source_type=UPLOAD 时记录，审计展示用；手工录入为 null） */
+    private String originalFilename;
+
+    /** 上传原件的 MinIO 对象键（审计/重解析用；手工录入为 null） */
+    private String originalFilePath;
+
+    private LocalDateTime createTime;
+    private LocalDateTime updateTime;
+
+    /** 标签（存于关联表，按需装填） */
+    private List<String> tags;
+
+    /**
+     * 是否可被检索
+     * <p>状态为已发布 <b>且</b> 向量化成功。缺一不可。</p>
+     */
+    public boolean isRetrievable() {
+        return KnowledgeDocLifecycle.shouldBeIndexed(status)
+                && KnowledgeDocLifecycle.INDEX_INDEXED.equals(indexStatus);
+    }
+
+    /** 向量化是否失败（前端需醒目提示） */
+    public boolean isIndexFailed() {
+        return KnowledgeDocLifecycle.INDEX_FAILED.equals(indexStatus);
+    }
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
+
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
+
+    public String getAuthor() { return author; }
+    public void setAuthor(String author) { this.author = author; }
+
+    public String getContent() { return content; }
+    public void setContent(String content) { this.content = content; }
+
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
+
+    public Integer getVersion() { return version; }
+    public void setVersion(Integer version) { this.version = version; }
+
+    public String getContentHash() { return contentHash; }
+    public void setContentHash(String contentHash) { this.contentHash = contentHash; }
+
+    public Long getSimhash() { return simhash; }
+    public void setSimhash(Long simhash) { this.simhash = simhash; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getIndexStatus() { return indexStatus; }
+    public void setIndexStatus(String indexStatus) { this.indexStatus = indexStatus; }
+
+    public String getIndexError() { return indexError; }
+    public void setIndexError(String indexError) { this.indexError = indexError; }
+
+    public LocalDateTime getIndexedAt() { return indexedAt; }
+    public void setIndexedAt(LocalDateTime indexedAt) { this.indexedAt = indexedAt; }
+
+    public Integer getChunkCount() { return chunkCount; }
+    public void setChunkCount(Integer chunkCount) { this.chunkCount = chunkCount; }
+
+    public LocalDateTime getEffectiveAt() { return effectiveAt; }
+    public void setEffectiveAt(LocalDateTime effectiveAt) { this.effectiveAt = effectiveAt; }
+
+    public LocalDateTime getExpiredAt() { return expiredAt; }
+    public void setExpiredAt(LocalDateTime expiredAt) { this.expiredAt = expiredAt; }
+
+    public String getKnowledgeSource() { return knowledgeSource; }
+    public void setKnowledgeSource(String knowledgeSource) { this.knowledgeSource = knowledgeSource; }
+
+    public String getSourceTicketId() { return sourceTicketId; }
+    public void setSourceTicketId(String sourceTicketId) { this.sourceTicketId = sourceTicketId; }
+
+    public String getSourceType() { return sourceType; }
+    public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+
+    public String getVisibility() { return visibility; }
+    public void setVisibility(String visibility) { this.visibility = visibility; }
+
+    public String getOwnerDept() { return ownerDept; }
+    public void setOwnerDept(String ownerDept) { this.ownerDept = ownerDept; }
+
+    public Long getKbId() { return kbId; }
+    public void setKbId(Long kbId) { this.kbId = kbId; }
+
+    public String getOriginalFilename() { return originalFilename; }
+    public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
+
+    public String getOriginalFilePath() { return originalFilePath; }
+    public void setOriginalFilePath(String originalFilePath) { this.originalFilePath = originalFilePath; }
+
+    public LocalDateTime getCreateTime() { return createTime; }
+    public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
+
+    public LocalDateTime getUpdateTime() { return updateTime; }
+    public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
+
+    public List<String> getTags() { return tags; }
+    public void setTags(List<String> tags) { this.tags = tags; }
+}

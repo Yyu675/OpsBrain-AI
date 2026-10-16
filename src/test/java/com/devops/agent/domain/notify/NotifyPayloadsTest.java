@@ -1,0 +1,163 @@
+package com.devops.agent.domain.notify;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 渠道回执判据（{@link NotifyPayloads#accepted}）单元测试。
+ *
+ * <h3>为什么单独立一个类</h3>
+ * 这个方法是**「送达」与「没送达」的唯一裁决点**：它判 true，看门狗的
+ * {@code delivered} 才 +1，灰度 DoD 里的「通知送达率」才有数。原实现是
+ * 报文串匹配 {@code body.contains("\"errcode\":0")}——真实钉钉回紧凑 JSON 所以
+ * 线上一直"能用"，但等价回执（多一个空格、键序不同）会被判**拒收**，
+ * 而错误报文里恰好出现同样子串时又会被判**送达**（两个方向的错都在）。
+ *
+ * <p>2026-10-15 实弹抓到：本机假接收端回 {@code {"errcode": 0, "errmsg": "ok"}}
+ * （带空格）即被判「渠道拒收」，而它是标准的成功回执。改结构化解析后钉住行为。</p>
+ */
+@DisplayName("通知载荷（渠道回执判据）")
+class NotifyPayloadsTest {
+
+    @Nested
+    @DisplayName("判收：HTTP 200 + errcode==0")
+    class Accepted {
+
+        @Test
+        @DisplayName("紧凑回执（钉钉/企微真实格式）→ 送达")
+        void compactOkIsAccepted() {
+            assertTrue(NotifyPayloads.accepted(200, "{\"errcode\":0,\"errmsg\":\"ok\"}"));
+        }
+
+        @Test
+        @DisplayName("等价回执：多一个空格 → 仍算送达（F4 回归：旧实现判成拒收）")
+        void spacedOkIsAccepted() {
+            assertTrue(NotifyPayloads.accepted(200, "{\"errcode\": 0, \"errmsg\": \"ok\"}"));
+        }
+
+        @Test
+        @DisplayName("等价回执：键序不同 → 仍算送达")
+        void reorderedOkIsAccepted() {
+            assertTrue(NotifyPayloads.accepted(200, "{\"errmsg\":\"ok\",\"errcode\":0}"));
+        }
+
+        @Test
+        @DisplayName("errcode 非 0（限流 130101 / 加签失败 310000）→ 未送达")
+        void nonZeroErrcodeIsRejected() {
+            assertFalse(NotifyPayloads.accepted(200, "{\"errcode\":310000,\"errmsg\":\"sign not match\"}"));
+        }
+
+        @Test
+        @DisplayName("错误报文里恰好含 \"errcode\":0 子串 → 不得误判为送达（旧实现的假阳性）")
+        void errcodeSubstringInsideMessageIsNotDelivery() {
+            assertFalse(NotifyPayloads.accepted(200,
+                    "{\"errcode\":310000,\"errmsg\":\"invalid field \\\"errcode\\\":0 not a code\"}"));
+        }
+
+        @Test
+        @DisplayName("HTTP 非 200 / 空体 / 非 JSON 体 → 一律未送达（宁可否，不可假报）")
+        void nonSuccessIsRejected() {
+            assertFalse(NotifyPayloads.accepted(500, "{\"errcode\":0}"));
+            assertFalse(NotifyPayloads.accepted(200, ""));
+            assertFalse(NotifyPayloads.accepted(200, "   "));
+            assertFalse(NotifyPayloads.accepted(200, null));
+            assertFalse(NotifyPayloads.accepted(200, "ok"));
+        }
+
+        @Test
+        @DisplayName("无 errcode 字段的 JSON（别的渠道错误页）→ 未送达")
+        void jsonWithoutErrcodeIsRejected() {
+            assertFalse(NotifyPayloads.accepted(200, "{\"message\":\"success\"}"));
+        }
+    }
+
+    @Nested
+    @DisplayName("企业微信 Markdown 富文本色值渲染")
+    class WeComMarkdownColor {
+
+        @Test
+        @DisplayName("告警中与P0/P1标红 warning，监控恢复标绿 info，P2标灰 comment")
+        void wecomMarkdownAdaptsNativeColors() throws Exception {
+            NotifyMessage normalMsg = NotifyMessage.normal("告警标题",
+                    "- **当前状态**：告警中（PROBLEM）\n- **告警等级**：P1 严重级（High）\n- **说明**：业务异常");
+            byte[] bytes = NotifyPayloads.wecomPayload(normalMsg, new com.fasterxml.jackson.databind.ObjectMapper());
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(bytes);
+            String content = root.path("markdown").path("content").asText();
+
+            assertTrue(content.contains("<font color=\"warning\">告警中（PROBLEM）</font>"));
+            assertTrue(content.contains("<font color=\"warning\">P1 严重级（High）</font>"));
+
+            NotifyMessage resolvedMsg = NotifyMessage.normal("恢复标题",
+                    "- **当前状态**：监控恢复（OK）\n- **告警等级**：P2 一般严重（Average）");
+            byte[] resBytes = NotifyPayloads.wecomPayload(resolvedMsg, mapper);
+            com.fasterxml.jackson.databind.JsonNode resRoot = mapper.readTree(resBytes);
+            String resContent = resRoot.path("markdown").path("content").asText();
+
+            assertTrue(resContent.contains("<font color=\"info\">监控恢复（OK）</font>"));
+            assertTrue(resContent.contains("<font color=\"comment\">P2 一般严重（Average）</font>"));
+        }
+
+        @Test
+        @DisplayName("诊断不足与工单状态标签在企微原生高亮色彩验证")
+        void wecomDiagnosisAndTicketStateColors() throws Exception {
+            NotifyMessage diagMsg = NotifyMessage.normal("诊断不足卡",
+                    "- **诊断状态**：证据不足，暂无法形成可靠根因结论\n" +
+                    "- **取证概况**：日志：查询失败；指标：数据源未启用/不可用\n" +
+                    "- **工单状态**：待分配（未认领 PENDING）");
+            byte[] bytes = NotifyPayloads.wecomPayload(diagMsg, new com.fasterxml.jackson.databind.ObjectMapper());
+            com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(bytes);
+            String content = root.path("markdown").path("content").asText();
+
+            assertTrue(content.contains("<font color=\"warning\">证据不足，暂无法形成可靠根因结论</font>"));
+            assertTrue(content.contains("<font color=\"warning\">查询失败</font>"));
+            assertTrue(content.contains("<font color=\"warning\">数据源未启用/不可用</font>"));
+            assertTrue(content.contains("<font color=\"warning\">待分配（未认领 PENDING）</font>"));
+        }
+    }
+
+    @Nested
+    @DisplayName("钉钉卡片交互渲染：含受信任操作回链升格 ActionCard，否则保持 Markdown")
+    class DingTalkPayloadCard {
+
+        @Test
+        @DisplayName("含有平台操作回链时升格为 ActionCard 按钮卡片")
+        void linksUpgradeToActionCard() throws Exception {
+            NotifyMessage msg = NotifyMessage.normal("告警通知",
+                    "### 告警摘要\n\n" +
+                    "- **当前状态**：告警中（PROBLEM）\n\n" +
+                    "[查看告警并处理](https://ops.example.com/alerts/101)  [查看工单](https://ops.example.com/tickets/TK-01)");
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            byte[] bytes = NotifyPayloads.dingtalkPayload(msg, mapper);
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(bytes);
+
+            org.junit.jupiter.api.Assertions.assertEquals("actionCard", root.path("msgtype").asText());
+            com.fasterxml.jackson.databind.JsonNode actionCard = root.path("actionCard");
+            org.junit.jupiter.api.Assertions.assertEquals("告警通知", actionCard.path("title").asText());
+            org.junit.jupiter.api.Assertions.assertFalse(actionCard.path("text").asText().contains("[查看告警并处理]"));
+            com.fasterxml.jackson.databind.JsonNode btns = actionCard.path("btns");
+            org.junit.jupiter.api.Assertions.assertEquals(2, btns.size());
+            org.junit.jupiter.api.Assertions.assertEquals("查看告警并处理", btns.get(0).path("title").asText());
+            org.junit.jupiter.api.Assertions.assertEquals("https://ops.example.com/alerts/101", btns.get(0).path("actionURL").asText());
+            org.junit.jupiter.api.Assertions.assertEquals("查看工单", btns.get(1).path("title").asText());
+            org.junit.jupiter.api.Assertions.assertEquals("https://ops.example.com/tickets/TK-01", btns.get(1).path("actionURL").asText());
+        }
+
+        @Test
+        @DisplayName("无平台操作回链时保持标准 Markdown 卡片")
+        void noLinksKeepsMarkdown() throws Exception {
+            NotifyMessage msg = NotifyMessage.urgent("紧急告警", "- **当前状态**：告警中（PROBLEM）");
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            byte[] bytes = NotifyPayloads.dingtalkPayload(msg, mapper);
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(bytes);
+
+            org.junit.jupiter.api.Assertions.assertEquals("markdown", root.path("msgtype").asText());
+            org.junit.jupiter.api.Assertions.assertTrue(root.path("markdown").path("text").asText().contains("@所有人"));
+            org.junit.jupiter.api.Assertions.assertTrue(root.path("at").path("isAtAll").asBoolean());
+        }
+    }
+}

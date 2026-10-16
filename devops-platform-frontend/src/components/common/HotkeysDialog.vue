@@ -1,0 +1,204 @@
+<script setup lang="ts">
+/**
+ * 快捷键帮助面板。
+ *
+ * 清单由 useActiveHotkeys() 从「当前页面真实注册」的快捷键派生，
+ * 不维护静态列表——静态列表会与实际注册漂移，最终向用户展示不存在的快捷键。
+ */
+import { X, Keyboard } from 'lucide-vue-next'
+import { useFocusTrap } from '@/utils/focusTrap'
+import { useActiveHotkeys } from '@/composables/useHotkeys'
+import { ref, watch } from 'vue'
+
+interface Props { visible: boolean }
+const props = defineProps<Props>()
+const emit = defineEmits<{ 'update:visible': [v: boolean] }>()
+
+const dialogRef = ref<HTMLElement | null>(null)
+const trap = useFocusTrap(() => dialogRef.value)
+
+const close = () => emit('update:visible', false)
+
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') { e.stopPropagation(); close() }
+}
+
+watch(() => props.visible, v => {
+  if (v) {
+    document.addEventListener('keydown', onKeydown)
+    trap.activate()
+  } else {
+    document.removeEventListener('keydown', onKeydown)
+    trap.deactivate()
+  }
+})
+
+const hotkeys = useActiveHotkeys()
+</script>
+
+<template>
+  <Teleport to="body">
+    <transition name="dialog-fade">
+      <div v-if="visible" class="dialog-mask" @click.self="close">
+        <div ref="dialogRef" class="dialog" role="dialog" aria-modal="true" aria-labelledby="hotkeys-title">
+          <header class="dialog-header">
+            <div class="header-left">
+              <Keyboard :size="18" />
+              <h3 id="hotkeys-title">键盘快捷键</h3>
+            </div>
+            <button class="btn-icon" @click="close" aria-label="关闭">
+              <X :size="18" />
+            </button>
+          </header>
+          <div class="dialog-body">
+            <div class="hint">按下 <kbd>?</kbd> 随时打开此面板。焦点在输入框时快捷键失效。</div>
+            <ul v-if="hotkeys.length" class="key-list">
+              <li v-for="hk in hotkeys" :key="hk.combo">
+                <span class="key-combo">
+                  <kbd v-for="(part, i) in hk.combo.split(' + ')" :key="i">{{ part }}</kbd>
+                </span>
+                <span class="key-desc">{{ hk.description }}</span>
+              </li>
+            </ul>
+            <p v-else class="key-empty">当前页面没有可用的快捷键。</p>
+          </div>
+        </div>
+      </div>
+    </transition>
+  </Teleport>
+</template>
+
+<style scoped lang="scss">
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 560px;
+  background: var(--surface-1);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-1);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--brand);
+
+  h3 {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    color: var(--text-1);
+  }
+}
+
+.btn-icon {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover { background: var(--surface-hover); color: var(--text-1); }
+}
+
+.dialog-body {
+  padding: 20px;
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  margin-bottom: 12px;
+}
+
+.key-empty {
+  margin: 0;
+  padding: 16px 0;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  text-align: center;
+}
+
+.key-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 24px;
+
+  @media (max-width: 640px) { grid-template-columns: 1fr; }
+}
+
+.key-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border-1);
+}
+
+.key-combo {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--border-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.key-desc {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  text-align: right;
+}
+
+.dialog-fade-enter-active,
+.dialog-fade-leave-active {
+  transition: opacity 0.15s ease;
+
+  .dialog { transition: transform 0.15s ease; }
+}
+
+.dialog-fade-enter-from,
+.dialog-fade-leave-to {
+  opacity: 0;
+  .dialog { transform: translateY(-16px); }
+}
+</style>

@@ -1,0 +1,1529 @@
+<script setup lang="ts">
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  Clock, AlertTriangle,
+  Send, ArrowUp, ArrowRightLeft, X, Check, Info, Plus,
+  Sparkles, BookPlus, Paperclip, TrendingUp
+} from 'lucide-vue-next'
+import { useTicketsStore, getStatusLabel, getPriorityLabel, UNASSIGNED } from '@/stores/tickets'
+import { canTransitionStatus, isTerminalStatus } from '@/constants/ticket'
+import { stageLabel } from '@/utils/ticketPresentation'
+import { useAppStore } from '@/stores/app'
+import {
+  fetchTicketById,
+  // B1 首响 / 升级
+  // B2 现场处置
+  addTicketAction,
+  fetchTicketActions,
+  updateTicketStage,
+  markTicketMitigated,
+  // B3 根因 + 验证
+  confirmRootCause,
+  submitVerification,
+  skipVerification,
+  type TicketActionRecord
+} from '@/api/tickets'
+import { useTicketClosure } from '@/composables/useTicketClosure'
+import { useTicketAttachments } from '@/composables/useTicketAttachments'
+import { useTicketActions } from '@/composables/useTicketActions'
+import { useTicketAnalysis } from '@/composables/useTicketAnalysis'
+import { getTrends, type TrendData } from '@/api/dashboard'
+import { mapServiceToModule } from '@/api/utils/dto-converter'
+import { notify, handleServerError } from '@/utils/notify'
+import { fetchDiagnosisReplay } from '@/api/diagnosis'
+import { useExternalResourceState } from '@/composables/useResourceState'
+import { useTicketPostmortem } from '@/composables/useTicketPostmortem'
+import PostmortemDrawer from '@/components/ticket/PostmortemDrawer.vue'
+import TicketTimeline from '@/components/ticket/TicketTimeline.vue'
+import TicketInsights from '@/components/ticket/TicketInsights.vue'
+// 右侧栏四块已拆为独立组件。业务逻辑仍留在本文件（addTag/removeTag、
+// useTicketAttachments 的回调），子组件只负责画 DOM 并把交互抛回来——
+// 这样 TicketDetail.actions.test.ts 里打在 vm.addTag() 上的 6 例
+// 一行不用改，拆分对错才有一把没被挪动过的标尺。
+import TicketPropsPanel from '@/components/ticket/TicketPropsPanel.vue'
+import TicketTagEditor from '@/components/ticket/TicketTagEditor.vue'
+import TicketAttachmentPanel from '@/components/ticket/TicketAttachmentPanel.vue'
+import TicketActivityLog from '@/components/ticket/TicketActivityLog.vue'
+import KnowledgeSinkDrawer from '@/components/ticket/KnowledgeSinkDrawer.vue'
+import SunkKnowledgeBadge from '@/components/ticket/SunkKnowledgeBadge.vue'
+import TicketActionSection from '@/components/ticket/TicketActionSection.vue'
+import TicketFormDialogs from '@/components/ticket/TicketFormDialogs.vue'
+import AppEmpty from '@/components/common/AppEmpty.vue'
+import ApiErrorState from '@/components/common/ApiErrorState.vue'
+import PageLoading from '@/components/common/PageLoading.vue'
+import CollapsibleCard from '@/components/common/CollapsibleCard.vue'
+import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
+
+const route = useRoute()
+const router = useRouter()
+const store = useTicketsStore()
+const app = useAppStore()
+
+const ticketId = computed(() => String(route.params.id))
+const ticket = computed(() => store.getById(ticketId.value))
+
+/**
+ * 三态由 useExternalResourceState 统一管理（6.18 契约）。
+ *
+ * 用「外部数据源」变体而非 useResourceState：工单数据归 store 持有
+ * （列表页已加载时详情页无需重拉），composable 再持一份必然与 store 漂移。
+ * 此处只统一状态机——此前手写的 loading/loadError/notFound 三个布尔量，
+ * 与 AlertDetail 的同名量已出现 v-if 条件不一致（`loading` vs `loading && !ticket`）。
+ */
+const resource = useExternalResourceState(() => !!ticket.value)
+const loading = resource.isLoading
+const loadError = resource.error
+const notFound = resource.isNotFound
+
+/** 加载工单详情（挂载与重试共用） */
+const loadDetail = () => resource.load(async () => {
+  if (!ticket.value) {
+    const fetchedTicket = await fetchTicketById(ticketId.value)
+    if (fetchedTicket) {
+      store.addTicket(fetchedTicket)
+    }
+  }
+  if (ticket.value) {
+    await store.loadTicketDetail(ticketId.value)
+  }
+})
+
+/**
+ * 时间线中以普通气泡渲染的回复
+ *
+ * 排除 role='ai'：AI 分析由 AnalysisCard 结构化渲染（原因/命令/置信度），
+ * 若同时出现在此循环会重复展示，且纯文本气泡会丢掉全部结构。
+ * 历史分析仍存库可审计，界面只呈现最新结论。
+ */
+const visibleReplies = computed(() =>
+  (ticket.value?.replies ?? []).filter(r => r.role !== 'ai')
+)
+
+/**
+ * 载入分析：只用存档，不自动调 LLM（方案 2，批 78）
+ *
+ * 此前的链路是「无存档 → 自动 runAnalysis()」——每次打开工单详情都是
+ * 一次付费调用。但工单里有大量场景是老手一眼就知道怎么处理的小问题：
+ * 磁盘满清理、证书过期换证、重启即可的偶发抖动。自动分析等于替所有人
+ * 做了「我需要 AI」的决定，token 在无人阅读中烧掉。
+ *
+ * 现在无存档时展示「生成 AI 分析」按钮（AnalysisCard 空态）：一次点击
+ * = 一次有意识的付费决策。需要 AI 的人一键可得，不需要的人零成本。
+ */
+const initAnalysis = async () => {
+  await loadArchivedAnalysis()
+}
+
+onMounted(() => {
+  loadDetail()
+  loadAttachments()
+  loadActions()
+  // 相似工单/相关文档/AI 分析不在此触发（审计批一后改由 watch(ticket.id)
+  // 驱动）：挂载时 store 未必有该工单（F5 直达），此刻 ticketService() 为空，
+  // 同步调用只会早退；工单入 store 后 watch 立即触发，两条路径都不漏。
+  // 趋势同理：由下方 watch(ticket.service) 在服务就绪后触发。
+})
+
+/**
+ * 切换工单必须重置全部工单相关状态
+ *
+ * /tickets/:id 是同一路由，切换 id 时 Vue 复用组件实例，onMounted 不再触发。
+ * 此前只调 loadDetail()，导致从工单 A 点「相似工单」跳到工单 B 后，
+ * B 的时间线继续挂着 A 的 AI 分析、右栏继续显示 A 的相似工单与相关文档——
+ * 把 A 的结论当作 B 的呈现给用户。
+ */
+watch(ticketId, (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    resetAnalysis()
+    actions.value = []
+    pm.reset()
+    // 趋势重置（审计批一 P0-2）：旧实现 A 的服务趋势会留在 B 页面——
+    // 口径标注写的是 A 的服务，数字却是 A 的，纯属张冠李戴
+    insightTrend.value = null
+    // 重置三态：使上一工单进行中的请求作废，并回到 loading 避免
+    // 新工单尚未拉到时残留上一工单的终态（error / notFound）
+    resource.reset()
+    loadDetail()
+    loadActions(newId)
+  }
+})
+
+/**
+ * 详情入 store 后驱动依赖工单数据的读取（审计批一 P0-2 补全）
+ *
+ * 旧实现在 watch(ticketId) 里同步调 loadSimilarTickets / loadRelatedDocs /
+ * initAnalysis——切工单瞬间 B 尚未入 store（loadDetail 的 fetch 在途），
+ * 三个函数读 ticketService() 为空全部早退且无重触发：从相似工单跳转或
+ * F5 直达时右栏 Insights 永久空白。改由「工单 id 变化」驱动——store 里
+ * 有缓存（列表页点进来）时 id 即刻就位立即触发，无缓存时 loadDetail 完成
+ * 后触发，两条路径都不漏。
+ *
+ * 注意：本 watch 必须放在 useTicketAnalysis 解构之后——immediate 会在
+ * setup 执行期同步触发一次，引用了尚未初始化的函数会直接 ReferenceError
+ * （第一次实现就栽在这里，测试 33 例全红）。
+ */
+
+/**
+ * 闭环进度、SLA 展示与属性栏的派生计算已抽到 useTicketClosure。
+ *
+ * 抽出的判定口径（止损按 mitigatedAt 而非状态、首响超时标 skipped、
+ * 已解决未验证时验证标 skipped、已超时优先于进度着色）连同注释一并搬走，
+ * 由 useTicketClosure.test.ts 单独覆盖。
+ */
+const { closureStages, properties, showSlaAlert, slaBarClass } = useTicketClosure(ticket)
+
+/** AI 分析 composable */
+const {
+  analysisContent, analysisStreaming, analysisDone, citations, citationDocs, analysisCost,
+  analysisFromArchive, analysisArchivedAt,
+  analysisVersions, analysisViewVersion, switchAnalysisVersion,
+  analysisId, analysisFeedback, submitFeedback,
+  structured, confidenceClass, useStructuredRender,
+  similarTickets, similarLoading, relatedDocs, relatedLoading,
+  runAnalysis, stopAnalysis, regenerateAnalysis, generateReply, replyDrafting,
+  loadSimilarTickets, loadRelatedDocs, renderMarkdown, copyCommand, copyAnalysis,
+  loadArchivedAnalysis, resetAnalysis,
+} = useTicketAnalysis(
+  () => ticketId.value,
+  () => ticketContextText.value,
+  () => ticket.value?.service ?? '',
+  () => ticket.value?.title ?? ''
+)
+
+watch(() => ticket.value?.id, (id, prev) => {
+  if (id && id !== prev) {
+    loadSimilarTickets()
+    loadRelatedDocs()
+    void initAnalysis()
+  }
+}, { immediate: true })
+
+/**
+ * 告警来源工单的诊断结论提示。
+ *
+ * 诊断在证据不足（INSUFFICIENT）时按设计不回填 AI 分析，于是分析区空白，
+ * 用户以为系统没看过这张单。这里在「没有分析」时去拉一次诊断回放：
+ * 有结论就用它的摘要填空态，并链到完整回放。回放接口接受告警去重键
+ * （工单 sourceTraceId 存的就是它），会桥接到诊断自己的 traceId。
+ */
+const diagnosisHint = ref('')
+
+const loadDiagnosisHint = async () => {
+  const requestedId = ticket.value?.id
+  diagnosisHint.value = ''
+  const trace = ticket.value?.sourceTraceId
+  // 已有分析就不必再解释「为什么没有分析」
+  if (!trace || analysisContent.value) return
+  try {
+    const replay = await fetchDiagnosisReplay(trace)
+    // 等待期间切了工单：这是上一张单的结论，不能写到新单上
+    if (ticket.value?.id !== requestedId) return
+    const summary = replay.session.summary
+    const sufficiency = replay.session.sufficiency
+    if (sufficiency === 'INSUFFICIENT') {
+      diagnosisHint.value = '自动诊断已运行，但证据不足、未形成结论，已转人工处理。'
+    } else if (summary) {
+      diagnosisHint.value = `自动诊断结论：${summary}`
+    }
+  } catch {
+    // 诊断回放拿不到不影响工单主体——空态退回「尚未生成 AI 分析」
+  }
+}
+
+watch(() => ticket.value?.sourceTraceId, (trace) => {
+  if (trace) void loadDiagnosisHint()
+})
+
+/**
+ * 工单趋势（B-1 + 下钻）：供右栏 Insights 迷你折线
+ *
+ * 按**该工单所属服务**下钻——右栏位于某张工单内，用户预期看到的是该服务的
+ * 趋势而非全库。服务未知时退化为全局并由组件标注口径。
+ * 取 14 天窗口——右栏窄，7 天点太少看不出走势，30 天在 120px 高度下会挤成锯齿。
+ * 失败仅降级为「趋势数据不可用」，不阻塞工单详情主体。
+ */
+const insightTrend = ref<TrendData | null>(null)
+const insightTrendLoading = ref(false)
+/** 趋势请求代数（审计批一）：切工单后 A 的在途响应不得写入 B 的图表 */
+let insightTrendEpoch = 0
+
+const loadInsightTrend = async () => {
+  // 旧守卫 `if (insightTrendLoading.value) return` 是"在途即跳过"——
+  // A 的趋势请求未返回时切到 B（服务不同），B 的加载被永久跳过，
+  // A 的数据（口径标注也是 A 的服务）留在 B 页面。改为代数守卫：
+  // 新请求照发，晚到的旧响应按代数丢弃，而不是让新请求给旧的让路。
+  const epoch = ++insightTrendEpoch
+  insightTrendLoading.value = true
+  try {
+    const service = ticket.value?.service
+    const module = service ? mapServiceToModule(service) : null
+    const data = await getTrends(14, module)
+    if (epoch !== insightTrendEpoch) return   // 已切工单，过期响应丢弃
+    insightTrend.value = data
+  } catch (e) {
+    if (epoch === insightTrendEpoch) {
+      console.warn('[TicketDetail] 趋势数据加载失败', e)
+      insightTrend.value = null
+    }
+  } finally {
+    if (epoch === insightTrendEpoch) insightTrendLoading.value = false
+  }
+}
+
+/**
+ * 服务就绪/变化时拉取该服务的趋势
+ *
+ * 用 watch 而非 onMounted：趋势按 ticket.service 下钻，而挂载时详情尚未加载完，
+ * 此刻 service 为空会拉成全局口径并显示错误的口径标注。
+ * immediate 不需要——service 由 undefined 变为实际值本身就会触发。
+ * 切换工单时若新旧服务相同则不重拉（数据一致，省一次请求）。
+ */
+watch(() => ticket.value?.service, (service, prev) => {
+  if (service && service !== prev) {
+    void loadInsightTrend()
+  }
+})
+
+/** 工单上下文文本，自动拼接给 AI */
+const ticketContextText = computed(() => {
+  const t = ticket.value
+  if (!t) return ''
+  return `工单编号: ${t.id}\n标题: ${t.title}\n优先级: ${getPriorityLabel(t.priority)}\n状态: ${getStatusLabel(t.status)}\n服务: ${t.service}\n分类: ${t.category}\nSLA: ${t.sla}\n描述: ${t.description}`
+})
+
+/**
+ * 工单状态流转类写操作已抽到 useTicketActions。
+ *
+ * 抽出的目的是让「哪个动作有防重入」一眼可查——它们此前散在 200~470 行
+ * 之间、中间还夹着派生计算与对话框状态，要确认「升级上报有没有防重入」
+ * 得在 2500 行里翻。集中后可以直接对照：每个写活动流的动作都必须有进行中标记。
+ *
+ * B2/B3 的表单类动作（处置记录/根因/验证）刻意留在本文件：它们与各自的
+ * 对话框表单状态强耦合，搬过去要一并带走 6 个 ref，反而让 composable
+ * 变成第二个大杂烩。分界线是「是否只依赖工单本身」。
+ */
+const {
+  replyContent, submitting, submitReply,
+  transferDialogVisible, transferTarget, transferring, workloadOf, openTransferDialog, doTransfer,
+  priorityAction, raisePriority,
+  acknowledging, doAcknowledge, escalateAction, doEscalate,
+  closeTicket, reopenLabel, processingAction, startProcessing,
+} = useTicketActions({
+  ticket,
+  getOperator: () => app.currentUser.name,
+  store,
+})
+
+
+/**
+ * B3 修复验证：转「已解决」时弹出验证弹窗
+ *
+ * D3 决策：必填但允许带理由跳过。
+ * 提交验证后后端自动转 RESOLVED + 记 verified_at（MTTR 终点）。
+ */
+const verifyDialogVisible = ref(false)
+const verifyForm = ref({ method: 'MONITOR', conclusion: '', skip: false, skipReason: '' })
+const verifySubmitting = ref(false)
+
+const openVerifyDialog = () => {
+  verifyForm.value = { method: 'MONITOR', conclusion: '', skip: false, skipReason: '' }
+  verifyDialogVisible.value = true
+}
+
+const resolveTicket = () => {
+  // 原直接改状态 → 改为弹出验证弹窗（D3 决策）
+  openVerifyDialog()
+}
+
+const doSubmitVerification = async () => {
+  const cur = ticket.value
+  if (!cur || verifySubmitting.value) return
+  const f = verifyForm.value
+  if (f.skip && !f.skipReason.trim()) {
+    notify.warning('跳过验证须填写理由')
+    return
+  }
+  verifySubmitting.value = true
+  try {
+    const operator = app.currentUser.name || '当前用户'
+    const updated = f.skip
+      ? await skipVerification(cur.id, f.skipReason.trim(), operator)
+      : await submitVerification(cur.id, f.method, f.conclusion.trim(), operator)
+    // 同步本地状态
+    const t = store.getById(cur.id)
+    if (t) {
+      t.status = updated.status
+      t.verifiedAt = updated.verifiedAt
+      t.verifyMethod = updated.verifyMethod
+      t.verifySkipped = updated.verifySkipped
+      t.version = updated.version
+      t.updatedAt = updated.updatedAt
+    }
+    await store.loadActivities(cur.id)
+    verifyDialogVisible.value = false
+    notify.success(f.skip ? '已跳过验证，工单标记为已解决' : '验证通过，工单已解决')
+  } catch (e) {
+    handleServerError(e, { action: '提交验证' })
+  } finally {
+    verifySubmitting.value = false
+  }
+}
+
+// ==================== B2 现场处置 ====================
+
+const actions = ref<TicketActionRecord[]>([])
+const actionsLoading = ref(false)
+/** 处置动作请求代数（审计批一 P0-2：A 的在途响应不得覆盖 B 的动作列表） */
+let actionsEpoch = 0
+const actionDialogVisible = ref(false)
+const actionForm = ref({ actionType: 'INVESTIGATE', summary: '', detail: '', effective: null as boolean | null })
+const actionSubmitting = ref(false)
+
+const loadActions = async (targetId?: string) => {
+  // 审计批一 P0-2：改用显式传入的工单 ID，不再依赖 store 里的 ticket.value——
+  // watch(ticketId) 切工单瞬间 B 尚未入 store（loadDetail 在途），旧实现此刻
+  // 早退且无重触发，B 的处置动作列表永久空白（相似工单跳转/F5 直达均中招）。
+  const id = targetId ?? ticket.value?.id
+  if (!id) return
+  const epoch = ++actionsEpoch
+  actionsLoading.value = true
+  try {
+    const rows = await fetchTicketActions(id)
+    if (epoch !== actionsEpoch) return   // 已切工单，过期响应丢弃
+    actions.value = rows
+  } catch (e) {
+    if (epoch === actionsEpoch) console.warn('加载处置动作失败', e)
+  } finally {
+    if (epoch === actionsEpoch) actionsLoading.value = false
+  }
+}
+
+const openActionDialog = () => {
+  actionForm.value = { actionType: 'INVESTIGATE', summary: '', detail: '', effective: null }
+  actionDialogVisible.value = true
+}
+
+const doAddAction = async () => {
+  const cur = ticket.value
+  if (!cur || actionSubmitting.value) return
+  if (!actionForm.value.summary.trim()) {
+    notify.warning('处置摘要不能为空')
+    return
+  }
+  actionSubmitting.value = true
+  try {
+    await addTicketAction(cur.id, {
+      actionType: actionForm.value.actionType,
+      summary: actionForm.value.summary.trim(),
+      detail: actionForm.value.detail.trim() || undefined,
+      operator: app.currentUser.name || '当前用户',
+      effective: actionForm.value.effective
+    })
+    await loadActions()
+    await store.loadActivities(cur.id)
+    actionDialogVisible.value = false
+    notify.success('处置动作已记录')
+  } catch (e) {
+    handleServerError(e, { action: '记录处置动作' })
+  } finally {
+    actionSubmitting.value = false
+  }
+}
+
+const doUpdateStage = async (stage: string) => {
+  const cur = ticket.value
+  if (!cur) return
+  try {
+    const updated = await updateTicketStage(cur.id, stage, app.currentUser.name || '当前用户')
+    const t = store.getById(cur.id)
+    if (t) {
+      t.handlingStage = updated.handlingStage
+      t.status = updated.status
+      t.version = updated.version
+      t.updatedAt = updated.updatedAt
+    }
+    await store.loadActivities(cur.id)
+    notify.success(`已切换到「${stageLabel(stage)}」`)
+  } catch (e) {
+    handleServerError(e, { action: '切换处置阶段' })
+  }
+}
+
+/** 标记止损（B2）：补录 mitigated_at，回调沿用阶段切换的响应同步 */
+const doMarkMitigated = async () => {
+  const cur = ticket.value
+  if (!cur) return
+  try {
+    const updated = await markTicketMitigated(cur.id, app.currentUser.name || '当前用户')
+    const t = store.getById(cur.id)
+    if (t) {
+      t.handlingStage = updated.handlingStage
+      t.mitigatedAt = updated.mitigatedAt
+      t.status = updated.status
+      t.version = updated.version
+      t.updatedAt = updated.updatedAt
+    }
+    await store.loadActivities(cur.id)
+    notify.success('已标记止损（业务已恢复，根因可能未定位）')
+  } catch (e) {
+    handleServerError(e, { action: '标记止损' })
+  }
+}
+
+// ==================== B3 根因确认 ====================
+
+const rootCauseDialogVisible = ref(false)
+const rootCauseForm = ref({ rootCause: '', category: 'UNKNOWN' })
+const rootCauseSubmitting = ref(false)
+
+const openRootCauseDialog = () => {
+  // 预填 AI 建议的最新分析内容（一键采纳）
+  const aiText = analysisContent.value
+  rootCauseForm.value = {
+    rootCause: aiText ? aiText.slice(0, 2000) : '',
+    category: 'UNKNOWN'
+  }
+  rootCauseDialogVisible.value = true
+}
+
+/**
+ * 进度条上可点击的步骤。
+ * 建单、首响是既成事实或自动判定，点了没有可执行的动作；
+ * 其余四步各自对应一个已经存在的操作弹窗。
+ */
+const STAGE_ACTIONS: Record<string, () => void> = {
+  mitigated: () => doUpdateStage('MITIGATED'),
+  fixed: openRootCauseDialog,
+  verified: resolveTicket,
+  // openPmDrawer 在下方复盘段落才解构出来，这里用箭头函数推迟到点击时再读
+  archived: () => openPmDrawer(),
+}
+
+const stageActionable = (key: string) =>
+  !!ticket.value && ticket.value.status !== 'closed' && key in STAGE_ACTIONS
+
+const onStageClick = (key: string) => {
+  if (stageActionable(key)) STAGE_ACTIONS[key]()
+}
+
+const doConfirmRootCause = async () => {
+  const cur = ticket.value
+  if (!cur || rootCauseSubmitting.value) return
+  if (!rootCauseForm.value.rootCause.trim()) {
+    notify.warning('根因不能为空')
+    return
+  }
+  rootCauseSubmitting.value = true
+  try {
+    const updated = await confirmRootCause(
+      cur.id,
+      rootCauseForm.value.rootCause.trim(),
+      rootCauseForm.value.category,
+      app.currentUser.name || '当前用户'
+    )
+    const t = store.getById(cur.id)
+    if (t) {
+      t.rootCauseCategory = updated.rootCauseCategory
+      t.version = updated.version
+      t.updatedAt = updated.updatedAt
+    }
+    await store.loadActivities(cur.id)
+    rootCauseDialogVisible.value = false
+    notify.success('根因已确认')
+  } catch (e) {
+    handleServerError(e, { action: '确认根因' })
+  } finally {
+    rootCauseSubmitting.value = false
+  }
+}
+
+// ==================== B4 复盘 ====================
+
+/**
+ * 复盘逻辑已抽到 useTicketPostmortem（原本 120 行内联在此文件中）。
+ * 该文件近 2900 行，复盘是其中交互面最窄、最独立的一块。
+ */
+const pm = useTicketPostmortem({
+  getTicketId: () => ticket.value?.id ?? null,
+  getOperator: () => app.currentUser.name || "当前用户",
+  // 保存复盘会在后端记活动流，需刷新时间线
+  onSaved: (ticketId) => store.loadActivities(ticketId)
+})
+// 解构出模板要用的 ref/方法：模板中写 pm.xxx.value 虽能过类型检查，
+// 但不符合 Vue 惯例（模板自动解包 ref），解构后与其它 composable 用法一致
+const {
+  drawerVisible: pmDrawerVisible,
+  form: pmForm,
+  newActionItem: pmNewActionItem,
+  actionItems: pmActionItems,
+  postmortem: pmRecord,
+  saving: pmSaving,
+  open: openPmDrawer,
+  generateDraft: pmGenerateDraft,
+  save: pmSave,
+  addItem: pmAddItem,
+  updateItemStatus: pmUpdateItemStatus,
+} = pm
+
+
+/** AI 生成回复草稿填入回复框 */
+const handleGenerateReply = async () => {
+  const result = await generateReply()
+  if (result) {
+    replyContent.value = result
+    notify.success('AI 已生成回复草稿，请审核后发送')
+  }
+}
+// ==================== 标签编辑 ====================
+const newTagInput = ref('')
+const tagRemoving = ref(false)
+
+const addTag = async () => {
+  const cur = ticket.value
+  if (!cur || !newTagInput.value.trim()) return
+  const tag = newTagInput.value.trim()
+  if ((cur.tags || []).includes(tag)) {
+    notify.warning('标签已存在')
+    return
+  }
+  tagRemoving.value = true
+  try {
+    const newTags = [...(cur.tags || []), tag]
+    await store.updateTags(cur.id, newTags)
+    notify.success('标签已添加')
+    newTagInput.value = ''
+  } catch {
+    // store 已提示错误
+  } finally {
+    tagRemoving.value = false
+  }
+}
+
+const addTagFromSuggestion = async (tag: string) => {
+  const cur = ticket.value
+  if (!cur || (cur.tags || []).includes(tag)) return
+  tagRemoving.value = true
+  try {
+    const newTags = [...(cur.tags || []), tag]
+    await store.updateTags(cur.id, newTags)
+    notify.success('标签已添加')
+  } catch {
+    // store 已提示错误
+  } finally {
+    tagRemoving.value = false
+  }
+}
+
+const removeTag = async (tag: string) => {
+  const cur = ticket.value
+  if (!cur) return
+  tagRemoving.value = true
+  try {
+    const newTags = (cur.tags || []).filter(t => t !== tag)
+    await store.updateTags(cur.id, newTags)
+    notify.success('标签已移除')
+  } catch {
+    // store 已提示错误
+  } finally {
+    tagRemoving.value = false
+  }
+}
+
+// ==================== 附件 ====================
+// 逻辑已抽到 useTicketAttachments：它是本文件交互面最窄、
+// 与其余逻辑耦合最少的一块（不参与状态机、不写活动流、不影响闭环进度）。
+// 「切换工单先清空再重载」「加载失败只降级不弹错、上传失败必须提示」
+// 等取舍连同注释一并搬走。
+//
+// 拆分后不再解构 fileInputRef / pickAttachment：隐藏 input 与「点按钮触发选择」
+// 是纯 DOM 细节，已封进 TicketAttachmentPanel 内部。composable 里那两个成员
+// 未删——它们有独立单测，且接口收窄属于本页的选择，不该反向裁剪公共 composable。
+const {
+  attachments, attachmentsLoading, uploading,
+  loadAttachments, onAttachmentSelected,
+  downloadAttachment, removeAttachment,
+} = useTicketAttachments({
+  ticketId,
+  getOperator: () => app.currentUser.name,
+})
+
+// ==================== 知识沉淀 ====================
+const sinkOpen = ref(false)
+
+const openSink = () => {
+  if (!ticket.value) return
+  sinkOpen.value = true
+}
+
+const onSinkPublished = (_docId: number, title: string) => {
+  notify.success(`已沉淀为知识「${title}」`)
+}
+
+const onSinkGotoDoc = (docId: number) => {
+  sinkOpen.value = false
+  router.push(`/knowledge/${docId}`)
+}
+
+// onBeforeUnmount 由 useTicketAnalysis composable 处理 abort
+</script>
+
+<template>
+  <div class="ticket-detail">
+
+    <!-- 加载态 -->
+    <main v-if="loading" class="main-container">
+      <PageLoading tip="正在加载工单详情…" />
+    </main>
+
+    <!-- 加载失败 -->
+    <main v-else-if="loadError" class="main-container">
+      <ApiErrorState
+        :error="loadError"
+        retry-label="重试"
+        @retry="loadDetail"
+      />
+      <div style="text-align: center; margin-top: 8px;">
+        <button class="btn-text" @click="router.push('/tickets')">返回工单列表</button>
+      </div>
+    </main>
+
+    <!-- 确实不存在 -->
+    <main v-else-if="notFound" class="main-container">
+      <AppEmpty
+        kind="notfound"
+        title="工单未找到"
+        description="该工单可能已删除或从未存在，其它页面不受影响。"
+        action-text="返回工单列表"
+        secondary-text="上一页"
+        @action="router.push('/tickets')"
+        @secondary="router.back()"
+      />
+    </main>
+
+    <template v-else-if="ticket">
+      <!-- Breadcrumb（统一为首页起始的递进链路） -->
+      <div class="breadcrumb-container">
+        <AppBreadcrumb
+          :items="[
+            { label: '智能工单', to: '/tickets' },
+            { label: ticket.id }
+          ]"
+        />
+      </div>
+
+      <!-- Two-column layout -->
+      <main class="main-container">
+        <div class="content-grid">
+
+          <!-- ========== LEFT COLUMN (65%) ========== -->
+          <div class="left-column">
+
+            <!-- Ticket Header Card -->
+            <div class="ticket-header-card">
+              <div class="ticket-badges">
+                <span class="badge" :class="`badge-status-${ticket.status}`">{{ getStatusLabel(ticket.status) }}</span>
+                <span class="badge" :class="`badge-priority-${ticket.priority}`">{{ getPriorityLabel(ticket.priority) }}</span>
+              </div>
+              <h1 class="ticket-title">{{ ticket.title }}</h1>
+              <div class="ticket-meta">
+                <span class="meta-label">创建人</span>
+                <span class="meta-value">{{ ticket.creator }}</span>
+                <span class="meta-dot">&middot;</span>
+                <span class="meta-label">创建时间</span>
+                <span class="meta-value">{{ ticket.createdAt }}</span>
+                <span class="meta-dot">&middot;</span>
+                <span class="meta-label">负责人</span>
+                <span class="meta-value meta-assignee">{{ ticket.assignee }}</span>
+                <template v-if="ticket.sourceTraceId">
+                  <span class="meta-dot">&middot;</span>
+                  <router-link
+                    class="meta-link"
+                    :to="`/diagnosis/${ticket.sourceTraceId}`"
+                    title="这张工单由告警自动创建，查看当时的诊断取证与根因假设"
+                  >查看诊断回放</router-link>
+                </template>
+              </div>
+              <div class="ticket-actions">
+                <!-- B1 确认接单：仅在尚未首响时显示。已首响后按钮消失，
+                     避免出现「确认接单」与「已响应 3 分钟」并存的矛盾界面 -->
+                <button
+                  v-if="ticket.firstResponseState !== 'RESPONDED'"
+                  class="btn-primary"
+                  :disabled="acknowledging"
+                  @click="doAcknowledge"
+                >
+                  <Check :size="16" />
+                  {{ acknowledging ? '处理中…' : '确认接单' }}
+                </button>
+                <button class="btn-outline" @click="openTransferDialog">
+                  <ArrowRightLeft :size="16" />
+                  转派
+                </button>
+                <!-- 拆分为两个按钮：提升优先级会重算 SLA 时限，升级上报只记录不动优先级 -->
+                <button class="btn-outline" :disabled="priorityAction.pending.value" @click="raisePriority">
+                  <ArrowUp :size="16" />
+                  {{ priorityAction.pending.value ? '提升中…' : '提升优先级' }}
+                </button>
+                <button class="btn-outline" :disabled="escalateAction.pending.value" @click="doEscalate">
+                  <TrendingUp :size="16" />
+                  {{ escalateAction.pending.value ? '提交中…' : '升级上报' }}
+                </button>
+                <!--
+                  状态流转类按钮一律由 canTransitionStatus 驱动，
+                  不再手写 `status === 'x' || status === 'y'` 的枚举列表。
+                  手写列表与状态机已经漂移出 8 处不一致（见 reopenLabel 注释）。
+                -->
+                <button
+                  class="btn-outline"
+                  @click="startProcessing"
+                  :disabled="processingAction.pending.value || !canTransitionStatus(ticket.status, 'processing')"
+                  :title="canTransitionStatus(ticket.status, 'processing') ? '' : `不能从「${getStatusLabel(ticket.status)}」变更为「处理中」`"
+                >
+                  <Clock :size="16" />
+                  {{ processingAction.pending.value ? '处理中…' : reopenLabel }}
+                </button>
+                <button class="btn-outline" @click="closeTicket"
+                  :disabled="!canTransitionStatus(ticket.status, 'closed')"
+                  :title="canTransitionStatus(ticket.status, 'closed') ? '' : '工单需先「标记解决」才能关闭'"
+                >
+                  <X :size="16" />
+                  关闭
+                </button>
+                <button
+                  class="btn-outline"
+                  @click="openSink"
+                  :disabled="isTerminalStatus(ticket.status)"
+                >
+                  <BookPlus :size="16" />
+                  沉淀为知识
+                </button>
+                <div class="btn-spacer"></div>
+                <button
+                  class="btn-primary"
+                  @click="resolveTicket"
+                  :disabled="!canTransitionStatus(ticket.status, 'resolved')"
+                  :title="canTransitionStatus(ticket.status, 'resolved') ? '' : '已作废的工单不可再变更状态'"
+                >
+                  <Check :size="16" />
+                  标记解决
+                </button>
+                <!-- B2 现场处置 -->
+                <button class="btn-outline" @click="openActionDialog" :disabled="isTerminalStatus(ticket.status) || ticket.status === 'closed'">
+                  <Plus :size="14" />
+                  记录处置
+                </button>
+                <!-- B3 根因 -->
+                <button class="btn-outline" @click="openRootCauseDialog" :disabled="isTerminalStatus(ticket.status) || ticket.status === 'closed'">
+                  <AlertTriangle :size="14" />
+                  确认根因
+                </button>
+                <!-- B4 复盘 -->
+                <button class="btn-outline" @click="openPmDrawer" :disabled="ticket.status === 'pending'">
+                  <BookPlus :size="14" />
+                  复盘归档
+                </button>
+              </div>
+            </div>
+
+            <!-- B5 闭环进度条（6 阶段横向步骤条）。
+                 止损/修复/验证/归档四步可点击，直接打开对应操作——
+                 页头那排按钮是全部动作的清单，进度条回答的是「现在该做哪一步」。 -->
+            <div class="closure-progress-bar">
+              <div
+                v-for="stage in closureStages"
+                :key="stage.key"
+                class="cp-step"
+                :class="[stage.state, { actionable: stageActionable(stage.key) }]"
+                :role="stageActionable(stage.key) ? 'button' : undefined"
+                :tabindex="stageActionable(stage.key) ? 0 : undefined"
+                @click="onStageClick(stage.key)"
+                @keydown.enter="onStageClick(stage.key)"
+              >
+                <div class="cp-dot">
+                  <Check v-if="stage.state === 'done'" :size="14" />
+                  <span v-else-if="stage.state === 'current'" class="cp-dot-inner"></span>
+                </div>
+                <span class="cp-label">{{ stage.label }}</span>
+                <el-tooltip
+                  v-if="stage.meta && stage.state === 'skipped'"
+                  :content="'跳过原因：' + stage.meta"
+                  placement="top"
+                  :show-after="200"
+                >
+                  <span class="cp-meta cp-meta-skipped">{{ stage.meta.length > 8 ? stage.meta.slice(0, 8) + '…' : stage.meta }}</span>
+                </el-tooltip>
+                <span v-else-if="stage.meta" class="cp-meta">{{ stage.meta }}</span>
+              </div>
+            </div>
+
+            <!-- B2 处置阶段切换 + 处置动作列表（拆到 TicketActionSection） -->
+            <TicketActionSection
+              :show-stage-switcher="ticket.status === 'processing'"
+              :current-stage="ticket.handlingStage"
+              :actions="actions"
+              @update-stage="doUpdateStage"
+              @mark-mitigated="doMarkMitigated"
+            />
+
+            <!-- 工单描述（2026-09-30：告警自动建单写入 Markdown 结构化描述 + JSON 块，
+                 走 safeMarkdown 渲染——纯文本 pre-wrap 会把 ###/``` 原样晒给用户） -->
+            <div v-if="ticket.description" class="ticket-description-card">
+              <h3 class="description-title">工单描述</h3>
+              <div class="description-body" v-html="renderMarkdown(ticket.description)"></div>
+            </div>
+
+            <!-- ========== Timeline ==========
+                 已抽到 TicketTimeline.vue：那是本文件视觉最独立的一块
+                 （自成体系的模板 + 236 行专属样式），与页面其余部分
+                 只通过数据往来，没有共享的交互状态。
+                 AI 分析的 18 个字段收成一个对象传入，避免调用处占满一屏。 -->
+            <TicketTimeline
+              :ticket="ticket"
+              :visible-replies="visibleReplies"
+              :show-sla-alert="showSlaAlert"
+              :analysis="{
+                content: analysisContent,
+                streaming: analysisStreaming,
+                done: analysisDone,
+                structured,
+                useStructuredRender,
+                confidenceClass,
+                citations,
+                citationDocs,
+                cost: analysisCost,
+                fromArchive: analysisFromArchive,
+                archivedAt: analysisArchivedAt,
+                feedback: analysisFeedback,
+                id: analysisId,
+                onFeedback: submitFeedback,
+                onGenerate: runAnalysis,
+                versions: analysisVersions,
+                viewVersion: analysisViewVersion,
+                onSwitchVersion: switchAnalysisVersion,
+                onAdopt: openRootCauseDialog,
+                renderMarkdown,
+                onCopyCommand: copyCommand,
+                onCopyAnalysis: copyAnalysis,
+                onRegenerate: regenerateAnalysis,
+                onStop: stopAnalysis,
+                diagnosisHint: diagnosisHint,
+                diagnosisTo: ticket.sourceTraceId ? `/diagnosis/${ticket.sourceTraceId}` : undefined,
+              }"
+            />
+
+            <!-- Reply Box -->
+            <div class="reply-box" v-if="!['closed', 'resolved', 'void'].includes(ticket.status)">
+              <textarea
+                v-model="replyContent"
+                class="reply-textarea"
+                rows="3"
+                placeholder="输入回复内容..."
+                @keydown.ctrl.enter="submitReply"
+              ></textarea>
+              <div class="reply-actions">
+                <button class="btn-outline" :disabled="replyDrafting" @click="handleGenerateReply">
+                  <Sparkles :size="16" class="primary-icon" />
+                  {{ replyDrafting ? 'AI 生成中…' : 'AI 生成回复' }}
+                </button>
+                <div class="btn-spacer"></div>
+                <button class="btn-primary" :disabled="submitting" @click="submitReply">
+                  <Send :size="16" />
+                  {{ submitting ? '发送中...' : '发送' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== RIGHT COLUMN (35%) ========== -->
+          <aside class="right-sidebar">
+
+            <!-- 工单属性 -->
+            <CollapsibleCard title="工单属性" :icon="Info" storage-key="td-props">
+              <TicketPropsPanel
+                :properties="properties"
+                :sla-progress="ticket.slaProgress"
+                :sla-breached="ticket.slaBreached"
+                :sla-bar-class="slaBarClass"
+              />
+            </CollapsibleCard>
+
+            <!-- 标签管理 -->
+            <CollapsibleCard title="标签" :icon="Info" storage-key="td-tags" :badge="(ticket.tags || []).length || undefined">
+              <TicketTagEditor
+                v-model:draft="newTagInput"
+                :tags="ticket.tags || []"
+                :hot-tags="store.hotTags"
+                :busy="tagRemoving"
+                @add="addTag"
+                @remove="removeTag"
+                @add-suggested="addTagFromSuggestion"
+              />
+            </CollapsibleCard>
+
+            <!-- AI 智能分析（只读 Insights） -->
+            <CollapsibleCard title="AI 智能分析" :icon="Sparkles" storage-key="td-ai" class="td-ai-card">
+              <TicketInsights
+                :similar-tickets="similarTickets"
+                :similar-loading="similarLoading"
+                :related-docs="relatedDocs"
+                :related-loading="relatedLoading"
+                :confidence="structured.confidence"
+                :confidence-class="confidenceClass"
+                :trend="insightTrend"
+                :trend-loading="insightTrendLoading"
+              />
+            </CollapsibleCard>
+
+            <!-- 附件 -->
+            <CollapsibleCard title="附件" :icon="Paperclip" storage-key="td-attachments" :badge="attachments.length || undefined">
+              <TicketAttachmentPanel
+                :attachments="attachments"
+                :loading="attachmentsLoading"
+                :uploading="uploading"
+                @download="downloadAttachment"
+                @remove="removeAttachment"
+                @select="onAttachmentSelected"
+              />
+            </CollapsibleCard>
+
+            <!-- 操作记录 -->
+            <CollapsibleCard title="操作记录" :icon="Clock" storage-key="td-activity">
+              <TicketActivityLog :activities="ticket.activities || []" />
+            </CollapsibleCard>
+          </aside>
+
+        </div>
+      </main>
+    </template>
+
+    <!-- 转派弹窗 -->
+    <el-dialog
+      v-model="transferDialogVisible"
+      title="转派工单"
+      width="360px"
+      :close-on-click-modal="false"
+    >
+      <div style="margin-bottom: 12px;">
+        <span style="color: #6b7280; font-size: 0.875rem;">当前负责人：</span>
+        <strong>{{ ticket?.assignee || UNASSIGNED }}</strong>
+      </div>
+      <el-select v-model="transferTarget" placeholder="选择新负责人" style="width: 100%">
+        <!-- 名单来自后端 sys_team_member（A2），不再硬编码编造姓名。
+             label 带负载提示，避免把工单转派给已满负荷的人 -->
+        <el-option
+          v-for="name in store.assignees"
+          :key="name"
+          :label="name + workloadOf(name)"
+          :value="name"
+        />
+      </el-select>
+      <template #footer>
+        <el-button @click="transferDialogVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!transferTarget || transferring" @click="doTransfer">{{ transferring ? '转派中…' : '确认转派' }}</el-button>
+      </template>
+    </el-dialog>
+
+    <KnowledgeSinkDrawer
+      v-if="ticket"
+      v-model="sinkOpen"
+      :ticket-id="ticket.id"
+      :ticket-title="ticket.title"
+      :ticket-service="ticket.service"
+      :ticket-description="ticket.description || ''"
+      :ticket-replies="ticket.replies || []"
+      :ticket-activities="ticket.activities || []"
+      @published="onSinkPublished"
+      @goto-doc="onSinkGotoDoc"
+    />
+
+    <!-- #7 已沉淀为知识徽标（含反馈计数）：无回链文档时组件自渲染为空 -->
+    <SunkKnowledgeBadge
+      v-if="ticket"
+      :ticket-id="ticket.id"
+      @goto-doc="onSinkGotoDoc"
+    />
+
+    <!-- B2/B3 三个表单弹窗（处置动作 / 修复验证 / 确认根因），拆到 TicketFormDialogs -->
+    <TicketFormDialogs
+      v-model:action-dialog-visible="actionDialogVisible"
+      v-model:action-form="actionForm"
+      v-model:verify-dialog-visible="verifyDialogVisible"
+      v-model:verify-form="verifyForm"
+      v-model:root-cause-dialog-visible="rootCauseDialogVisible"
+      v-model:root-cause-form="rootCauseForm"
+      :action-submitting="actionSubmitting"
+      :verify-submitting="verifySubmitting"
+      :root-cause-submitting="rootCauseSubmitting"
+      @add-action="doAddAction"
+      @submit-verification="doSubmitVerification"
+      @confirm-root-cause="doConfirmRootCause"
+    />
+
+    <!-- ========== B4 复盘抽屉（拆分为独立组件，逻辑见 useTicketPostmortem） ========== -->
+    <PostmortemDrawer
+      v-model:visible="pmDrawerVisible"
+      v-model:form="pmForm"
+      v-model:new-action-item="pmNewActionItem"
+      :action-items="pmActionItems"
+      :postmortem="pmRecord"
+      :saving="pmSaving"
+      @generate-draft="pmGenerateDraft"
+      @save="pmSave"
+      @add-item="pmAddItem"
+      @update-item-status="pmUpdateItemStatus"
+    />
+  </div>
+</template>
+
+<style scoped lang="scss">
+.ticket-detail {
+  min-height: 100vh;
+  background: var(--surface-0);
+}
+
+/* ========== Breadcrumb ========== */
+.breadcrumb-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 24px 8px;
+}
+
+/* 面包屑内部样式已随 AppBreadcrumb 公共组件收敛（容器定位仍由本页负责） */
+
+/* ========== Main Container ========== */
+.main-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 24px 32px;
+}
+
+.content-grid {
+  display: flex;
+  gap: 24px;
+
+  @media (max-width: 1200px) {
+    flex-direction: column;
+  }
+}
+
+.left-column {
+  flex: 65;
+  min-width: 0;
+}
+
+.right-sidebar {
+  flex: 35;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ========== Ticket Header Card ========== */
+.ticket-header-card {
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius-lg, 12px);
+  padding: 24px;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+}
+
+/* ========== Ticket Description Card ========== */
+.ticket-description-card {
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius-lg, 12px);
+  padding: 20px 24px;
+  margin-top: 16px;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+}
+.description-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-2, var(--text-2));
+  margin: 0 0 8px 0;
+}
+.description-body {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--text-1, var(--text-1));
+  word-break: break-word;
+}
+/* v-html 产物不带 scope 属性，Markdown 子元素必须 :deep（复刻 KnowledgeSinkDrawer
+   的 .markdown-body 视觉：标题降级、JSON 代码块深底、列表/分隔线与全站一致） */
+.description-body {
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+    margin: 12px 0 4px;
+    font-size: var(--text-sm, 0.875rem);
+    font-weight: 600;
+    color: var(--text-1);
+    &:first-child { margin-top: 0; }
+  }
+  :deep(p) { margin: 0 0 6px; &:last-child { margin-bottom: 0; } }
+  :deep(ul), :deep(ol) { margin: 0 0 6px; padding-left: 16px; }
+  :deep(li) { margin-bottom: 2px; }
+  :deep(hr) { border: none; border-top: 1px solid var(--border-1, var(--border-1)); margin: 8px 0; }
+  :deep(code) {
+    padding: 1px 5px;
+    background: var(--surface-2, #f1f5f9);
+    border-radius: 4px;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8125em;
+    word-break: break-all;
+  }
+  :deep(pre) {
+    margin: 6px 0;
+    padding: 10px 12px;
+    background: #1E293B;
+    border-radius: 8px;
+    overflow-x: auto;
+    code {
+      display: block;
+      padding: 0;
+      background: transparent;
+      color: #CBD5E1;
+      font-size: 0.75rem;
+      line-height: 1.5;
+      word-break: normal;
+      white-space: pre-wrap;
+    }
+  }
+}
+
+.ticket-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--weight-medium, 500);
+  border-radius: var(--radius-full, 9999px);
+}
+
+.badge-status-processing {
+  background: var(--brand-subtle, var(--brand-subtle));
+  color: var(--brand-hover, var(--brand-hover));
+}
+
+.badge-status-pending {
+  background: var(--warning-subtle, var(--warning-subtle));
+  color: var(--warning, var(--warning));
+}
+
+.badge-status-resolved {
+  background: var(--success, var(--success));
+  color: white;
+}
+
+.badge-status-closed {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.badge-priority-urgent {
+  background: var(--danger-subtle, var(--danger-subtle));
+  color: var(--danger, var(--danger));
+}
+
+.badge-priority-high {
+  background: #FEE7D6;
+  color: #EA580C;
+}
+
+.badge-priority-medium {
+  background: var(--brand-subtle, var(--brand-subtle));
+  color: var(--brand, var(--brand));
+}
+
+.badge-priority-low {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.ticket-title {
+  font-family: var(--font-display, 'Inter', sans-serif);
+  font-size: var(--text-xl, 1.25rem);
+  font-weight: var(--weight-semibold, 600);
+  color: var(--text-1, var(--text-1));
+  margin: 0 0 12px 0;
+  letter-spacing: -0.01em;
+}
+
+.ticket-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text-3, var(--text-3));
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.meta-label {
+  color: var(--text-2, var(--text-2));
+}
+
+.meta-value {
+  color: var(--text-1, var(--text-1));
+  font-weight: var(--weight-medium, 500);
+}
+
+.meta-assignee {
+  color: var(--brand-hover, var(--brand-hover));
+}
+
+.meta-link {
+  color: var(--brand, var(--brand));
+  font-size: var(--text-sm, 0.875rem);
+  text-decoration: none;
+
+  &:hover { text-decoration: underline; }
+}
+
+.meta-dot {
+  margin: 0 4px;
+  color: var(--text-3, var(--text-3));
+}
+
+.ticket-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ========== Shared Buttons ========== */
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-2, var(--border-2));
+  border-radius: var(--radius, 8px);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--weight-medium, 500);
+  font-family: var(--font-body, 'Inter', sans-serif);
+  background: var(--surface-1, var(--surface-1));
+  color: var(--text-2, var(--text-2));
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    border-color: var(--brand, var(--brand));
+    color: var(--brand, var(--brand));
+  }
+}
+
+.btn-spacer {
+  flex: 1;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius, 8px);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--weight-medium, 500);
+  font-family: var(--font-body, 'Inter', sans-serif);
+  background: var(--brand, var(--brand));
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: var(--brand-hover, var(--brand-hover));
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.primary-icon {
+  color: var(--brand-hover, var(--brand-hover));
+}
+
+/* ========== Reply Box ========== */
+.reply-box {
+  background: var(--surface-1, var(--surface-1));
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius-lg, 12px);
+  padding: 16px;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+  margin-top: 8px;
+}
+
+.reply-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border-1, var(--border-1));
+  border-radius: var(--radius, 8px);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-relaxed, 1.625);
+  font-family: var(--font-body, 'Inter', sans-serif);
+  background: var(--surface-0, var(--surface-0));
+  color: var(--text-1, var(--text-1));
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+
+  &:focus {
+    border-color: var(--brand-hover, var(--brand-hover));
+    box-shadow: 0 0 0 2px var(--brand-subtle, var(--brand-subtle));
+  }
+}
+
+.reply-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+}
+
+/* ========== Side Cards ========== */
+/* AI 智能分析面板：CollapsibleCard 的 scoped 根元素带本组件 data-v，
+   故父作用域 .td-ai-card 规则可直接命中其根，赋予主色高亮边框以突出重点 */
+.td-ai-card {
+  border: 2px solid var(--brand-subtle, var(--brand-subtle));
+}
+
+/* ── 右侧栏样式已随模板一并搬出 ──────────────────────────────
+   属性/SLA → TicketPropsPanel.vue
+   标签编辑 → TicketTagEditor.vue
+   附件     → TicketAttachmentPanel.vue（含 .btn-outline 副本，scoped 不穿透）
+   操作记录 → TicketActivityLog.vue
+
+   同时删掉了 39 个**已无对应 DOM** 的类：
+   `.ai-insights` / `.insight-*` 十条是 TicketInsights 抽出去时的遗留，
+   `.empty-card` / `.empty-icon` / `.loading-spinner` 等九条在改用
+   AppEmpty / ApiErrorState / PageLoading 后就没人引用了，
+   `.preview-tag` 则是占位标签删除后剩下的。
+
+   死样式不报错也不影响渲染，但它们会让下一个人以为
+   「页面上还有这块 UI」，照着改半天发现毫无效果——
+   这正是本次拆分前排查右侧栏花掉的时间。 */
+
+/* ===== B5 闭环进度条 ===== */
+.closure-progress-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 16px 20px;
+  background: var(--surface-1, #fff);
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--border-1, var(--border-1));
+  margin-bottom: 16px;
+}
+
+.cp-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  position: relative;
+  text-align: center;
+}
+
+/* 连接线 */
+.cp-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  right: -50%;
+  height: 2px;
+  background: var(--border-2, var(--border-1));
+  z-index: 0;
+}
+
+.cp-step.done:not(:last-child)::after {
+  background: var(--success);
+}
+
+.cp-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border-2, var(--border-1));
+  background: var(--surface-1, #fff);
+  color: var(--text-3);
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.cp-step.done .cp-dot {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
+.cp-step.current .cp-dot {
+  border-color: var(--brand);
+  background: var(--surface-1, var(--surface-1));
+}
+
+.cp-dot-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.cp-step.skipped .cp-dot {
+  border-color: var(--border-2);
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
+.cp-step.skipped .cp-dot::after {
+  content: '—';
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.cp-label {
+  font-size: 12px;
+  color: var(--text-2, var(--text-2));
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cp-step.done .cp-label { color: var(--success); }
+.cp-step.current .cp-label { color: var(--brand); font-weight: 600; }
+.cp-step.skipped .cp-label { color: var(--text-3); }
+
+/* 可点击的步骤：当前步用指针和悬停下划线提示「这里能操作」，
+   已完成的步骤保持可点（允许补记），但不抢视觉焦点 */
+.cp-step.actionable { cursor: pointer; }
+.cp-step.actionable:hover .cp-label { text-decoration: underline; }
+.cp-step.actionable:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
+.cp-meta {
+  font-size: 11px;
+  color: var(--text-3, var(--text-3));
+  font-variant-numeric: tabular-nums;
+}
+
+.cp-meta-skipped {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-3);
+}
+
+/* B2 处置阶段条/动作列表的样式随模板搬到 TicketActionSection.vue，
+   B2/B3 三个弹窗的表单样式随模板搬到 TicketFormDialogs.vue
+   （scoped 不穿透组件边界，留在这里就是死样式）。 */
+</style>

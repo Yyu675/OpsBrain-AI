@@ -1,0 +1,221 @@
+<script setup lang="ts">
+import { notify } from '@/utils/notify'
+import { ref, onErrorCaptured, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+import { AlertTriangle, RefreshCw, Home, Copy } from 'lucide-vue-next'
+import { copyText } from '@/utils/clipboard'
+
+interface Props {
+  scope?: string
+}
+const props = withDefaults(defineProps<Props>(), { scope: '页面' })
+
+const err = ref<Error | null>(null)
+const route = useRoute()
+
+onErrorCaptured((e) => {
+  console.error('[AppErrorBoundary] captured:', e)
+  err.value = e instanceof Error ? e : new Error(String(e))
+  return false
+})
+
+watch(() => route.fullPath, () => {
+  err.value = null
+})
+
+const retry = () => {
+  err.value = null
+}
+
+const router = useRouter()
+const backHome = () => {
+  err.value = null
+  router.push('/')
+}
+
+/**
+ * 错误摘要的时间戳，刻意用 UTC。
+ *
+ * 这段摘要是给后端排查用的（用户复制后贴进工单/群里），与服务端日志
+ * 同为 UTC 才好直接比对时间点，且 `Z` 后缀不产生时区歧义。
+ * 与「写入后端时间字段必须用 nowAsBackendTime」是两个不同场景，
+ * 故此处豁免 no-restricted-syntax 规则。
+ */
+// eslint-disable-next-line no-restricted-syntax
+const utcTimestamp = () => new Date().toISOString()
+
+const copySummary = async () => {
+  if (!err.value) return
+  const lines = [
+    `[错误摘要] ${props.scope}`,
+    `时间：${utcTimestamp()}`,
+    `路径：${route.fullPath}`,
+    `URL：${typeof window !== 'undefined' ? window.location.href : '—'}`,
+    `UA：${typeof navigator !== 'undefined' ? navigator.userAgent : '—'}`,
+    `消息：${err.value.message || '(无消息)'}`,
+    '堆栈：',
+    err.value.stack || '(无堆栈)'
+  ]
+  const ok = await copyText(lines.join('\n'))
+  if (ok) notify.success('错误摘要已复制到剪贴板')
+  else notify.warning('复制失败，请手动选择技术详情复制')
+}
+</script>
+
+<template>
+  <div class="err-boundary-root">
+    <div v-if="err" class="err-boundary">
+      <div class="err-card">
+        <div class="err-icon">
+          <AlertTriangle :size="32" />
+        </div>
+        <h2 class="err-title">{{ scope }}加载失败</h2>
+        <p class="err-msg">{{ err.message || '发生了未知错误' }}</p>
+        <p class="err-hint">该问题不会影响其他页面的正常访问</p>
+        <div class="err-actions">
+          <button class="err-btn err-btn-primary" @click="retry">
+            <RefreshCw :size="14" />
+            重试
+          </button>
+          <button class="err-btn" @click="copySummary">
+            <Copy :size="14" />
+            复制错误摘要
+          </button>
+          <button class="err-btn" @click="backHome">
+            <Home :size="14" />
+            返回首页
+          </button>
+        </div>
+        <details v-if="err.stack" class="err-detail">
+          <summary>技术详情</summary>
+          <pre>{{ err.stack }}</pre>
+        </details>
+      </div>
+    </div>
+    <slot v-else />
+  </div>
+</template>
+
+<style scoped lang="scss">
+.err-boundary-root {
+  /* 单根容器：满足 <Suspense> 默认插槽单根节点要求，不引入额外布局 */
+  display: contents;
+}
+
+.err-boundary {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--surface-0);
+}
+
+.err-card {
+  max-width: 520px;
+  width: 100%;
+  padding: 32px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.err-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--danger-subtle);
+  color: var(--danger);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.err-title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--text-1);
+  margin: 0 0 8px 0;
+}
+
+.err-msg {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  margin: 0 0 4px 0;
+  word-break: break-word;
+}
+
+.err-hint {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  margin: 0 0 24px 0;
+}
+
+.err-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.err-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  background: var(--surface-1);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+  }
+
+  &.err-btn-primary {
+    background: var(--brand);
+    color: white;
+    border-color: var(--brand);
+
+    &:hover {
+      background: var(--brand-hover);
+      color: white;
+    }
+  }
+}
+
+.err-detail {
+  text-align: left;
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+
+  summary {
+    cursor: pointer;
+    color: var(--text-3);
+    user-select: none;
+  }
+
+  pre {
+    margin: 8px 0 0 0;
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+}
+</style>

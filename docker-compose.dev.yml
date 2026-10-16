@@ -1,0 +1,313 @@
+# =====================================================================
+# OpsBrain AI（智维大脑）—— 开发环境基础设施编排
+# 用途：本地开发时在宿主机（IDEA）跑 Spring Boot，用本文件一键拉起
+#       它依赖的 PostgreSQL+pgvector、Redis、Adminer 三个服务。
+#
+# 启动：docker compose -f docker-compose.dev.yml up -d
+# 停止：docker compose -f docker-compose.dev.yml down
+# 清库：docker compose -f docker-compose.dev.yml down -v （连同数据卷一起删）
+#
+# 端口规则（2026-08-17 调整）：容器内保持标准端口不变，宿主机映射端口统一加前缀 2。
+#   原前缀 1 方案（15432/16379/18080/19000）在本机 Docker Desktop 上绑定静默失败——
+#   无进程占用、不在 netsh excludedportrange 内，但 NetworkSettings.Ports 为空且宿主机不可达；
+#   同镜像同命令换用 2xxxx 端口即正常，故改用前缀 2。详见 CLAUDE.md 6.36。
+#     PostgreSQL  容器内 5432  → 宿主机 25432
+#     Redis       容器内 6379  → 宿主机 26379
+#     Adminer     容器内 8080  → 宿主机 28080
+#     MinIO API   容器内 9000  → 宿主机 29000
+#     MinIO 控制台 容器内 9001  → 宿主机 29001
+#     node-exporter 容器内 9100 → 宿主机 29100（L2 监控，2026-08-20 新增）
+#     Prometheus  容器内 9090  → 宿主机 29090（L2 监控 Web UI）
+#     Alertmanager 容器内 9093 → 宿主机 29093（L2 监控 Web UI）
+#
+# 后端连接约定：
+#   - 宿主机跑后端（本地开发）：连 localhost:25432 / localhost:26379
+#   - 后端也进容器时（compose 内互联）：连 服务名+容器内端口 postgres:5432 / redis:6379
+# 账号/库名/密码严格对齐 docs/05-development-design/04-数据库设计.md。
+# =====================================================================
+
+services:
+  # ------------------- PostgreSQL + pgvector -------------------
+  postgres:
+    image: ankane/pgvector:v0.5.1
+    container_name: devops-pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: devops_knowledge_db
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops_password
+      # 让 pg_isready / psql 等客户端默认连到业务库，健康检查更准确
+      PGDATABASE: devops_knowledge_db
+    ports:
+      - "25432:5432"          # 宿主机 25432 → 容器 5432
+    volumes:
+      - devops_pg_data:/var/lib/postgresql/data
+      # 表结构的唯一真相源是 Flyway 基线
+      # src/main/resources/db/migration/V1__baseline.sql（S0-1 起；
+      # 批 69 迁移收敛后 V1 单文件即全量 33 表，原 V2~V11 已折叠进基线）。
+      # 旧 sql/init.sql 时代已于批 67 终结——classpath Flyway 单真相源。
+      #
+      # 这里把同一份 V1 挂成 PG 首启脚本，仅为「纯容器、应用尚未启动」
+      # 时的便利；应用一旦启动，Flyway 的 baseline-on-migrate 会把它
+      # 标记为已应用，二者不冲突（V1 保持幂等写法兜底）。
+      #
+      # ⚠️ 仅在数据卷为空（首次初始化）时自动执行。之后的结构变更
+      #    走新迁移文件 V{n}__描述.sql，由应用启动时自动 apply；
+      #    如需手工执行：
+      #      docker compose -f docker-compose.dev.yml exec -T postgres \
+      #        psql -U devops -d devops_knowledge_db \
+      #        < src/main/resources/db/migration/V1__baseline.sql
+      #    （启动期 SchemaGuard 仍会检出结构缺失）
+      - ./src/main/resources/db/migration/V1__baseline.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devops -d devops_knowledge_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ------------------- Redis 7 -------------------
+  redis:
+    image: redis:7.0-alpine
+    container_name: devops-redis
+    restart: unless-stopped
+    # 容器内仍监听标准 6379；通过 --requirepass 设置密码，与后端配置一致
+    command: ["redis-server", "--requirepass", "devops_redis_pwd", "--appendonly", "yes"]
+    ports:
+      - "26379:6379"          # 宿主机 26379 → 容器 6379
+    volumes:
+      - devops_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "devops_redis_pwd", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ------------------- MinIO（对象存储，工单附件） -------------------
+  # 选用理由：与生产 OSS/S3 接口一致，多实例部署可共享，
+  #   原生支持预签名 URL（文件不经后端流转，避免占用应用带宽）。
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    container_name: devops-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: devops_minio
+      MINIO_ROOT_PASSWORD: devops_minio_pwd
+      # 集群指标端点免 JWT（2026-10-15）：否则 OpsBrainMinioDown 查的
+      # minio_cluster_health_online 永远无数据（不误报，也永不响）
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    ports:
+      - "29000:9000"          # S3 API
+      - "29001:9001"          # 控制台 http://localhost:29001
+    volumes:
+      - devops_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ------------------- MinIO 初始化（建桶，一次性任务） -------------------
+  # 桶设为 private：下载统一走后端签发的预签名 URL，
+  # 避免附件被匿名遍历（运维附件常含日志与配置，属敏感数据）。
+  minio-init:
+    image: minio/mc:RELEASE.2024-09-16T17-43-14Z
+    container_name: devops-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 devops_minio devops_minio_pwd &&
+      mc mb --ignore-existing local/devops-ticket-attachment &&
+      mc anonymous set none local/devops-ticket-attachment &&
+      echo '✅ MinIO 桶 devops-ticket-attachment 已就绪（private）' &&
+      mc mb --ignore-existing local/devops-memory-archive &&
+      mc anonymous set none local/devops-memory-archive &&
+      echo '{\"Rules\":[{\"ID\":\"expire-archive-365d\",\"Status\":\"Enabled\",\"Expiration\":{\"Days\":365}}]}' > /tmp/ilm-archive.json &&
+      mc ilm rule import local/devops-memory-archive < /tmp/ilm-archive.json &&
+      echo '✅ MinIO 桶 devops-memory-archive 已就绪（private + 365 天自动过期）'
+      "
+    restart: "no"
+
+  # ------------------- Adminer（数据库可视化，验收查表用） -------------------
+  adminer:
+    image: adminer:4
+    container_name: devops-adminer
+    restart: unless-stopped
+    ports:
+      - "28080:8080"          # 宿主机 28080 → 容器 8080，浏览器访问 http://localhost:28080
+    environment:
+      # 打开页面默认预填 PostgreSQL 服务名，登录时 System 选 PostgreSQL、
+      # Server 填 postgres、用户 devops、密码 devops_password、库 devops_knowledge_db
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ------------------- 抓取令牌（一次性 init，幂等）-------------------
+  # 与生产同款：文件不存在则生成，已存在则保留。生成后**宿主机后端**读同一路径：
+  #   export SCRAPE_TOKEN_FILE=monitoring/secrets/scrape_token   （再启动后端）
+  scrape-token-init:
+    image: busybox:1.36
+    container_name: devops-scrape-token-init
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        f=/secrets/scrape_token
+        if [ ! -s "$$f" ]; then
+          head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$f"
+          echo "[scrape-token] 已生成新令牌（32 字节十六进制）"
+        else
+          echo "[scrape-token] 令牌已存在，保留不覆盖"
+        fi
+        chmod 644 "$$f"
+    volumes:
+      - ./monitoring/secrets:/secrets
+
+  # ------------------- 中间件 exporter（2026-10-15 补接线）-------------------
+  # 供给 opsbrain-dependency-alerts 三条规则（pg_up / redis_up / minio_*）——
+  # 缺了它们，PG/Redis 宕机规则永不触发（"用户先痛，监控后知"）。
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.19.1
+    container_name: devops-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://devops:devops_password@postgres:5432/devops_knowledge_db?sslmode=disable
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "false"
+    ports:
+      - "29187:9187"          # 宿主机 29187（2xxxx 前缀惯例）
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.91.1
+    container_name: devops-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: devops_redis_pwd
+    ports:
+      - "29121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ------------------- L2 监控栈：node-exporter（宿主机指标采集）-------------------
+  # 暴露 CPU/内存/磁盘/负载等指标，供 Prometheus 抓取。
+  # 端口 9100 → 宿主机 29100（沿用前缀 2 惯例）。
+  #
+  # 注：Windows/Docker Desktop（WSL2）下不挂 / 根文件系统——rslave 传播模式在
+  # WSL2 不支持（报 "not a shared or slave mount"）。此处采集的是 WSL2 VM 的
+  # 指标而非 Windows 宿主机，对验证告警链路已足够；Linux 生产部署可加回
+  # `--path.rootfs=/host` + `- /:/host:ro,rslave` 采集真实宿主机指标。
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: devops-node-exporter
+    restart: unless-stopped
+    ports:
+      - "29100:9100"
+
+  # ------------------- L2 监控栈：Prometheus（指标采集 + 告警规则评估）-------------------
+  # 抓 node-exporter 指标，按 alert.rules.yml 评估告警，触发后推给 Alertmanager。
+  # 端口 9090 → 宿主机 29090（Web UI: http://localhost:29090）。
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: devops-prometheus
+    restart: unless-stopped
+    ports:
+      - "29090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      # 抓取凭据：与宿主机后端（SCRAPE_TOKEN_FILE=monitoring/secrets/scrape_token）同一份文件
+      - ./monitoring/secrets/scrape_token:/etc/prometheus/secrets/scrape_token:ro
+      - devops_prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      # 评估间隔调短便于开发期快速验证（生产用默认 1m）
+      - '--storage.tsdb.retention.time=7d'
+    depends_on:
+      - node-exporter
+      - alertmanager
+      - scrape-token-init
+      - postgres-exporter
+      - redis-exporter
+    # opsbrain job 抓宿主机的后端（host.docker.internal），Linux Docker 需要显式解析
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ------------------- L2 监控栈：Alertmanager（告警路由 → OpsBrain Webhook）-------------------
+  # 把 Prometheus 触发的告警按 alertmanager.yml 路由，webhook_config 指向 OpsBrain 后端。
+  # 端口 9093 → 宿主机 29093（Web UI: http://localhost:29093）。
+  #
+  # 关键：后端在宿主机（IDEA）跑，不在本 compose 网络内，故 webhook 地址用
+  # host.docker.internal:8088（extra_hosts 声明确保 Linux Docker 也能解析）。
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: devops-alertmanager
+    restart: unless-stopped
+    ports:
+      - "29093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ------------------- S1-3 日志栈（可选，profile=logs）：Loki + Promtail -------------------
+  # 2026-09-30 起后端 LOKI_ENABLED 默认 true（方案 B：日志证据要进工单取证明细），
+  # 本 profile 容器未起时查询会如实 FAILED（连不上≠查过没有）。要接上日志栈：
+  #   1) docker compose -f docker-compose.dev.yml --profile logs up -d loki promtail
+  #   2) 重启后端（.env 的 LOKI_ENABLED 可显式覆盖默认值）
+  # Promtail 经 docker socket 抓取本机全部容器 stdout/stderr，容器名作 app 标签——
+  # 与 LokiLogQueryClient 的流选择器 {app=~"<service>.*"} 对齐。
+  loki:
+    image: grafana/loki:2.9.11
+    container_name: devops-loki
+    restart: unless-stopped
+    profiles: ["logs"]
+    ports:
+      - "23100:3100"
+    # 单节点文件系统存储，仅开发用；生产请换对象存储 + 分布式部署
+    command: ["-config.file=/etc/loki/local-config.yaml", "-auth.enabled=false"]
+    volumes:
+      - devops_loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:2.9.11
+    container_name: devops-promtail
+    restart: unless-stopped
+    profiles: ["logs"]
+    volumes:
+      # Docker Desktop（WSL2）同样提供该 socket——Linux 容器内挂载即可
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/promtail.yml:/etc/promtail/config.yml:ro
+      # 宿主机后端日志（mvn spring-boot:run 落 logs/dev-run-canary.log）：
+      # 后端不在容器里，docker_sd 抓不到它——不挂这里，诊断对 backend/
+      # devops-platform 类服务的日志取证恒为空
+      - ./logs:/host-logs:ro
+    command: ["-config.file=/etc/promtail/config.yml"]
+    depends_on:
+      - loki
+
+# 具名数据卷：容器删除后数据仍保留，除非显式 down -v
+volumes:
+  devops_pg_data:
+    name: devops_pg_data
+  devops_redis_data:
+    name: devops_redis_data
+  devops_minio_data:
+    name: devops_minio_data
+  devops_prometheus_data:
+    name: devops_prometheus_data
+  devops_loki_data:
+    name: devops_loki_data

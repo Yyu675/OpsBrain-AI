@@ -1,0 +1,271 @@
+# =====================================================================
+# Prometheus 告警规则（L2 监控栈，2026-08-20）
+# =====================================================================
+# 每条规则的 labels 与 annotations 必须与 OpsBrain AlertService 的读取契约对齐：
+#   labels.severity  → 映射 P0~P4（critical→P0, warning→P2, info→P4，或直接 P0~P4）
+#   labels.service   → 告警归属服务
+#   labels.module    → 业务模块枚举（HOST/POD/DB/CACHE/NETWORK/K8S/MYSQL...）
+#   annotations.summary     → 告警标题
+#   annotations.description → 告警详情（渲染进工单描述）
+#
+# alertname 由 alert: 字段提供，Prometheus 自动作为 labels.alertname。
+#
+# severity 分级参照蓝图 §二：
+#   P0/P1 高危 → 人机协同（HITL），自动建单 + 强提醒
+#   P2/P3 中低危 → 自动建单 + 观察
+#
+# 【规则写作约定】（2026-09-25 治理约定）
+# 新增告警规则时，同步在知识库沉淀对应手册，且手册标题带上本规则的
+# alertname（如「内存使用率持续升高（HighMemoryUsage）处置手册」）。
+# 原因：诊断的知识检索以「告警名+描述」为查询锚点，手册标题带告警名时
+# 实测命中率显著更高；规则没有手册=这条告警的诊断永远接不到知识。
+# =====================================================================
+
+groups:
+  - name: opsbrain-host-alerts
+    rules:
+      # ---- P2：宿主机内存使用率偏高（可真实触发）----
+      # 内存可用率 < 20% 持续 1 分钟触发。开发期易复现（开点内存压力即可）。
+      - alert: HostHighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 1m
+        labels:
+          severity: warning        # → P2
+          service: host-node
+          module: HOST
+        annotations:
+          summary: "宿主机内存使用率超过 80%"
+          description: "节点内存可用率过低（已用 > 80%），持续 1 分钟。可能存在内存泄漏或负载过高，需排查占用最高的进程。"
+
+      # ---- P1：宿主机内存严重不足（可真实触发，阈值更高）----
+      - alert: HostCriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 92
+        for: 1m
+        labels:
+          severity: critical       # → P0（AlertService: critical→P0）
+          service: host-node
+          module: HOST
+        annotations:
+          summary: "宿主机内存严重不足（>92%）"
+          description: "节点内存已用超过 92%，持续 1 分钟，存在 OOM 风险。需立即定位高占用进程或扩容。"
+
+      # ---- P2：根分区磁盘将满（可真实触发）----
+      # Windows/WSL2 下 node-exporter 未挂宿主机 /host，改用容器可见的根挂载点 "/"。
+      # Linux 生产若挂了 /host，把 mountpoint 改回 "/host"。
+      - alert: HostDiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 2m
+        labels:
+          severity: warning        # → P2
+          service: host-node
+          module: HOST
+          alert_kind: causal       # 因果型——磁盘将满是可预测的资源耗尽，走趋势预测
+        annotations:
+          summary: "根分区磁盘使用率超过 85%"
+          description: "根分区可用空间不足 15%，持续 2 分钟。需清理日志/临时文件或扩容磁盘。"
+
+      # ---- P3：CPU 负载偏高（可真实触发）----
+      - alert: HostHighCpuLoad
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 85
+        for: 2m
+        labels:
+          severity: info           # → P4（如需 P3 可改 warning 或显式 P3）
+          service: host-node
+          module: HOST
+        annotations:
+          summary: "宿主机 CPU 使用率持续偏高（>85%）"
+          description: "CPU 使用率持续 2 分钟超过 85%，可能有异常进程占用或负载激增。"
+
+  # ---- 验证专用哨兵告警（已完成联调验证，默认注释）----
+  # vector(1) 恒为 1，规则永远满足——起栈后约 15s 必定推一条 P0 告警到 webhook。
+  # 2026-08-20 已用它验证「Prometheus→Alertmanager→OpsBrain→自动建单→去重」整条链路通过
+  # （告警 id=6 → 工单 TKT-20260820-0006，重发 occurrence_count 递增不重复建单）。
+  # 保留但注释：需要再次联调时取消注释并 `curl -X POST localhost:29090/-/reload` 重载即可。
+  # 取消注释后会持续每分钟产生噪声告警，验证完请重新注释。
+  # - name: opsbrain-smoke-test
+  #   rules:
+  #     - alert: OpsBrainWebhookSmokeTest
+  #       expr: vector(1) > 0
+  #       for: 0m
+  #       labels:
+  #         severity: critical       # → P0
+  #         service: payment-service
+  #         module: POD
+  #       annotations:
+  #         summary: "【联调哨兵】OpsBrain 告警链路连通性测试"
+  #         description: "此为验证 Prometheus→Alertmanager→OpsBrain Webhook→自动建单链路的哨兵告警，非真实故障。"
+
+  # ---- OpsBrain 应用自身(S5-2/5-2.5,批 37):labels 契约同 host 组 ----
+  - name: opsbrain-app-alerts
+    rules:
+      # P0:应用宕机/不可达 2 分钟——critical→P0 人机协同(AlertService 映射表)
+      - alert: OpsBrainDown
+        expr: up{job="opsbrain"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "OpsBrain 应用不可达超过 2 分钟"
+          description: "Prometheus 连续 2 分钟抓不到 /ai/actuator/prometheus。查:docker compose ps / docker compose logs app;常见因=OOMKill(见 compose deploy limits)或 Flyway 迁移失败拒载。"
+
+      # P2:15 分钟内重启次数 >2——进程在口吐白沫但不会自己说
+      - alert: OpsBrainFrequentRestart
+        expr: changes(process_start_time_seconds{job="opsbrain"}[15m]) > 2
+        for: 1m
+        labels:
+          severity: warning
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "OpsBrain 应用 15 分钟内多次重启"
+          description: "JVM 反复退出重启。首查 OOM(ExitOnOutOfMemoryError 语义,日志应有 OutOfMemoryError 痕迹)与 compose deploy limits 余量;次查 Postgres/Redis 探活之外的连接风暴。"
+
+  # =====================================================================
+  # 业务水位组（批 50，S5-1.4 配套）——数据面=BusinessMetrics 四枚存量 Gauge
+  # （opsbrain_* 为 Micrometer→Prometheus 的点转下划线名）。
+  # 阈值纪律：两枚均为「起步阈值」，真窗首周按 P95 水位校准后回填
+  # （调阈值先看水位基线，拍脑袋阈值=风暴种子）。
+  # NaN 语义：供体崩坏时 Gauge 报 NaN，比较恒 false 不误报——
+  # 供体失踪由 OpsBrainDown/依赖闸另行报警（职责分离，双保险不重叠）。
+  # =====================================================================
+  - name: opsbrain-business-alerts
+    rules:
+      # P2:高优工单积压——P0/P1 未结量持续 15 分钟过线,值班拥堵信号
+      - alert: OpsBrainUrgentPendingHigh
+        expr: opsbrain_tickets_urgent_pending > 10
+        for: 15m
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+          alert_kind: business     # 业务性告警——诊断走业务上下文，勿找技术指标
+        annotations:
+          summary: "P0/P1 高优工单积压(>10 张,持续 15 分钟)"
+          description: "与看板 KPI 同口径——先按 module/priority 分布拆积压构成,再按值班 SOP 高开单排班疏导;必要时升级 P1 评估增援。起步阈值,真窗首周校准。"
+
+      # P2:审批排队超时——治理闸空置=自愈与前变更全哑火的替身警报
+      - alert: OpsBrainApprovalBacklog
+        expr: opsbrain_approvals_pending > 5
+        for: 1h
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+          alert_kind: business     # 业务性告警——审批积压是排班/治理问题，非技术故障
+        annotations:
+          summary: "待审批积压(>5 笔,持续 1 小时)"
+          description: "审批闸空置积压 = 治理链路没哑火、只是没人批。先到审批页清账;夜班常态请评估当班审批人排班,不要盲目调高阈值。起步阈值,真窗首周校准。"
+
+
+  # =====================================================================
+  # 系统自身监控补缺（批 76 / P3-2，报告 174 审计件）
+  # 此前规则面缺：中间件探活（PG/Redis/MinIO 宕机靠应用报错倒查）、
+  # JVM 堆压力、HTTP 5xx 错误率——三者都是「用户先痛监控后知」的典型。
+  # 依赖暴露前提：compose 侧给 PG/Redis/MinIO 暴露 metrics 端点
+  # （postgres_exporter/redis_exporter/minio 自带 /minio/v2/metrics）。
+  # 暴露端点属部署侧接线件，规则先就位（无数据时 for 持续不满足不误报）。
+  # =====================================================================
+  - name: opsbrain-dependency-alerts
+    rules:
+      # P1:PG 掉线——检索/建单/审批全链随 db down 报错,须最高优先响应
+      - alert: OpsBrainPostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical       # → P0
+          service: opsbrain-ai
+          module: DATABASE
+        annotations:
+          summary: "PostgreSQL 探活失败(1 分钟)"
+          description: "检查容器:docker compose ps postgres;若 OOMKill 查容器内存预算(批 76 已配 1g limit)与日志。应用侧 /actuator/health 的 db 组件会同步 DOWN。"
+
+      # P1:Redis 掉线——限流 fail-closed 拒收 webhook(批 75 后),语义缓存/会话降级
+      - alert: OpsBrainRedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical       # → P0
+          service: opsbrain-ai
+          module: CACHE
+        annotations:
+          summary: "Redis 探活失败(1 分钟)"
+          description: "注意:批 75 后 webhook 限流 fail-closed,Redis 宕=告警入口拒收(Alertmanager 会退避重投不丢)。先拉起 Redis,再核对积压的告警是否已重投完整。"
+
+      # P1:MinIO 掉线——附件上传/归档写入失败
+      - alert: OpsBrainMinioDown
+        expr: minio_cluster_health_online == 0 or minio_server_offline > 0
+        for: 1m
+        labels:
+          severity: warning        # → P2(附件可用性非主链路,但持续宕要人看)
+          service: opsbrain-ai
+          module: STORAGE
+        annotations:
+          summary: "MinIO 探活失败(1 分钟)"
+          description: "附件上传/冷记忆归档会持续失败。检查容器与卷挂载;单节点 MinIO 无冗余,对象数据只在卷里——拉起前勿动卷。"
+
+  - name: opsbrain-jvm-alerts
+    rules:
+      # P2:JVM 老年代近满——Full GC 风暴前兆,应用假死的主因
+      - alert: OpsBrainJvmHeapHigh
+        expr: jvm_memory_used_bytes{area="heap",id=~"G1 Old Gen|PS Old Gen"} / jvm_memory_max_bytes{area="heap",id=~"G1 Old Gen|PS Old Gen"} > 0.85
+        for: 10m
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+          alert_kind: causal       # 因果型——JVM 堆将满是可预测的资源耗尽，走趋势预测
+        annotations:
+          summary: "JVM 老年代使用率 >85%(持续 10 分钟)"
+          description: "先看是检索大结果集还是 SSE 长会话堆积;容器 limit 2g(批 76 口径),堆约 1.5g——调预算先看 Grafana 基线再动,OOMKill 不是降速。"
+
+      # P2:HTTP 5xx 错误率——用户侧「偶发报错」的量化替身
+      - alert: OpsBrainHttp5xxRate
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) > 0.02
+        for: 10m
+        labels:
+          severity: warning        # → P2
+          service: opsbrain-ai
+          module: APP
+        annotations:
+          summary: "HTTP 5xx 错误率 >2%(5 分钟窗口,持续 10 分钟)"
+          description: "按 uri/status 标签拆;若集中在单一端点查该链路依赖(渠道健康 /ai-model 可指认 chat vs embedding),若均匀抬头查 GC/连接池。"
+
+  - name: opsbrain-pipeline-watchdog
+    rules:
+      # ---- 管道心跳（FR-1.6）：恒真告警，Prometheus 每次评估都触发 ----
+      # 它活着只证明一件事：Prometheus 规则评估 → Alertmanager 路由 → OpsBrain webhook
+      # 这条管道在动。后端 PipelineHeartbeatScheduler 盯它的 last_occurred_at，
+      # 超时未到即上报「管道静默」元告警（critical→P0 建单强提醒）。
+      # severity=info → P4：走分级建单门槛，不产生工单，只在告警表上持续跳动。
+      - alert: OpsBrainPipelineWatchdog
+        expr: vector(1)
+        for: 0s
+        labels:
+          severity: info           # → P4，只统计不建单
+          service: monitoring-pipeline
+          module: OTHER
+        annotations:
+          summary: "监控管道心跳"
+          description: "恒真告警：存在即证明 Prometheus→Alertmanager→OpsBrain 管道存活。它消失才是故障信号。"
+
+      # ---- 送达级失败（项2，2026-10-03）：渠道 HTTP 亲口报错，10 分钟窗口点名 ----
+      # 与 OpsBrainNotifySilent（NotifySilentWatchdogScheduler，受理账、全静默 5min 才报）互补：
+      # 这里盯送达账 notify_delivery_total{result="error"}（2xx+errcode=0 才算送达）——
+      # 单次失败即可见，补上「受理≠送达」的最后一环。
+      # severity=warning→P2 与 NotifySilent 同族同档：不做渠道自推送——被测渠道可能
+      # 正是坏的那个，自推送=空转循环。找人路径分两级（实测 2026-10-03 钻 J）：
+      # FIRING 期间告警页强可见；瞬态失败 10 分钟自愈 = 零工单纯统计（观察窗
+      # 「自愈留统计不留单」），持续未自愈才由观察窗补建工单。
+      # 保留名 ∈ ReservedAlertNames.isReserved：跳过 LLM 诊断、风暴期照常放行建单。
+      - alert: OpsBrainNotifyDeliveryFail
+        expr: increase(opsbrain_notify_delivery_total{result="error"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning        # → P2（与 OpsBrainNotifySilent 同族同档）
+          service: opsbrain-ai
+          module: OTHER
+        annotations:
+          summary: "通知送达失败（10 分钟窗口内渠道回执报错）"
+          description: "notify_delivery_total{result=error} 非 2xx/errcode≠0（≠受理失败，那条由 OpsBrainNotifySilent 盯）。查 /ai/api/v1/alerts/notify-health 的 deliverFailed/lastDeliveredAt 与钉钉端点连通性；窗口内零错误自动 resolved。"

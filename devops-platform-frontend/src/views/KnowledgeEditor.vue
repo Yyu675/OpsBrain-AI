@@ -1,0 +1,1679 @@
+<script setup lang="ts">
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
+import TurndownService from 'turndown'
+import {
+  Save, Send, Upload, Settings2, FileText, Plus,
+  BookOpen, Eye, Code2, ChevronDown, Lightbulb,
+  Table2, Minus, Heading2, Heading3, SquareTerminal, Wrench,
+  ListChecks, TriangleAlert, BookTemplate, MoreHorizontal,
+  ListTree,
+} from 'lucide-vue-next'
+import DocOutlinePanel from '@/components/knowledge/DocOutlinePanel.vue'
+import DocPropertiesPanel from '@/components/knowledge/DocPropertiesPanel.vue'
+import { useKnowledgeStore } from '@/stores/knowledge'
+import { useDirtyGuard } from '@/composables/useDirtyGuard'
+import { saveDraft, loadDraft, clearDraft } from '@/utils/draftStorage'
+// 内容处理逻辑已抽到 utils/editorContent（有 32 例单测），
+// 组件只负责编排。见该文件头部说明。
+import {
+  appendHeading,
+  appendMarkdownBlock,
+  findCategoryIdByName,
+  extractToc,
+  hasMeaningfulContent,
+  hasTag,
+  HTML_BLOCKS,
+  MAX_TAGS,
+  normalizeDraftState,
+  normalizeTagList,
+  removeHeadingIn,
+  renameHeadingIn,
+  toPlainText,
+  toVisualContent,
+  toMarkdownForStorage,
+  type BlockCommand,
+  type EditorDraftState,
+  type TocItem,
+} from '@/utils/editorContent'
+import {
+  createKnowledgeCategory,
+  DuplicateContentError,
+  fetchKnowledgeBases,
+  fetchKnowledgeCategories,
+  fetchKnowledgeTags,
+  VersionConflictError,
+} from '@/api/knowledge'
+import type {
+  KnowledgeBaseItem,
+  KnowledgeCategoryEntity,
+  KnowledgeDocCreateRequest,
+  KnowledgeDocSaveResult,
+  KnowledgeDocUpdateRequest,
+  KnowledgeTag,
+} from '@/api/types'
+import KnowledgeTreeSidebar from '@/components/knowledge/KnowledgeTreeSidebar.vue'
+import CollapsiblePanel from '@/components/common/CollapsiblePanel.vue'
+import CollapseToggle from '@/components/common/CollapseToggle.vue'
+import RailButton from '@/components/common/RailButton.vue'
+import AppBreadcrumb from '@/components/common/AppBreadcrumb.vue'
+import { useHotkeys } from '@/composables/useHotkeys'
+import { useMediaQuery } from '@/composables/useMediaQuery'
+import { notify, handleServerError } from '@/utils/notify'
+
+const route = useRoute()
+const router = useRouter()
+const store = useKnowledgeStore()
+const MdEditor = defineAsyncComponent(async () => {
+  await import('md-editor-v3/lib/style.css')
+  return (await import('md-editor-v3')).MdEditor
+})
+
+/**
+ * 富文本编辑器同样异步加载。
+ *
+ * 此前它是静态 import —— 静态依赖会被提升进入口图，
+ * 导致 wangEditor（约 977KB / gzip 327KB）在**每个页面**首屏都被下载，
+ * 哪怕用户从不编辑文档。路由本身是 lazy 的，但静态 import 让 lazy 失效。
+ *
+ * 改为 defineAsyncComponent 后，只有真正切到富文本模式才拉取。
+ */
+const KnowledgeRichEditor = defineAsyncComponent(
+  () => import('@/components/knowledge/KnowledgeRichEditor.vue')
+)
+
+// ==================== 路由 / ID 归一 ====================
+
+const isNew = computed(() => route.params.id === 'new' || route.params.id === undefined)
+const id = computed(() => {
+  if (isNew.value) return null
+  const n = Number(route.params.id)
+  return Number.isFinite(n) && n > 0 ? n : NaN
+})
+const draftToken = computed(() => typeof route.query.draft === 'string' ? route.query.draft : 'default')
+const draftKey = computed(() => (isNew.value ? `knowledge-doc-new-${draftToken.value}` : `knowledge-doc-${id.value}`))
+
+// ==================== 表单 ====================
+
+const emptyForm = () => ({
+  title: '',
+  category: '',
+  summary: '',
+  tags: [] as string[],
+  content: '',
+  /** 所属知识库（V2）：null = 落默认库（新建）/ 不变更（编辑） */
+  kbId: null as number | null,
+})
+const formData = ref(emptyForm())
+type EditorForm = ReturnType<typeof emptyForm>
+/** 右侧面板 Tab */
+const activeSideTab = ref<'settings' | 'toc'>('toc')
+interface RichEditorExpose { insertHtml: (html: string) => void; focus: () => void }
+type StarterTemplateKey = 'blank' | 'troubleshooting' | 'runbook' | 'postmortem'
+
+const tocItems = ref<TocItem[]>([])
+const richEditorRef = ref<RichEditorExpose | null>(null)
+const directoryCategories = ref<KnowledgeCategoryEntity[]>([])
+const managedTags = ref<KnowledgeTag[]>([])
+/** 新建时：是否保存后立即发布并向量化 */
+const publishOnCreate = ref(false)
+/** 编辑时：当前持有的版本号（乐观锁），由详情加载得到 */
+const currentVersion = ref(0)
+/** 编辑时：变更说明（写入版本历史 change_reason） */
+const changeReason = ref('')
+
+const loadingEdit = ref(false)
+const editorReady = ref(false)
+const saving = ref(false)
+const draftSavedAt = ref<string | null>(null)
+const mobileSideOpen = ref(false)
+const editorPreview = ref(true)
+/**
+ * 默认 Markdown 模式，富文本编辑器仅在用户主动切换时懒加载。
+ *
+ * 性能考量：
+ * - 富文本编辑器（wangEditor）打包后 800 KB / gzip 274 KB
+ * - Markdown 编辑器（md-editor-v3）已内置，无额外加载
+ * - 运维文档 80% 场景使用 Markdown 即可满足需求
+ *
+ * 用户可通过顶栏切换按钮随时启用富文本模式。
+ */
+const editorMode = ref<'visual' | 'markdown'>('markdown')
+const starterDismissed = ref(false)
+
+/**
+ * 左右侧栏折叠状态。
+ *
+ * 折叠/持久化/过渡动画/命中区已统一收敛到 CollapsiblePanel，
+ * 此处只保留状态与实例引用供快捷键与图标轨使用。
+ */
+const leftSidebarCollapsed = ref(false)
+const rightSidebarCollapsed = ref(false)
+const leftPanelRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
+const rightPanelRef = ref<InstanceType<typeof CollapsiblePanel> | null>(null)
+
+/**
+ * `[` 收左栏（目录）、`]` 收右栏（大纲/属性）。
+ *
+ * 编辑器正文是 contenteditable / textarea，useHotkeys 已排除可编辑元素，
+ * 故在正文中打 `[` `]` 不会误触折叠。
+ */
+/**
+ * 窄屏（≤760px）下右栏改由已有的悬浮抽屉（mobileSideOpen）控制，
+ * 此时禁用 CollapsiblePanel 的折叠——否则两套开合入口并存会互相矛盾：
+ * 用户先折叠再点抽屉按钮，内容因已折叠而未渲染，按钮看似失灵。
+ * 断点与下方 `@media (max-width: 760px)` 的 `.ce-sidebar` 抽屉样式保持一致。
+ */
+const isNarrowScreen = useMediaQuery('(max-width: 760px)')
+
+useHotkeys([
+  { key: '[', description: '收起/展开目录', handler: () => leftPanelRef.value?.toggle() },
+  { key: ']', description: '收起/展开侧栏', handler: () => rightPanelRef.value?.toggle() }
+])
+const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+
+const starterTemplates = [
+  {
+    key: 'blank' as const,
+    label: '空白文档',
+    icon: FileText,
+    content: '<p><br></p>',
+  },
+  {
+    key: 'troubleshooting' as const,
+    label: '故障排查',
+    icon: Wrench,
+    content: '<h2>现象与影响</h2><p><br></p><h2>排查过程</h2><p><br></p><h2>根因与处理</h2><p><br></p><h2>验证结果</h2><p><br></p>',
+  },
+  {
+    key: 'runbook' as const,
+    label: '操作手册',
+    icon: ListChecks,
+    content: '<h2>适用范围</h2><p><br></p><h2>前置检查</h2><p><br></p><h2>操作步骤</h2><ol><li><br></li></ol><h2>回滚方案</h2><p><br></p>',
+  },
+  {
+    key: 'postmortem' as const,
+    label: '故障复盘',
+    icon: TriangleAlert,
+    content: '<h2>事件摘要</h2><p><br></p><h2>时间线</h2><p><br></p><h2>根因分析</h2><p><br></p><h2>改进事项</h2><ul><li><br></li></ul>',
+  },
+] satisfies Array<{ key: StarterTemplateKey; label: string; icon: typeof FileText; content: string }>
+
+
+const selectedCategoryId = computed<number | null>(() =>
+  findCategoryIdByName(formData.value.category, directoryCategories.value))
+
+// ==================== 离开保护 / 草稿 ====================
+
+const isDirty = ref(false)
+// 新建时「保存后立即发布」开关（带 setter，供 v-model）
+const publishOnChange = computed({
+  get: () => publishOnCreate.value,
+  set: (v) => { publishOnCreate.value = v; isDirty.value = true }
+})
+
+watch(formData, () => { isDirty.value = true }, { deep: true })
+watch(publishOnChange, () => { isDirty.value = true })
+
+/**
+ * 离开确认（三选一）。
+ *
+ * 草稿已由 saveDraft 自动暂存到本机，故「离开」与「丢弃」是两件不同的事：
+ * - 本机暂存并离开 → 草稿留着，下次进来自动恢复
+ * - 放弃 → clearDraft 彻底丢掉这次编辑
+ * - 关闭/Esc → 留在页面继续编辑
+ *
+ * 原先这段逻辑在页内「返回知识库」按钮的 handleBack 里，只覆盖点那个按钮的路径；
+ * 现统一到 useDirtyGuard 的 onBeforeRouteLeave，面包屑跳转、导航栏跳转、
+ * 浏览器后退全部走同一套确认，不会有绕过草稿保护的入口。
+ */
+useDirtyGuard(isDirty, {
+  message: '有未提交的内容，是否暂存到本机后离开？',
+  title: '提示',
+  confirmText: '本机暂存并离开',
+  discardText: '放弃',
+  onConfirm: () => {
+    handleSaveDraft()
+    isDirty.value = false
+  },
+  onDiscard: () => {
+    clearDraft(draftKey.value)
+    isDirty.value = false
+  }
+})
+
+let autoSaveTimer: number | null = null
+const currentDraftState = (): EditorDraftState => ({
+  form: { ...formData.value, tags: [...formData.value.tags] },
+  baseVersion: isNew.value ? null : currentVersion.value,
+  publishOnCreate: publishOnCreate.value,
+  changeReason: changeReason.value,
+  editorMode: editorMode.value,
+})
+
+const saveCurrentDraft = () => saveDraft(draftKey.value, currentDraftState())
+
+const startAutoSave = () => {
+  if (autoSaveTimer) clearInterval(autoSaveTimer)
+  autoSaveTimer = window.setInterval(() => {
+    if (isDirty.value) {
+      saveCurrentDraft()
+    }
+  }, 3000)
+}
+
+const syncEditorViewport = () => {
+  editorPreview.value = window.innerWidth > 760
+}
+
+const showStarter = computed(() =>
+  isNew.value
+  && editorMode.value === 'visual'
+  && !starterDismissed.value
+  && !hasMeaningfulContent(formData.value.content)
+)
+
+const startWithTemplate = async (key: StarterTemplateKey) => {
+  const template = starterTemplates.find(item => item.key === key)
+  if (!template) return
+  starterDismissed.value = true
+  formData.value.content = template.content
+  await nextTick()
+  richEditorRef.value?.focus()
+}
+
+const switchEditorMode = async (mode: 'visual' | 'markdown') => {
+  if (mode === editorMode.value) return
+  starterDismissed.value = true
+  formData.value.content = mode === 'visual'
+    ? await toVisualContent(formData.value.content)
+    : turndown.turndown(formData.value.content)
+  editorMode.value = mode
+  await nextTick()
+}
+
+const insertBlock = async (command: BlockCommand) => {
+  starterDismissed.value = true
+  if (editorMode.value === 'visual') {
+    await nextTick()
+    richEditorRef.value?.insertHtml(HTML_BLOCKS[command])
+    return
+  }
+  formData.value.content = appendMarkdownBlock(formData.value.content, command)
+}
+
+// ==================== 加载 ====================
+
+const loadCategoriesAndTags = async () => {
+  const [categoryResult, tagResult] = await Promise.allSettled([
+    fetchKnowledgeCategories(),
+    fetchKnowledgeTags(),
+  ])
+  if (categoryResult.status === 'fulfilled') {
+    directoryCategories.value = categoryResult.value
+  } else {
+    console.warn('[KnowledgeEditor] 加载目录分类失败', categoryResult.reason)
+  }
+  if (tagResult.status === 'fulfilled') {
+    managedTags.value = tagResult.value
+  } else {
+    console.warn('[KnowledgeEditor] 加载标签失败', tagResult.reason)
+  }
+  await Promise.all([store.loadCategories(), store.loadHotTags()])
+  if (tagResult.status === 'rejected') {
+    managedTags.value = store.hotTags.map((item, index) => ({
+      id: -(index + 1),
+      name: item.tag,
+      description: null,
+      color: null,
+      usageCount: item.count,
+    }))
+  }
+}
+
+/**
+ * 知识库列表（V2）。onMounted 与 loadDoc 并发起跑，loadDoc 的
+ * 「新建默认落默认库」需要等它——单例 Promise 保证只拉一次且可等待。
+ */
+const knowledgeBases = ref<KnowledgeBaseItem[]>([])
+let knowledgeBasesPromise: Promise<void> | null = null
+const loadKnowledgeBases = () => {
+  knowledgeBasesPromise ??= fetchKnowledgeBases()
+    .then(list => { knowledgeBases.value = list })
+    .catch(e => { console.warn('[KnowledgeEditor] 加载知识库列表失败', e) })
+  return knowledgeBasesPromise
+}
+
+const loadDoc = async () => {
+  // 编辑态加载失败或跳转后，重置干净状态
+  if (isNew.value) {
+    starterDismissed.value = false
+    formData.value = emptyForm()
+    formData.value.category = typeof route.query.category === 'string' ? route.query.category : ''
+    // 默认归属：列表页带着库筛选点「新建」时跟随该库（?kb=），否则落默认库。
+    // 等库列表到达再定默认——onMounted 里它与本函数并发起跑，见 loadKnowledgeBases
+    const routeKb = Number(route.query.kb)
+    if (Number.isInteger(routeKb) && routeKb > 0) {
+      formData.value.kbId = routeKb
+    } else {
+      await loadKnowledgeBases()
+      formData.value.kbId =
+        knowledgeBases.value.find(b => b.code.toLowerCase() === 'default')?.id ?? null
+    }
+    currentVersion.value = 0
+    changeReason.value = ''
+    publishOnCreate.value = false
+    draftSavedAt.value = null
+    const rawDraft = loadDraft<EditorDraftState | EditorForm>(draftKey.value)
+    if (rawDraft) {
+      const draft = normalizeDraftState(rawDraft)
+      const merged = { ...formData.value, ...draft.form }
+      merged.tags = draft.form.tags ?? []
+      formData.value = merged
+      publishOnCreate.value = draft.publishOnCreate
+      changeReason.value = draft.changeReason
+      editorMode.value = draft.editorMode
+      notify.info('已恢复草稿')
+      isDirty.value = true
+    }
+    if (editorMode.value === 'visual') {
+      formData.value.content = await toVisualContent(formData.value.content)
+    }
+    return
+  }
+
+  if (Number.isNaN(id.value)) {
+    notify.error('无效的文档 ID')
+    router.replace('/knowledge')
+    return
+  }
+  const docId = id.value
+  if (docId == null) return
+
+  loadingEdit.value = true
+  try {
+    const d = await store.loadDetail(docId)
+    // store.loadDetail 不再抛错（三态收敛到 useResourceState 后，
+    // 「不存在」与「加载失败」都以返回 null 表示），故按 store 状态区分：
+    // notFound 跳回列表，error 由页面的三态区渲染重试入口
+    if (!d) {
+      if (store.detailStatus === 'notFound') {
+        notify.error('文档不存在或已被删除')
+        router.replace('/knowledge')
+      }
+      return
+    }
+    if (d.status === 'DEPRECATED' || d.status === 'ARCHIVED') {
+      notify.warning('已废弃或已归档文档需要先恢复才能编辑')
+      router.replace(`/knowledge/${docId}`)
+      return
+    }
+    formData.value = {
+      title: d.title,
+      category: d.category ?? '',
+      summary: d.summary ?? '',
+      tags: [...d.tags],
+      content: await toVisualContent(d.content),
+      // 回填当前归属：面板据此展示所在库；保存时若与库中一致，后端视为未变更
+      kbId: d.kbId ?? null,
+    }
+    currentVersion.value = d.version
+    publishOnCreate.value = false
+    changeReason.value = ''
+    isDirty.value = false
+
+    const rawDraft = loadDraft<EditorDraftState | EditorForm>(draftKey.value)
+    if (rawDraft) {
+      const draft = normalizeDraftState(rawDraft)
+      if (draft.baseVersion == null || draft.baseVersion !== d.version) {
+        try {
+          await ElMessageBox.confirm(
+            `本机草稿基于 ${draft.baseVersion == null ? '未知版本' : `v${draft.baseVersion}`}，服务器已是 v${d.version}。为避免覆盖他人修改，是否将草稿恢复为新文档？`,
+            '草稿版本冲突',
+            { confirmButtonText: '恢复为新文档', cancelButtonText: '忽略并清除', type: 'warning' }
+          )
+          const newDraftId = crypto.randomUUID()
+          saveDraft(`knowledge-doc-new-${newDraftId}`, { ...draft, baseVersion: null })
+          clearDraft(draftKey.value)
+          isDirty.value = false
+          await router.replace({ path: '/knowledge/editor/new', query: { draft: newDraftId } })
+          return
+        } catch {
+          clearDraft(draftKey.value)
+        }
+      } else {
+      try {
+        await ElMessageBox.confirm(
+          '发现此文档的本机暂存内容，是否恢复？恢复后仍需点击“保存”提交到服务器。',
+          '恢复本机暂存',
+          { confirmButtonText: '恢复', cancelButtonText: '忽略并清除', type: 'info' }
+        )
+        formData.value = {
+          ...formData.value,
+          ...draft.form,
+          tags: draft.form.tags ?? [],
+          content: draft.editorMode === 'visual'
+            ? await toVisualContent(draft.form.content ?? '')
+            : draft.form.content ?? '',
+        }
+        changeReason.value = draft.changeReason
+        editorMode.value = draft.editorMode
+        normalizeTags()
+        draftSavedAt.value = '已恢复'
+        isDirty.value = true
+      } catch {
+        clearDraft(draftKey.value)
+      }
+      }
+    }
+  } catch (e) {
+    // store.loadDetail 已不抛错（notFound/error 均返回 null 并置 store 状态），
+    // 此处兜住的是本函数其余步骤的异常（草稿恢复、内容转换等）
+    handleServerError(e, { action: '加载文档' })
+  } finally {
+    loadingEdit.value = false
+  }
+}
+
+const mountEditor = async () => {
+  editorReady.value = false
+  await loadDoc()
+  await nextTick()
+  editorReady.value = true
+}
+
+onMounted(async () => {
+  syncEditorViewport()
+  window.addEventListener('resize', syncEditorViewport, { passive: true })
+  loadCategoriesAndTags()
+  // 与 loadDoc 并发：新建分支默认库的解析会 await 这个单例 Promise
+  void loadKnowledgeBases()
+  await mountEditor()
+  startAutoSave()
+})
+
+// 监听内容变化，提取目录（防抖 500ms）
+let tocTimer: number | null = null
+watch(() => formData.value.content, () => {
+  if (tocTimer) clearTimeout(tocTimer)
+  tocTimer = window.setTimeout(() => {
+    tocItems.value = extractToc(formData.value.content)
+  }, 500)
+})
+
+watch(
+  [() => route.params.id, () => route.query.draft, () => route.query.category],
+  async () => { await mountEditor() }
+)
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncEditorViewport)
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+    autoSaveTimer = null
+  }
+  if (tocTimer) {
+    clearTimeout(tocTimer)
+    tocTimer = null
+  }
+})
+
+// ==================== 标签 / 摘要工具 ====================
+
+const addTag = (tag: string) => {
+  const t = tag.trim()
+  if (!t) return
+  if (hasTag(formData.value.tags, t)) {
+    notify.warning('标签已存在')
+    return
+  }
+  if (formData.value.tags.length >= MAX_TAGS) {
+    notify.warning(`最多添加 ${MAX_TAGS} 个标签`)
+    return
+  }
+  formData.value.tags.push(t)
+}
+
+const normalizeTags = () => {
+  formData.value.tags = normalizeTagList(formData.value.tags)
+}
+
+const createCategoryFromSettings = async () => {
+  try {
+    const { value } = await ElMessageBox.prompt('新分类会同步出现在左侧知识库目录中', '新建分类', {
+      inputPlaceholder: '分类名称',
+      inputPattern: /\S+/,
+      inputErrorMessage: '请输入分类名称',
+    })
+    const created = await createKnowledgeCategory({ name: value.trim(), parentId: null })
+    await loadCategoriesAndTags()
+    formData.value.category = created.name
+    notify.success('分类已创建')
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    handleServerError(error, { action: '创建分类' })
+  }
+}
+
+/** 自动生成摘要（去除 Markdown 标记，取前 150 字） */
+const generateSummary = () => {
+  if (!hasMeaningfulContent(formData.value.content)) {
+    notify.warning('请先输入文档内容')
+    return
+  }
+  const text = toPlainText(formData.value.content).slice(0, 150)
+  if (!text) {
+    notify.warning('内容格式不正确，无法生成摘要')
+    return
+  }
+  formData.value.summary = text
+  notify.success('已生成摘要')
+}
+
+// ==================== 导入 .md ====================
+
+const MAX_IMPORT_SIZE = 5 * 1024 * 1024 // 5MB
+
+const handleImportMd = () => {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.md,.markdown'
+  input.onchange = async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (!file) return
+    if (file.size > MAX_IMPORT_SIZE) {
+      notify.error(`文件过大（${(file.size / 1024 / 1024).toFixed(1)}MB），最大支持 5MB`)
+      return
+    }
+    const text = await file.text()
+    formData.value.content = editorMode.value === 'visual' ? await toVisualContent(text) : text
+    if (!formData.value.title.trim()) formData.value.title = file.name.replace(/\.(md|markdown)$/i, '')
+    notify.success(`已导入 ${file.name}`)
+  }
+  input.click()
+}
+
+// ==================== 保存草稿 ====================
+
+const handleSaveDraft = () => {
+  if (!saveCurrentDraft()) {
+    notify.error('本机暂存失败，请检查浏览器存储空间')
+    return
+  }
+  draftSavedAt.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  notify.success('已暂存到本机浏览器')
+}
+
+const showSaveOutcome = async (saved: KnowledgeDocSaveResult, successMessage: string) => {
+  const indexFailed = saved.indexStatus === 'FAILED' || saved.indexOutcome?.status === 'FAILED'
+  if (indexFailed) {
+    notify.warning('文档已保存，但向量化失败，可在详情页重试')
+  } else {
+    notify.success(successMessage)
+  }
+  if (saved.nearDuplicates?.length) {
+    const titles = saved.nearDuplicates.slice(0, 5).map(item => `《${item.title}》`).join('、')
+    await ElMessageBox.alert(`检测到内容相似的文档：${titles}。建议确认是否需要合并或建立引用。`, '相似文档提醒', {
+      type: 'warning',
+      confirmButtonText: '我知道了',
+    })
+  }
+}
+
+const handleEditorMenu = async (command: 'mode' | 'import' | 'draft') => {
+  if (command === 'mode') {
+    await switchEditorMode(editorMode.value === 'visual' ? 'markdown' : 'visual')
+  } else if (command === 'import') {
+    handleImportMd()
+  } else {
+    handleSaveDraft()
+  }
+}
+
+// ==================== 保存 / 发布 ====================
+
+const handleSave = async (publishAfterSave = false) => {
+  if (!formData.value.title.trim()) {
+    notify.warning('请输入标题')
+    return
+  }
+  if (!hasMeaningfulContent(formData.value.content)) {
+    notify.warning('请输入内容')
+    return
+  }
+  if (formData.value.tags.length > MAX_TAGS) {
+    formData.value.tags = formData.value.tags.slice(0, MAX_TAGS)
+  }
+  normalizeTags()
+
+  // 入库内容统一为 Markdown，与 sys_knowledge_doc.content 的 schema 契约一致
+  //（该列注释明写「Markdown 原文」）。
+  //
+  // 修复前这里直接提交 formData.content —— 用户停在哪个编辑模式就存哪个格式，
+  // visual 模式存的是 HTML。三处后果：
+  //  1. RAG 切片错乱：ParentChildDocumentSplitter 按 Markdown 标题层级切分，
+  //     拿到 HTML 时层级识别不可靠，切片边界跑偏 → 检索准确率下降；
+  //  2. 详情页渲染不可控：KnowledgeDetail 走 safeMarkdown（marked + DOMPurify），
+  //     HTML 内容经 Markdown 渲染器处理，结果取决于 marked 对裸 HTML 的宽容度；
+  //  3. content_hash 去重失效：同一篇文档用两种模式保存，哈希不同，
+  //     近重复检测认不出它们是同一篇。
+  const contentForStorage = toMarkdownForStorage(formData.value.content)
+
+  const common = {
+    title: formData.value.title.trim(),
+    category: formData.value.category.trim(),
+    categoryId: selectedCategoryId.value,
+    summary: formData.value.summary.trim() || undefined,
+    tags: formData.value.tags,
+    content: contentForStorage,
+    // 知识库归属（V2）：null/undefined 时新建落默认库、编辑不变更；
+    // 编辑时换库会触发后端按新库切片参数重建索引
+    kbId: formData.value.kbId ?? undefined,
+  }
+
+  saving.value = true
+  try {
+    if (isNew.value) {
+      const req: KnowledgeDocCreateRequest = { ...common, publish: publishOnCreate.value }
+      const saved = await store.createDoc(req)
+      await showSaveOutcome(saved, publishOnCreate.value ? '文档已发布' : '草稿已保存')
+      clearDraft(draftKey.value)
+      isDirty.value = false
+      if (autoSaveTimer) clearInterval(autoSaveTimer)
+      router.push(`/knowledge/${saved.id}`)
+      return
+    } else {
+      const docId = id.value
+      if (docId == null) return
+      const req: KnowledgeDocUpdateRequest = {
+        ...common,
+        version: currentVersion.value,
+        changeReason: changeReason.value.trim() || undefined,
+      }
+      const saved = await store.updateDoc(docId, req, currentVersion.value)
+      if (publishAfterSave) {
+        const published = await store.publishDoc(docId)
+        if (published.indexStatus === 'FAILED') {
+          notify.warning('草稿已发布，但向量化失败，可在详情页重试')
+        } else {
+          notify.success('文档已保存并发布')
+        }
+      } else {
+        await showSaveOutcome(saved, '文档已更新')
+      }
+      clearDraft(draftKey.value)
+      isDirty.value = false
+      if (autoSaveTimer) clearInterval(autoSaveTimer)
+      router.push(`/knowledge/${saved.id}`)
+      return
+    }
+  } catch (e) {
+    if (e instanceof DuplicateContentError) {
+      try {
+        await ElMessageBox.confirm(
+          `内容与已有文档「${e.duplicateTitle ?? '未知'}」重复。是否查看该文档？`,
+          '内容重复',
+          {
+            confirmButtonText: '查看重复文档',
+            cancelButtonText: '留在本页',
+            type: 'warning',
+          }
+        )
+        if (e.duplicateDocId) router.push(`/knowledge/${e.duplicateDocId}`)
+      } catch {
+        // 用户选择留在本页，继续编辑
+      }
+    } else if (e instanceof VersionConflictError) {
+      /*
+       * 版本冲突：禁止自动覆盖（6.11），但**不能只甩一句「请刷新」就完事**。
+       *
+       * 原实现弹的是纯文本 toast，用户面临的处境是：
+       *   - 页面上没有任何「刷新」入口，只能按 F5
+       *   - 而按 F5 会把自己刚写的内容全部丢掉（编辑器里的是未落库的）
+       *   - 草稿虽然在 sessionStorage 里，但它的 baseVersion 已过期，
+       *     恢复时又会触发一次「草稿版本冲突」弹窗
+       * 结果就是用户被困住：既不敢刷新，也提交不上去。
+       *
+       * 改为给出明确的两条出路，并**在刷新前先把当前内容存进草稿**——
+       * 这样无论选哪条，用户写的字都不会凭空消失。
+       */
+      saveCurrentDraft()
+      try {
+        await ElMessageBox.confirm(
+          '该文档已被他人修改，你的编辑基于旧版本。\n\n' +
+          '你的内容已暂存到本机草稿。是否载入最新版本？' +
+          '载入后可对照草稿手动合并，避免覆盖他人的改动。',
+          '版本冲突',
+          {
+            type: 'warning',
+            confirmButtonText: '载入最新版本',
+            cancelButtonText: '留在本页继续编辑',
+            distinguishCancelAndClose: true,
+          }
+        )
+        // 重新拉取详情：currentVersion 与表单都会被刷新为服务器最新值
+        await loadDoc()
+        notify.info('已载入最新版本，你的原内容保留在本机草稿中')
+      } catch {
+        // 留在本页：保持现状，用户可自行复制内容后再决定
+      }
+    } else {
+      handleServerError(e, { action: '保存文档' })
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+const handleSaveAndPublish = () => handleSave(true)
+const handleSaveClick = () => handleSave()
+
+// 返回列表：由面包屑（AppBreadcrumb）+ useDirtyGuard 的离开确认统一承担，
+// 原页内 handleBack 已删除——它只覆盖点那一个按钮的路径，无法拦住其它离开入口。
+
+const scrollEditorToHeading = async (item: { text: string }) => {
+  activeSideTab.value = 'toc'
+  await nextTick()
+  const contentRoot = editorMode.value === 'visual'
+    ? document.querySelector('.ce-paper .kr-editor')
+    : document.querySelector('.ce-paper .md-editor-preview')
+  if (contentRoot) {
+    const heading = Array.from(contentRoot.querySelectorAll('h2,h3')).find(
+      el => el.textContent?.trim() === item.text
+    )
+    if (heading instanceof HTMLElement) {
+      heading.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+  }
+  notify.info('当前目录标题尚未渲染')
+}
+
+const insertHeading = async () => {
+  try {
+    const { value } = await ElMessageBox.prompt('标题将追加到文档末尾，可继续在编辑区调整位置', '新增目录标题', {
+      inputPlaceholder: '二级标题名称',
+      inputPattern: /\S+/,
+      inputErrorMessage: '请输入标题名称',
+    })
+    formData.value.content = appendHeading(
+      formData.value.content, value, editorMode.value === 'visual')
+  } catch {
+    // 用户取消
+  }
+}
+
+const renameHeading = async (item: TocItem) => {
+  try {
+    const { value } = await ElMessageBox.prompt('修改会同步更新正文标题', '重命名文章标题', {
+      inputValue: item.text,
+      inputPattern: /\S+/,
+      inputErrorMessage: '请输入标题名称',
+    })
+    formData.value.content = renameHeadingIn(
+      formData.value.content, item, value, editorMode.value === 'visual')
+  } catch {
+    // 用户取消
+  }
+}
+
+const removeHeading = async (item: TocItem) => {
+  try {
+    await ElMessageBox.confirm(`删除目录标题“${item.text}”？标题下正文会保留。`, '删除目录标题', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+    formData.value.content = removeHeadingIn(
+      formData.value.content, item, editorMode.value === 'visual')
+  } catch {
+    // 用户取消
+  }
+}
+
+// ==================== 视图派生 ====================
+
+/** 主操作按钮文案：保存中 / 新建（按发布开关）/ 编辑 */
+const primaryLabel = computed(() =>
+  saving.value
+    ? '保存中...'
+    : isNew.value
+      ? (publishOnCreate.value ? '发布' : '保存草稿')
+      : '保存'
+)
+</script>
+
+<template>
+  <div class="knowledge-editor">
+    <!-- 页内工具栏：面包屑 + 标题 + 保存状态 + 操作按钮 -->
+    <header class="ce-toolbar">
+      <div class="ce-toolbar-inner">
+        <div class="ce-toolbar-left">
+          <!--
+            统一为首页起始的递进面包屑，替代原「返回知识库」按钮。
+            未保存草稿的离开确认由 useDirtyGuard 的 onBeforeRouteLeave 兜住——
+            它拦截所有路由离开（含面包屑跳转），不会因换成 RouterLink 而绕过。
+          -->
+          <AppBreadcrumb
+            :items="[
+              { label: '知识库', to: '/knowledge' },
+              { label: formData.title || '无标题文档' }
+            ]"
+            :current-max-width="260"
+          />
+        </div>
+        <div class="ce-toolbar-right">
+          <div class="ce-save-status">
+            <span class="ce-save-dot" :class="{ 'ce-save-dot--dirty': isDirty }" />
+            <span>
+              {{ isDirty ? (draftSavedAt ? `未提交 · 本机暂存 ${draftSavedAt}` : '未提交 · 自动暂存中') : '已提交' }}
+            </span>
+          </div>
+          <el-dropdown trigger="click" @command="handleEditorMenu">
+            <button class="ce-btn-more" type="button" title="更多编辑操作">
+              <MoreHorizontal :size="18" />
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="mode">
+                  <Code2 v-if="editorMode === 'visual'" :size="15" />
+                  <Eye v-else :size="15" />
+                  {{ editorMode === 'visual' ? 'Markdown 高级模式' : '返回可视化编辑' }}
+                </el-dropdown-item>
+                <el-dropdown-item command="import" divided><Upload :size="15" />导入 Markdown</el-dropdown-item>
+                <el-dropdown-item command="draft"><Save :size="15" />暂存到本机</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <button class="ce-btn-primary" type="button" :disabled="saving" @click="handleSaveClick">
+            <Send :size="15" />
+            <span>{{ primaryLabel }}</span>
+          </button>
+          <button
+            v-if="!isNew && store.detail?.status === 'DRAFT'"
+            class="ce-btn-outline"
+            type="button"
+            :disabled="saving"
+            @click="handleSaveAndPublish"
+          >
+            <Send :size="15" />
+            <span>保存并发布</span>
+          </button>
+          <button class="ce-mobile-side" type="button" title="文章大纲和文档属性" @click="mobileSideOpen = true">
+            <Settings2 :size="16" />
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 加载中 -->
+    <div v-if="loadingEdit || !editorReady" class="ce-loading">
+      <span class="ce-spinner" />
+      <span>加载文档...</span>
+    </div>
+
+    <div v-else class="ce-workspace">
+      <!-- 左侧知识树（折叠按钮在知识树自己的标题行内） -->
+      <CollapsiblePanel
+        ref="leftPanelRef"
+        side="left"
+        storage-key="ke-left-collapsed"
+        label="目录"
+        :width="260"
+        :rail-width="40"
+        @update:collapsed="leftSidebarCollapsed = $event"
+      >
+        <template #default="{ toggle }">
+          <KnowledgeTreeSidebar
+            :current-doc-id="id"
+            mode="editor"
+            @changed="loadCategoriesAndTags"
+          >
+            <template #title-actions>
+              <CollapseToggle side="left" label="目录" @click="toggle" />
+            </template>
+          </KnowledgeTreeSidebar>
+        </template>
+      </CollapsiblePanel>
+      <div v-if="mobileSideOpen" class="ce-side-mask" @click="mobileSideOpen = false" />
+      <div class="ce-body">
+      <!-- 居中纸面编辑器 -->
+      <main class="ce-main">
+        <div class="ce-paper">
+          <input
+            v-model="formData.title"
+            type="text"
+            class="ce-doc-title"
+            placeholder="请输入标题"
+            maxlength="100"
+          />
+          <div class="ce-paper-meta">
+            <el-dropdown v-if="!showStarter" trigger="click" @command="insertBlock">
+              <button class="ce-insert-menu" type="button">
+                <Plus :size="14" />
+                <span>插入</span>
+                <ChevronDown :size="13" />
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="h2"><Heading2 :size="15" />二级标题</el-dropdown-item>
+                  <el-dropdown-item command="h3"><Heading3 :size="15" />三级标题</el-dropdown-item>
+                  <el-dropdown-item command="callout" divided><Lightbulb :size="15" />提示块</el-dropdown-item>
+                  <el-dropdown-item command="code"><SquareTerminal :size="15" />代码块</el-dropdown-item>
+                  <el-dropdown-item command="table"><Table2 :size="15" />表格</el-dropdown-item>
+                  <el-dropdown-item command="divider"><Minus :size="15" />分隔线</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <span class="ce-paper-context">
+              <BookOpen :size="13" />
+              {{ formData.category || '未分类' }}
+            </span>
+            <span class="ce-title-count">{{ formData.title.length }}/100</span>
+          </div>
+          <section v-if="showStarter" class="ce-starter" aria-labelledby="ce-starter-title">
+            <div class="ce-starter-title">
+              <BookTemplate :size="18" />
+              <h2 id="ce-starter-title">选择文档模板</h2>
+            </div>
+            <div class="ce-starter-grid">
+              <button
+                v-for="template in starterTemplates"
+                :key="template.key"
+                type="button"
+                @click="startWithTemplate(template.key)"
+              >
+                <component :is="template.icon" :size="19" />
+                <span>{{ template.label }}</span>
+              </button>
+            </div>
+          </section>
+          <KnowledgeRichEditor
+            v-else-if="editorMode === 'visual'"
+            ref="richEditorRef"
+            v-model="formData.content"
+          />
+          <MdEditor
+            v-else
+            v-model="formData.content"
+            language="zh-CN"
+            :preview="editorPreview"
+            :toolbars="[
+              'bold',
+              'underline',
+              'italic',
+              'strikeThrough',
+              '-',
+              'title',
+              'sub',
+              'sup',
+              'quote',
+              'unorderedList',
+              'orderedList',
+              'task',
+              '-',
+              'codeRow',
+              'code',
+              'link',
+              'image',
+              'table',
+              '-',
+              'revoke',
+              'next',
+              '=',
+              'pageFullscreen',
+              'fullscreen',
+              'preview',
+              'catalog'
+            ]"
+            :toolbarsExclude="['github']"
+            placeholder="开始编写 Markdown 内容..."
+          />
+        </div>
+      </main>
+
+      <!-- 右侧设置面板（可折叠；折叠后图标轨可直接切到大纲/属性 tab） -->
+      <CollapsiblePanel
+        ref="rightPanelRef"
+        side="right"
+        storage-key="ke-right-collapsed"
+        label="侧栏"
+        :width="240"
+        :disabled="isNarrowScreen"
+        @update:collapsed="rightSidebarCollapsed = $event"
+      >
+        <!--
+          折叠态图标轨：点击图标既展开侧栏又切到对应 tab——
+          比「先展开、再点 tab」两步操作更直接。
+        -->
+        <template #rail="{ toggle }">
+          <RailButton
+            title="文章大纲"
+            :active="activeSideTab === 'toc'"
+            :count="tocItems.length"
+            @click="activeSideTab = 'toc'; toggle()"
+          >
+            <ListTree :size="17" />
+          </RailButton>
+          <RailButton
+            title="文档属性"
+            :active="activeSideTab === 'settings'"
+            @click="activeSideTab = 'settings'; toggle()"
+          >
+            <Settings2 :size="16" />
+          </RailButton>
+        </template>
+
+        <template #default="{ toggle }">
+        <aside class="ce-sidebar" :class="{ 'mobile-open': mobileSideOpen }">
+        <div class="ce-side-tabs">
+          <!-- 右侧栏的折叠按钮放**左端**：镜像对称，贴近它要让出的主内容区 -->
+          <CollapseToggle
+            v-if="!isNarrowScreen"
+            class="ce-side-collapse"
+            side="right"
+            label="侧栏"
+            @click="toggle"
+          />
+          <button
+            class="ce-side-tab"
+            :class="{ active: activeSideTab === 'toc' }"
+            @click="activeSideTab = 'toc'"
+          >大纲</button>
+          <button
+            class="ce-side-tab"
+            :class="{ active: activeSideTab === 'settings' }"
+            @click="activeSideTab = 'settings'"
+          >属性</button>
+        </div>
+
+        <!-- 设置 Tab（文档属性面板已抽成子组件） -->
+        <template v-if="activeSideTab === 'settings'">
+          <DocPropertiesPanel
+            v-model:category="formData.category"
+            v-model:tags="formData.tags"
+            v-model:summary="formData.summary"
+            v-model:publish-on-create="publishOnChange"
+            v-model:change-reason="changeReason"
+            v-model:kb-id="formData.kbId"
+            :knowledge-bases="knowledgeBases"
+            :categories="directoryCategories"
+            :managed-tags="managedTags"
+            :hot-tags="store.hotTags"
+            :is-new="isNew"
+            :current-version="currentVersion"
+            :is-draft="store.detail?.status === 'DRAFT'"
+            :has-content="!!formData.content.trim()"
+            @create-category="createCategoryFromSettings"
+            @generate-summary="generateSummary"
+            @add-tag="addTag"
+            @normalize-tags="normalizeTags"
+          />
+        </template>
+
+        <!-- 目录 Tab（大纲面板已抽成子组件） -->
+        <template v-if="activeSideTab === 'toc'">
+          <DocOutlinePanel
+            :items="tocItems"
+            @insert="insertHeading"
+            @rename="renameHeading"
+            @remove="removeHeading"
+            @scroll-to="scrollEditorToHeading"
+          />
+        </template>
+      </aside>
+      </template>
+      </CollapsiblePanel>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped lang="scss">
+.knowledge-editor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  min-height: 620px;
+  overflow: hidden;
+  background: var(--surface-0);
+}
+
+/* ==================== 页内工具栏 ==================== */
+
+.ce-toolbar {
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-1);
+  flex-shrink: 0;
+}
+
+.ce-toolbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 0 16px;
+}
+
+.ce-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ce-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ce-btn-ghost, .ce-btn-primary, .ce-btn-more, .ce-mobile-side { border: 0; outline: 0; }
+.ce-mobile-side { display: none; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 5px; color: var(--text-2); }
+.ce-mobile-side:hover { color: var(--brand); background: var(--brand-subtle); }
+.ce-side-mask { display: none; }
+
+/* 原「返回知识库」按钮及其配套（分隔线/图标/标题）的样式已删除——
+   该按钮已被 AppBreadcrumb 面包屑取代，DOM 不存在，这些规则已成死代码。 */
+
+.ce-title-input {
+  flex: 1;
+  min-width: 180px;
+  max-width: 560px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 32px;
+  font-weight: var(--weight-bold);
+  line-height: 1.3;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease;
+
+  &::placeholder {
+    color: var(--text-3);
+    font-weight: var(--weight-normal);
+  }
+}
+
+.ce-title-count {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.ce-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.ce-save-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-subtle);
+}
+.ce-save-dot--dirty {
+  background: var(--warning, var(--warning));
+  box-shadow: 0 0 0 3px rgba(230, 162, 60, 0.15);
+}
+
+.ce-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--surface-2);
+    color: var(--text-1);
+  }
+}
+
+.ce-btn-more {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+}
+
+.ce-btn-more:hover {
+  color: var(--brand);
+  background: var(--brand-subtle);
+}
+
+.ce-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  transition: all 0.15s ease;
+
+  &:hover {
+    border-color: var(--brand-hover);
+    color: var(--brand);
+  }
+}
+
+.ce-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  background: var(--brand);
+  color: var(--brand-fg);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  transition: background 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--brand-hover);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+/* ==================== 加载态 ==================== */
+
+.ce-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 80px 0;
+  color: var(--text-3);
+  font-size: var(--text-sm);
+}
+
+.ce-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-2);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: ce-spin 0.8s linear infinite;
+}
+
+@keyframes ce-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==================== 主体区域 ==================== */
+
+.ce-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 侧栏折叠（容器/过渡/命中区/持久化）已统一由 CollapsiblePanel 负责，此处不再重复定义 */
+
+.ce-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* 居中纸面 */
+.ce-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: stretch;
+  overflow-y: auto;
+  padding: 12px 14px 24px;
+}
+
+.ce-paper {
+  width: 100%;
+  max-width: none;
+  min-height: calc(100vh - 128px);
+  padding: 22px 28px 40px;
+  box-sizing: border-box;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+}
+
+.ce-doc-title {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: 700 30px/1.35 var(--font-display);
+}
+
+.ce-doc-title::placeholder { color: var(--text-3); font-weight: var(--weight-normal); }
+
+.ce-paper-meta {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.ce-paper-meta .ce-title-count { margin-left: auto; }
+
+.ce-insert-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ce-insert-menu:hover {
+  border-color: var(--brand-hover);
+  color: var(--brand);
+}
+
+.ce-paper-context {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ce-starter {
+  min-height: calc(100vh - 250px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 18px;
+  padding: 34px 0 48px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--border-1);
+}
+
+.ce-starter-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.ce-starter-title h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+}
+
+.ce-starter-grid {
+  width: min(100%, 520px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ce-starter-grid button {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-size: 14px;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.ce-starter-grid button:hover {
+  border-color: var(--brand-hover);
+  background: var(--brand-subtle);
+  color: var(--brand);
+}
+
+
+
+
+/* 右侧设置面板 */
+/* 宽度由 CollapsiblePanel 的 width prop 控制，此处只管内部呈现 */
+.ce-sidebar {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 16px 20px;
+  overflow-y: auto;
+  background: var(--surface-hover);
+  border-left: 1px solid var(--border-1);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.ce-side-tabs {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-1);
+  margin: 0 -16px 2px;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+/* 折叠按钮在 tab 行左端（镜像对称：右侧栏的控件贴近主内容区） */
+.ce-side-collapse {
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.ce-side-tab {
+  flex: 1;
+  height: 36px;
+  border: none;
+  background: transparent;
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-bottom: 2px solid transparent;
+  padding: 0;
+
+  &.active {
+    color: var(--brand);
+    font-weight: var(--weight-semibold);
+    border-bottom-color: var(--brand);
+  }
+
+  &:hover:not(.active) {
+    color: var(--text-1);
+  }
+}
+
+
+
+
+
+
+.ce-toc-empty-action { display: flex; align-items: center; gap: 6px; border: 1px dashed var(--border-2); border-radius: 5px; padding: 9px 10px; }
+.ce-toc-empty-action:hover { border-color: var(--brand-hover); color: var(--brand); }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ==================== md-editor 纸面化 ==================== */
+
+:deep(.md-editor) {
+  border: none;
+  border-radius: var(--radius);
+  min-height: calc(100vh - 245px);
+  height: auto !important;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+}
+
+:deep(.md-editor-toolbar) {
+  background: var(--surface-hover);
+  border-bottom: 1px solid var(--border-1);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+:deep(.md-editor-toolbar-item) {
+  color: var(--text-2);
+}
+
+:deep(.md-editor-toolbar-item:hover) {
+  color: var(--brand);
+  background: var(--brand-subtle);
+}
+
+:deep(.md-editor-content-wrapper) {
+  height: auto !important;
+  flex: 1;
+  min-height: calc(100vh - 294px);
+}
+
+:deep(.md-editor-input-wrapper) {
+  height: 100% !important;
+  min-height: calc(100vh - 294px);
+}
+
+:deep(.md-editor-input) {
+  height: 100% !important;
+  min-height: calc(100vh - 294px);
+  padding: 20px 24px;
+  overflow-y: auto !important;
+}
+
+/* ==================== 响应式 ==================== */
+
+@media (max-width: 1050px) {
+  /* 宽度已由 CollapsiblePanel 的 width prop 控制，此处只收窄正文内边距 */
+  .ce-main { padding-inline: 10px; }
+}
+
+@media (max-width: 900px) {
+  .ce-toolbar-inner {
+    flex-wrap: wrap;
+    min-height: auto;
+    padding: 10px 16px;
+    row-gap: 10px;
+  }
+
+  .ce-title-input {
+    max-width: 100%;
+  }
+
+  .ce-save-status { display: none; }
+}
+
+@media (max-width: 760px) {
+  .ce-body { overflow: hidden; }
+  .ce-main { padding: 16px 12px 32px; }
+  .ce-sidebar {
+    position: fixed;
+    z-index: 81;
+    top: 56px;
+    right: 0;
+    bottom: 0;
+    width: min(300px, 88vw);
+    height: auto;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-lg);
+  }
+  .ce-sidebar.mobile-open { transform: translateX(0); }
+  .ce-side-mask { position: fixed; z-index: 80; inset: 56px 0 0; display: block; background: rgba(17, 24, 39, 0.32); }
+  .ce-mobile-side { display: inline-flex; }
+  .ce-btn-ghost span, .ce-btn-outline span { display: none; }
+  .ce-btn-ghost, .ce-btn-outline { width: 34px; justify-content: center; padding: 0; }
+  .ce-paper { padding: 22px 20px 36px; box-sizing: border-box; }
+  .ce-doc-title { font-size: 25px; }
+  .ce-paper-meta { flex-wrap: wrap; height: auto; padding-bottom: 8px; }
+  .ce-title-count { margin-left: auto; }
+  .ce-starter { min-height: calc(100vh - 260px); }
+  .ce-starter-grid { grid-template-columns: 1fr; }
+  :deep(.md-editor-preview-wrapper),
+  :deep(.md-editor-resize-operate) { display: none !important; }
+  :deep(.md-editor-input-wrapper) { width: 100% !important; }
+}
+
+@media (max-width: 600px) {
+  .ce-btn-ghost, .ce-btn-outline { display: none; }
+  .ce-toolbar-inner { gap: 8px; padding-inline: 10px; }
+  .ce-toolbar-left { gap: 7px; }
+  .ce-toolbar-right { gap: 5px; }
+  .ce-btn-primary { height: 32px; padding-inline: 11px; }
+}
+</style>
