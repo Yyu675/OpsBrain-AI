@@ -66,9 +66,20 @@ public final class AlertAnnotationKeys {
     /** 阈值（与 CURRENT_VALUE 成对渲染为「当前值 X / 阈值 Y」） */
     public static final String THRESHOLD = "threshold";
 
+    // ==================== 多源监控（Zabbix等）硬核定位 ====================
+
+    /** 监控项目（对应 Zabbix item_name，如 "HPE Primera: Get errors"） */
+    public static final String MONITOR_ITEM = "monitor_item";
+
+    /** 目标地址/IP（对应 Zabbix host_ip，如 "10.210.44.11"） */
+    public static final String TARGET_ADDRESS = "target_address";
+
+    /** 发生/恢复主机（对应 Zabbix host_name，如 "primera01"） */
+    public static final String HOST_NAME = "host_name";
+
     /** 全部人看键（渲染顺序即重要度顺序：影响 →指标事实→ 原因 → 动作 → 链接） */
     public static final List<String> ALL = List.of(
-            SUMMARY, IMPACT, CURRENT_VALUE, THRESHOLD, DESCRIPTION,
+            SUMMARY, IMPACT, MONITOR_ITEM, TARGET_ADDRESS, HOST_NAME, CURRENT_VALUE, THRESHOLD, DESCRIPTION,
             LIKELY_CAUSE, FIRST_ACTION, RUNBOOK_URL, DASHBOARD_URL);
 
     /**

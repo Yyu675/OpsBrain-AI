@@ -298,6 +298,9 @@ public class ZabbixSourceAdapter implements AlertSourceAdapter {
         putIfPresent(annotations, AlertAnnotationKeys.CURRENT_VALUE, f.get("item_value"));
         putIfPresent(annotations, "opdata", opdataOf(f));
         putIfPresent(annotations, "item_name", f.get("item_name"));
+        putIfPresent(annotations, AlertAnnotationKeys.MONITOR_ITEM, f.get("item_name"));
+        putIfPresent(annotations, AlertAnnotationKeys.TARGET_ADDRESS, f.get("host_ip"));
+        putIfPresent(annotations, AlertAnnotationKeys.HOST_NAME, f.get("host_name"));
         putIfPresent(annotations, "zabbix_event_id", f.get("event_id"));
         putIfPresent(annotations, "zabbix_trigger_id", f.get("trigger_id"));
         putIfPresent(annotations, "zabbix_host_ip", f.get("host_ip"));
