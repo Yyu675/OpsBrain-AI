@@ -29,6 +29,11 @@
           "refId": "B",
           "expr": "opsbrain_tickets_urgent_pending",
           "legendFormat": "紧急未办(P0/P1)"
+        },
+        {
+          "refId": "C",
+          "expr": "opsbrain_tickets_open",
+          "legendFormat": "在办工单 ({{priority}})"
         }
       ]
     },
@@ -207,6 +212,11 @@
           "refId": "K",
           "expr": "opsbrain_notify_silent_seconds",
           "legendFormat": "通知静默秒数"
+        },
+        {
+          "refId": "L",
+          "expr": "histogram_quantile(0.95, sum by (le, priority) (rate(opsbrain_ticket_resolved_seconds_bucket[5m])))",
+          "legendFormat": "解决耗时 p95 ({{priority}})"
         }
       ]
     }

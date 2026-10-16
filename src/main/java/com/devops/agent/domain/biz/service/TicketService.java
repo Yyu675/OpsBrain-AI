@@ -54,6 +54,8 @@ public class TicketService {
     private final com.devops.agent.domain.biz.repository.TicketAttachmentRepository attachmentRepository;
     private final com.devops.agent.domain.biz.repository.TicketAiAnalysisRepository aiAnalysisRepository;
     private final io.minio.MinioClient minioClient;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.devops.agent.infrastructure.metrics.BusinessMetrics businessMetrics;
 
     public TicketService(DevOpsTicketRepository ticketRepository,
                         TicketReplyRepository replyRepository,
@@ -501,6 +503,21 @@ public class TicketService {
         ticketRepository.updateStatus(ticketId, target);
         log.info("🔄 [TicketService] 工单状态变更 | ticketId={} | {} → {}",
                 ticketId, existing.getStatus(), target);
+
+        // D-b 组 ⑤ MTTR 时序度量：工单进入 RESOLVED 时记录解决耗时（create_time → now）
+        if (TicketEnums.Status.RESOLVED.equals(target) && businessMetrics != null) {
+            try {
+                if (existing.getCreateTime() != null) {
+                    long elapsed = java.time.Duration.between(
+                            existing.getCreateTime(), java.time.LocalDateTime.now()).toMillis();
+                    if (elapsed >= 0) {
+                        businessMetrics.recordTicketResolved(existing.getPriority(), elapsed);
+                    }
+                }
+            } catch (Exception mEx) {
+                log.debug("[TicketService] 工单 MTTR 指标打点失败（忽略）| {}", mEx.getMessage());
+            }
+        }
 
         // 活动流留痕：状态变更是工单生命周期的关键节点
         recordActivity(ticketId,

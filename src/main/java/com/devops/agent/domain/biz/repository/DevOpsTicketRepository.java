@@ -540,6 +540,27 @@ public class DevOpsTicketRepository {
     }
 
     /**
+     * 统计指定优先级的未完结工单数（D-b 组 ⑤ 工单流速指标度量：opsbrain.tickets.open{priority}）。
+     * 口径：status NOT IN (RESOLVED, CLOSED, VOID) 且 priority = ?
+     */
+    public long countOpenByPriority(String priority) {
+        if (priority == null || priority.isBlank()) {
+            return 0L;
+        }
+        String sql = """
+            SELECT COUNT(*) FROM sys_devops_ticket
+             WHERE priority = ?
+               AND status NOT IN (?, ?, ?)
+            """;
+        Long n = jdbcTemplate.queryForObject(sql, Long.class,
+                priority,
+                TicketEnums.Status.RESOLVED,
+                TicketEnums.Status.CLOSED,
+                TicketEnums.Status.VOID);
+        return n != null ? n : 0L;
+    }
+
+    /**
      * 统计「待分配且未完结」的工单数（供列表页「未分配」提示卡）。
      * <p>
      * 待分配是库里的哨兵值「待分配」（建单时未指定负责人的落库值）。

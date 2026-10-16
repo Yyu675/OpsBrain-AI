@@ -126,6 +126,13 @@ public class BusinessMetrics {
                         () -> safe(() -> (double) tickets.countUrgentPending()))
                 .description("P0/P1 未结工单（口径与看板 KPI 同宗）")
                 .register(registry);
+        // D-b 组 ⑤ 工单流速面：在办工单按优先级拆分 Gauge
+        for (String p : new String[]{"P0", "P1", "P2", "P3"}) {
+            Gauge.builder("opsbrain.tickets.open", () -> safe(() -> (double) tickets.countOpenByPriority(p)))
+                    .tag("priority", p)
+                    .description("在办工单水位（按优先级 P0~P3 拆分）")
+                    .register(registry);
+        }
         Gauge.builder("opsbrain.alerts.active", () -> safe(() -> (double) alerts.countActive()))
                 .description("活跃告警水位（FIRING + ACKNOWLEDGED）")
                 .register(registry);
@@ -221,6 +228,19 @@ public class BusinessMetrics {
 
     public void recordTicketAutoCreate(long millis, boolean ok) {
         (ok ? ticketAutoCreateOk : ticketAutoCreateFailed)
+                .record(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * 工单结单/解决耗时度量（D-b 组 ⑤ MTTR 时序度量）：
+     * 按 priority 细分 Timer。
+     */
+    public void recordTicketResolved(String priority, long millis) {
+        String p = (priority != null && !priority.isBlank()) ? priority : "P2";
+        Timer.builder("opsbrain.ticket_resolved_seconds")
+                .tag("priority", p)
+                .description("工单解决/止损耗时（MTTR 度量）")
+                .register(registry)
                 .record(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 

@@ -191,4 +191,24 @@ class TicketServiceTest {
 
         assertThat(service.getTotalTickets()).isEqualTo(100L);
     }
+
+    @Test
+    void updateStatusToResolvedRecordsMttrMetrics() {
+        com.devops.agent.infrastructure.metrics.BusinessMetrics bm =
+                mock(com.devops.agent.infrastructure.metrics.BusinessMetrics.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "businessMetrics", bm);
+
+        DevOpsTicket existing = new DevOpsTicket();
+        existing.setId("TKT-100");
+        existing.setStatus("PROCESSING");
+        existing.setPriority("P1");
+        existing.setCreateTime(java.time.LocalDateTime.now().minusMinutes(15));
+        when(ticketRepository.findById("TKT-100")).thenReturn(existing);
+
+        service.updateStatus("TKT-100", "RESOLVED");
+
+        verify(ticketRepository).updateStatus("TKT-100", "RESOLVED");
+        verify(bm).recordTicketResolved(org.mockito.ArgumentMatchers.eq("P1"),
+                org.mockito.ArgumentMatchers.longThat(elapsed -> elapsed >= 14 * 60 * 1000L));
+    }
 }

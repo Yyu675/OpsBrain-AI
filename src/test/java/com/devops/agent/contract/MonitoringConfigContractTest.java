@@ -67,7 +67,7 @@ class MonitoringConfigContractTest {
             "clamp_max", "clamp_min", "round", "abs", "ceil", "floor", "exp", "ln", "log2", "log10",
             "sqrt", "sort", "sort_desc", "label_replace", "label_join", "le", "instance", "job",
             "mode", "result", "status", "uri", "method", "area", "id", "mountpoint", "service",
-            "module", "severity", "alertname", "alert_kind", "field", "kind", "true", "false");
+            "module", "severity", "alertname", "alert_kind", "field", "kind", "priority", "true", "false");
 
     private static Path root;
 
