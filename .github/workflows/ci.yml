@@ -278,7 +278,7 @@ jobs:
           rm -f "$report" /tmp/spring-negative-control.xml
           set +e
           GITHUB_ACTIONS=false ./mvnw -B -ntp -Dspring-framework.version=6.2.17 \
-            '-Dtest=SpringFrameworkSecurityCompatibilityTest#templateLiteralDelimitersAreEscaped+contentVersionRemovalPreservesParentDirectory+unsafeVersionedPathNeverReachesResourceLookup+spelOperationBudgetRejectsAtExactBoundary' test > /tmp/spring-negative-control.log 2>&1
+            '-Dtest=SpringFrameworkSecurityCompatibilityTest' test > /tmp/spring-negative-control.log 2>&1
           rc=$?
           set -e
           python3 - "$rc" <<'PYTEST'
@@ -287,7 +287,7 @@ jobs:
           try:
               root = ET.parse(path).getroot()
               assert sys.argv[1] == '1'
-              assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['4', '4', '0', '0']
+              assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['7', '4', '0', '0']
               reasons = {
                   'templateLiteralDelimitersAreEscaped': 'template literal delimiters must be escaped',
                   'contentVersionRemovalPreservesParentDirectory': 'only the last version suffix may be removed',
@@ -295,7 +295,10 @@ jobs:
                   'spelOperationBudgetRejectsAtExactBoundary': 'ten operations must hit the configured budget',
               }
               cases = {c.get('name'): c for c in root.findall('testcase')}
-              assert set(cases) == set(reasons)
+              healthy = {'ordinaryScriptTextRetainsEscapingContract', 'healthySpelEvaluationStillWorksAboveBoundary',
+                         'actualVersionedStaticResourceHandlerServesBytesAndRejectsWrongDigest'}
+              assert set(cases) == set(reasons) | healthy
+              assert all(cases[name].find('failure') is None for name in healthy)
               for name, reason in reasons.items():
                   failure = cases[name].find('failure')
                   assert failure is not None and failure.get('type') == 'org.opentest4j.AssertionFailedError'
@@ -309,7 +312,7 @@ jobs:
               tail = '\n'.join(pathlib.Path('/tmp/spring-negative-control.log').read_text(errors='replace').splitlines()[-100:])[-30000:]
               print('::error::Spring旧版负对照未得到真实四红：' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
               raise
-          print('::notice::Spring6.2.17真实安全负对照4失败/0错误/0跳过；四个具体失败原因及全17模块旧classpath实核，小输入不用耗时或大循环；修补版随后完整clean verify，非线上可达性证明')
+          print('::notice::Spring6.2.17真实安全负对照7例/4失败/0错误/0跳过；三项健康对照、四个具体失败原因及全17模块旧classpath实核，小输入不用耗时或大循环；修补版随后完整clean verify，非线上可达性证明')
           PYTEST
 
       - name: Junrar旧版有界双红负对照（不运行旧版恶意归档无限循环）

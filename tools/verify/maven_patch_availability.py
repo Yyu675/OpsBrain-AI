@@ -96,7 +96,7 @@ def inspect(get=fetch):
     for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on"):
         candidates.append(probe("org.bouncycastle", artifact, "1.85", get=get))
     candidates.append(probe("com.github.junrar", "junrar", "7.6.1", get=get))
-    # 批120：同6.2维护线；完整Framework族（包括BOM）实际供应，不引Spring7/Boot4。
+    # 批120：同6.2维护线；本项目现用Framework族（包括BOM）实际供应，不引Spring7/Boot4。
     for artifact in ("spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support",
                      "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging",
                      "spring-orm", "spring-oxm", "spring-test", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket"):

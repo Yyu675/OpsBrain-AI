@@ -278,3 +278,9 @@ BC1.85必须显式管理`bcprov/bcpkix/bcutil/bcjmail-jdk18on`四入口（Boot3.
 Junrar7.6.1官方POM/JAR真实供应→唯一DM入口→SDK边界/有界解释器/实际RAR/Tika兼容→旧7.5.5双红且具体失败原因实核→完整clean verify→原生/Boot SHA。旧VM输入List最多第五次取指即硬退出，不执行恶意RAR死循环，不以计时/大循环判红；健康夹具固定官方提交/SHA并保留许可，只进test。
 
 11套检查器116例（供应11、补丁15），六类唯一源码注入检出还原。原生本批20→19，Junrar完成组HC0、66目标variant逐Boot字节，原65及所有非Junrar runtime GAV/type/classifier不变；19条余量、原生rc1、unknown1/incomplete保留，不替换生产输入、不加豁免、不扩大灰度。实际同源证据`runtime-junrar-patch-2026-10-16.json`及最终HEAD见PR22。
+
+### 批120 Spring6.2同线部分回补
+
+本项目17个Framework JAR（生产16+spring-test）及BOM官方实际供应→Boot原`spring-framework.version`入口→真实SDK七例→旧6.2.17全部七例/四安全FAIL/三健康通过/0ERROR/0SKIP，具体失败原因及17模块旧classpath实核→完整clean verify→原生/Boot/官方JAR SHA。只用短SpEL表达式的10/11运算预算、单级目录和少量文字，不以耗时/大循环制造DoS，不以新API编译错误冒充红。
+
+11套检查器120例（供应12、补丁18），Spring16×3缺件/混版/旧字节子场景、三承诺CVE、跨线及新HIGH完整保留；七类唯一源码注入检出还原。Spring是**部分组**，只正向要求41850/41842/41845关闭；`partial_targets`现在含Tomcat与Spring，`partial_target_hc_rows`合计本轮5，不能误读为只有Tomcat或整组清零。原生本批19→16，82目标variant（Spring16另与官方Central实际字节相等），原66及非Spring GAV/type/classifier不变；rc1/unknown1/incomplete不变，不替换生产输入、不加豁免、不扩大灰度。持久证据`runtime-spring-patch-2026-10-16.json`，最终HEAD与main真跑见PR23。

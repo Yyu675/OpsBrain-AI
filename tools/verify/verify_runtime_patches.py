@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""批116/117/118/119/120补丁验收：完成组清零，Tomcat九条定向修补，不替代全量安全门禁，不豁免其他发现。"""
+"""批116/117/118/119/120补丁验收：完成组清零，Tomcat九条及Spring三条定向修补，不替代全量安全门禁，不豁免其他发现。"""
 import argparse
 import base64
 import hashlib
