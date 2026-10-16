@@ -119,4 +119,45 @@ class NotifyPayloadsTest {
             assertTrue(content.contains("<font color=\"warning\">待分配（未认领 PENDING）</font>"));
         }
     }
+
+    @Nested
+    @DisplayName("钉钉卡片交互渲染：含受信任操作回链升格 ActionCard，否则保持 Markdown")
+    class DingTalkPayloadCard {
+
+        @Test
+        @DisplayName("含有平台操作回链时升格为 ActionCard 按钮卡片")
+        void linksUpgradeToActionCard() throws Exception {
+            NotifyMessage msg = NotifyMessage.normal("告警通知",
+                    "### 告警摘要\n\n" +
+                    "- **当前状态**：告警中（PROBLEM）\n\n" +
+                    "[查看告警并处理](https://ops.example.com/alerts/101)  [查看工单](https://ops.example.com/tickets/TK-01)");
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            byte[] bytes = NotifyPayloads.dingtalkPayload(msg, mapper);
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(bytes);
+
+            org.junit.jupiter.api.Assertions.assertEquals("actionCard", root.path("msgtype").asText());
+            com.fasterxml.jackson.databind.JsonNode actionCard = root.path("actionCard");
+            org.junit.jupiter.api.Assertions.assertEquals("告警通知", actionCard.path("title").asText());
+            org.junit.jupiter.api.Assertions.assertFalse(actionCard.path("text").asText().contains("[查看告警并处理]"));
+            com.fasterxml.jackson.databind.JsonNode btns = actionCard.path("btns");
+            org.junit.jupiter.api.Assertions.assertEquals(2, btns.size());
+            org.junit.jupiter.api.Assertions.assertEquals("查看告警并处理", btns.get(0).path("title").asText());
+            org.junit.jupiter.api.Assertions.assertEquals("https://ops.example.com/alerts/101", btns.get(0).path("actionURL").asText());
+            org.junit.jupiter.api.Assertions.assertEquals("查看工单", btns.get(1).path("title").asText());
+            org.junit.jupiter.api.Assertions.assertEquals("https://ops.example.com/tickets/TK-01", btns.get(1).path("actionURL").asText());
+        }
+
+        @Test
+        @DisplayName("无平台操作回链时保持标准 Markdown 卡片")
+        void noLinksKeepsMarkdown() throws Exception {
+            NotifyMessage msg = NotifyMessage.urgent("紧急告警", "- **当前状态**：告警中（PROBLEM）");
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            byte[] bytes = NotifyPayloads.dingtalkPayload(msg, mapper);
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(bytes);
+
+            org.junit.jupiter.api.Assertions.assertEquals("markdown", root.path("msgtype").asText());
+            org.junit.jupiter.api.Assertions.assertTrue(root.path("markdown").path("text").asText().contains("@所有人"));
+            org.junit.jupiter.api.Assertions.assertTrue(root.path("at").path("isAtAll").asBoolean());
+        }
+    }
 }

@@ -6,6 +6,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,18 +33,54 @@ public final class NotifyPayloads {
      * 钉钉 markdown 卡片；urgent 时正文追加 @所有人 + at.isAtAll。
      * 钉钉成功判据：HTTP 200 且 body 含 {@code "errcode":0}。
      */
+    private static final java.util.regex.Pattern ACTION_LINK_PATTERN =
+            java.util.regex.Pattern.compile("\\[([^\\]]+)\\]\\((https://[^\\)]+)\\)");
+
+    /**
+     * 钉钉卡片：优先检测正文末尾的受信任 HTTPS 操作回链（如「查看告警并处理」、「查看工单」），
+     * 存在时自动升格为原生独立 ActionCard 交互按钮卡片；无回链或不匹配时安全回退为标准 Markdown 卡片。
+     * urgent 时追加 @所有人 强提醒与 at.isAtAll。
+     */
     public static byte[] dingtalkPayload(NotifyMessage msg, ObjectMapper mapper) throws Exception {
-        Map<String, Object> markdown = new LinkedHashMap<>();
-        markdown.put("title", msg.title());
-        markdown.put("text", msg.urgent() ? msg.markdown() + "\n\n@所有人" : msg.markdown());
+        String rawMarkdown = msg.markdown();
+        List<Map<String, String>> buttons = extractActionButtons(rawMarkdown);
 
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("msgtype", "markdown");
-        payload.put("markdown", markdown);
+        if (!buttons.isEmpty() && buttons.size() <= 3) {
+            String cleanText = ACTION_LINK_PATTERN.matcher(rawMarkdown).replaceAll("").trim();
+            Map<String, Object> actionCard = new LinkedHashMap<>();
+            actionCard.put("title", msg.title());
+            actionCard.put("text", msg.urgent() ? cleanText + "\n\n@所有人" : cleanText);
+            actionCard.put("btnOrientation", "0");
+            actionCard.put("btns", buttons);
+            payload.put("msgtype", "actionCard");
+            payload.put("actionCard", actionCard);
+        } else {
+            Map<String, Object> markdown = new LinkedHashMap<>();
+            markdown.put("title", msg.title());
+            markdown.put("text", msg.urgent() ? rawMarkdown + "\n\n@所有人" : rawMarkdown);
+            payload.put("msgtype", "markdown");
+            payload.put("markdown", markdown);
+        }
+
         if (msg.urgent()) {
             payload.put("at", Map.of("isAtAll", true));
         }
         return mapper.writeValueAsBytes(payload);
+    }
+
+    private static List<Map<String, String>> extractActionButtons(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return List.of();
+        }
+        java.util.regex.Matcher matcher = ACTION_LINK_PATTERN.matcher(markdown);
+        List<Map<String, String>> btns = new ArrayList<>();
+        while (matcher.find()) {
+            String title = matcher.group(1).trim();
+            String url = matcher.group(2).trim();
+            btns.add(Map.of("title", title, "actionURL", url));
+        }
+        return btns;
     }
 
     /**
