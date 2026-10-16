@@ -71,6 +71,13 @@ class TestAvailability(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.tomcat_versions(lambda url: (404, b""))
 
+    def test_BC必须逐模块实取POM和JAR(self):
+        metadata = {"last_versions_up_to_10_1_58": ["10.1.57"]}
+        with mock.patch.object(probe, "tomcat_versions", return_value=metadata), mock.patch.object(probe, "probe", return_value={}) as call:
+            probe.inspect()
+        bc = [c.args for c in call.call_args_list if c.args[0] == "org.bouncycastle"]
+        self.assertEqual(bc, [("org.bouncycastle", a, "1.85") for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on")])
+
     def test_CLI网络失败响红且清除陈旧证据(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "probe.json"

@@ -89,6 +89,9 @@ def inspect(get=fetch):
                                           ("org.apache.opennlp", "opennlp-tools", "2.5.9", "jar"),
                                           ("org.jsoup", "jsoup", "1.23.2", "jar")):
         candidates.append(probe(group, artifact, version, kind, get))
+    # BC版本族同升；不仅核bcprov，PKIX/ASN.1工具也须有正式供应，不能只改扫描器可见版本。
+    for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on"):
+        candidates.append(probe("org.bouncycastle", artifact, "1.85", get=get))
     return {"schema_version": 1, "repository": BASE, "tomcat_metadata": metadata, "candidates": candidates,
             "boundary": "200且有效POM/JAR只证明本轮可获取，不证明传递解析/二进制兼容/漏洞已修；404保留，网络/坏内容失败，不自动选版本或加豁免"}
 
