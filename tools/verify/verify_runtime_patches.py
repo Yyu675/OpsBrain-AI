@@ -23,7 +23,11 @@ SPRING_REMEDIATED = {"CVE-2026-41850", "CVE-2026-41842", "CVE-2026-41845"}
 SPRING_MODULES = {"spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support",
                   "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging",
                   "spring-orm", "spring-oxm", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket"}
-BOOT_MODULES = {"spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure"}
+BOOT_MODULES = {"spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure",
+                "spring-boot-starter", "spring-boot-starter-actuator", "spring-boot-starter-aop",
+                "spring-boot-starter-data-jdbc", "spring-boot-starter-data-jpa", "spring-boot-starter-data-redis",
+                "spring-boot-starter-jdbc", "spring-boot-starter-json", "spring-boot-starter-logging",
+                "spring-boot-starter-tomcat", "spring-boot-starter-validation", "spring-boot-starter-web", "spring-boot-starter-websocket"}
 DATA_MODULES = {"spring-data-commons", "spring-data-jdbc", "spring-data-jpa",
                 "spring-data-keyvalue", "spring-data-redis", "spring-data-relational"}
 REQUIRED = {"com.github.junrar:junrar", "org.bouncycastle:bcjmail-jdk18on", "org.bouncycastle:bcprov-jdk18on", "org.bouncycastle:bcpkix-jdk18on", "org.bouncycastle:bcutil-jdk18on",
@@ -56,6 +60,11 @@ def verify(bom, experiment):
     for name, version, kind, classifier in registry:
         group = name.split(":")[0]
         if group not in VERSIONS:
+            continue
+        # Starter 为空/元依赖包，不直接内嵌进 BOOT-INF/lib/，通过 REQUIRED 严验坐标与版本。
+        if name.startswith("org.springframework.boot:spring-boot-starter"):
+            if version != VERSIONS[group]:
+                raise ValueError(f"补丁模块混版/回退：{name}:{version}，需{VERSIONS[group]}")
             continue
         # tcnative有独立2.x版本流，随Netty BOM对齐；只排除版本相等断言，不豁免漏洞。
         if not name.startswith("io.netty:netty-tcnative") and version != VERSIONS[group]:
