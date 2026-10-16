@@ -159,4 +159,28 @@ class BusinessMetricsTest {
         // 送达后读数大于等于 0
         assertThat(registry.get("opsbrain.notify_silent_seconds").gauge().value()).isGreaterThanOrEqualTo(0.0);
     }
+
+    @Test
+    @DisplayName("在办工单按优先级拆分 Gauge 与工单解决耗时 Timer")
+    void ticketOpenAndResolvedMetrics() {
+        DevOpsTicketRepository tickets = mock(DevOpsTicketRepository.class);
+        when(tickets.countOpenByPriority("P0")).thenReturn(2L);
+        when(tickets.countOpenByPriority("P1")).thenReturn(5L);
+
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BusinessMetrics m = new BusinessMetrics(
+                registry,
+                tickets,
+                mock(AlertRepository.class),
+                mock(ApprovalRequestRepository.class));
+
+        assertThat(registry.get("opsbrain.tickets.open")
+                .tag("priority", "P0").gauge().value()).isEqualTo(2.0);
+        assertThat(registry.get("opsbrain.tickets.open")
+                .tag("priority", "P1").gauge().value()).isEqualTo(5.0);
+
+        m.recordTicketResolved("P0", 120_000);
+        assertThat(registry.get("opsbrain.ticket_resolved_seconds")
+                .tag("priority", "P0").timer().count()).isEqualTo(1L);
+    }
 }

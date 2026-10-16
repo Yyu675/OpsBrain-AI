@@ -76,7 +76,7 @@ PROMQL_TOKENS = {
     "minute", "month", "year", "days_in_month", "e", "pi", "inf", "nan",
     "le", "instance", "job", "mode", "result", "status", "uri", "method",
     "area", "id", "mountpoint", "service", "module", "severity", "alertname",
-    "alert_kind", "field", "kind", "quantile_label",
+    "alert_kind", "field", "kind", "priority", "quantile_label",
 }
 
 
