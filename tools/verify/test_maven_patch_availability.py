@@ -95,6 +95,19 @@ class TestAvailability(unittest.TestCase):
             probe.inspect()
         self.assertEqual([c.args for c in call.call_args_list if c.args[0] == "com.github.junrar"], [("com.github.junrar", "junrar", "7.6.1")])
 
+    def test_Spring同线全族及BOM供应不可遗漏(self):
+        with mock.patch.object(probe, "tomcat_versions", return_value={"last_versions_up_to_10_1_58": ["10.1.57"]}), mock.patch.object(probe, "probe", return_value={}) as call:
+            probe.inspect()
+        calls = [c for c in call.call_args_list if c.args[0] == "org.springframework"]
+        expected = {"spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support",
+                    "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging",
+                    "spring-orm", "spring-oxm", "spring-test", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket"}
+        self.assertEqual({c.args[1] for c in calls}, expected | {"spring-framework-bom"})
+        self.assertEqual(len(calls), len(expected) + 1)
+        self.assertTrue(all(c.args[2] == "6.2.19" for c in calls))
+        self.assertTrue(all((c.args[3] if len(c.args) > 3 else c.kwargs.get("packaging", "jar")) ==
+                            ("pom" if c.args[1] == "spring-framework-bom" else "jar") for c in calls))
+
     def test_CLI网络失败响红且清除陈旧证据(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "probe.json"
