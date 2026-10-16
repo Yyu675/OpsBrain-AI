@@ -293,4 +293,26 @@ class DiagnosisOrchestratorTest {
                 "trace-42", 1001L, "TK-001", aggregate, "完整取证明细");
     }
 
+
+    @Test
+    @DisplayName("诊断执行中收集证据时向 BusinessMetrics 打点")
+    void diagnosisRecordsEvidenceMetrics() throws Exception {
+        com.devops.agent.infrastructure.metrics.BusinessMetrics bm =
+                mock(com.devops.agent.infrastructure.metrics.BusinessMetrics.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(orchestrator, "businessMetrics", bm);
+
+        CountDownLatch latch = new CountDownLatch(1);
+        doAnswer(inv -> {
+            latch.countDown();
+            return 1;
+        }).when(sessionRepository).complete(any(), any(), any(), any());
+
+        orchestrator.submit(1001L, "TK-100", "order-service");
+        boolean ok = latch.await(3, TimeUnit.SECONDS);
+        assertThat(ok).isTrue();
+
+        verify(bm, atLeastOnce()).recordDiagnosisEvidence(eq("metrics"), eq("SUCCESS"));
+        verify(bm, atLeastOnce()).recordDiagnosisEvidence(eq("logs"), eq("SUCCESS"));
+        verify(bm, atLeastOnce()).recordDiagnosisEvidence(eq("knowledge"), eq("NO_DATA"));
+    }
 }

@@ -225,6 +225,25 @@ public class BusinessMetrics {
     }
 
     /**
+     * 诊断各路证据收集状态打点（D-b 组 ④ 诊断成效度量）：
+     * 按 kind（metrics/logs/changes/knowledge/topology）与 status（SUCCESS/FAILED/NO_DATA/UNAVAILABLE）细分。
+     */
+    public void recordDiagnosisEvidence(String kind, String status) {
+        if (kind == null || kind.isBlank()) {
+            kind = "unknown";
+        }
+        if (status == null || status.isBlank()) {
+            status = "UNKNOWN";
+        }
+        Counter.builder("opsbrain.diagnosis_evidence_status_total")
+                .tag("kind", kind)
+                .tag("status", status)
+                .description("诊断证据收集状态计数（按数据源类别与采集结果细分）")
+                .register(registry)
+                .increment();
+    }
+
+    /**
      * 通知一次发送尝试的结果（CompositeNotifier 每次 send 收尾调一次）。
      * {@code result}：success（≥1 渠道受理）/ failed（有渠道但全抛）/ degraded（无可用渠道）。
      */

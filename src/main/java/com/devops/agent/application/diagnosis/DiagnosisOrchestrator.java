@@ -488,6 +488,14 @@ public class DiagnosisOrchestrator {
             String traceId, List<Evidence> evidences) {
         List<com.devops.agent.domain.diagnosis.HypothesisGenerator.RankedEvidence> ranked = new ArrayList<>();
         for (Evidence e : evidences) {
+            if (businessMetrics != null && e != null) {
+                try {
+                    businessMetrics.recordDiagnosisEvidence(e.evidenceType(),
+                            e.status() != null ? e.status().name() : "UNKNOWN");
+                } catch (Exception mEx) {
+                    log.debug("[Diagnosis] 证据指标打点异常（忽略）| {}", mEx.getMessage());
+                }
+            }
             try {
                 long id = evidenceRepository.save(traceId, "diagnosis-engine", e.evidenceType(),
                         e.status().name(), e.title(),
