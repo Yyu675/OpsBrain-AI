@@ -291,6 +291,9 @@ jobs:
               assert {c.get('name') for c in root.findall('testcase')} == {'outOfRangeInstructionPointerIsRejected', 'executorHonorsRejectedJumpWithinBoundedFetches'}
               assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
               cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+              cases = {c.get('name'): c for c in root.findall('testcase')}
+              assert '越界IP不能伪报跳转成功' in cases['outOfRangeInstructionPointerIsRejected'].find('failure').get('message', '')
+              assert 'fixture instruction-fetch fuse exceeded' in cases['executorHonorsRejectedJumpWithinBoundedFetches'].find('failure').get('message', '')
               assert any(p.endswith('/junrar-7.5.5.jar') for p in cp)
               assert not any(p.endswith('/junrar-7.6.1.jar') for p in cp)
               shutil.copyfile(path, '/tmp/junrar-negative-control.xml')
