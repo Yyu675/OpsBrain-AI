@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 from verify_runtime_patches import REQUIRED, VERSIONS, evidence_frames, main, verify
@@ -22,7 +23,9 @@ def component(name, version):
 
 
 def fixture():
-    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, VERSIONS[n.split(":")[0]]) for n in sorted(REQUIRED)]}
+    # BC期望独立于被测策略常量，删错REQUIRED/VERSIONS不能让夹具跟着少模块、造成同源假绿。
+    names = REQUIRED | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
     experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
                   "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
                   "native_gate_rc": 1, "checkout_sha": "b" * 40}
@@ -113,6 +116,42 @@ class TestRuntimePatches(unittest.TestCase):
             probe["findings"].append({"PkgName": group + ":probe", "Severity": "HIGH", "VulnerabilityID": "CVE-PROBE"})
             with self.assertRaises(ValueError):
                 verify(bom, probe)
+
+    def test_BC全版本族不能混版缺件假字节或留HC(self):
+        for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on"):
+            for fault in ("version", "missing", "bytes", "hc"):
+                bom, probe = fixture()
+                name = "org.bouncycastle:" + artifact
+                c = next(c for c in bom["components"] if c["group"] + ":" + c["name"] == name)
+                if fault == "version":
+                    c.update(component(name, "1.81"))
+                    # SBOM/Boot都真实为旧版，隔离版本守卫，不能靠哈希不匹配误打误撞判红。
+                    next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["variant"][1] = "1.81"
+                elif fault == "missing":
+                    bom["components"].remove(c)
+                elif fault == "bytes":
+                    next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["sha256"] = "b" * 64
+                else:
+                    probe["findings"].append({"PkgName": name, "Severity": "CRITICAL", "VulnerabilityID": "CVE-PROBE"})
+                with self.subTest(artifact=artifact, fault=fault), self.assertRaises(ValueError):
+                    verify(bom, probe)
+
+    def test_POM四入口生效且邮件夹具不得抢生产作用域(self):
+        root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+        self.assertEqual(root.findtext("m:properties/m:bouncycastle.version", namespaces=ns), "1.85")
+        dm = {d.findtext("m:artifactId", namespaces=ns): d for d in root.findall("m:dependencyManagement/m:dependencies/m:dependency", ns)
+              if d.findtext("m:groupId", namespaces=ns) == "org.bouncycastle"}
+        for artifact in ("bcprov", "bcpkix", "bcutil", "bcjmail"):
+            self.assertIn(artifact + "-jdk18on", dm)
+            self.assertEqual(dm[artifact + "-jdk18on"].findtext("m:version", namespaces=ns), "${bouncycastle.version}")
+        deps = {d.findtext("m:artifactId", namespaces=ns): d for d in root.findall("m:dependencies/m:dependency", ns)}
+        for artifact in ("jakarta.mail-api", "angus-mail"):
+            d = deps[artifact]
+            self.assertEqual(d.findtext("m:scope", namespaces=ns), "test")
+            exclusions = {(e.findtext("m:groupId", namespaces=ns), e.findtext("m:artifactId", namespaces=ns))
+                          for e in d.findall("m:exclusions/m:exclusion", ns)}
+            self.assertIn(("org.eclipse.angus", "angus-activation"), exclusions)
 
     def invoke(self, root, severity="HIGH,CRITICAL"):
         argv = ["guard", "--sbom", str(root / "bom.json"), "--experiment", str(root / "probe.json"),

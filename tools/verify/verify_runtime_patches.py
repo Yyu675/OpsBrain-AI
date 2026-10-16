@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""批116/117补丁验收：完成组清零，Tomcat九条定向修补，不替代全量安全门禁，不豁免其他发现。"""
+"""批116/117/118补丁验收：完成组清零，Tomcat九条定向修补，不替代全量安全门禁，不豁免其他发现。"""
 import argparse
 import base64
 import hashlib
@@ -13,12 +13,13 @@ from trivy_summary import escape
 
 VERSIONS = {"org.apache.tika": "3.2.2", "io.netty": "4.1.137.Final",
             "io.micrometer": "1.15.12", "org.apache.opennlp": "2.5.9", "org.jsoup": "1.23.2",
-            "org.apache.tomcat.embed": "10.1.57"}
+            "org.apache.tomcat.embed": "10.1.57", "org.bouncycastle": "1.85"}
 ZERO_HC_GROUPS = set(VERSIONS) - {"org.apache.tomcat.embed"}
 # 正向列出本次必须关闭的9条；不是剩余漏洞忽略表，原生报告/门禁完整保留。
 TOMCAT_REMEDIATED = {"CVE-2026-41293", "CVE-2026-43512", "CVE-2026-43515", "CVE-2026-29129",
                      "CVE-2026-34483", "CVE-2026-34487", "CVE-2026-41284", "CVE-2026-42498", "CVE-2026-43513"}
-REQUIRED = {"org.apache.tika:tika-core", "org.apache.tika:tika-parser-pdf-module",
+REQUIRED = {"org.bouncycastle:bcjmail-jdk18on", "org.bouncycastle:bcprov-jdk18on", "org.bouncycastle:bcpkix-jdk18on", "org.bouncycastle:bcutil-jdk18on",
+            "org.apache.tika:tika-core", "org.apache.tika:tika-parser-pdf-module",
             "io.netty:netty-handler", "io.netty:netty-codec-http", "io.netty:netty-codec-http2",
             "io.micrometer:micrometer-core", "io.micrometer:micrometer-registry-prometheus", "io.micrometer:micrometer-registry-otlp",
             "org.apache.opennlp:opennlp-tools", "org.jsoup:jsoup",
@@ -64,7 +65,7 @@ def verify(bom, experiment):
             "partial_target_hc_rows": len(tomcat_findings),
             "partial_targets": {"org.apache.tomcat.embed": {"required_absent_cves": sorted(TOMCAT_REMEDIATED), "remaining_findings": tomcat_findings}}, "remaining_hc_rows": len(experiment["findings"]),
             "native_gate_rc": experiment.get("native_gate_rc"), "full_security_passed": False,
-            "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup完成组清零；Tomcat仅验九条关闭，剩余发现完整保留；非整体安全/灰度放行"}
+            "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup/BC完成组清零；Tomcat仅验九条关闭，剩余发现完整保留；非整体安全/灰度放行"}
 
 
 def evidence_frames(payload):

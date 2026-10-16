@@ -64,11 +64,14 @@ def probe(group, artifact, version, packaging="jar", get=fetch):
         if status == 200:
             if ext == "pom":
                 root = ET.fromstring(body)
-                actual = tuple(root.findtext("m:" + k, namespaces=NS)
-                               or root.findtext("m:parent/m:" + k, namespaces=NS)
+                # Maven合法POM可省略XML namespace；只接受标准namespace或无namespace，不接受任意XML。
+                if root.tag not in ("project", "{" + NS["m"] + "}project"):
+                    raise ValueError(f"下载POM根元素非法：{url}: {root.tag}")
+                ns = "{" + NS["m"] + "}" if root.tag.startswith("{") else ""
+                actual = tuple(root.findtext(ns + k) or (root.findtext(ns + "parent/" + ns + k) if k != "artifactId" else None)
                                for k in ("groupId", "artifactId", "version"))
                 if actual != (group, artifact, version):
-                    raise ValueError("下载POM坐标不符")
+                    raise ValueError(f"下载POM坐标不符：{url}: 实际{actual}，预期{(group, artifact, version)}")
             else:
                 with zipfile.ZipFile(io.BytesIO(body)) as jar:
                     if "META-INF/MANIFEST.MF" not in jar.namelist() or not any(n.endswith(".class") for n in jar.namelist()):
@@ -89,6 +92,9 @@ def inspect(get=fetch):
                                           ("org.apache.opennlp", "opennlp-tools", "2.5.9", "jar"),
                                           ("org.jsoup", "jsoup", "1.23.2", "jar")):
         candidates.append(probe(group, artifact, version, kind, get))
+    # BC版本族同升；不仅核bcprov，PKIX/ASN.1工具也须有正式供应，不能只改扫描器可见版本。
+    for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on"):
+        candidates.append(probe("org.bouncycastle", artifact, "1.85", get=get))
     return {"schema_version": 1, "repository": BASE, "tomcat_metadata": metadata, "candidates": candidates,
             "boundary": "200且有效POM/JAR只证明本轮可获取，不证明传递解析/二进制兼容/漏洞已修；404保留，网络/坏内容失败，不自动选版本或加豁免"}
 
