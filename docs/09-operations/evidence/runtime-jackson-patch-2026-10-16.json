@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-16",
+  "batch": 122,
+  "branch": "arena/fda07685-opsbrain-ai",
+  "baseline_commit": "3dd5eab630d098f5728b75efed47eb06d76c161b",
+  "tested_commit": "6ec6f9fb0ada1dd0a4a7071c20b3eef5094e3914",
+  "baseline_hc_count": 10,
+  "final_hc_count": 5,
+  "high_count": 0,
+  "critical_count": 5,
+  "closed_cves": [
+    "CVE-2026-89407",
+    "CVE-2026-89425",
+    "CVE-2026-68497",
+    "CVE-2026-91776",
+    "CVE-2026-91777"
+  ],
+  "remaining_findings": [
+    {"VulnerabilityID": "CVE-2026-65182", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-65905", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-68525", "PkgName": "org.apache.tomcat.embed:tomcat-embed-core", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-47884", "PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"},
+    {"VulnerabilityID": "CVE-2026-47890", "PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}
+  ],
+  "verified_variants_count": 95,
+  "runs": {
+    "pr_ci": 38893112374,
+    "scan": 38893112408,
+    "push_ci": 38893106758
+  },
+  "scan_job_id": 116947245474,
+  "backend_tests": {
+    "total": 2091,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2
+  },
+  "e2e_tests": {
+    "passed": 60
+  },
+  "notice": "Jackson 2.21.7 同线回补；全仓 HIGH 漏洞清零（5 HIGH + 5 CRITICAL -> 0 HIGH + 5 CRITICAL）；Tomcat 3 CRITICAL + WebMVC 2 CRITICAL 严格保留"
+}
