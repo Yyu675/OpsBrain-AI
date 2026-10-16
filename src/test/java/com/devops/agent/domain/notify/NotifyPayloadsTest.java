@@ -85,18 +85,21 @@ class NotifyPayloadsTest {
             NotifyMessage normalMsg = NotifyMessage.normal("告警标题",
                     "- **当前状态**：告警中（PROBLEM）\n- **告警等级**：P1 严重级（High）\n- **说明**：业务异常");
             byte[] bytes = NotifyPayloads.wecomPayload(normalMsg, new com.fasterxml.jackson.databind.ObjectMapper());
-            String json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(bytes);
+            String content = root.path("markdown").path("content").asText();
 
-            assertTrue(json.contains("<font color=\"warning\">告警中（PROBLEM）</font>"));
-            assertTrue(json.contains("<font color=\"warning\">P1 严重级（High）</font>"));
+            assertTrue(content.contains("<font color=\"warning\">告警中（PROBLEM）</font>"));
+            assertTrue(content.contains("<font color=\"warning\">P1 严重级（High）</font>"));
 
             NotifyMessage resolvedMsg = NotifyMessage.normal("恢复标题",
                     "- **当前状态**：监控恢复（OK）\n- **告警等级**：P2 一般严重（Average）");
-            byte[] resBytes = NotifyPayloads.wecomPayload(resolvedMsg, new com.fasterxml.jackson.databind.ObjectMapper());
-            String resJson = new String(resBytes, java.nio.charset.StandardCharsets.UTF_8);
+            byte[] resBytes = NotifyPayloads.wecomPayload(resolvedMsg, mapper);
+            com.fasterxml.jackson.databind.JsonNode resRoot = mapper.readTree(resBytes);
+            String resContent = resRoot.path("markdown").path("content").asText();
 
-            assertTrue(resJson.contains("<font color=\"info\">监控恢复（OK）</font>"));
-            assertTrue(resJson.contains("<font color=\"comment\">P2 一般严重（Average）</font>"));
+            assertTrue(resContent.contains("<font color=\"info\">监控恢复（OK）</font>"));
+            assertTrue(resContent.contains("<font color=\"comment\">P2 一般严重（Average）</font>"));
         }
     }
 }
