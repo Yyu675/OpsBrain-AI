@@ -20,6 +20,7 @@
         <java.version>21</java.version>
         <!-- 批120：Boot原有Framework BOM入口，同6.2维护线整体对齐；余下两条CRITICAL不豁免。 -->
         <spring-framework.version>6.2.19</spring-framework.version>
+        <jackson-bom.version>2.21.7</jackson-bom.version>
         <!-- 批116/117：兼容维护线修补；构件供应、原生扫描和实际Boot字节均须核验。 -->
         <tika.version>3.2.2</tika.version>
         <netty.version>4.1.137.Final</netty.version>
