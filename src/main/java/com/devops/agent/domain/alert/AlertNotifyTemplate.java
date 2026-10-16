@@ -152,7 +152,7 @@ public final class AlertNotifyTemplate {
         if (current != null && threshold != null) {
             line(md, "指标", current + "（阈值 " + threshold + "）");
         } else if (current != null) {
-            line(md, "监控取值", current);
+            line(md, "当前值", current);
         } else if (threshold != null) {
             line(md, "阈值", threshold);
         }
@@ -251,7 +251,7 @@ public final class AlertNotifyTemplate {
             line(md, "恢复取值", "未提供（触发时取值 " + originalValue + "）");
         }
         boolean estimated = estimatedEnd || estimatedStart(originalAnnotations);
-        line(md, estimated ? "持续时间（估算）" : "持续时间",
+        line(md, estimated ? "本次持续（估算）" : "本次持续",
                 humanDuration(alert.getFirstOccurredAt(),
                         alert.getResolvedAt() != null ? alert.getResolvedAt() : LocalDateTime.now()));
 

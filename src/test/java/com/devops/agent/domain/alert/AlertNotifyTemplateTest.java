@@ -502,7 +502,7 @@ class AlertNotifyTemplateTest {
                     .contains("**告警主机**：primera01")
                     .contains("**告警地址**：10.210.44.11")
                     .contains("**监控项目**：HPE Primera: Get errors")
-                    .contains("**监控取值**：Failed to receive data: volumes : Error: cannot get URL: Timeout was reached.")
+                    .contains("**当前值**：Failed to receive data: volumes : Error: cannot get URL: Timeout was reached.")
                     .contains("**影响**：存储管理API超时，部分卷监控离线")
                     .contains("**关联工单**：TK-20261013-0021");
 
@@ -518,7 +518,7 @@ class AlertNotifyTemplateTest {
                     .contains("**恢复地址**：10.210.44.11")
                     .contains("**监控项目**：HPE Primera: Get errors")
                     .contains("**恢复取值**：WSAPI response OK (HTTP 200)")
-                    .contains("**持续时间**：不足 1 分钟")
+                    .contains("**本次持续**：不足 1 分钟")
                     .contains("仍有 1 条活跃告警——**不要据此关闭整张工单**");
         }
 
@@ -527,7 +527,7 @@ class AlertNotifyTemplateTest {
         void diagnosisInsufficientProvidesActionableGuidance() {
             Alert alert = baseAlert();
             List<Evidence> collected = List.of(
-                    evidence(Evidence.EvidenceStatus.UNAVAILABLE, Evidence.Type.LOGS),
+                    evidence(Evidence.EvidenceStatus.FAILED, Evidence.Type.LOGS),
                     evidence(Evidence.EvidenceStatus.FAILED, Evidence.Type.METRICS)
             );
 
