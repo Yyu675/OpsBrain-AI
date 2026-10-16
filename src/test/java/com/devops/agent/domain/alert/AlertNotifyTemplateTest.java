@@ -490,7 +490,8 @@ class AlertNotifyTemplateTest {
                     AlertAnnotationKeys.HOST_NAME, "primera01",
                     AlertAnnotationKeys.TARGET_ADDRESS, "10.210.44.11",
                     AlertAnnotationKeys.CURRENT_VALUE, "Failed to receive data: volumes : Error: cannot get URL: Timeout was reached.",
-                    AlertAnnotationKeys.IMPACT, "存储管理API超时，部分卷监控离线"
+                    AlertAnnotationKeys.IMPACT, "存储管理API超时，部分卷监控离线",
+                    AlertNotifyTemplate.START_TIME_ESTIMATED, "false"
             );
 
             // 触发卡断言
