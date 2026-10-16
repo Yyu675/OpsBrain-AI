@@ -68,7 +68,7 @@ def probe(group, artifact, version, packaging="jar", get=fetch):
                 if root.tag not in ("project", "{" + NS["m"] + "}project"):
                     raise ValueError(f"下载POM根元素非法：{url}: {root.tag}")
                 ns = "{" + NS["m"] + "}" if root.tag.startswith("{") else ""
-                actual = tuple(root.findtext(ns + k) or root.findtext(ns + "parent/" + ns + k)
+                actual = tuple(root.findtext(ns + k) or (root.findtext(ns + "parent/" + ns + k) if k != "artifactId" else None)
                                for k in ("groupId", "artifactId", "version"))
                 if actual != (group, artifact, version):
                     raise ValueError(f"下载POM坐标不符：{url}: 实际{actual}，预期{(group, artifact, version)}")

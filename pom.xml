@@ -26,6 +26,8 @@
         <micrometer.version>1.15.12</micrometer.version>
         <opennlp.version>2.5.9</opennlp.version>
         <jsoup.version>1.23.2</jsoup.version>
+        <!-- 批118：BC全版本族同升，官方三模块实取可用；真实加密回归/原生/Boot字节再验收。 -->
+        <bouncycastle.version>1.85</bouncycastle.version>
         <!-- CVE-2026-22731/22733：Boot 同 3.5 线升至 3.5.12，不跨 4.x。 -->
         <!-- CVE-2026-54291/42198：JDBC 最小补丁线；覆盖 Boot 的托管版本。 -->
         <postgresql.version>42.7.12</postgresql.version>

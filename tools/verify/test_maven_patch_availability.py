@@ -78,6 +78,8 @@ class TestAvailability(unittest.TestCase):
             self.assertEqual(result["availability"], "available")
             with self.assertRaisesRegex(ValueError, "坐标不符"):
                 probe.probe("x", "a", "2", "pom", lambda url: (200, body))
+        with self.assertRaisesRegex(ValueError, "坐标不符"):
+            probe.probe("x", "a", "1", "pom", lambda url: (200, b'<project><parent><groupId>x</groupId><artifactId>a</artifactId><version>1</version></parent></project>'))
         with self.assertRaisesRegex(ValueError, "根元素非法"):
             probe.probe("x", "a", "1", "pom", lambda url: (200, b'<project xmlns="urn:wrong"><groupId>x</groupId><artifactId>a</artifactId><version>1</version></project>'))
 

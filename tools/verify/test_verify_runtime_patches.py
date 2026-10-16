@@ -114,6 +114,23 @@ class TestRuntimePatches(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify(bom, probe)
 
+    def test_BC全版本族不能混版缺件假字节或留HC(self):
+        for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on"):
+            for fault in ("version", "missing", "bytes", "hc"):
+                bom, probe = fixture()
+                name = "org.bouncycastle:" + artifact
+                c = next(c for c in bom["components"] if c["group"] + ":" + c["name"] == name)
+                if fault == "version":
+                    c.update(component(name, "1.81"))
+                elif fault == "missing":
+                    bom["components"].remove(c)
+                elif fault == "bytes":
+                    next(v for v in probe["packaged_libraries"] if v["variant"][0] == name)["sha256"] = "b" * 64
+                else:
+                    probe["findings"].append({"PkgName": name, "Severity": "CRITICAL", "VulnerabilityID": "CVE-PROBE"})
+                with self.subTest(artifact=artifact, fault=fault), self.assertRaises(ValueError):
+                    verify(bom, probe)
+
     def invoke(self, root, severity="HIGH,CRITICAL"):
         argv = ["guard", "--sbom", str(root / "bom.json"), "--experiment", str(root / "probe.json"),
                 "--json", str(root / "out.json"), "--scan-severity", severity]

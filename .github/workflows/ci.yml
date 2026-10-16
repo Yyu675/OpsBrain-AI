@@ -271,6 +271,38 @@ jobs:
                   sys.exit(1)
           PY
 
+      - name: BC旧版五红负对照（计数器/名称约束/ASN.1，不把下载编译错误当红测）
+        run: |
+          set -euo pipefail
+          report=target/surefire-reports/TEST-com.devops.agent.infrastructure.BouncyCastleSecurityCompatibilityTest.xml
+          rm -f "$report" /tmp/bc-negative-control.xml
+          set +e
+          GITHUB_ACTIONS=false ./mvnw -B -ntp -Dbouncycastle.version=1.81 \
+            '-Dtest=BouncyCastleSecurityCompatibilityTest#gostCounterDoesNotRepeatAfterByteWrap+excludedEmailCannotEscapeWithTrailingDot+excludedUriCannotEscapeWithTrailingDot+directoryConstraintMustMatchInitialPrefix+lazyAsn1RetainsDepthBudget' test > /tmp/bc-negative-control.log 2>&1
+          rc=$?
+          set -e
+          python3 - "$rc" <<'PYTEST'
+          import pathlib, shutil, sys, xml.etree.ElementTree as ET
+          try:
+              path = 'target/surefire-reports/TEST-com.devops.agent.infrastructure.BouncyCastleSecurityCompatibilityTest.xml'
+              root = ET.parse(path).getroot()
+              assert sys.argv[1] == '1', '旧BC必须安全断言失败而非下载/编译错误'
+              assert [root.get(k) for k in ('tests', 'failures', 'errors', 'skipped')] == ['5', '5', '0', '0']
+              expected = {'gostCounterDoesNotRepeatAfterByteWrap', 'excludedEmailCannotEscapeWithTrailingDot', 'excludedUriCannotEscapeWithTrailingDot', 'directoryConstraintMustMatchInitialPrefix', 'lazyAsn1RetainsDepthBudget'}
+              assert {c.get('name') for c in root.findall('testcase')} == expected
+              assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
+              cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
+              for artifact in ('bcprov', 'bcpkix', 'bcutil'):
+                  assert any(p.endswith('/' + artifact + '-jdk18on-1.81.jar') for p in cp), '旧版三模块必须对齐'
+                  assert not any(p.endswith('/' + artifact + '-jdk18on-1.85.jar') for p in cp), '不得混修补版'
+              shutil.copyfile(path, '/tmp/bc-negative-control.xml')
+          except Exception:
+              for line in pathlib.Path('/tmp/bc-negative-control.log').read_text(errors='replace').splitlines()[-100:]:
+                  print('::error::BC负对照诊断 ' + line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              raise
+          print('::notice::BC1.81真实安全负对照5失败/0错误/0跳过；三模块旧版classpath实核，修补版随后完整clean verify；非线上可达性证明')
+          PYTEST
+
       - name: Tika 旧版本真实负对照（不能把编译/下载失败当安全断言失败）
         run: |
           set -euo pipefail
@@ -470,6 +502,8 @@ jobs:
             /tmp/tika-negative-control.log
             /tmp/opennlp-negative-control.xml
             /tmp/opennlp-negative-control.log
+            /tmp/bc-negative-control.xml
+            /tmp/bc-negative-control.log
           if-no-files-found: ignore
           retention-days: 7
 
