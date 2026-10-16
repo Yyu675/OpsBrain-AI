@@ -18,7 +18,7 @@ ZERO_HC_GROUPS = set(VERSIONS) - {"org.apache.tomcat.embed"}
 # 正向列出本次必须关闭的9条；不是剩余漏洞忽略表，原生报告/门禁完整保留。
 TOMCAT_REMEDIATED = {"CVE-2026-41293", "CVE-2026-43512", "CVE-2026-43515", "CVE-2026-29129",
                      "CVE-2026-34483", "CVE-2026-34487", "CVE-2026-41284", "CVE-2026-42498", "CVE-2026-43513"}
-REQUIRED = {"org.bouncycastle:bcprov-jdk18on", "org.bouncycastle:bcpkix-jdk18on", "org.bouncycastle:bcutil-jdk18on",
+REQUIRED = {"org.bouncycastle:bcjmail-jdk18on", "org.bouncycastle:bcprov-jdk18on", "org.bouncycastle:bcpkix-jdk18on", "org.bouncycastle:bcutil-jdk18on",
             "org.apache.tika:tika-core", "org.apache.tika:tika-parser-pdf-module",
             "io.netty:netty-handler", "io.netty:netty-codec-http", "io.netty:netty-codec-http2",
             "io.micrometer:micrometer-core", "io.micrometer:micrometer-registry-prometheus", "io.micrometer:micrometer-registry-otlp",

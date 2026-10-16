@@ -23,7 +23,7 @@ def component(name, version):
 
 def fixture():
     # BC期望独立于被测策略常量，删错REQUIRED/VERSIONS不能让夹具跟着少模块、造成同源假绿。
-    names = REQUIRED | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on")}
+    names = REQUIRED | {"org.bouncycastle:" + a for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")}
     bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [component(n, "1.85" if n.startswith("org.bouncycastle:") else VERSIONS[n.split(":")[0]]) for n in sorted(names)]}
     experiment = {"schema_version": 1, "counts": {"runtime_missing_from_sbom": 0, "sbom_missing_from_scan": 0},
                   "findings": [{"PkgName": "org.springframework:spring-webmvc", "Severity": "CRITICAL"}],
@@ -117,7 +117,7 @@ class TestRuntimePatches(unittest.TestCase):
                 verify(bom, probe)
 
     def test_BC全版本族不能混版缺件假字节或留HC(self):
-        for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on"):
+        for artifact in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on"):
             for fault in ("version", "missing", "bytes", "hc"):
                 bom, probe = fixture()
                 name = "org.bouncycastle:" + artifact

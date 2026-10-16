@@ -88,7 +88,7 @@ class TestAvailability(unittest.TestCase):
         with mock.patch.object(probe, "tomcat_versions", return_value=metadata), mock.patch.object(probe, "probe", return_value={}) as call:
             probe.inspect()
         bc = [c.args for c in call.call_args_list if c.args[0] == "org.bouncycastle"]
-        self.assertEqual(bc, [("org.bouncycastle", a, "1.85") for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on")])
+        self.assertEqual(bc, [("org.bouncycastle", a, "1.85") for a in ("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on", "bcjmail-jdk18on")])
 
     def test_CLI网络失败响红且清除陈旧证据(self):
         with tempfile.TemporaryDirectory() as tmp:

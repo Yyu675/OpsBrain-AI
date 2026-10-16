@@ -1,5 +1,6 @@
 package com.devops.agent.infrastructure;
 
+import jakarta.mail.internet.MimeBodyPart;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -21,6 +22,11 @@ import org.bouncycastle.asn1.x509.NameConstraintValidatorException;
 import org.bouncycastle.asn1.x509.PKIXNameConstraintValidator;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaCertStore;
+import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder;
+import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
+import org.bouncycastle.mail.smime.SMIMESigned;
+import org.bouncycastle.mail.smime.SMIMESignedGenerator;
 import org.bouncycastle.cms.CMSAlgorithm;
 import org.bouncycastle.cms.CMSEnvelopedData;
 import org.bouncycastle.cms.CMSEnvelopedDataGenerator;
@@ -50,6 +56,7 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -131,6 +138,22 @@ class BouncyCastleSecurityCompatibilityTest {
         jdkStore.load(new ByteArrayInputStream(keyStore(pair, cert)), PASSWORD);
         assertArrayEquals(pair.getPrivate().getEncoded(), jdkStore.getKey("fixture", PASSWORD).getEncoded());
         assertArrayEquals(cert.getEncoded(), jdkStore.getCertificate("fixture").getEncoded());
+    }
+
+    @Test
+    void signedMimeMessageRoundTrips() throws Exception {
+        var pair = keyPair();
+        var cert = certificate(pair);
+        var body = new MimeBodyPart();
+        body.setText("OpsBrain signed MIME recovery", StandardCharsets.UTF_8.name());
+        var generator = new SMIMESignedGenerator();
+        generator.addSignerInfoGenerator(new JcaSimpleSignerInfoGeneratorBuilder().setProvider(BC)
+                .build("SHA256withRSA", pair.getPrivate(), cert));
+        generator.addCertificates(new JcaCertStore(List.of(cert)));
+        var signed = new SMIMESigned(generator.generate(body));
+        assertTrue(signed.getContent().getContent().toString().contains("signed MIME recovery"));
+        var signer = signed.getSignerInfos().getSigners().iterator().next();
+        assertTrue(signer.verify(new JcaSimpleSignerInfoVerifierBuilder().setProvider(BC).build(cert)));
     }
 
     @Test

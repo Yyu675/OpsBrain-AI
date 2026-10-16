@@ -293,8 +293,8 @@ jobs:
               assert {c.get('name') for c in root.findall('testcase')} == expected
               assert all(c.find('failure').get('type') == 'org.opentest4j.AssertionFailedError' for c in root.findall('testcase'))
               cp = root.find("./properties/property[@name='java.class.path']").get('value').split(':')
-              for artifact in ('bcprov', 'bcpkix', 'bcutil'):
-                  assert any(p.endswith('/' + artifact + '-jdk18on-1.81.jar') for p in cp), '旧版三模块必须对齐'
+              for artifact in ('bcprov', 'bcpkix', 'bcutil', 'bcjmail'):
+                  assert any(p.endswith('/' + artifact + '-jdk18on-1.81.jar') for p in cp), '旧版四模块必须对齐'
                   assert not any(p.endswith('/' + artifact + '-jdk18on-1.85.jar') for p in cp), '不得混修补版'
               shutil.copyfile(path, '/tmp/bc-negative-control.xml')
           except Exception:
@@ -304,7 +304,7 @@ jobs:
                   tail += '\n' + ET.tostring(ET.parse(path).getroot(), encoding='unicode')[-20000:]
               print('::error::BC负对照诊断 ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
               raise
-          print('::notice::BC1.81真实安全负对照5失败/0错误/0跳过；三模块旧版classpath实核，修补版随后完整clean verify；非线上可达性证明')
+          print('::notice::BC1.81真实安全负对照5失败/0错误/0跳过；四模块旧版classpath实核，修补版随后完整clean verify；非线上可达性证明')
           PYTEST
 
       - name: Tika 旧版本真实负对照（不能把编译/下载失败当安全断言失败）
