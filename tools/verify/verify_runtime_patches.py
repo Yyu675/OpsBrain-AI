@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""批116/117/118/119/120补丁验收：完成组清零，Tomcat九条及Spring三条定向修补，不替代全量安全门禁，不豁免其他发现。"""
+"""批116/117/118/119/120/121补丁验收：完成组清零（含Boot/Data），Tomcat九条及Spring三条定向修补，不替代全量安全门禁，不豁免其他发现。"""
 import argparse
 import base64
 import hashlib
@@ -13,7 +13,8 @@ from trivy_summary import escape
 
 VERSIONS = {"org.apache.tika": "3.2.2", "io.netty": "4.1.137.Final",
             "io.micrometer": "1.15.12", "org.apache.opennlp": "2.5.9", "org.jsoup": "1.23.2",
-            "org.apache.tomcat.embed": "10.1.57", "org.bouncycastle": "1.85", "com.github.junrar": "7.6.1", "org.springframework": "6.2.19"}
+            "org.apache.tomcat.embed": "10.1.57", "org.bouncycastle": "1.85", "com.github.junrar": "7.6.1",
+            "org.springframework": "6.2.19", "org.springframework.boot": "3.5.15", "org.springframework.data": "3.5.12"}
 ZERO_HC_GROUPS = set(VERSIONS) - {"org.apache.tomcat.embed", "org.springframework"}
 # 正向列出本次必须关闭的9条；不是剩余漏洞忽略表，原生报告/门禁完整保留。
 TOMCAT_REMEDIATED = {"CVE-2026-41293", "CVE-2026-43512", "CVE-2026-43515", "CVE-2026-29129",
@@ -22,6 +23,13 @@ SPRING_REMEDIATED = {"CVE-2026-41850", "CVE-2026-41842", "CVE-2026-41845"}
 SPRING_MODULES = {"spring-aop", "spring-aspects", "spring-beans", "spring-context", "spring-context-support",
                   "spring-core", "spring-expression", "spring-jcl", "spring-jdbc", "spring-messaging",
                   "spring-orm", "spring-oxm", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket"}
+BOOT_MODULES = {"spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure",
+                "spring-boot-starter", "spring-boot-starter-actuator", "spring-boot-starter-aop",
+                "spring-boot-starter-data-jdbc", "spring-boot-starter-data-jpa", "spring-boot-starter-data-redis",
+                "spring-boot-starter-jdbc", "spring-boot-starter-json", "spring-boot-starter-logging",
+                "spring-boot-starter-tomcat", "spring-boot-starter-validation", "spring-boot-starter-web", "spring-boot-starter-websocket"}
+DATA_MODULES = {"spring-data-commons", "spring-data-jdbc", "spring-data-jpa",
+                "spring-data-keyvalue", "spring-data-redis", "spring-data-relational"}
 REQUIRED = {"com.github.junrar:junrar", "org.bouncycastle:bcjmail-jdk18on", "org.bouncycastle:bcprov-jdk18on", "org.bouncycastle:bcpkix-jdk18on", "org.bouncycastle:bcutil-jdk18on",
             "org.apache.tika:tika-core", "org.apache.tika:tika-parser-pdf-module",
             "io.netty:netty-handler", "io.netty:netty-codec-http", "io.netty:netty-codec-http2",
@@ -30,6 +38,8 @@ REQUIRED = {"com.github.junrar:junrar", "org.bouncycastle:bcjmail-jdk18on", "org
             "org.apache.tomcat.embed:tomcat-embed-core", "org.apache.tomcat.embed:tomcat-embed-el", "org.apache.tomcat.embed:tomcat-embed-websocket"}
 
 REQUIRED |= {"org.springframework:" + name for name in SPRING_MODULES}
+REQUIRED |= {"org.springframework.boot:" + name for name in BOOT_MODULES}
+REQUIRED |= {"org.springframework.data:" + name for name in DATA_MODULES}
 
 
 def verify(bom, experiment):
@@ -50,6 +60,11 @@ def verify(bom, experiment):
     for name, version, kind, classifier in registry:
         group = name.split(":")[0]
         if group not in VERSIONS:
+            continue
+        # Starter 为空/元依赖包，不直接内嵌进 BOOT-INF/lib/，通过 REQUIRED 严验坐标与版本。
+        if name.startswith("org.springframework.boot:spring-boot-starter"):
+            if version != VERSIONS[group]:
+                raise ValueError(f"补丁模块混版/回退：{name}:{version}，需{VERSIONS[group]}")
             continue
         # tcnative有独立2.x版本流，随Netty BOM对齐；只排除版本相等断言，不豁免漏洞。
         if not name.startswith("io.netty:netty-tcnative") and version != VERSIONS[group]:
@@ -75,7 +90,7 @@ def verify(bom, experiment):
             "partial_target_hc_rows": len(tomcat_findings) + len(spring_findings),
             "partial_targets": {"org.apache.tomcat.embed": {"required_absent_cves": sorted(TOMCAT_REMEDIATED), "remaining_findings": tomcat_findings}, "org.springframework": {"required_absent_cves": sorted(SPRING_REMEDIATED), "remaining_findings": spring_findings}}, "remaining_hc_rows": len(experiment["findings"]),
             "native_gate_rc": experiment.get("native_gate_rc"), "full_security_passed": False,
-            "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup/BC/Junrar完成组清零；Tomcat仅验九条、Spring仅验三条关闭，剩余发现完整保留；非整体安全/灰度放行"}
+            "notice": "Tika/Netty/Micrometer/OpenNLP/jsoup/BC/Junrar/Boot/Data完成组清零；Tomcat仅验九条、Spring仅验三条关闭，剩余发现完整保留；非整体安全/灰度放行"}
 
 
 def evidence_frames(payload):

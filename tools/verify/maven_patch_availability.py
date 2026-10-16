@@ -74,8 +74,11 @@ def probe(group, artifact, version, packaging="jar", get=fetch):
                     raise ValueError(f"下载POM坐标不符：{url}: 实际{actual}，预期{(group, artifact, version)}")
             else:
                 with zipfile.ZipFile(io.BytesIO(body)) as jar:
-                    if "META-INF/MANIFEST.MF" not in jar.namelist() or not any(n.endswith(".class") for n in jar.namelist()):
-                        raise ValueError("JAR缺manifest或class，不能把错误页当构件")
+                    manifest = jar.read("META-INF/MANIFEST.MF").decode("utf-8", errors="replace") if "META-INF/MANIFEST.MF" in jar.namelist() else ""
+                    has_class = any(n.endswith(".class") for n in jar.namelist())
+                    is_starter = "Spring-Boot-Jar-Type: dependencies-starter" in manifest or artifact.startswith("spring-boot-starter")
+                    if not manifest or (not has_class and not is_starter):
+                        raise ValueError("JAR缺manifest或class/starter标记，不能把错误页当构件")
             row.update({"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()})
         files.append(row)
     return {"coordinate": f"{group}:{artifact}:{version}", "packaging": packaging,
@@ -102,6 +105,19 @@ def inspect(get=fetch):
                      "spring-orm", "spring-oxm", "spring-test", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket"):
         candidates.append(probe("org.springframework", artifact, "6.2.19", get=get))
     candidates.append(probe("org.springframework", "spring-framework-bom", "6.2.19", "pom", get))
+    # 批121：同3.5协同线；Boot 3.5.15及Spring Data 3.5.12全族官方供应，不跨Boot4/Spring7。
+    for artifact in ("spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure",
+                     "spring-boot-starter", "spring-boot-starter-actuator", "spring-boot-starter-aop",
+                     "spring-boot-starter-data-jdbc", "spring-boot-starter-data-jpa", "spring-boot-starter-data-redis",
+                     "spring-boot-starter-jdbc", "spring-boot-starter-json", "spring-boot-starter-logging",
+                     "spring-boot-starter-tomcat", "spring-boot-starter-validation", "spring-boot-starter-web", "spring-boot-starter-websocket"):
+        candidates.append(probe("org.springframework.boot", artifact, "3.5.15", get=get))
+    candidates.append(probe("org.springframework.boot", "spring-boot-starter-parent", "3.5.15", "pom", get))
+    candidates.append(probe("org.springframework.boot", "spring-boot-dependencies", "3.5.15", "pom", get))
+    for artifact in ("spring-data-commons", "spring-data-jdbc", "spring-data-jpa",
+                     "spring-data-keyvalue", "spring-data-redis", "spring-data-relational"):
+        candidates.append(probe("org.springframework.data", artifact, "3.5.12", get=get))
+    candidates.append(probe("org.springframework.data", "spring-data-bom", "2025.0.12", "pom", get))
     return {"schema_version": 1, "repository": BASE, "tomcat_metadata": metadata, "candidates": candidates,
             "boundary": "200且有效POM/JAR只证明本轮可获取，不证明传递解析/二进制兼容/漏洞已修；404保留，网络/坏内容失败，不自动选版本或加豁免"}
 

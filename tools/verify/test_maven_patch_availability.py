@@ -55,6 +55,13 @@ class TestAvailability(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.probe("x", "a", "1", get=lambda url: (200, pom() if url.endswith(".pom") else out.getvalue()))
 
+    def test_SpringBootStarter空包带合法Manifest可接受(self):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as z:
+            z.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nSpring-Boot-Jar-Type: dependencies-starter\n")
+        res = probe.probe("org.springframework.boot", "spring-boot-starter", "3.5.15", get=lambda url: (200, pom("org.springframework.boot", "spring-boot-starter", "3.5.15") if url.endswith(".pom") else out.getvalue()))
+        self.assertEqual(res["availability"], "available")
+
     def test_网络和服务故障不能伪装未发布(self):
         with self.assertRaises(ValueError):
             probe.probe("x", "a", "1", get=lambda url: (503, b""))
@@ -107,6 +114,24 @@ class TestAvailability(unittest.TestCase):
         self.assertTrue(all(c.args[2] == "6.2.19" for c in calls))
         self.assertTrue(all((c.args[3] if len(c.args) > 3 else c.kwargs.get("packaging", "jar")) ==
                             ("pom" if c.args[1] == "spring-framework-bom" else "jar") for c in calls))
+
+    def test_SpringBoot及SpringData同线供应不可遗漏(self):
+        with mock.patch.object(probe, "tomcat_versions", return_value={"last_versions_up_to_10_1_58": ["10.1.57"]}), mock.patch.object(probe, "probe", return_value={}) as call:
+            probe.inspect()
+        boot_calls = [c for c in call.call_args_list if c.args[0] == "org.springframework.boot"]
+        boot_expected = {"spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure",
+                         "spring-boot-starter", "spring-boot-starter-actuator", "spring-boot-starter-aop",
+                         "spring-boot-starter-data-jdbc", "spring-boot-starter-data-jpa", "spring-boot-starter-data-redis",
+                         "spring-boot-starter-jdbc", "spring-boot-starter-json", "spring-boot-starter-logging",
+                         "spring-boot-starter-tomcat", "spring-boot-starter-validation", "spring-boot-starter-web", "spring-boot-starter-websocket",
+                         "spring-boot-starter-parent", "spring-boot-dependencies"}
+        self.assertEqual({c.args[1] for c in boot_calls}, boot_expected)
+        self.assertTrue(all(c.args[2] == "3.5.15" for c in boot_calls))
+        data_calls = [c for c in call.call_args_list if c.args[0] == "org.springframework.data"]
+        data_expected = {"spring-data-commons", "spring-data-jdbc", "spring-data-jpa",
+                         "spring-data-keyvalue", "spring-data-redis", "spring-data-relational", "spring-data-bom"}
+        self.assertEqual({c.args[1] for c in data_calls}, data_expected)
+        self.assertTrue(all(c.args[2] == ("2025.0.12" if c.args[1] == "spring-data-bom" else "3.5.12") for c in data_calls))
 
     def test_CLI网络失败响红且清除陈旧证据(self):
         with tempfile.TemporaryDirectory() as tmp:
