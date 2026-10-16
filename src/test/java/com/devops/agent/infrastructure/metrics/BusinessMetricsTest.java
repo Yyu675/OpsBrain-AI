@@ -89,4 +89,31 @@ class BusinessMetricsTest {
                 .containsEntry("deliverFailed", 1L)
                 .containsKey("lastDeliveredAt");
     }
+
+    @Test
+    @DisplayName("告警到达、去重多维细分与降噪反指标（观察窗与风暴聚合）计数")
+    void multiDimensionalAlertAndSuppressionCounters() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BusinessMetrics m = new BusinessMetrics(
+                registry,
+                mock(DevOpsTicketRepository.class),
+                mock(AlertRepository.class),
+                mock(ApprovalRequestRepository.class));
+
+        m.incAlertReceived("critical", "zabbix");
+        m.incAlertReceived("warning", "prometheus");
+        m.incAlertDedup("P1", "prometheus");
+        m.incObservationSuppressed("P2");
+        m.incStormAggregated();
+
+        assertThat(registry.get("opsbrain.alert_received_total")
+                .tags("severity", "critical", "source", "zabbix").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.alert_received_total")
+                .tags("severity", "warning", "source", "prometheus").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.alert_dedup_total")
+                .tags("severity", "P1", "source", "prometheus").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.observation_suppressed_total")
+                .tags("level", "P2").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("opsbrain.storm_aggregated_total").counter().count()).isEqualTo(1.0);
+    }
 }

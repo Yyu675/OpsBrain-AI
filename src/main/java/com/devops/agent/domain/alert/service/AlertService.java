@@ -810,7 +810,7 @@ public class AlertService {
                     alertName, signal.startsAt());
             if (businessMetrics != null) businessMetrics.incAlertTimeFallback("startsAt");
         }
-        if (businessMetrics != null) businessMetrics.incAlertReceived();
+        if (businessMetrics != null) businessMetrics.incAlertReceived(signal.severity(), signal.source());
 
         // 计算去重键：排除 alertname/service/severity 避免重复
         String dedupKey = computeDedupKey(alertName, service, signal.labels());
@@ -840,6 +840,7 @@ public class AlertService {
             if (isStormSuppressed(candidate)) {
                 log.info("🌪️ [AlertService] 风暴抑制 | alertName={} | level={} | 已聚合进摘要事件",
                         alertName, candidate.getLevel());
+                if (businessMetrics != null) businessMetrics.incStormAggregated();
                 upsertStormSummary();
                 return;
             }
@@ -852,7 +853,7 @@ public class AlertService {
                 alertNotifier.broadcastUpdate(latest);
                 maybeEscalate(prevLevel, latest);
             });
-            if (businessMetrics != null) businessMetrics.incAlertDedup();
+            if (businessMetrics != null) businessMetrics.incAlertDedup(candidate.getLevel(), candidate.getSource());
         }
     }
 
@@ -1090,6 +1091,7 @@ public class AlertService {
         if (isObservationPending(saved)) {
             log.info("⏳ [AlertService] 进入自愈观察窗 | id={} | alertName={} | level={} | 窗口={}min",
                     saved.getId(), alertName, saved.getLevel(), observationWindowMinutes);
+            if (businessMetrics != null) businessMetrics.incObservationSuppressed(saved.getLevel());
             // 自愈引擎照常求值：它在窗口内把告警治好，正是观察窗想要的结局
             triggerHealingPolicy(saved);
             return;

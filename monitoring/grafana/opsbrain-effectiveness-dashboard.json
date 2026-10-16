@@ -187,6 +187,16 @@
           "refId": "G",
           "expr": "sum(rate(opsbrain_alert_time_fallback_total[5m]))",
           "legendFormat": "告警时间回退"
+        },
+        {
+          "refId": "H",
+          "expr": "sum(rate(opsbrain_observation_suppressed_total[5m]))",
+          "legendFormat": "自愈观察抑制"
+        },
+        {
+          "refId": "I",
+          "expr": "sum(rate(opsbrain_storm_aggregated_total[5m]))",
+          "legendFormat": "风暴聚合抑制"
         }
       ]
     }
