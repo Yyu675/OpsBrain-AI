@@ -64,11 +64,14 @@ def probe(group, artifact, version, packaging="jar", get=fetch):
         if status == 200:
             if ext == "pom":
                 root = ET.fromstring(body)
-                actual = tuple(root.findtext("m:" + k, namespaces=NS)
-                               or root.findtext("m:parent/m:" + k, namespaces=NS)
+                # Maven合法POM可省略XML namespace；只接受标准namespace或无namespace，不接受任意XML。
+                if root.tag not in ("project", "{" + NS["m"] + "}project"):
+                    raise ValueError(f"下载POM根元素非法：{url}: {root.tag}")
+                ns = "{" + NS["m"] + "}" if root.tag.startswith("{") else ""
+                actual = tuple(root.findtext(ns + k) or root.findtext(ns + "parent/" + ns + k)
                                for k in ("groupId", "artifactId", "version"))
                 if actual != (group, artifact, version):
-                    raise ValueError("下载POM坐标不符")
+                    raise ValueError(f"下载POM坐标不符：{url}: 实际{actual}，预期{(group, artifact, version)}")
             else:
                 with zipfile.ZipFile(io.BytesIO(body)) as jar:
                     if "META-INF/MANIFEST.MF" not in jar.namelist() or not any(n.endswith(".class") for n in jar.namelist()):

@@ -71,6 +71,16 @@ class TestAvailability(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.tomcat_versions(lambda url: (404, b""))
 
+    def test_无namespace合法POM仍必须严格验坐标(self):
+        for body in (b'<project><groupId>x</groupId><artifactId>a</artifactId><version>1</version></project>',
+                     b'<project><parent><groupId>x</groupId><artifactId>parent</artifactId><version>1</version></parent><artifactId>a</artifactId></project>'):
+            result = probe.probe("x", "a", "1", "pom", lambda url: (200, body))
+            self.assertEqual(result["availability"], "available")
+            with self.assertRaisesRegex(ValueError, "坐标不符"):
+                probe.probe("x", "a", "2", "pom", lambda url: (200, body))
+        with self.assertRaisesRegex(ValueError, "根元素非法"):
+            probe.probe("x", "a", "1", "pom", lambda url: (200, b'<project xmlns="urn:wrong"><groupId>x</groupId><artifactId>a</artifactId><version>1</version></project>'))
+
     def test_BC必须逐模块实取POM和JAR(self):
         metadata = {"last_versions_up_to_10_1_58": ["10.1.57"]}
         with mock.patch.object(probe, "tomcat_versions", return_value=metadata), mock.patch.object(probe, "probe", return_value={}) as call:
