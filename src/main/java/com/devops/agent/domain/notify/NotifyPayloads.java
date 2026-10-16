@@ -129,7 +129,19 @@ public final class NotifyPayloads {
                 .replace("监控恢复（OK）", "<font color=\"info\">监控恢复（OK）</font>")
                 .replace("P0 灾难级（Disaster）", "<font color=\"warning\">P0 灾难级（Disaster）</font>")
                 .replace("P1 严重级（High）", "<font color=\"warning\">P1 严重级（High）</font>")
-                .replace("P2 一般严重（Average）", "<font color=\"comment\">P2 一般严重（Average）</font>");
+                .replace("P2 一般严重（Average）", "<font color=\"comment\">P2 一般严重（Average）</font>")
+                .replace("P3 警告级（Warning）", "<font color=\"comment\">P3 警告级（Warning）</font>")
+                .replace("P4 提示级（Info）", "<font color=\"comment\">P4 提示级（Info）</font>")
+                .replace("证据不足，暂无法形成可靠根因结论", "<font color=\"warning\">证据不足，暂无法形成可靠根因结论</font>")
+                .replace("证据薄弱，诊断结果需人工复核", "<font color=\"warning\">证据薄弱，诊断结果需人工复核</font>")
+                .replace("取证完成；诊断结论及其依据请查看详情，不等于根因已确认", "<font color=\"info\">取证完成；诊断结论及其依据请查看详情，不等于根因已确认</font>")
+                .replace("查询失败", "<font color=\"warning\">查询失败</font>")
+                .replace("数据源未启用/不可用", "<font color=\"warning\">数据源未启用/不可用</font>")
+                .replace("待分配（未认领 PENDING）", "<font color=\"warning\">待分配（未认领 PENDING）</font>")
+                .replace("处置中（PROCESSING）", "<font color=\"warning\">处置中（PROCESSING）</font>")
+                .replace("已恢复待验证（RESOLVED）", "<font color=\"info\">已恢复待验证（RESOLVED）</font>")
+                .replace("已闭环（CLOSED）", "<font color=\"comment\">已闭环（CLOSED）</font>")
+                .replace("已作废（VOID）", "<font color=\"comment\">已作废（VOID）</font>");
     }
 
     /** 判收专用：只读 errcode，不依赖调用方传入的 ObjectMapper（测试探针也能直接用） */

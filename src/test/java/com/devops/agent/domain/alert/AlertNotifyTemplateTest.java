@@ -196,12 +196,12 @@ class AlertNotifyTemplateTest {
 
             assertThat(msg.urgent()).isTrue();
             assertThat(msg.title()).startsWith("⬆️ [P1]");
-            assertThat(md).contains("**级别**：P2 → P1")
+            assertThat(md).contains("**级别**：P2 一般严重（Average） → P1 严重级（High）")
                     // 升级场景值班更需要动作信息——触发卡的段全保留
                     .contains("**摘要**", "**详情**", "TK-3");
             // 级别行紧跟标题之后（第一屏第一条差异事实）
-            assertThat(md.indexOf("### ")).isLessThan(md.indexOf("**级别**：P2 → P1"));
-            assertThat(md.indexOf("**级别**：P2 → P1")).isLessThan(md.indexOf("**摘要**"));
+            assertThat(md.indexOf("### ")).isLessThan(md.indexOf("**级别**：P2 一般严重（Average） → P1 严重级（High）"));
+            assertThat(md.indexOf("**级别**：P2 一般严重（Average） → P1 严重级（High）")).isLessThan(md.indexOf("**摘要**"));
         }
     }
 

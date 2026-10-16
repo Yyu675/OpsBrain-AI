@@ -101,5 +101,22 @@ class NotifyPayloadsTest {
             assertTrue(resContent.contains("<font color=\"info\">监控恢复（OK）</font>"));
             assertTrue(resContent.contains("<font color=\"comment\">P2 一般严重（Average）</font>"));
         }
+
+        @Test
+        @DisplayName("诊断不足与工单状态标签在企微原生高亮色彩验证")
+        void wecomDiagnosisAndTicketStateColors() throws Exception {
+            NotifyMessage diagMsg = NotifyMessage.normal("诊断不足卡",
+                    "- **诊断状态**：证据不足，暂无法形成可靠根因结论\n" +
+                    "- **取证概况**：日志：查询失败；指标：数据源未启用/不可用\n" +
+                    "- **工单状态**：待分配（未认领 PENDING）");
+            byte[] bytes = NotifyPayloads.wecomPayload(diagMsg, new com.fasterxml.jackson.databind.ObjectMapper());
+            com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(bytes);
+            String content = root.path("markdown").path("content").asText();
+
+            assertTrue(content.contains("<font color=\"warning\">证据不足，暂无法形成可靠根因结论</font>"));
+            assertTrue(content.contains("<font color=\"warning\">查询失败</font>"));
+            assertTrue(content.contains("<font color=\"warning\">数据源未启用/不可用</font>"));
+            assertTrue(content.contains("<font color=\"warning\">待分配（未认领 PENDING）</font>"));
+        }
     }
 }
