@@ -55,6 +55,13 @@ class TestAvailability(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.probe("x", "a", "1", get=lambda url: (200, pom() if url.endswith(".pom") else out.getvalue()))
 
+    def test_SpringBootStarter空包带合法Manifest可接受(self):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as z:
+            z.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nSpring-Boot-Jar-Type: dependencies-starter\n")
+        res = probe.probe("org.springframework.boot", "spring-boot-starter", "3.5.15", get=lambda url: (200, pom("org.springframework.boot", "spring-boot-starter", "3.5.15") if url.endswith(".pom") else out.getvalue()))
+        self.assertEqual(res["availability"], "available")
+
     def test_网络和服务故障不能伪装未发布(self):
         with self.assertRaises(ValueError):
             probe.probe("x", "a", "1", get=lambda url: (503, b""))

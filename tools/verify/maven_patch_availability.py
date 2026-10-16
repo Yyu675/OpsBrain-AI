@@ -74,8 +74,11 @@ def probe(group, artifact, version, packaging="jar", get=fetch):
                     raise ValueError(f"下载POM坐标不符：{url}: 实际{actual}，预期{(group, artifact, version)}")
             else:
                 with zipfile.ZipFile(io.BytesIO(body)) as jar:
-                    if "META-INF/MANIFEST.MF" not in jar.namelist() or not any(n.endswith(".class") for n in jar.namelist()):
-                        raise ValueError("JAR缺manifest或class，不能把错误页当构件")
+                    manifest = jar.read("META-INF/MANIFEST.MF").decode("utf-8", errors="replace") if "META-INF/MANIFEST.MF" in jar.namelist() else ""
+                    has_class = any(n.endswith(".class") for n in jar.namelist())
+                    is_starter = "Spring-Boot-Jar-Type: dependencies-starter" in manifest or artifact.startswith("spring-boot-starter")
+                    if not manifest or (not has_class and not is_starter):
+                        raise ValueError("JAR缺manifest或class/starter标记，不能把错误页当构件")
             row.update({"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()})
         files.append(row)
     return {"coordinate": f"{group}:{artifact}:{version}", "packaging": packaging,
