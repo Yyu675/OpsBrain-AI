@@ -202,6 +202,11 @@
           "refId": "J",
           "expr": "sum by (kind, status) (rate(opsbrain_diagnosis_evidence_status_total[5m]))",
           "legendFormat": "诊断证据-{{kind}}-{{status}}"
+        },
+        {
+          "refId": "K",
+          "expr": "opsbrain_notify_silent_seconds",
+          "legendFormat": "通知静默秒数"
         }
       ]
     }
