@@ -102,6 +102,19 @@ def inspect(get=fetch):
                      "spring-orm", "spring-oxm", "spring-test", "spring-tx", "spring-web", "spring-webmvc", "spring-websocket"):
         candidates.append(probe("org.springframework", artifact, "6.2.19", get=get))
     candidates.append(probe("org.springframework", "spring-framework-bom", "6.2.19", "pom", get))
+    # 批121：同3.5协同线；Boot 3.5.15及Spring Data 3.5.12全族官方供应，不跨Boot4/Spring7。
+    for artifact in ("spring-boot", "spring-boot-actuator", "spring-boot-actuator-autoconfigure", "spring-boot-autoconfigure",
+                     "spring-boot-starter", "spring-boot-starter-actuator", "spring-boot-starter-aop",
+                     "spring-boot-starter-data-jdbc", "spring-boot-starter-data-jpa", "spring-boot-starter-data-redis",
+                     "spring-boot-starter-jdbc", "spring-boot-starter-json", "spring-boot-starter-logging",
+                     "spring-boot-starter-tomcat", "spring-boot-starter-validation", "spring-boot-starter-web", "spring-boot-starter-websocket"):
+        candidates.append(probe("org.springframework.boot", artifact, "3.5.15", get=get))
+    candidates.append(probe("org.springframework.boot", "spring-boot-starter-parent", "3.5.15", "pom", get))
+    candidates.append(probe("org.springframework.boot", "spring-boot-dependencies", "3.5.15", "pom", get))
+    for artifact in ("spring-data-commons", "spring-data-jdbc", "spring-data-jpa",
+                     "spring-data-keyvalue", "spring-data-redis", "spring-data-relational"):
+        candidates.append(probe("org.springframework.data", artifact, "3.5.12", get=get))
+    candidates.append(probe("org.springframework.data", "spring-data-bom", "2025.0.12", "pom", get))
     return {"schema_version": 1, "repository": BASE, "tomcat_metadata": metadata, "candidates": candidates,
             "boundary": "200且有效POM/JAR只证明本轮可获取，不证明传递解析/二进制兼容/漏洞已修；404保留，网络/坏内容失败，不自动选版本或加豁免"}
 
