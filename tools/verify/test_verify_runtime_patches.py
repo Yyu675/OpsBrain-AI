@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 from verify_runtime_patches import REQUIRED, VERSIONS, evidence_frames, main, verify
@@ -134,6 +135,23 @@ class TestRuntimePatches(unittest.TestCase):
                     probe["findings"].append({"PkgName": name, "Severity": "CRITICAL", "VulnerabilityID": "CVE-PROBE"})
                 with self.subTest(artifact=artifact, fault=fault), self.assertRaises(ValueError):
                     verify(bom, probe)
+
+    def test_POM四入口生效且邮件夹具不得抢生产作用域(self):
+        root = ET.parse(Path(__file__).resolve().parents[2] / "pom.xml").getroot()
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+        self.assertEqual(root.findtext("m:properties/m:bouncycastle.version", namespaces=ns), "1.85")
+        dm = {d.findtext("m:artifactId", namespaces=ns): d for d in root.findall("m:dependencyManagement/m:dependencies/m:dependency", ns)
+              if d.findtext("m:groupId", namespaces=ns) == "org.bouncycastle"}
+        for artifact in ("bcprov", "bcpkix", "bcutil", "bcjmail"):
+            self.assertIn(artifact + "-jdk18on", dm)
+            self.assertEqual(dm[artifact + "-jdk18on"].findtext("m:version", namespaces=ns), "${bouncycastle.version}")
+        deps = {d.findtext("m:artifactId", namespaces=ns): d for d in root.findall("m:dependencies/m:dependency", ns)}
+        for artifact in ("jakarta.mail-api", "angus-mail"):
+            d = deps[artifact]
+            self.assertEqual(d.findtext("m:scope", namespaces=ns), "test")
+            exclusions = {(e.findtext("m:groupId", namespaces=ns), e.findtext("m:artifactId", namespaces=ns))
+                          for e in d.findall("m:exclusions/m:exclusion", ns)}
+            self.assertIn(("org.eclipse.angus", "angus-activation"), exclusions)
 
     def invoke(self, root, severity="HIGH,CRITICAL"):
         argv = ["guard", "--sbom", str(root / "bom.json"), "--experiment", str(root / "probe.json"),

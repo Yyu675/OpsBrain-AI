@@ -266,3 +266,9 @@ ECJ=/path/to/ecj.jar
 `maven_patch_availability.py --checkout-sha <40位SHA> --json <输出>` 向官方Central GET实际POM/JAR、校验坐标/ZIP目录并记录字节SHA；仅404可记not_found，网络/503/坏内容退出2且清除陈旧输出，分片可恢复。POM/JAR可取不代表传递解析或漏洞已修；真实Maven和Boot证据另验。供应8例、运行补丁11例，11个扫描/工作流脚本合计109例。
 
 补丁闸扩展到Micrometer1.15.12、OpenNLP2.5.9、jsoup1.23.2完成组，保留Tika/Netty约束；Tomcat10.1.57是**部分修补**：正向要求本次应消失的9条CVE，不改写原始报告/原生码，不忽略需58的余量；输出`zero_hc_groups`、`partial_targets.remaining_findings`与整体`remaining_hc_rows`，不能把完成组0当Tomcat整组0或安全放行。OpenNLP旧版三类真实安全断言负对照另在backend CI执行，随后全量clean verify；真SQL/HTTP/CLI不跳。
+
+### 批118 BC版本族
+
+BC1.85必须显式管理`bcprov/bcpkix/bcutil/bcjmail-jdk18on`四入口（Boot3.5.12不托管，只有属性不生效）；四模块官方POM/JAR实际供应、全部Boot SHA及零HC共同验收，不只看core。POM供应协议兼容合法无namespace，但仍严验坐标，不允许继承父artifactId。BC旧版五红负对照与修补版八项真实SDK/加密/MIME/PDF回归后，再完整clean verify。Mail API/Angus只test，排除测试路径抢占既有activation作用域，所有非BC runtime GAV/type/classifier与基线逐项比对。
+
+本地11套脚本113例（供应10、补丁13；BC四模块16故障子场景），十类唯一源码注入均检出后还原。原生本批前置实扫23已包含历史22之外Junrar新披露；不能把23→20写成22→19或“新增披露0”，也不能忽略Junrar。最终结果/门禁/SHA见PR21和`runtime-bc-patches-2026-10-16.json`，工程绿不代表20条剩余风险或灰度通过。
