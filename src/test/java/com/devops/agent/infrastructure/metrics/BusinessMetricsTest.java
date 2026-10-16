@@ -141,4 +141,22 @@ class BusinessMetricsTest {
         assertThat(registry.get("opsbrain.diagnosis_evidence_status_total")
                 .tags("kind", "unknown", "status", "UNKNOWN").counter().count()).isEqualTo(1.0);
     }
+
+    @Test
+    @DisplayName("送达静默秒数 Gauge 正常反映最近一次送达时间差")
+    void notifySilentSecondsGauge() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BusinessMetrics m = new BusinessMetrics(
+                registry,
+                mock(DevOpsTicketRepository.class),
+                mock(AlertRepository.class),
+                mock(ApprovalRequestRepository.class));
+
+        // 初始无送达，返回 0.0
+        assertThat(registry.get("opsbrain.notify_silent_seconds").gauge().value()).isEqualTo(0.0);
+
+        m.notifyDelivery(true);
+        // 送达后读数大于等于 0
+        assertThat(registry.get("opsbrain.notify_silent_seconds").gauge().value()).isGreaterThanOrEqualTo(0.0);
+    }
 }

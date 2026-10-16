@@ -133,6 +133,11 @@ public class BusinessMetrics {
                         () -> safe(() -> (double) approvals.countByStatus(ApprovalStatus.PENDING.name())))
                 .description("待审批排队数（值与审批页待办清单同口径）")
                 .register(registry);
+        // D-b 组 ③ 送达质量：距上次送达成功秒数（0 表示尚无送达或已成功送达即刻，随时间推移单调递增）
+        Gauge.builder("opsbrain.notify_silent_seconds", () -> {
+            long last = notifyLastDeliveredAt;
+            return last <= 0 ? 0.0 : Math.max(0.0, (System.currentTimeMillis() - last) / 1000.0);
+        }).description("距上次通知送达成功秒数（通知管道静默看门狗量化指标）").register(registry);
         log.info("📏 [Metrics] 业务水位计已登记（4 枚存量 Gauge + RED 流速面）");
     }
 
