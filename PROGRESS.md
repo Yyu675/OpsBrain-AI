@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-16（批120 同源首轮验收；最终HEAD复验见PR23，不代表灰度达标）
+> **最后更新**：2026-10-17（批123~128 通知富文本与D-b全量业务度量体系完整落地，PR #26~#35 合并闭环）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -217,6 +217,12 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | 日期 | 变更 |
 |---|---|
 | 2026-08-28 | 建立本台账；确认产品定位路线；登记 P0 四项与前端优化待决策项 |
+| 2026-10-17 | 批128：工单流速面与 MTTR 分级时序度量体系落地（D-b 实施收官），在办工单按优先级水位拆分 `opsbrain.tickets.open{priority=P0~P3}` 与解决耗时直方图 `opsbrain.ticket_resolved_seconds{priority}` 闭环，PR #35 合入 main |
+| 2026-10-17 | 批127：通知渠道送达静默度量与看门狗指标增强落地，秒级时序 Gauge `opsbrain.notify_silent_seconds` 闭环，PR #34 合入 main |
+| 2026-10-17 | 批126：诊断各路证据成效度量体系落地，五路证据采集状态 Counter `opsbrain.diagnosis_evidence_status_total{kind,status}` 闭环，PR #33 合入 main |
+| 2026-10-17 | 批125：钉钉通知受信任回链升格原生 ActionCard 独立交互按钮与 Markdown 智能降级落地，PR #32 合入 main |
+| 2026-10-17 | 批124：告警多维质量度量扩展（severity/source）与自愈降噪反指标（`opsbrain.observation_suppressed_total`、`opsbrain.storm_aggregated_total`）落地，PR #31 合入 main |
+| 2026-10-16 | 批123：三种通知模板（触发/恢复/诊断不足）企业实战重构、告警当前状态与工单生命周期全链路中文本地化、级别双语中枢、企微原生富文本色彩渲染落地，PR #26~#30 合入 main |
 | 2026-08-28 | 收到四项决策：编辑器走方案 A、用户全为技术人员、语言包裁剪立即开做、P0 先做 OpenAPI。台账与待办已按决策重排 |
 | 2026-08-31 | 插入 OpenAPI 可消费性验证：继续改 DTO 前先确认生成的 schema 前端能用，避免多模块返工 |
 | 2026-08-31 | P0-2 第二步·知识库模块：`list` 改 record。发现知识库与工单分页字段名不同（content/totalElements vs tickets/total），**刻意不统一**——前端两处 store 逐字段读取，统一属破坏性变更 |
