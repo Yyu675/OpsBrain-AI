@@ -4,9 +4,9 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
-import type { DiagnosisReplayResponseEvidencesItem } from './diagnosisReplayResponseEvidencesItem';
-import type { DiagnosisReplayResponseHypothesesItem } from './diagnosisReplayResponseHypothesesItem';
-import type { DiagnosisReplayResponseSession } from './diagnosisReplayResponseSession';
+import type { DiagnosisEvidenceItem } from './diagnosisEvidenceItem';
+import type { DiagnosisHypothesisItem } from './diagnosisHypothesisItem';
+import type { DiagnosisReplaySessionView } from './diagnosisReplaySessionView';
 
 /**
  * 诊断链回放详情响应
@@ -15,11 +15,10 @@ export interface DiagnosisReplayResponse {
   /** AI 执行模式 */
   aiMode: string;
   /** 证据采集项列表 */
-  evidences: DiagnosisReplayResponseEvidencesItem[];
+  evidences: DiagnosisEvidenceItem[];
   /** 假设推导项列表 */
-  hypotheses: DiagnosisReplayResponseHypothesesItem[];
-  /** 诊断会话详情 */
-  session: DiagnosisReplayResponseSession;
+  hypotheses: DiagnosisHypothesisItem[];
+  session: DiagnosisReplaySessionView;
   /** 诊断链路追踪 ID */
   traceId: string;
 }

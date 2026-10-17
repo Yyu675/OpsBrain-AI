@@ -25001,29 +25001,19 @@
           "evidences": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object"
-              }
+              "$ref": "#/components/schemas/DiagnosisEvidenceItem"
             },
             "description": "证据采集项列表"
           },
           "hypotheses": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object"
-              }
+              "$ref": "#/components/schemas/DiagnosisHypothesisItem"
             },
             "description": "假设推导项列表"
           },
           "session": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object"
-            },
-            "description": "诊断会话详情"
+            "$ref": "#/components/schemas/DiagnosisReplaySessionView"
           },
           "traceId": {
             "type": "string",
@@ -26253,6 +26243,135 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        }
+      },
+      "DiagnosisReplaySession": {
+        "type": "object",
+        "properties": {
+          "alert_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "sufficiency": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "ticket_id": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EmptyDiagnosisSession": {
+        "type": "object"
+      },
+      "DiagnosisReplaySessionView": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DiagnosisReplaySession"
+          },
+          {
+            "$ref": "#/components/schemas/EmptyDiagnosisSession"
+          }
+        ]
+      },
+      "DiagnosisEvidenceItem": {
+        "type": "object",
+        "properties": {
+          "agent_name": {
+            "type": "string"
+          },
+          "collected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "content": {
+            "type": "string"
+          },
+          "evidence_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "relevance_score": {
+            "type": "number",
+            "format": "double"
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DiagnosisHypothesisItem": {
+        "type": "object",
+        "properties": {
+          "confidence": {
+            "type": "number",
+            "format": "double"
+          },
+          "contradict_ids": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evidence_ids": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "session_trace_id": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "suggested_action": {
             "type": "string"
           }
         }

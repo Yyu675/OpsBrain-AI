@@ -481,6 +481,18 @@ class OpenApiSchemaIntegrationTest {
             JsonNode diagReplay = componentSchema("DiagnosisReplayResponse");
             assertThat(diagReplay).as("DiagnosisReplayResponse 缺失").isNotNull();
             assertThat(fieldNames(diagReplay.path("properties"))).contains("traceId", "session", "evidences", "hypotheses", "aiMode");
+            JsonNode diagnosisSession = componentSchema("DiagnosisReplaySession");
+            assertThat(fieldNames(diagnosisSession.path("properties"))).contains(
+                    "id", "trace_id", "alert_id", "ticket_id", "service", "status", "sufficiency",
+                    "summary", "created_at", "updated_at");
+            JsonNode diagnosisSessionView = componentSchema("DiagnosisReplaySessionView");
+            assertThat(diagnosisSessionView.path("oneOf")).hasSize(2);
+            assertThat(fieldNames(componentSchema("DiagnosisEvidenceItem").path("properties")))
+                    .contains("id", "trace_id", "agent_name", "evidence_type", "status", "title",
+                            "content", "source_ref", "relevance_score", "collected_at");
+            assertThat(fieldNames(componentSchema("DiagnosisHypothesisItem").path("properties")))
+                    .contains("id", "session_trace_id", "rank", "statement", "reasoning", "confidence",
+                            "evidence_ids", "contradict_ids", "suggested_action", "created_at");
 
             JsonNode hypoFeedback = componentSchema("HypothesisFeedbackResponse");
             assertThat(hypoFeedback).as("HypothesisFeedbackResponse 缺失").isNotNull();

@@ -11,6 +11,7 @@ import { http, unwrapBiz } from '../utils/http'
 import { API_ENDPOINTS } from '../config/api'
 
 export interface DiagnosisSessionView {
+  id?: number
   trace_id?: string
   alert_id?: number
   ticket_id?: string
@@ -18,14 +19,20 @@ export interface DiagnosisSessionView {
   status?: string
   sufficiency?: string
   summary?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface DiagnosisEvidenceView {
   id: number
+  trace_id: string | null
+  agent_name: string
   evidence_type: string
   status: 'SUCCESS' | 'NO_DATA' | 'FAILED' | 'UNAVAILABLE'
-  title?: string
-  source_ref?: string
+  title: string
+  source_ref?: string | null
+  relevance_score?: number | null
+  collected_at: string
   /**
    * 证据载荷原文（后端 Evidence.toToolPayload() 的 JSON 串）。
    * 知识证据的 content.hits[].chunkId 是诊断反馈回流的精确入口——
@@ -36,13 +43,15 @@ export interface DiagnosisEvidenceView {
 
 export interface DiagnosisHypothesisView {
   id: number
+  session_trace_id: string
   rank: number
   statement: string
   reasoning?: string
   confidence: number
   evidence_ids?: string | null
   contradict_ids?: string | null
-  suggested_action?: string
+  suggested_action?: string | null
+  created_at: string
   feedback?: string | null
 }
 

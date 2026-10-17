@@ -3,8 +3,10 @@ package com.devops.agent.domain.biz.repository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * sys_diagnosis_session 仓储（S2-1，路线图 §6.1）。
@@ -16,6 +18,10 @@ import java.util.Map;
  */
 @Repository
 public class DiagnosisSessionRepository {
+
+    public record SessionRow(Long id, String traceId, Long alertId, String ticketId, String service,
+                             String status, String sufficiency, String summary,
+                             Timestamp createdAt, Timestamp updatedAt) {}
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -130,12 +136,16 @@ public class DiagnosisSessionRepository {
     }
 
     /** 按 trace_id 取会话（诊断详情 API：证据链回放的入口）。 */
-    public Map<String, Object> findByTraceId(String traceId) {
+    public Optional<SessionRow> findByTraceId(String traceId) {
         String sql = "SELECT id, trace_id, alert_id, ticket_id, service, status, sufficiency, summary, "
                 + "created_at, updated_at FROM sys_diagnosis_session WHERE trace_id = ? "
                 + "ORDER BY id DESC LIMIT 1";
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, traceId);
-        return rows.isEmpty() ? Map.of() : rows.get(0);
+        List<SessionRow> rows = jdbcTemplate.query(sql, (rs, rowNum) -> new SessionRow(
+                rs.getLong("id"), rs.getString("trace_id"), rs.getLong("alert_id"),
+                rs.getString("ticket_id"), rs.getString("service"), rs.getString("status"),
+                rs.getString("sufficiency"), rs.getString("summary"),
+                rs.getTimestamp("created_at"), rs.getTimestamp("updated_at")), traceId);
+        return rows.stream().findFirst();
     }
 
     /**

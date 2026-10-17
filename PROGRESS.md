@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-17（批149 将自愈执行步骤时间线从嵌套 Map 改为显式 HealingExecutionStep；字段兼容测试、OpenAPI/Orval/fieldContract 同步中）
+> **最后更新**：2026-10-17（批150 将诊断回放 session/evidence/hypothesis 内嵌 Map 改为类型化记录；保留 SQL snake_case 字段与无会话 `{}` 语义；OpenAPI/生成类型/字段断言同步中）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -553,4 +553,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批146(2026-10-17):HealthCheckController 原始 `Map<String,Object>` 响应全部 Record 化（`/health`、`/health/ping`、`/health/db`、`/health/ai-model`），仅固定响应结构，不调整路径、HTTP 状态、探针频率语义或付费模型开关。AI 探测的成功/失败子结构用字段可空 Record + `NON_NULL` 精确保留旧 JSON 字段形状；补 ping/disabled 探测的 HTTP 契约断言。OpenAPI/Orval/fieldContract 同步；前端 `gen:check`、`typecheck` 与 Vitest 107 文件/1863 测试通过。后端编译、完整测试和探针 HTTP 行为以当前 PR CI 真跑为合并门禁。
 - 批147(2026-10-17):清理 `ServiceOwnerListResponse.items` 的嵌套 Map 契约。仓储 `listAll()` 改为显式 `ServiceOwnerRow`（时间列映射 `LocalDateTime`），Controller 转为 `ServiceOwnerItem` Record；响应 JSON 字段名和值保持不变。更新 OpenAPI 快照、Orval 类型、`fieldContract.ts` 双向字段断言及 `OpenApiSchemaIntegrationTest` schema 字段断言，新增 Controller 记录映射单测。前端类型与生成新鲜度、后端编译/测试、OpenAPI 与 E2E 均由 PR #56 CI 验证通过并合入 main（commit `68d212c`）。
 - 批148(2026-10-17):将 `KnowledgeBaseReindexResponse.failures` 从嵌套 `List<Map<String,Object>>` 收口为 `KnowledgeBaseReindexFailure` Record，并把 `KnowledgeDocService.reindexByKnowledgeBase` 的内部统计/失败结果一并强类型化，去掉 Controller 中 unchecked Map 转换；保持失败列表字段 `docId/title/indexStatus/error` 与原值一致。同步 OpenAPI/Orval/fieldContract；`KnowledgeBaseControllerWebTest` 改用 typed service result，`OpenApiSchemaIntegrationTest` 锁定失败项 schema。前端 typecheck 与 CI 前端/后端/OpenAPI/工作流/E2E 全绿；PR #57 已 squash 合入（merge commit `7aabbe7`）。
-- 批149(2026-10-17):将 `HealingExecutionDetailResponse.steps` 由 `List<Map<String,Object>>` 改为 `List<HealingExecutionStep>`；保留 `name/status/detail/at` 四字段、损坏 JSON 降级空列表行为，并对未知旧字段容错。同步 OpenAPI 快照、Orval 与 `fieldContract.ts` 双向 key assertions；新增 controller 单测覆盖标准回放与损坏回退，OpenAPI 集成测试锁定 schema。前端生成/类型检查通过，PR CI 待最终验收。`DiagnosisReplayResponse` 暂不改：session 查无记录时旧语义是 `{}`，需先设计能保持空对象与可空数据库字段序列化一致的方案。
+- 批149(2026-10-17):将 `HealingExecutionDetailResponse.steps` 由 `List<Map<String,Object>>` 改为 `List<HealingExecutionStep>`；保留 `name/status/detail/at` 四字段、损坏 JSON 降级空列表行为，并对未知旧字段容错。同步 OpenAPI 快照、Orval 与 `fieldContract.ts` 双向 key assertions；新增 controller 单测覆盖标准回放与损坏回退，OpenAPI 集成测试锁定 schema。前端生成/类型检查通过，CI 前端/后端/OpenAPI/工作流/E2E 全绿；PR #58 已 squash 合入（merge commit `c7709c8`）。
+- 批150(2026-10-17):诊断回放 API 强类型化。session/evidence/hypothesis 由 Map 改成 DTO Records；三个 Repository 回放查询改 RowMapper typed rows，保持原 SQL 列名序列化为 snake_case、原排序/字段值及 null 字段；无 session 采用空对象 record union 保留 `{}` 响应。同步 OpenAPI/Orval 与 `fieldContract.ts` 三组 key 双向断言；补 controller 序列化断言（snake_case + 空对象）、活体 OpenAPI schema 属性/oneOf 断言，更新仓储/Controller 测试。前端 typecheck 通过；后端无本地 Java，需 PR CI 编译、测试和快照新鲜度确认。

@@ -13,7 +13,6 @@ import org.springframework.test.context.TestPropertySource;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,12 +56,12 @@ class DiagnosisHypothesisRepositoryTest extends AbstractIntegrationTest {
         repository.save("trace-other", new Hypothesis(1, "别的", "r", 0.5,
                 List.of(), List.of(), "s", Instant.now()));
 
-        List<Map<String, Object>> rows = repository.findBySessionTraceId(trace);
+        var rows = repository.findBySessionTraceId(trace);
         assertThat(rows).hasSize(2);
-        assertThat(((Number) rows.get(0).get("rank")).intValue()).isEqualTo(1);
-        assertThat(rows.get(0).get("statement")).isEqualTo("变更回归");
-        assertThat(rows.get(0).get("evidence_ids")).isEqualTo("[10,11]");
-        assertThat(rows.get(1).get("contradict_ids")).isEqualTo("[10]");
+        assertThat(rows.get(0).rank()).isEqualTo(1);
+        assertThat(rows.get(0).statement()).isEqualTo("变更回归");
+        assertThat(rows.get(0).evidenceIds()).isEqualTo("[10,11]");
+        assertThat(rows.get(1).contradictIds()).isEqualTo("[10]");
         assertThat(repository.countBySession(trace)).isEqualTo(2L);
     }
 }
