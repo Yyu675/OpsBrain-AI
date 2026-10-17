@@ -558,12 +558,9 @@ public class TicketController {
      * </p>
      */
     @GetMapping("/attachments/{attachmentId}/download-url")
-    public ApiResponse<Map<String, Object>> attachmentDownloadUrl(@PathVariable Long attachmentId) {
+    public ApiResponse<com.devops.agent.controller.dto.AttachmentDownloadUrlResponse> attachmentDownloadUrl(@PathVariable Long attachmentId) {
         String url = attachmentService.presignDownloadUrl(attachmentId);
-        Map<String, Object> data = new HashMap<>();
-        data.put("url", url);
-        data.put("expiresInSeconds", 300);
-        return ApiResponse.success(data);
+        return ApiResponse.success(new com.devops.agent.controller.dto.AttachmentDownloadUrlResponse(url, 300));
     }
 
     /**
@@ -597,14 +594,11 @@ public class TicketController {
      * @param limit 数量上限，默认 20
      */
     @GetMapping("/tags/hot")
-    public ApiResponse<Map<String, Object>> hotTags(
+    public ApiResponse<com.devops.agent.controller.dto.TicketHotTagsResponse> hotTags(
             @RequestParam(defaultValue = "20") int limit) {
         var hot = ticketService.getHotTags(limit);
-        Map<String, Object> data = new HashMap<>();
-        // 保序输出：按热度降序的标签名列表
-        data.put("tags", new ArrayList<>(hot.keySet()));
-        data.put("counts", hot);
-        return ApiResponse.success(data);
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketHotTagsResponse(
+                new ArrayList<>(hot.keySet()), hot));
     }
 
     /**

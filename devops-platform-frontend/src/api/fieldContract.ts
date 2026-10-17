@@ -56,11 +56,13 @@ import type { SimulateResult as GenSimulateResult } from './generated/simulateRe
 import type { StormStatus as GenStormStatus } from './generated/stormStatus'
 import type { PipelineHeartbeat as GenPipelineHeartbeat } from './generated/pipelineHeartbeat'
 import type { LogsHeartbeat as GenLogsHeartbeat } from './generated/logsHeartbeat'
+import type { KnowledgeHotTagResponse as GenKnowledgeHotTagResponse } from './generated/knowledgeHotTagResponse'
+import type { ApprovalPageResponse as GenApprovalPageResponse } from './generated/approvalPageResponse'
 
-import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult } from './types'
+import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
 import type { BackendTicket } from './types/ticket'
 import type { StormStatus, PipelineHeartbeat, LogsHeartbeat } from './alerts'
-import type { ApprovalRequest } from './approval'
+import type { ApprovalRequest, ApprovalPage } from './approval'
 import type {
   RiskPolicy,
   ApprovalMode,
@@ -117,11 +119,15 @@ export type KnowledgeDocCreateRequest_Missing = AssertDriftFree<GenOnly<GenCreat
 export type KnowledgeDocCreateRequest_Extra = AssertDriftFree<HandOnly<GenCreateRequest, KnowledgeDocCreateRequest>>
 export type KnowledgeDocUpdateRequest_Missing = AssertDriftFree<GenOnly<GenUpdateRequest, KnowledgeDocUpdateRequest>>
 export type KnowledgeDocUpdateRequest_Extra = AssertDriftFree<HandOnly<GenUpdateRequest, KnowledgeDocUpdateRequest>>
+export type KnowledgeHotTag_Missing = AssertDriftFree<GenOnly<GenKnowledgeHotTagResponse, KnowledgeHotTag>>
+export type KnowledgeHotTag_Extra = AssertDriftFree<HandOnly<GenKnowledgeHotTagResponse, KnowledgeHotTag>>
 
 // ==================== 审批 / 治理域 ====================
 
 export type ApprovalRequest_Missing = AssertDriftFree<GenOnly<GenApprovalRequest, ApprovalRequest>>
 export type ApprovalRequest_Extra = AssertDriftFree<HandOnly<GenApprovalRequest, ApprovalRequest>>
+export type ApprovalPage_Missing = AssertDriftFree<GenOnly<GenApprovalPageResponse, ApprovalPage>>
+export type ApprovalPage_Extra = AssertDriftFree<HandOnly<GenApprovalPageResponse, ApprovalPage>>
 export type RiskPolicy_Missing = AssertDriftFree<GenOnly<GenRiskPolicy, RiskPolicy>>
 export type RiskPolicy_Extra = AssertDriftFree<HandOnly<GenRiskPolicy, RiskPolicy>>
 export type ActionAllowlistEntry_Missing = AssertDriftFree<GenOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>

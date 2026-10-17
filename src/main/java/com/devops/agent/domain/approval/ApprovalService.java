@@ -66,21 +66,33 @@ public class ApprovalService {
     }
 
     /** 待审队列（最早提交的先审） */
-    public Map<String, Object> listPending(int page, int size) {
+    public com.devops.agent.controller.dto.ApprovalPageResponse listPendingPage(int page, int size) {
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, size), 200);
         List<ApprovalRequest> list = repository.findPending(safeSize, (safePage - 1) * safeSize);
         int total = repository.countByStatus(ApprovalStatus.PENDING.name());
-        return page(list, total, safePage, safeSize);
+        return com.devops.agent.controller.dto.ApprovalPageResponse.of(list, total, safePage, safeSize);
+    }
+
+    /** 待审队列（最早提交的先审，兼容 Map 调用） */
+    public Map<String, Object> listPending(int page, int size) {
+        var p = listPendingPage(page, size);
+        return page(p.items(), p.total(), p.page(), p.size());
     }
 
     /** 按状态查询（空=全部），最新在前 */
-    public Map<String, Object> listByStatus(String status, int page, int size) {
+    public com.devops.agent.controller.dto.ApprovalPageResponse listByStatusPage(String status, int page, int size) {
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, size), 200);
         List<ApprovalRequest> list = repository.findByStatus(status, safeSize, (safePage - 1) * safeSize);
         int total = repository.countByStatus(status);
-        return page(list, total, safePage, safeSize);
+        return com.devops.agent.controller.dto.ApprovalPageResponse.of(list, total, safePage, safeSize);
+    }
+
+    /** 按状态查询（空=全部），最新在前（兼容 Map 调用） */
+    public Map<String, Object> listByStatus(String status, int page, int size) {
+        var p = listByStatusPage(status, page, size);
+        return page(p.items(), p.total(), p.page(), p.size());
     }
 
     /**

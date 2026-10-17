@@ -143,6 +143,10 @@ class ApprovalControllerWebTest {
         return m;
     }
 
+    private static com.devops.agent.controller.dto.ApprovalPageResponse pageResponse(List<ApprovalRequest> items, int total) {
+        return com.devops.agent.controller.dto.ApprovalPageResponse.of(items, total, 1, 20);
+    }
+
     private String json(Object o) throws Exception {
         return objectMapper.writeValueAsString(o);
     }
@@ -156,8 +160,8 @@ class ApprovalControllerWebTest {
         @Test
         @DisplayName("省略 status 默认查待审队列")
         void defaultsToPending() throws Exception {
-            when(approvalService.listPending(1, 20))
-                    .thenReturn(page(List.of(approval(1L, "PENDING")), 1));
+            when(approvalService.listPendingPage(1, 20))
+                    .thenReturn(pageResponse(List.of(approval(1L, "PENDING")), 1));
 
             mockMvc.perform(get("/api/v1/approvals"))
                     .andExpect(status().isOk())
@@ -166,46 +170,46 @@ class ApprovalControllerWebTest {
                     .andExpect(jsonPath("$.data.items[0].riskLevel").value("DESTRUCTIVE_HIGH_RISK"))
                     .andExpect(jsonPath("$.traceId").exists());
 
-            verify(approvalService).listPending(1, 20);
-            verify(approvalService, never()).listByStatus(anyString(), anyInt(), anyInt());
+            verify(approvalService).listPendingPage(1, 20);
+            verify(approvalService, never()).listByStatusPage(anyString(), anyInt(), anyInt());
         }
 
         @Test
         @DisplayName("status=PENDING（含大小写变体）等价于默认，仍走待审队列的排序")
         void pendingIsCaseInsensitive() throws Exception {
-            when(approvalService.listPending(anyInt(), anyInt())).thenReturn(page(List.of(), 0));
+            when(approvalService.listPendingPage(anyInt(), anyInt())).thenReturn(pageResponse(List.of(), 0));
 
             mockMvc.perform(get("/api/v1/approvals").param("status", "pending"))
                     .andExpect(status().isOk());
 
             // 待审队列是「最早优先」，其他状态是「最新优先」——
             // 走错分支会让排队最久的审批沉到列表底部
-            verify(approvalService).listPending(1, 20);
+            verify(approvalService).listPendingPage(1, 20);
         }
 
         @Test
         @DisplayName("status=ALL 传 null 给 Service（表示不筛状态），而不是字符串 \"ALL\"")
         void allMeansNoFilter() throws Exception {
-            when(approvalService.listByStatus(isNull(), anyInt(), anyInt()))
-                    .thenReturn(page(List.of(), 0));
+            when(approvalService.listByStatusPage(isNull(), anyInt(), anyInt()))
+                    .thenReturn(pageResponse(List.of(), 0));
 
             mockMvc.perform(get("/api/v1/approvals").param("status", "all"))
                     .andExpect(status().isOk());
 
             // 若原样传 "ALL"，SQL 会去匹配一个名为 ALL 的状态，结果恒为空列表
-            verify(approvalService).listByStatus(isNull(), eq(1), eq(20));
+            verify(approvalService).listByStatusPage(isNull(), eq(1), eq(20));
         }
 
         @Test
         @DisplayName("其他状态归一化为大写并去空格后透传")
         void otherStatusIsNormalized() throws Exception {
-            when(approvalService.listByStatus(anyString(), anyInt(), anyInt()))
-                    .thenReturn(page(List.of(), 0));
+            when(approvalService.listByStatusPage(anyString(), anyInt(), anyInt()))
+                    .thenReturn(pageResponse(List.of(), 0));
 
             mockMvc.perform(get("/api/v1/approvals").param("status", "  rejected  "))
                     .andExpect(status().isOk());
 
-            verify(approvalService).listByStatus(eq("REJECTED"), eq(1), eq(20));
+            verify(approvalService).listByStatusPage(eq("REJECTED"), eq(1), eq(20));
         }
 
         @Test
