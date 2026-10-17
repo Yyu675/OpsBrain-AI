@@ -25286,10 +25286,7 @@
             "type": "array",
             "description": "失败详情列表",
             "items": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object"
-              }
+              "$ref": "#/components/schemas/KnowledgeBaseReindexFailure"
             }
           },
           "kbId": {
@@ -26225,6 +26222,24 @@
           "updateTime": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "KnowledgeBaseReindexFailure": {
+        "type": "object",
+        "properties": {
+          "docId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "error": {
+            "type": "string"
+          },
+          "indexStatus": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
           }
         }
       }

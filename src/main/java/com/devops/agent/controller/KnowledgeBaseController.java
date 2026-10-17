@@ -11,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 知识库管理 API（顶层实体）。
@@ -140,22 +139,19 @@ public class KnowledgeBaseController {
      * 大库执行前请确认配额。</p>
      */
     @PostMapping("/{id}/reindex-all")
-    @SuppressWarnings("unchecked")
     public ApiResponse<com.devops.agent.controller.dto.KnowledgeBaseReindexResponse> reindexAll(@PathVariable Long id) {
         writeGuard.requireDestructive();
         KnowledgeBase kb = kbService.findById(id);
         if (kb == null) {
             return ApiResponse.error(ApiCode.NOT_FOUND, "知识库不存在: " + id);
         }
-        Map<String, Object> result = docService.reindexByKnowledgeBase(id);
+        KnowledgeDocService.KnowledgeBaseReindexResult result = docService.reindexByKnowledgeBase(id);
+        List<com.devops.agent.controller.dto.KnowledgeBaseReindexFailure> failures = result.failures().stream()
+                .map(failure -> new com.devops.agent.controller.dto.KnowledgeBaseReindexFailure(
+                        failure.docId(), failure.title(), failure.indexStatus(), failure.error()))
+                .toList();
         com.devops.agent.controller.dto.KnowledgeBaseReindexResponse response = new com.devops.agent.controller.dto.KnowledgeBaseReindexResponse(
-                id,
-                kb.getName(),
-                ((Number) result.getOrDefault("total", 0)).intValue(),
-                ((Number) result.getOrDefault("success", 0)).intValue(),
-                ((Number) result.getOrDefault("failed", 0)).intValue(),
-                (List<Map<String, Object>>) result.getOrDefault("failures", List.of())
-        );
+                id, kb.getName(), result.total(), result.success(), result.failed(), failures);
         return ApiResponse.success(response);
     }
 }

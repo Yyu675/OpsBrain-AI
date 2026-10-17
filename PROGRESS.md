@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-17（批147 将 ServiceOwner 路由列表中的嵌套 Map 项改为 ServiceOwnerItem Record，并同步仓储行映射、OpenAPI、Orval 与字段契约；后续核查剩余嵌套 Map DTO）
+> **最后更新**：2026-10-17（批148 将按库索引重建失败项从嵌套 Map 改为强类型 Record，ServiceOwner 路由列表嵌套 Map 已随批147收口；CI 验证进行中）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -160,7 +160,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | # | 任务 | 挂起原因 | 恢复条件 |
 |---|---|---|---|
 | S0-4b | ~~40 条正例话题文档~~（批41 文档面 40/40 收口）——余两件环境型：摄取生效验证（随 S0-2b 首跑）+ expectedDocs 注记真窗回填 | 环境型（真窗/容器），非内容欠账 | S0-2b 首跑窗口 / EVAL_LLM 真窗 |
-| P0-2b 剩余 | 顶层响应 `ApiResponse<Object>`/`ApiResponse<Map<...>>` 与控制器原始 Map 响应已清零；批147 开始清理已命名 DTO 内的嵌套 Map（本批 ServiceOwnerListResponse.items） | OpenAPI 快照、Orval、fieldContract 双向对账；保留现有 JSON 结构/字段值 | 不改请求协议、HTTP 状态和健康探针行为；继续审计嵌套 Map DTO（诊断回放、Healing steps、按库重建失败项等），Zabbix 动态 webhook 请求 Map 保持不动 |
+| P0-2b 剩余 | 顶层响应 `ApiResponse<Object>`/`ApiResponse<Map<...>>` 与控制器原始 Map 响应已清零；批147收口 ServiceOwnerListResponse.items，批148收口按库索引重建 failures | OpenAPI 快照、Orval、fieldContract 双向对账；保留现有 JSON 字段结构和值 | 不改请求协议、HTTP 状态和健康探针行为；继续审计嵌套 Map DTO（诊断回放、Healing steps 等），Zabbix 动态 webhook 请求 Map 保持不动 |
 | — | ⚠️ **P0-2 的收益边界（前置调研已做，挂起后仍有效）** | 实测 70/130 端点返回 `Map`/`Object`，OpenAPI 只能生成 `additionalProperties: true`。恢复时按模块逐个改，**不要期待一次性全量** | — |
 
 ### 前端优化（方向已重新确认，按序推进）
@@ -552,3 +552,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 
 - 批146(2026-10-17):HealthCheckController 原始 `Map<String,Object>` 响应全部 Record 化（`/health`、`/health/ping`、`/health/db`、`/health/ai-model`），仅固定响应结构，不调整路径、HTTP 状态、探针频率语义或付费模型开关。AI 探测的成功/失败子结构用字段可空 Record + `NON_NULL` 精确保留旧 JSON 字段形状；补 ping/disabled 探测的 HTTP 契约断言。OpenAPI/Orval/fieldContract 同步；前端 `gen:check`、`typecheck` 与 Vitest 107 文件/1863 测试通过。后端编译、完整测试和探针 HTTP 行为以当前 PR CI 真跑为合并门禁。
 - 批147(2026-10-17):清理 `ServiceOwnerListResponse.items` 的嵌套 Map 契约。仓储 `listAll()` 改为显式 `ServiceOwnerRow`（时间列映射 `LocalDateTime`），Controller 转为 `ServiceOwnerItem` Record；响应 JSON 字段名和值保持不变。更新 OpenAPI 快照、Orval 类型、`fieldContract.ts` 双向字段断言及 `OpenApiSchemaIntegrationTest` schema 字段断言，新增 Controller 记录映射单测。前端 `gen:check`/`typecheck` 待本轮运行，后端用 PR CI 验证。
+- 批148(2026-10-17):将 `KnowledgeBaseReindexResponse.failures` 从嵌套 `List<Map<String,Object>>` 收口为 `KnowledgeBaseReindexFailure` Record，并把 `KnowledgeDocService.reindexByKnowledgeBase` 的内部统计/失败结果一并强类型化，去掉 Controller 中 unchecked Map 转换；保持失败列表字段 `docId/title/indexStatus/error` 与原值一致。同步 OpenAPI/Orval/fieldContract；`KnowledgeBaseControllerWebTest` 改用 typed service result，`OpenApiSchemaIntegrationTest` 锁定失败项 schema。前端 typecheck 通过，CI 后端/契约/E2E 为最终验收。

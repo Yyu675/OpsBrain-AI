@@ -2,7 +2,6 @@ package com.devops.agent.controller.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
-import java.util.Map;
 
 @Schema(description = "知识库批量重切索引响应")
 public record KnowledgeBaseReindexResponse(
@@ -22,6 +21,6 @@ public record KnowledgeBaseReindexResponse(
         int failed,
 
         @Schema(description = "失败详情列表")
-        List<Map<String, Object>> failures
+        List<KnowledgeBaseReindexFailure> failures
 ) {
 }
