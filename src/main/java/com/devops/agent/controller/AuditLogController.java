@@ -97,7 +97,7 @@ public class AuditLogController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        Map<String, Object> result = repository.queryAgentCallLog(
+        var pageResult = repository.queryAgentCallLog(
                 modelName, operationType, cached, minLatencyMs, from, to, page, size);
 
         // 统计与列表用同一套筛选条件——否则「列表 20 条、统计说 1 万次」
@@ -105,7 +105,7 @@ public class AuditLogController {
         var stats = repository.queryAgentCallStats(
                 modelName, operationType, cached, minLatencyMs, from, to);
 
-        return ApiResponse.success(AuditLogConverter.toAuditAiCallsResponse(result, stats));
+        return ApiResponse.success(AuditLogConverter.toAuditAiCallsResponse(pageResult, stats));
     }
 
     /**

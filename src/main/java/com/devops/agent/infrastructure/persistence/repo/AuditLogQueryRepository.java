@@ -1,7 +1,9 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
+import com.devops.agent.domain.audit.AgentCallLogRow;
 import com.devops.agent.domain.audit.AgentCallTraceRow;
 import com.devops.agent.domain.audit.AuditAgentCallStats;
+import com.devops.agent.domain.audit.AuditPage;
 import com.devops.agent.domain.audit.AuditFilterOptionsData;
 import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import lombok.extern.slf4j.Slf4j;
@@ -132,7 +134,7 @@ public class AuditLogQueryRepository {
      * @param from          起始时间
      * @param to            结束时间
      */
-    public Map<String, Object> queryAgentCallLog(
+    public AuditPage<AgentCallLogRow> queryAgentCallLog(
             String modelName, String operationType, Boolean cached,
             Integer minLatencyMs, LocalDateTime from, LocalDateTime to,
             int page, int size) {
@@ -183,7 +185,7 @@ public class AuditLogQueryRepository {
          * ② 问答内容可能含敏感信息，列表页权限较宽，按需下钻更稳妥。
          * 需要看全文时点 traceId 走详情接口。
          */
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+        List<AgentCallLogRow> rows = jdbcTemplate.query(
                 """
                 SELECT id, trace_id, model_name, is_cached, latency_ms, cost_rmb,
                        operation_type, operator_id, affected_resources,
@@ -191,9 +193,17 @@ public class AuditLogQueryRepository {
                        create_time
                 FROM sys_agent_call_log
                 """ + where + " ORDER BY create_time DESC, id DESC LIMIT ? OFFSET ?",
+                (rs, rowNum) -> new AgentCallLogRow(
+                        rs.getObject("id", Long.class), rs.getString("trace_id"),
+                        rs.getString("model_name"), rs.getObject("is_cached", Boolean.class),
+                        rs.getObject("latency_ms", Integer.class), rs.getBigDecimal("cost_rmb"),
+                        rs.getString("operation_type"), rs.getString("operator_id"),
+                        rs.getString("affected_resources"), rs.getString("query_preview"),
+                        rs.getObject("create_time", LocalDateTime.class)),
                 pageArgs.toArray());
 
-        return page(rows, totalCount, safePage, safeSize);
+        int totalPages = (int) Math.ceil((double) totalCount / safeSize);
+        return new AuditPage<>(rows, totalCount, safePage, safeSize, totalPages);
     }
 
     /** 单条 AI 调用详情（含问答全文与引用） */
