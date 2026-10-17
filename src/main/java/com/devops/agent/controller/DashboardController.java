@@ -205,7 +205,8 @@ public class DashboardController {
         if (val != null) {
             try {
                 return Long.parseLong(val.toString());
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.warn("⚠️ [Dashboard] 数值解析失败: val={}, error={}", val, e.getMessage());
             }
         }
         return 0L;
