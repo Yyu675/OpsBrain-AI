@@ -11302,7 +11302,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseSessionListResponse"
                 }
               }
             }
@@ -11392,7 +11392,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseSessionContextResponse"
                 }
               }
             }
@@ -12805,7 +12805,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeStatsResponse"
                 }
               }
             }
@@ -13818,7 +13818,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeCategoryTreeResponse"
                 }
               }
             }
@@ -23431,6 +23431,296 @@
           },
           "data": {
             "$ref": "#/components/schemas/MetricDatasourceResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "KnowledgeStatsResponse": {
+        "type": "object",
+        "properties": {
+          "totalChunks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalDocuments": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseKnowledgeStatsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeStatsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "KnowledgeTreeDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "categoryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updateTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "KnowledgeCategoryTreeNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "parentId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "docCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeTreeDocument"
+            }
+          }
+        }
+      },
+      "KnowledgeCategoryTreeResponse": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeCategoryTreeNode"
+            }
+          },
+          "uncategorized": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeTreeDocument"
+            }
+          }
+        }
+      },
+      "ApiResponseKnowledgeCategoryTreeResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeCategoryTreeResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SessionKeyFactsDto": {
+        "type": "object",
+        "properties": {
+          "conclusion": {
+            "type": "string"
+          },
+          "confirmedFacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "intent": {
+            "type": "string"
+          },
+          "pendingRisks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SessionSummaryItem": {
+        "type": "object",
+        "properties": {
+          "createTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finalState": {
+            "type": "string"
+          },
+          "keyFacts": {
+            "$ref": "#/components/schemas/SessionKeyFactsDto"
+          },
+          "relatedTickets": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "totalCostRmb": {
+            "type": "number"
+          },
+          "totalTokens": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "turnCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updateTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionSummaryItem"
+            }
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseSessionListResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SessionListResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SessionContextResponse": {
+        "type": "object",
+        "properties": {
+          "hasHistory": {
+            "type": "boolean"
+          },
+          "keyFactsText": {
+            "type": "string"
+          },
+          "recentHistory": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseSessionContextResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SessionContextResponse"
           },
           "traceId": {
             "type": "string"

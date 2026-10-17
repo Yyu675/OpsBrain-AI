@@ -88,8 +88,19 @@ public class KnowledgeManageController {
      * @return 统计信息
      */
     @GetMapping("/stats")
-    public ApiResponse<Map<String, Object>> getKnowledgeStats() {
-        return ApiResponse.success(knowledgeStatsService.getStats());
+    public ApiResponse<com.devops.agent.controller.dto.KnowledgeStatsResponse> getKnowledgeStats() {
+        Map<String, Object> stats = knowledgeStatsService.getStats();
+        long totalDocs = stats.get("totalDocuments") instanceof Number n ? n.longValue() : 0L;
+        long totalChunks = stats.get("totalChunks") instanceof Number n ? n.longValue() : 0L;
+        long activeChunks = stats.get("activeChunks") instanceof Number n ? n.longValue() : 0L;
+        long filteredOut = stats.get("filteredOut") instanceof Number n ? n.longValue() : 0L;
+        @SuppressWarnings("unchecked")
+        Map<String, Long> bySource = (Map<String, Long>) stats.get("bySource");
+        java.time.LocalDateTime lastUpdateTime = (java.time.LocalDateTime) stats.get("lastUpdateTime");
+        long hotQueryCount = stats.get("hotQueryCount") instanceof Number n ? n.longValue() : 0L;
+
+        return ApiResponse.success(new com.devops.agent.controller.dto.KnowledgeStatsResponse(
+                totalDocs, totalChunks, activeChunks, filteredOut, bySource != null ? bySource : Map.of(), lastUpdateTime, hotQueryCount));
     }
 
     /**

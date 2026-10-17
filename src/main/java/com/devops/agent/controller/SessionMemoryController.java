@@ -39,7 +39,7 @@ public class SessionMemoryController {
      * @param tenantId 租户标识（多租户预留）
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> listSessions(
+    public ApiResponse<com.devops.agent.controller.dto.SessionListResponse> listSessions(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "default") String tenantId) {
@@ -51,19 +51,13 @@ public class SessionMemoryController {
         List<SessionSummary> sessions = memoryManager.listRecentSessions(tenantId, safeSize, offset);
         long total = memoryManager.countSessions(tenantId);
 
-        List<Map<String, Object>> items = new ArrayList<>(sessions.size());
+        List<com.devops.agent.controller.dto.SessionSummaryItem> items = new ArrayList<>(sessions.size());
         for (SessionSummary s : sessions) {
-            items.add(toBrief(s));
+            items.add(toSessionItem(s));
         }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("sessions", items);
-        data.put("total", total);
-        data.put("page", safePage);
-        data.put("size", safeSize);
-        data.put("totalPages", (int) Math.ceil((double) total / safeSize));
-
-        return ApiResponse.success(data);
+        int totalPages = (int) Math.ceil((double) total / safeSize);
+        return ApiResponse.success(new com.devops.agent.controller.dto.SessionListResponse(items, total, safePage, safeSize, totalPages));
     }
 
     /**
@@ -72,16 +66,13 @@ public class SessionMemoryController {
      * @param sessionId 会话 ID
      */
     @GetMapping("/{sessionId}/context")
-    public ApiResponse<Map<String, Object>> getContext(@PathVariable String sessionId) {
+    public ApiResponse<com.devops.agent.controller.dto.SessionContextResponse> getContext(@PathVariable String sessionId) {
         var ctx = memoryManager.loadContext(sessionId);
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("sessionId", sessionId);
-        data.put("recentHistory", ctx.recentHistory());
-        data.put("keyFactsText", ctx.keyFactsText());
-        data.put("hasHistory", ctx.hasHistory());
-
-        return ApiResponse.success(data);
+        return ApiResponse.success(new com.devops.agent.controller.dto.SessionContextResponse(
+                sessionId,
+                ctx.recentHistory() != null ? ctx.recentHistory() : List.of(),
+                ctx.keyFactsText(),
+                ctx.hasHistory()));
     }
 
     /**
@@ -99,31 +90,26 @@ public class SessionMemoryController {
 
     // ==================== 内部转换 ====================
 
-    /**
-     * 转为前端展示用的精简结构
-     */
-    private Map<String, Object> toBrief(SessionSummary s) {
-        Map<String, Object> m = new HashMap<>();
-        m.put("sessionId", s.getSessionId());
-        m.put("traceId", s.getTraceId());
-        m.put("summary", s.getSummary());
-        m.put("turnCount", s.getTurnCount());
-        m.put("totalTokens", s.getTotalTokens());
-        m.put("totalCostRmb", s.getTotalCostRmb());
-        m.put("finalState", s.getFinalState());
-        m.put("relatedTickets", s.getRelatedTickets());
-        m.put("createTime", s.getCreateTime());
-        m.put("updateTime", s.getUpdateTime());
-
-        // 关键事实摘要（供列表页展示标签）
+    private com.devops.agent.controller.dto.SessionSummaryItem toSessionItem(SessionSummary s) {
+        com.devops.agent.controller.dto.SessionKeyFactsDto facts = null;
         if (s.getKeyFacts() != null) {
-            Map<String, Object> facts = new HashMap<>();
-            facts.put("intent", s.getKeyFacts().getIntent());
-            facts.put("confirmedFacts", s.getKeyFacts().getConfirmedFacts());
-            facts.put("conclusion", s.getKeyFacts().getConclusion());
-            facts.put("pendingRisks", s.getKeyFacts().getPendingRisks());
-            m.put("keyFacts", facts);
+            facts = new com.devops.agent.controller.dto.SessionKeyFactsDto(
+                    s.getKeyFacts().getIntent(),
+                    s.getKeyFacts().getConfirmedFacts(),
+                    s.getKeyFacts().getConclusion(),
+                    s.getKeyFacts().getPendingRisks());
         }
-        return m;
+        return new com.devops.agent.controller.dto.SessionSummaryItem(
+                s.getSessionId(),
+                s.getTraceId(),
+                s.getSummary(),
+                s.getTurnCount(),
+                s.getTotalTokens(),
+                s.getTotalCostRmb(),
+                s.getFinalState(),
+                s.getRelatedTickets(),
+                facts,
+                s.getCreateTime(),
+                s.getUpdateTime());
     }
 }
