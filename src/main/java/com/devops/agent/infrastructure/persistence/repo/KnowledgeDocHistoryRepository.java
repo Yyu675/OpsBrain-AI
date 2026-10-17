@@ -1,6 +1,7 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
 import com.devops.agent.domain.rag.KnowledgeDoc;
+import com.devops.agent.domain.rag.KnowledgeDocVersionRow;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -9,7 +10,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 知识文档历史版本仓储
@@ -70,7 +70,7 @@ public class KnowledgeDocHistoryRepository {
     /**
      * 版本历史列表（不含正文）
      */
-    public List<Map<String, Object>> listVersions(Long docId) {
+    public List<KnowledgeDocVersionRow> listVersions(Long docId) {
         // 列名用 camelCase 别名：前端 KnowledgeDocVersion 契约是 camelCase，
         // 直接返回 queryForList 的 snake_case 键会让版本抽屉的类型/作者/时间渲染为空。
         // 注意：PostgreSQL 会把未加引号的别名折叠为小写，必须用双引号保留大小写
@@ -84,7 +84,12 @@ public class KnowledgeDocHistoryRepository {
              WHERE doc_id = ?
              ORDER BY version DESC
             """;
-        return jdbcTemplate.queryForList(sql, docId);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new KnowledgeDocVersionRow(
+                (Long) rs.getObject("id"), (Long) rs.getObject("docId"),
+                (Integer) rs.getObject("version"), rs.getString("title"),
+                rs.getString("category"), rs.getString("author"), rs.getString("contentHash"),
+                (Integer) rs.getObject("contentLength"), rs.getString("changedBy"), rs.getString("changeReason"),
+                rs.getString("changeType"), rs.getObject("createTime", LocalDateTime.class)), docId);
     }
 
     /**
