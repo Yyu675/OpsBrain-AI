@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批162 将 AI 分析准确率统计的 repository/service/controller 固定 Map 改为 typed records；批161 已合入 PR #70）
+> **最后更新**：2026-10-18（批163 将工单列表 KPI 固定 Map wrapper 改为 `TicketStatsData`，动态状态/优先级字典保留 Map；批162 已合入 PR #71 `090f829`）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -566,4 +566,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批159(2026-10-18):将 `KnowledgeStatsService.listChunks()` 的分页 wrapper 从 `Map<String,Object>` 改为 `KnowledgeChunkPageData`，Controller 直接映射 typed fields 到既有 `KnowledgeChunkPageResponse`。查询筛选、分页钳制、参数透传和输出 page/size/total/list 字段保持不变；WebMvc 测试改 typed stub 并锁定分页 JSON。外部 schema 不变，无需 OpenAPI/Orval 更新；PR #68 前端、后端、工作流与 E2E CI 全绿并合入（merge commit `1e85f0f`）。
 - 批160(2026-10-18):`DevOpsTicketRepository.countFirstResponseStats()`、`TicketService.getFirstResponseStats()` 与 Controller 的固定 Map 数据流改为 `TicketFirstResponseStats` typed record。SQL 条件及有记录才计算均值、NULL MTTA 保持 null、平均值一位小数舍入与异常回退零计数/null 均值不变；新增 HTTP 契约断言。响应 DTO/schema 未变，无 OpenAPI/Orval 更新；PR #69 前端、后端、工作流与 E2E CI 全通过并合入（merge commit `93488bd`）。
 - 批161(2026-10-18):将 `DevOpsTicketRepository.countClosureMetrics()`、`TicketService.getClosureMetrics()`、`TicketController.closureMetrics()` 的固定 Map 数据流改为 `TicketClosureMetricsData`。保留 SQL 聚合、null 均值/比例语义、舍入、postmortemRate 分母为 0 时 null、days/window/alertRepository 分支条件、缺行/异常回退及 JSON 全部字段；新增 HTTP typed projection 响应断言。对外 DTO/schema 未变，无需 OpenAPI/Orval 更新；PR #70 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `a42a650`）。
-- 批162(2026-10-18):将 `TicketAiAnalysisRepository.feedbackStats()` 的固定聚合 Map 改为 `TicketAiFeedbackStats`，Service 计算层改为 `TicketAiAccuracyStats` typed record，Controller 直接映射到原有响应 DTO；保留计数缺行→0、rated=0 rate→0、三位小数舍入和反馈统计 SQL；更新服务测试并新增 HTTP 字段断言。外部 schema 不变，无 OpenAPI/Orval 更新；后端 CI 待验证。
+- 批162(2026-10-18):将 `TicketAiAnalysisRepository.feedbackStats()` 的固定聚合 Map 改为 `TicketAiFeedbackStats`，Service 计算层改为 `TicketAiAccuracyStats` typed record，Controller 直接映射到原有响应 DTO；保留计数缺行→0、rated=0 rate→0、三位小数舍入和反馈统计 SQL；更新服务测试并新增 HTTP 字段断言。外部 schema 不变，无 OpenAPI/Orval 更新；PR #71 前端、后端、工作流与 E2E CI 全通过并合入（merge commit `090f829`）。
+- 批163(2026-10-18):将 `TicketService.getTicketStats()` 固定外层 `Map<String,Object>` 改为 `TicketStatsData`，保留 `byStatus`/`byPriority` 为动态 `Map<String,Long>`；仍为已知状态与优先级补 0、resolved 合并 RESOLVED+CLOSED、其他 KPI 计数不变。Controller 由 typed fields 映射原 `TicketStatsResponse`，服务测试改 record accessor 并新增 HTTP 字段/动态键断言；无外部 schema 变化，PR CI 待验证。

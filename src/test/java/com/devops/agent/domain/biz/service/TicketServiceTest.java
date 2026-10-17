@@ -130,35 +130,26 @@ class TicketServiceTest {
         ));
         when(ticketRepository.countUrgentPending()).thenReturn(5L);
 
-        Map<String, Object> stats = service.getTicketStats();
+        var stats = service.getTicketStats();
 
-        assertThat(stats).containsKeys("total", "todayNew", "byStatus", "byPriority",
-                "pending", "processing", "resolved", "urgentPending");
-
-        assertThat(stats.get("total")).isEqualTo(10L);
-        assertThat(stats.get("todayNew")).isEqualTo(3L);
-        assertThat(stats.get("urgentPending")).isEqualTo(5L);
-
-        @SuppressWarnings("unchecked")
-        Map<String, Long> byStatus = (Map<String, Long>) stats.get("byStatus");
-        assertThat(byStatus.get("PENDING")).isEqualTo(5L);
-        assertThat(byStatus.get("PROCESSING")).isEqualTo(3L);
-        assertThat(byStatus.get("RESOLVED")).isEqualTo(1L);
-        assertThat(byStatus.get("CLOSED")).isEqualTo(1L);
-        assertThat(byStatus.get("VOID")).isEqualTo(0L);
-
-        @SuppressWarnings("unchecked")
-        Map<String, Long> byPriority = (Map<String, Long>) stats.get("byPriority");
-        assertThat(byPriority.get("P0")).isEqualTo(2L);
-        assertThat(byPriority.get("P1")).isEqualTo(3L);
-        assertThat(byPriority.get("P2")).isEqualTo(4L);
-        assertThat(byPriority.get("P3")).isEqualTo(1L);
+        assertThat(stats.total()).isEqualTo(10L);
+        assertThat(stats.todayNew()).isEqualTo(3L);
+        assertThat(stats.urgentPending()).isEqualTo(5L);
+        assertThat(stats.byStatus().get("PENDING")).isEqualTo(5L);
+        assertThat(stats.byStatus().get("PROCESSING")).isEqualTo(3L);
+        assertThat(stats.byStatus().get("RESOLVED")).isEqualTo(1L);
+        assertThat(stats.byStatus().get("CLOSED")).isEqualTo(1L);
+        assertThat(stats.byStatus().get("VOID")).isEqualTo(0L);
+        assertThat(stats.byPriority().get("P0")).isEqualTo(2L);
+        assertThat(stats.byPriority().get("P1")).isEqualTo(3L);
+        assertThat(stats.byPriority().get("P2")).isEqualTo(4L);
+        assertThat(stats.byPriority().get("P3")).isEqualTo(1L);
 
         // 扁平字段验证
-        assertThat(stats.get("pending")).isEqualTo(5L);
-        assertThat(stats.get("processing")).isEqualTo(3L);
+        assertThat(stats.pending()).isEqualTo(5L);
+        assertThat(stats.processing()).isEqualTo(3L);
         // resolved = RESOLVED + CLOSED
-        assertThat(stats.get("resolved")).isEqualTo(2L);
+        assertThat(stats.resolved()).isEqualTo(2L);
     }
 
     @Test
@@ -169,19 +160,14 @@ class TicketServiceTest {
         when(ticketRepository.countGroupByPriority()).thenReturn(List.of());
         when(ticketRepository.countUrgentPending()).thenReturn(0L);
 
-        Map<String, Object> stats = service.getTicketStats();
+        var stats = service.getTicketStats();
 
-        @SuppressWarnings("unchecked")
-        Map<String, Long> byStatus = (Map<String, Long>) stats.get("byStatus");
-        // 所有状态都应补 0
+        // 所有状态/优先级都应补 0，字典键保持动态 Map 语义。
         for (String s : TicketEnums.Status.ALL) {
-            assertThat(byStatus.get(s)).isZero();
+            assertThat(stats.byStatus().get(s)).isZero();
         }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Long> byPriority = (Map<String, Long>) stats.get("byPriority");
         for (String p : TicketEnums.Priority.ALL) {
-            assertThat(byPriority.get(p)).isZero();
+            assertThat(stats.byPriority().get(p)).isZero();
         }
     }
 

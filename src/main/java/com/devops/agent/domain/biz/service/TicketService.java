@@ -1709,12 +1709,9 @@ public class TicketService {
      *
      * @return 统计 Map（total / todayNew / byStatus / byPriority / pending / processing / resolved / urgentPending）
      */
-    public Map<String, Object> getTicketStats() {
-        Map<String, Object> data = new java.util.HashMap<>();
-
+    public com.devops.agent.domain.biz.entity.TicketStatsData getTicketStats() {
         long total = ticketRepository.countAll();
-        data.put("total", total);
-        data.put("todayNew", ticketRepository.countCreatedToday());
+        long todayNew = ticketRepository.countCreatedToday();
 
         // 各状态计数，缺失状态补 0，避免前端 undefined
         Map<String, Long> byStatus = new java.util.HashMap<>();
@@ -1724,13 +1721,6 @@ public class TicketService {
         for (Object[] row : ticketRepository.countGroupByStatus()) {
             byStatus.put(String.valueOf(row[0]), (Long) row[1]);
         }
-        data.put("byStatus", byStatus);
-
-        // 前端 KPI 直接可用的扁平字段
-        data.put("pending", byStatus.getOrDefault("PENDING", 0L));
-        data.put("processing", byStatus.getOrDefault("PROCESSING", 0L));
-        data.put("resolved", byStatus.getOrDefault("RESOLVED", 0L)
-                + byStatus.getOrDefault("CLOSED", 0L));
 
         // 各优先级计数，缺失补 0
         Map<String, Long> byPriority = new java.util.HashMap<>();
@@ -1740,13 +1730,18 @@ public class TicketService {
         for (Object[] row : ticketRepository.countGroupByPriority()) {
             byPriority.put(String.valueOf(row[0]), (Long) row[1]);
         }
-        data.put("byPriority", byPriority);
 
-        data.put("urgentPending", ticketRepository.countUrgentPending());
-        // 待分配积压：真实库里 27/28 张工单无人认领，这个数字不进 KPI 就没人看得见
-        data.put("unassignedOpen", ticketRepository.countUnassignedOpen());
-
-        return data;
+        // 保留动态状态/优先级字典与供 KPI 使用的扁平计数。
+        return new com.devops.agent.domain.biz.entity.TicketStatsData(
+                total,
+                todayNew,
+                byStatus,
+                byStatus.getOrDefault("PENDING", 0L),
+                byStatus.getOrDefault("PROCESSING", 0L),
+                byStatus.getOrDefault("RESOLVED", 0L) + byStatus.getOrDefault("CLOSED", 0L),
+                byPriority,
+                ticketRepository.countUrgentPending(),
+                ticketRepository.countUnassignedOpen());
     }
 
     /**
