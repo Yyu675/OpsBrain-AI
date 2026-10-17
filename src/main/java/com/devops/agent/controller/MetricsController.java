@@ -15,6 +15,7 @@ import com.devops.agent.controller.dto.SeriesPointDto;
 import com.devops.agent.infrastructure.metrics.MetricsCatalog;
 import com.devops.agent.infrastructure.metrics.PromQuery;
 import com.devops.agent.infrastructure.metrics.PrometheusClient;
+import com.devops.agent.infrastructure.metrics.PrometheusHealth;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -175,22 +176,16 @@ public class MetricsController {
      */
     @GetMapping("/datasource")
     public ApiResponse<MetricDatasourceResponse> datasource() {
-        Map<String, Object> health = prometheus.health();
-
-        String baseUrl = (String) health.get("baseUrl");
-        boolean enabled = Boolean.TRUE.equals(health.get("enabled"));
-        boolean reachable = Boolean.TRUE.equals(health.get("reachable"));
-        Long latencyMs = health.get("latencyMs") instanceof Number n ? n.longValue() : null;
-        String error = (String) health.get("error");
+        PrometheusHealth health = prometheus.health();
 
         MetricDatasourceDto dto = new MetricDatasourceDto(
                 "prometheus",
                 "Prometheus",
-                baseUrl,
-                enabled,
-                reachable,
-                latencyMs,
-                error);
+                health.baseUrl(),
+                health.enabled(),
+                health.reachable(),
+                health.latencyMs(),
+                health.error());
 
         return ApiResponse.success(new MetricDatasourceResponse(List.of(dto), 1));
     }

@@ -179,15 +179,10 @@ public class PrometheusClient {
      * @return {@code {reachable, latencyMs, baseUrl, error?}}
      */
     @CircuitBreaker(name = "prometheus", fallbackMethod = "healthFallback")
-    public Map<String, Object> health() {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("baseUrl", baseUrl);
-        result.put("enabled", enabled);
-
+    public PrometheusHealth health() {
         if (!enabled) {
-            result.put("reachable", false);
-            result.put("error", "Prometheus 集成未启用（devops.metrics.prometheus.enabled=false）");
-            return result;
+            return new PrometheusHealth(baseUrl, false, false, null,
+                    "Prometheus 集成未启用（devops.metrics.prometheus.enabled=false）");
         }
 
         long start = System.currentTimeMillis();
@@ -198,21 +193,16 @@ public class PrometheusClient {
                     .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             long cost = System.currentTimeMillis() - start;
-
             boolean ok = resp.statusCode() >= 200 && resp.statusCode() < 300;
-            result.put("reachable", ok);
-            result.put("latencyMs", cost);
-            if (!ok) {
-                result.put("error", "HTTP " + resp.statusCode());
-            }
+            return new PrometheusHealth(baseUrl, true, ok, cost,
+                    ok ? null : "HTTP " + resp.statusCode());
         } catch (Exception e) {
-            result.put("reachable", false);
-            result.put("latencyMs", System.currentTimeMillis() - start);
+            long cost = System.currentTimeMillis() - start;
             // 只给类名 + 消息，不带堆栈：这个结果要显示在页面上
-            result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            String error = e.getClass().getSimpleName() + ": " + e.getMessage();
             log.warn("[Prometheus] 健康检查失败 | baseUrl={} | {}", baseUrl, e.toString());
+            return new PrometheusHealth(baseUrl, true, false, cost, error);
         }
-        return result;
     }
 
     // ==================================================================
@@ -262,18 +252,11 @@ public class PrometheusClient {
     }
 
     @SuppressWarnings("unused") // 由 Resilience4j 按名反射调用
-    private Map<String, Object> healthFallback(Throwable t) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("baseUrl", baseUrl);
-        result.put("enabled", enabled);
-        result.put("reachable", false);
-        result.put("latencyMs", 0L);
-        if (t instanceof CallNotPermittedException) {
-            result.put("error", "熔断器打开：未发出健康探测（连续失败超过阈值，等待半开探测恢复）");
-        } else {
-            result.put("error", t.getClass().getSimpleName() + ": " + t.getMessage());
-        }
-        return result;
+    private PrometheusHealth healthFallback(Throwable t) {
+        String error = t instanceof CallNotPermittedException
+                ? "熔断器打开：未发出健康探测（连续失败超过阈值，等待半开探测恢复）"
+                : t.getClass().getSimpleName() + ": " + t.getMessage();
+        return new PrometheusHealth(baseUrl, enabled, false, 0L, error);
     }
 
     /**

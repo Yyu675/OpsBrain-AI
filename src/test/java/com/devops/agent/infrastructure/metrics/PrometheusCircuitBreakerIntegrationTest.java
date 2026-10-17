@@ -19,7 +19,6 @@ import org.springframework.test.context.TestPropertySource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Instant;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -178,10 +177,10 @@ class PrometheusCircuitBreakerIntegrationTest extends AbstractIntegrationTest {
         assertThat(breaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
 
         int before = SERVER.getRequestCount();
-        Map<String, Object> health = prometheus.health();
+        PrometheusHealth health = prometheus.health();
 
-        assertThat(health.get("reachable")).isEqualTo(false);
-        assertThat(String.valueOf(health.get("error")))
+        assertThat(health.reachable()).isEqualTo(false);
+        assertThat(String.valueOf(health.error()))
                 .as("健康 fallback 必须显式标注「熔断器打开」，而不是让页面显示别的错误")
                 .contains("熔断器打开");
         assertThat(SERVER.getRequestCount() - before)
