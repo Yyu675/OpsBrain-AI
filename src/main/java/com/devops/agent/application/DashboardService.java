@@ -1,6 +1,7 @@
 package com.devops.agent.application;
 
 import com.devops.agent.controller.dto.DashboardOverviewDTO;
+import com.devops.agent.controller.dto.DiagnosisBoardResponse;
 
 import java.util.Map;
 
@@ -62,5 +63,5 @@ public interface DashboardService {
      * （trace_id 归因成本 / 全部完成会话，零成本会话入分母）。
      * days 由实现层夹紧 [1, 90]。
      */
-    Map<String, Object> getDiagnosisBoard(int days);
+    DiagnosisBoardResponse getDiagnosisBoard(int days);
 }

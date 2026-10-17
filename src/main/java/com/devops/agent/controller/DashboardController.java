@@ -11,9 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * M8 看板统计模块 - Controller 层
@@ -107,8 +105,7 @@ public class DashboardController {
             @RequestParam(defaultValue = "7") int days) {
         log.info("📊 [Dashboard] 请求诊断区看板 | days={}", days);
         // 夹紧下沉在实现层（单点口径，不外散到端点）
-        Map<String, Object> boardMap = dashboardService.getDiagnosisBoard(days);
-        return ApiResponse.success(com.devops.agent.controller.dto.DiagnosisBoardConverter.fromMap(boardMap));
+        return ApiResponse.success(dashboardService.getDiagnosisBoard(days));
     }
 
     /**

@@ -3,6 +3,7 @@ package com.devops.agent.application.impl;
 import com.devops.agent.application.DashboardCallTrends;
 import com.devops.agent.application.DashboardService;
 import com.devops.agent.controller.dto.DashboardOverviewDTO;
+import com.devops.agent.controller.dto.DiagnosisBoardResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -51,27 +52,30 @@ public class DashboardServiceImpl implements DashboardService {
      * 窗口夹紧与 /trends 同宽 [1, 90]。
      */
     @Override
-    public Map<String, Object> getDiagnosisBoard(int days) {
+    public DiagnosisBoardResponse getDiagnosisBoard(int days) {
         int window = Math.min(Math.max(1, days), 90);
-        List<Map<String, Object>> statusRows = jdbcTemplate.queryForList(
+        List<DiagnosisBoardComposer.StatusCountRow> statusRows = jdbcTemplate.query(
                 """
                 SELECT status, COUNT(*) AS n FROM sys_diagnosis_session
                  WHERE created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                  GROUP BY status ORDER BY n DESC
-                """, window);
-        List<Map<String, Object>> sufficiencyRows = jdbcTemplate.queryForList(
+                """, (rs, rowNum) -> new DiagnosisBoardComposer.StatusCountRow(
+                        rs.getString("status"), rs.getLong("n")), window);
+        List<DiagnosisBoardComposer.SufficiencyCountRow> sufficiencyRows = jdbcTemplate.query(
                 """
                 SELECT sufficiency, COUNT(*) AS n FROM sys_diagnosis_session
                  WHERE status = 'COMPLETED' AND sufficiency IS NOT NULL
                    AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                  GROUP BY sufficiency ORDER BY n DESC
-                """, window);
-        List<Map<String, Object>> evidenceRows = jdbcTemplate.queryForList(
+                """, (rs, rowNum) -> new DiagnosisBoardComposer.SufficiencyCountRow(
+                        rs.getString("sufficiency"), rs.getLong("n")), window);
+        List<DiagnosisBoardComposer.EvidenceCountRow> evidenceRows = jdbcTemplate.query(
                 """
                 SELECT evidence_type, status, COUNT(*) AS n FROM sys_diagnosis_evidence
                  WHERE collected_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                  GROUP BY evidence_type, status
-                """, window);
+                """, (rs, rowNum) -> new DiagnosisBoardComposer.EvidenceCountRow(
+                        rs.getString("evidence_type"), rs.getString("status"), rs.getLong("n")), window);
         // AVG 聚合永远返回一行（无完成会话时为 NULL）——不会 EmptyResultDataAccess
         Double avgSeconds = jdbcTemplate.queryForObject(
                 """
@@ -80,9 +84,8 @@ public class DashboardServiceImpl implements DashboardService {
                  WHERE status = 'COMPLETED'
                    AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                 """, Double.class, window);
-        // 逐日诊断量趋势（S4-4.3）：SQL 只取有数的行，补零/越窗丢弃属日历
-        // 语义，全部下沉 Composer（right 端点由这里注入 LocalDate.now()）
-        List<Map<String, Object>> trendRows = jdbcTemplate.queryForList(
+        // SQL 仅取有数的日期；补零/窗口语义由 Composer 负责。
+        List<DiagnosisBoardComposer.TrendRow> trendRows = jdbcTemplate.query(
                 """
                 SELECT DATE(created_at) AS day,
                        COUNT(*) AS total,
@@ -91,9 +94,10 @@ public class DashboardServiceImpl implements DashboardService {
                  WHERE created_at >= CURRENT_DATE - CAST(? AS INTEGER)
                  GROUP BY DATE(created_at)
                  ORDER BY day
-                """, window - 1);
-        // 4-4.3 均价分子：窗口内完成诊断归因到的 LLM 调用总成本
-        // （trace_id 一对多直接 SUM；无归因调用→0，均价语义与分母留给 Composer）
+                """, (rs, rowNum) -> new DiagnosisBoardComposer.TrendRow(
+                        rs.getObject("day", LocalDate.class), rs.getLong("total"), rs.getLong("completed")),
+                window - 1);
+        // trace_id 一对多直接 SUM；无归因调用→0，均价语义与分母留给 Composer。
         Double costTotal = jdbcTemplate.queryForObject(
                 """
                 SELECT COALESCE(SUM(l.cost_rmb), 0)
@@ -102,18 +106,16 @@ public class DashboardServiceImpl implements DashboardService {
                  WHERE s.status = 'COMPLETED'
                    AND s.created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                 """, Double.class, window);
-        // S4-2 校准读数（批次 35）：假设置信度 × 反馈对的直采——判定集/豁免计数/
-        // 空集 null 纪律全部下沉 HypothesisCalibrationBoard（纯函数）。
-        List<Map<String, Object>> feedbackRows = jdbcTemplate.queryForList(
+        List<HypothesisCalibrationBoard.FeedbackRow> feedbackRows = jdbcTemplate.query(
                 """
                 SELECT confidence, feedback FROM sys_diagnosis_hypothesis
                  WHERE feedback IS NOT NULL
                    AND created_at >= CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
-                """, window);
-        Map<String, Object> board = DiagnosisBoardComposer.compose(statusRows, sufficiencyRows,
-                evidenceRows, avgSeconds, window, trendRows, LocalDate.now(), costTotal);
-        board.put("calibration", HypothesisCalibrationBoard.compose(feedbackRows));
-        return board;
+                """, (rs, rowNum) -> new HypothesisCalibrationBoard.FeedbackRow(
+                        rs.getObject("confidence", Double.class), rs.getString("feedback")), window);
+        return DiagnosisBoardComposer.compose(statusRows, sufficiencyRows, evidenceRows, avgSeconds,
+                window, trendRows, LocalDate.now(), costTotal,
+                HypothesisCalibrationBoard.compose(feedbackRows));
     }
 
     @Override
