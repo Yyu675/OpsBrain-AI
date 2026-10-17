@@ -393,28 +393,28 @@ public class TicketController {
      */
     @GetMapping("/metrics/closure")
     public ApiResponse<com.devops.agent.controller.dto.TicketClosureMetricsResponse> closureMetrics(@RequestParam(required = false) Integer days) {
-        Map<String, Object> m = ticketService.getClosureMetrics(days);
+        com.devops.agent.domain.biz.entity.TicketClosureMetricsData metrics =
+                ticketService.getClosureMetrics(days);
         return ApiResponse.success(new com.devops.agent.controller.dto.TicketClosureMetricsResponse(
-                m.get("total") instanceof Number n ? n.longValue() : 0L,
-                m.get("firstResponded") instanceof Number n ? n.longValue() : 0L,
-                m.get("mitigated") instanceof Number n ? n.longValue() : 0L,
-                m.get("rootCauseConfirmed") instanceof Number n ? n.longValue() : 0L,
-                m.get("verified") instanceof Number n ? n.longValue() : 0L,
-                m.get("verifySkipped") instanceof Number n ? n.longValue() : 0L,
-                m.get("mttaMinutes") instanceof Number n ? n.doubleValue() : null,
-                m.get("mttmMinutes") instanceof Number n ? n.doubleValue() : null,
-                m.get("mttrMinutes") instanceof Number n ? n.doubleValue() : null,
-                m.get("skipRate") instanceof Number n ? n.doubleValue() : null,
-                m.get("alertSourced") instanceof Number n ? n.longValue() : null,
-                m.get("postmortemTotal") instanceof Number n ? n.longValue() : null,
-                m.get("finishedTotal") instanceof Number n ? n.longValue() : null,
-                m.get("postmortemRate") instanceof Number n ? n.doubleValue() : null,
-                m.get("windowDays") instanceof Number n ? n.intValue() : null,
-                m.get("alertsInWindow") instanceof Number n ? n.longValue() : null,
-                m.get("alertSourcedInWindow") instanceof Number n ? n.longValue() : null,
-                m.get("incidentsInWindow") instanceof Number n ? n.longValue() : null,
-                m.get("incidentsTotal") instanceof Number n ? n.longValue() : null
-        ));
+                metrics.total(),
+                metrics.firstResponded(),
+                metrics.mitigated(),
+                metrics.rootCauseConfirmed(),
+                metrics.verified(),
+                metrics.verifySkipped(),
+                metrics.mttaMinutes(),
+                metrics.mttmMinutes(),
+                metrics.mttrMinutes(),
+                metrics.skipRate(),
+                metrics.alertSourced(),
+                metrics.postmortemTotal(),
+                metrics.finishedTotal(),
+                metrics.postmortemRate(),
+                metrics.windowDays(),
+                metrics.alertsInWindow(),
+                metrics.alertSourcedInWindow(),
+                metrics.incidentsInWindow(),
+                metrics.incidentsTotal()));
     }
 
     /**

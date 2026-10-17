@@ -211,4 +211,45 @@ class TicketServiceTest {
         verify(bm).recordTicketResolved(org.mockito.ArgumentMatchers.eq("P1"),
                 org.mockito.ArgumentMatchers.longThat(elapsed -> elapsed >= 14 * 60 * 1000L));
     }
+
+    @Test
+    void closureMetricsUsesWindowAggregatesOnlyForPositiveDays() {
+        var alertRepository = mock(com.devops.agent.domain.alert.repository.AlertRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "alertRepository", alertRepository);
+        when(ticketRepository.countClosureMetrics()).thenReturn(new com.devops.agent.domain.biz.entity.TicketClosureMetricsData(
+                10, 7, 6, 5, 4, 1, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
+        when(alertRepository.countSince(any(java.time.LocalDateTime.class))).thenReturn(13L);
+        when(alertRepository.countDerivedIncidents(any(java.time.LocalDateTime.class))).thenReturn(8L);
+        when(ticketRepository.countByCreatorSince(org.mockito.ArgumentMatchers.eq("alert-bot"),
+                any(java.time.LocalDateTime.class))).thenReturn(3L);
+
+        var result = service.getClosureMetrics(7);
+
+        assertThat(result.windowDays()).isEqualTo(7);
+        assertThat(result.alertsInWindow()).isEqualTo(13L);
+        assertThat(result.alertSourcedInWindow()).isEqualTo(3L);
+        assertThat(result.incidentsInWindow()).isEqualTo(8L);
+        assertThat(result.incidentsTotal()).isNull();
+        org.mockito.Mockito.verify(alertRepository, org.mockito.Mockito.never())
+                .countDerivedIncidents(java.time.LocalDateTime.of(2000, 1, 1, 0, 0));
+    }
+
+    @Test
+    void closureMetricsUsesAllTimeIncidentCountWhenNoPositiveWindow() {
+        var alertRepository = mock(com.devops.agent.domain.alert.repository.AlertRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "alertRepository", alertRepository);
+        when(ticketRepository.countClosureMetrics()).thenReturn(new com.devops.agent.domain.biz.entity.TicketClosureMetricsData(
+                0, 0, 0, 0, 0, 0, null, null, null, null,
+                null, null, null, null, null, null, null, null, null));
+        when(alertRepository.countDerivedIncidents(java.time.LocalDateTime.of(2000, 1, 1, 0, 0)))
+                .thenReturn(21L);
+
+        var result = service.getClosureMetrics(0);
+
+        assertThat(result.windowDays()).isNull();
+        assertThat(result.alertsInWindow()).isNull();
+        assertThat(result.incidentsInWindow()).isNull();
+        assertThat(result.incidentsTotal()).isEqualTo(21L);
+    }
 }
