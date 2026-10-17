@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批167 将审计筛选选项固定结构改为 `AuditFilterOptionsData`；批166 已合入 PR #75 `efdb2bd`）
+> **最后更新**：2026-10-18（批168 将 audit trace 操作审计结果固定 rows 改为 `OperationAuditTraceRow`；批167 已合入 PR #76 `763355c`）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -571,4 +571,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批164(2026-10-18):将 `EffectivenessSnapshotScheduler.trend()` 的 JDBC `queryForList`/固定列 Map rows 改为 `EffectivenessTrendRow` typed RowMapper；Controller 通过 typed accessors 映射到原 `EffectivenessTrendItem`，保留 date 值转换、SQL 日期窗口/排序、days [1,90] 钳制、空列表及原 snake_case JSON 字段。新增 WebMvc 全字段响应断言和 days 下限断言；外部 schema 未变，无需 OpenAPI/Orval 更新；PR #73 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `a2911f0`）。
 - 批165(2026-10-18):将 `DashboardService.getCallTrends()` 与 Controller 的固定 `{days,cost,cacheHitRate}` Map wrapper 改为 `DashboardCallTrends` typed record；底层 SQL、无数据日期补零、有效查询口径、成本/命中率舍入、横轴长度 WARN 条件及 Dashboard JSON 不变。新增 service 测试锁定补零/数值舍入，更新 WebMvc 测试适配 typed call trend；外部 schema 不变，无 OpenAPI/Orval 更新；PR #74 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `2cc13c2`）。
 - 批166(2026-10-18):将 `TicketService.getTicketTrends()` 与 Dashboard Controller 的固定 `{days,created,resolved,module}` Map wrapper 改为 `TicketTrendData`；保留跨天补零、created/resolved 查询口径、module null/blank 归一化、横轴不一致 WARN 条件与 Dashboard 响应数组。新增 service 测试锁定补零和 module 值，更新既有 WebMvc 测试 typed stub。对外 schema 不变，无 OpenAPI/Orval 更新；PR #75 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `efdb2bd`）。
-- 批167(2026-10-18):将 `AuditLogQueryRepository.queryFilterOptions()` 从固定键 `Map<String,Object>` 改为 `AuditFilterOptionsData` typed record，Controller 映射既有 `AuditFilterOptionsResponse`；保留候选 SQL、排序和 NULL 筛选语义（继续剔除 NULL 选项），并保留 null 列表→空数组。新增 repository 测试覆盖 typed 值和 NULL 过滤，更新 WebMvc stub；外部 schema 未变，无 OpenAPI/Orval 更新；PR CI 待验证。
+- 批167(2026-10-18):将 `AuditLogQueryRepository.queryFilterOptions()` 从固定键 `Map<String,Object>` 改为 `AuditFilterOptionsData` typed record，Controller 映射既有 `AuditFilterOptionsResponse`；保留候选 SQL、排序和 NULL 筛选语义（继续剔除 NULL 选项），并保留 null 列表→空数组。新增 repository 测试覆盖 typed 值和 NULL 过滤，更新 WebMvc stub；外部 schema 未变，无 OpenAPI/Orval 更新；PR #76 后端、前端、工作流和 E2E CI 全通过并合入（merge commit `763355c`）。
+- 批168(2026-10-18):针对已有 `/audit/trace/{traceId}` WebMvc 覆盖的固定操作审计行，将 `AuditLogQueryRepository.findAuditByTraceId()` 从 `List<Map<String,Object>>` 改为 `List<OperationAuditTraceRow>` RowMapper，Controller 通过 typed converter 映射既有 `OperationAuditItem`；保留 SELECT 字段、traceId filter、创建时间/id 排序、空链路/单侧链路行为和 JSON snake_case 字段。增强 WebMvc 字段断言并添加 typed repository 查询测试；外部 schema 不变，无 OpenAPI/Orval 更新，PR CI 待验证。

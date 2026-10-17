@@ -107,6 +107,13 @@ class AuditLogControllerWebTest {
         return m;
     }
 
+    private static com.devops.agent.domain.audit.OperationAuditTraceRow traceOperation(String action) {
+        return new com.devops.agent.domain.audit.OperationAuditTraceRow(
+                12L, "trace-row", "u-1", "Alice", action, "ticket", "T-9",
+                "POST", "/api/v1/tickets", 200, true, 0, null, "127.0.0.1", 42,
+                java.time.LocalDateTime.of(2026, 10, 18, 10, 30));
+    }
+
     // ==================================================================
 
     @Nested
@@ -256,13 +263,17 @@ class AuditLogControllerWebTest {
             when(repository.findAgentCallByTraceId("t-1"))
                     .thenReturn(Map.of("id", 1, "model_name", "deepseek-chat", "modelName", "deepseek-chat"));
             when(repository.findAuditByTraceId("t-1"))
-                    .thenReturn(List.of(Map.of("action", "ticket.create")));
+                    .thenReturn(List.of(traceOperation("ticket.create")));
 
             mockMvc.perform(get("/api/v1/audit/trace/t-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.traceId").value("t-1"))
                     .andExpect(jsonPath("$.data.aiCall.model_name").value("deepseek-chat"))
-                    .andExpect(jsonPath("$.data.operations[0].action").value("ticket.create"));
+                    .andExpect(jsonPath("$.data.operations[0].action").value("ticket.create"))
+                    .andExpect(jsonPath("$.data.operations[0].actor_id").value("u-1"))
+                    .andExpect(jsonPath("$.data.operations[0].actor_name").value("Alice"))
+                    .andExpect(jsonPath("$.data.operations[0].status_code").value(200))
+                    .andExpect(jsonPath("$.data.operations[0].duration_ms").value(42));
         }
 
         @Test
@@ -272,7 +283,7 @@ class AuditLogControllerWebTest {
             // 这不是异常，若判成 40004 会让所有人工操作都查不到链路
             when(repository.findAgentCallByTraceId("t-2")).thenReturn(null);
             when(repository.findAuditByTraceId("t-2"))
-                    .thenReturn(List.of(Map.of("action", "ticket.close")));
+                    .thenReturn(List.of(traceOperation("ticket.close")));
 
             mockMvc.perform(get("/api/v1/audit/trace/t-2"))
                     .andExpect(status().isOk())

@@ -38,6 +38,16 @@ public final class AuditLogConverter {
         return new AuditOperationsResponse(items, total, page, size, totalPages);
     }
 
+    public static OperationAuditItem toOperationAuditItem(
+            com.devops.agent.domain.audit.OperationAuditTraceRow row) {
+        if (row == null) return null;
+        return new OperationAuditItem(
+                row.id(), row.traceId(), row.actorId(), row.actorName(), row.action(),
+                row.targetType(), row.targetId(), row.httpMethod(), row.httpPath(),
+                row.statusCode(), row.success(), row.bizCode(), row.errorMessage(),
+                row.clientIp(), row.durationMs(), row.createTime());
+    }
+
     public static OperationAuditItem toOperationAuditItem(Map<String, Object> m) {
         if (m == null) return null;
         return new OperationAuditItem(
