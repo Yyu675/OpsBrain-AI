@@ -254,14 +254,14 @@ class AuditLogControllerWebTest {
         @DisplayName("AI 调用与操作审计一并返回 —— 这是本模块相对通用日志查看器的核心价值")
         void returnsBothSides() throws Exception {
             when(repository.findAgentCallByTraceId("t-1"))
-                    .thenReturn(Map.of("id", 1, "modelName", "deepseek-chat"));
+                    .thenReturn(Map.of("id", 1, "model_name", "deepseek-chat", "modelName", "deepseek-chat"));
             when(repository.findAuditByTraceId("t-1"))
                     .thenReturn(List.of(Map.of("action", "ticket.create")));
 
             mockMvc.perform(get("/api/v1/audit/trace/t-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.traceId").value("t-1"))
-                    .andExpect(jsonPath("$.data.aiCall.modelName").value("deepseek-chat"))
+                    .andExpect(jsonPath("$.data.aiCall.model_name").value("deepseek-chat"))
                     .andExpect(jsonPath("$.data.operations[0].action").value("ticket.create"));
         }
 

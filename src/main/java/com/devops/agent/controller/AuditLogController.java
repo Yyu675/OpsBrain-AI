@@ -3,6 +3,13 @@ package com.devops.agent.controller;
 import cn.dev33.satoken.annotation.SaCheckRole;
 import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.controller.dto.AuditAiCallsResponse;
+import com.devops.agent.controller.dto.AuditFilterOptionsResponse;
+import com.devops.agent.controller.dto.AuditLogConverter;
+import com.devops.agent.controller.dto.AuditOperationsResponse;
+import com.devops.agent.controller.dto.AuditTraceDetailResponse;
+import com.devops.agent.controller.dto.AgentCallDetailItem;
+import com.devops.agent.controller.dto.OperationAuditItem;
 import com.devops.agent.infrastructure.persistence.repo.AuditLogQueryRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -55,7 +62,7 @@ public class AuditLogController {
      * @param action 操作标识前缀，如 {@code ticket.} 可查全部工单相关操作
      */
     @GetMapping("/operations")
-    public ApiResponse<Map<String, Object>> listOperations(
+    public ApiResponse<AuditOperationsResponse> listOperations(
             @RequestParam(required = false) String actorId,
             @RequestParam(required = false) String action,
             @RequestParam(required = false) String targetType,
@@ -67,8 +74,9 @@ public class AuditLogController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        return ApiResponse.success(repository.queryOperationAudit(
-                actorId, action, targetType, success, from, to, page, size));
+        Map<String, Object> raw = repository.queryOperationAudit(
+                actorId, action, targetType, success, from, to, page, size);
+        return ApiResponse.success(AuditLogConverter.toAuditOperationsResponse(raw));
     }
 
     /**
@@ -77,7 +85,7 @@ public class AuditLogController {
      * @param minLatencyMs 最小耗时，用于筛出慢调用
      */
     @GetMapping("/ai-calls")
-    public ApiResponse<Map<String, Object>> listAiCalls(
+    public ApiResponse<AuditAiCallsResponse> listAiCalls(
             @RequestParam(required = false) String modelName,
             @RequestParam(required = false) String operationType,
             @RequestParam(required = false) Boolean cached,
@@ -97,7 +105,7 @@ public class AuditLogController {
         result.put("stats", repository.queryAgentCallStats(
                 modelName, operationType, cached, minLatencyMs, from, to));
 
-        return ApiResponse.success(result);
+        return ApiResponse.success(AuditLogConverter.toAuditAiCallsResponse(result));
     }
 
     /**
@@ -108,7 +116,7 @@ public class AuditLogController {
      * 「这张工单是谁、通过什么方式、基于什么问答创建的」。</p>
      */
     @GetMapping("/trace/{traceId}")
-    public ApiResponse<Map<String, Object>> traceDetail(@PathVariable String traceId) {
+    public ApiResponse<AuditTraceDetailResponse> traceDetail(@PathVariable String traceId) {
         Map<String, Object> aiCall = repository.findAgentCallByTraceId(traceId);
         List<Map<String, Object>> operations = repository.findAuditByTraceId(traceId);
 
@@ -117,16 +125,19 @@ public class AuditLogController {
             return ApiResponse.error(ApiCode.NOT_FOUND, "该链路无记录，可能已过保留期");
         }
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("traceId", traceId);
-        result.put("aiCall", aiCall);
-        result.put("operations", operations);
-        return ApiResponse.success(result);
+        AgentCallDetailItem aiCallItem = AuditLogConverter.toAgentCallDetailItem(aiCall);
+        List<OperationAuditItem> opItems = new ArrayList<>();
+        if (operations != null) {
+            for (Map<String, Object> op : operations) {
+                opItems.add(AuditLogConverter.toOperationAuditItem(op));
+            }
+        }
+        return ApiResponse.success(new AuditTraceDetailResponse(traceId, aiCallItem, opItems));
     }
 
     /** 筛选下拉候选值，从实际数据聚合而非硬编码——避免列出库里根本没有的选项 */
     @GetMapping("/filter-options")
-    public ApiResponse<Map<String, Object>> filterOptions() {
-        return ApiResponse.success(repository.queryFilterOptions());
+    public ApiResponse<AuditFilterOptionsResponse> filterOptions() {
+        return ApiResponse.success(AuditLogConverter.toAuditFilterOptionsResponse(repository.queryFilterOptions()));
     }
 }
