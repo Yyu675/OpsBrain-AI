@@ -962,7 +962,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseIngestSecretView"
                 }
               }
             }

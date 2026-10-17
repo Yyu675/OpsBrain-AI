@@ -96,7 +96,7 @@ public class NotifyChannelController {
     }
 
     @GetMapping("/ingest-secret")
-    public ApiResponse<Object> ingestSecret(@RequestParam(defaultValue = "false") boolean reveal,
+    public ApiResponse<NotifyChannelService.IngestSecretView> ingestSecret(@RequestParam(defaultValue = "false") boolean reveal,
                                             jakarta.servlet.http.HttpServletRequest request) {
         if (reveal) {
             NotifyChannelService.Revealed revealed = service.revealIngest();
