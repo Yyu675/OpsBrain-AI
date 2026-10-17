@@ -10,4 +10,6 @@ export interface ApiResponseListKnowledgeCategoryCountResponse {
   code?: number;
   message?: string;
   data?: KnowledgeCategoryCountResponse[];
+  traceId?: string;
+  timestamp?: number;
 }

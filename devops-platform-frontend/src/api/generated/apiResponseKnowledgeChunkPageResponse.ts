@@ -10,4 +10,6 @@ export interface ApiResponseKnowledgeChunkPageResponse {
   code?: number;
   message?: string;
   data?: KnowledgeChunkPageResponse;
+  traceId?: string;
+  timestamp?: number;
 }

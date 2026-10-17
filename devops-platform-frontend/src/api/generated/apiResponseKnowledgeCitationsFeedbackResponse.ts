@@ -10,4 +10,6 @@ export interface ApiResponseKnowledgeCitationsFeedbackResponse {
   code?: number;
   message?: string;
   data?: KnowledgeCitationsFeedbackResponse;
+  traceId?: string;
+  timestamp?: number;
 }

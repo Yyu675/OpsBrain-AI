@@ -10,4 +10,6 @@ export interface ApiResponseEndpointDeprecatedResponse {
   code?: number;
   message?: string;
   data?: EndpointDeprecatedResponse;
+  traceId?: string;
+  timestamp?: number;
 }

@@ -10,4 +10,6 @@ export interface ApiResponseListKnowledgeDocHealthResponse {
   code?: number;
   message?: string;
   data?: KnowledgeDocHealthResponse[];
+  traceId?: string;
+  timestamp?: number;
 }

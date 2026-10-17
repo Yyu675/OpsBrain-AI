@@ -24647,6 +24647,13 @@
             "items": {
               "$ref": "#/components/schemas/KnowledgeCategoryCountResponse"
             }
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -24665,6 +24672,13 @@
             "items": {
               "$ref": "#/components/schemas/KnowledgeDocHealthResponse"
             }
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -24680,6 +24694,13 @@
           },
           "data": {
             "$ref": "#/components/schemas/KnowledgeCitationsFeedbackResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -24695,6 +24716,13 @@
           },
           "data": {
             "$ref": "#/components/schemas/EndpointDeprecatedResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -24710,6 +24738,13 @@
           },
           "data": {
             "$ref": "#/components/schemas/KnowledgeChunkPageResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       }
