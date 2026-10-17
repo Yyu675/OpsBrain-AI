@@ -8421,7 +8421,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseChangeEventReportResponse"
                 }
               }
             }
@@ -17832,29 +17832,6 @@
           "owner",
           "service"
         ]
-      },
-      "ApiResponseMapStringObject": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "additionalProperties": {}
-          },
-          "message": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "traceId": {
-            "type": "string"
-          }
-        }
       },
       "ApiResponseNotifyChannelView": {
         "type": "object",
