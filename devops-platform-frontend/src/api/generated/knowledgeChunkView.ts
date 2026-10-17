@@ -9,18 +9,18 @@
  * 知识切片视图
  */
 export interface KnowledgeChunkView {
-  id?: number;
+  contentLength: number;
+  contentPreview?: string;
+  createTime?: string;
   docTitle?: string;
-  sectionHeader?: string;
-  content?: string;
-  charCount?: number;
-  parentId?: number;
-  hasParent?: boolean;
-  version?: number;
-  status?: string;
-  knowledgeSource?: string;
   effectiveAt?: string;
   expiredAt?: string;
-  createTime?: string;
+  hasParentText: boolean;
+  id?: number;
+  knowledgeSource?: string;
+  parentId?: string;
+  sectionHeader?: string;
+  status?: string;
   updateTime?: string;
+  version: number;
 }

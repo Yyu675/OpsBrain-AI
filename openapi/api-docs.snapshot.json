@@ -24539,38 +24539,18 @@
       "KnowledgeChunkView": {
         "type": "object",
         "properties": {
-          "id": {
+          "contentLength": {
             "type": "integer",
-            "format": "int64"
+            "format": "int32"
+          },
+          "contentPreview": {
+            "type": "string"
+          },
+          "createTime": {
+            "type": "string",
+            "format": "date-time"
           },
           "docTitle": {
-            "type": "string"
-          },
-          "sectionHeader": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "charCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "parentId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "hasParent": {
-            "type": "boolean"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "status": {
-            "type": "string"
-          },
-          "knowledgeSource": {
             "type": "string"
           },
           "effectiveAt": {
@@ -24581,16 +24561,40 @@
             "type": "string",
             "format": "date-time"
           },
-          "createTime": {
-            "type": "string",
-            "format": "date-time"
+          "hasParentText": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "knowledgeSource": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "sectionHeader": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           },
           "updateTime": {
             "type": "string",
             "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
           }
         },
-        "description": "知识切片视图"
+        "description": "知识切片视图",
+        "required": [
+          "contentLength",
+          "hasParentText",
+          "version"
+        ]
       },
       "KnowledgeChunkPageResponse": {
         "type": "object",
