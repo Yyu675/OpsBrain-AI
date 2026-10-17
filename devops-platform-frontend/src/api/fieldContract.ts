@@ -58,6 +58,12 @@ import type { NotifyChannelList as GenNotifyChannelList } from './generated/noti
 import type { IngestSecretView as GenIngestSecretView } from './generated/ingestSecretView'
 import type { MaskedIngestSecretResponse as GenMaskedIngestSecretResponse } from './generated/maskedIngestSecretResponse'
 import type { RevealedIngestSecretResponse as GenRevealedIngestSecretResponse } from './generated/revealedIngestSecretResponse'
+import type { PingResponse as GenPingResponse } from './generated/pingResponse'
+import type { DatabaseProbeResponse as GenDatabaseProbeResponse } from './generated/databaseProbeResponse'
+import type { AiModelProbeResponse as GenAiModelProbeResponse } from './generated/aiModelProbeResponse'
+import type { ChatModelProbeResponse as GenChatModelProbeResponse } from './generated/chatModelProbeResponse'
+import type { EmbeddingModelProbeResponse as GenEmbeddingModelProbeResponse } from './generated/embeddingModelProbeResponse'
+
 import type { Revealed as GenRevealed } from './generated/revealed'
 import type { TestResult as GenTestResult } from './generated/testResult'
 import type { CreateRequest as GenCreateRequest } from './generated/createRequest'
@@ -152,6 +158,23 @@ type GenOnly<G, H> = Exclude<keyof G, keyof H>
 type HandOnly<G, H> = Exclude<keyof H, keyof G>
 /** 差集必须 never；非 never 时 TS2344 会把漂移字段名点在错误信息里 */
 type AssertDriftFree<T extends never> = T
+
+// 健康探针契约：保持不包装的原始 JSON，同时由 record 锁住字段集。
+type PingResponseKeys = 'status' | 'service' | 'mode' | 'timestamp'
+type DatabaseProbeResponseKeys = 'timestamp' | 'status' | 'database' | 'error'
+type AiModelProbeResponseKeys = 'mode' | 'timestamp' | 'overallStatus' | 'reason' | 'hint' | 'turboModel' | 'reasonerModel' | 'embeddingModel'
+type ChatModelProbeResponseKeys = 'status' | 'response' | 'modelClass' | 'error' | 'hint'
+type EmbeddingModelProbeResponseKeys = 'status' | 'dimension' | 'modelClass' | 'error' | 'hint'
+export type PingResponse_Missing = AssertDriftFree<GenOnly<GenPingResponse, Record<PingResponseKeys, unknown>>>
+export type PingResponse_Extra = AssertDriftFree<HandOnly<GenPingResponse, Record<PingResponseKeys, unknown>>>
+export type DatabaseProbeResponse_Missing = AssertDriftFree<GenOnly<GenDatabaseProbeResponse, Record<DatabaseProbeResponseKeys, unknown>>>
+export type DatabaseProbeResponse_Extra = AssertDriftFree<HandOnly<GenDatabaseProbeResponse, Record<DatabaseProbeResponseKeys, unknown>>>
+export type AiModelProbeResponse_Missing = AssertDriftFree<GenOnly<GenAiModelProbeResponse, Record<AiModelProbeResponseKeys, unknown>>>
+export type AiModelProbeResponse_Extra = AssertDriftFree<HandOnly<GenAiModelProbeResponse, Record<AiModelProbeResponseKeys, unknown>>>
+export type ChatModelProbeResponse_Missing = AssertDriftFree<GenOnly<GenChatModelProbeResponse, Record<ChatModelProbeResponseKeys, unknown>>>
+export type ChatModelProbeResponse_Extra = AssertDriftFree<HandOnly<GenChatModelProbeResponse, Record<ChatModelProbeResponseKeys, unknown>>>
+export type EmbeddingModelProbeResponse_Missing = AssertDriftFree<GenOnly<GenEmbeddingModelProbeResponse, Record<EmbeddingModelProbeResponseKeys, unknown>>>
+export type EmbeddingModelProbeResponse_Extra = AssertDriftFree<HandOnly<GenEmbeddingModelProbeResponse, Record<EmbeddingModelProbeResponseKeys, unknown>>>
 
 // ==================== 工单域 ====================
 
