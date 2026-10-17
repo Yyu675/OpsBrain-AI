@@ -28,6 +28,8 @@ public class KnowledgeBoostRepository {
 
     public record DocHealthRow(Long docId, String title, long helpful, long wrong) {}
 
+    record BoostCountsRow(Long chunkId, Integer helpfulCount, Integer wrongCount) {}
+
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBoostRepository.class);
 
     /** 单次反馈解析出的 chunk 上限：一条分析的引用不该扇出成百条 boost 写 */
@@ -69,12 +71,12 @@ public class KnowledgeBoostRepository {
         }
         String placeholders = String.join(",", chunkIds.stream().map(id -> "?").toList());
         String sql = "SELECT chunk_id, helpful_count, wrong_count FROM sys_knowledge_boost WHERE chunk_id IN (" + placeholders + ")";
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, chunkIds.toArray());
-        for (Map<String, Object> row : rows) {
-            long id = ((Number) row.get("chunk_id")).longValue();
-            int helpful = ((Number) row.get("helpful_count")).intValue();
-            int wrong = ((Number) row.get("wrong_count")).intValue();
-            out.put(id, computeBoost(helpful, wrong));
+        List<BoostCountsRow> rows = jdbcTemplate.query(sql, (rs, rowNum) -> new BoostCountsRow(
+                rs.getObject("chunk_id", Long.class),
+                rs.getObject("helpful_count", Integer.class),
+                rs.getObject("wrong_count", Integer.class)), chunkIds.toArray());
+        for (BoostCountsRow row : rows) {
+            out.put(row.chunkId(), computeBoost(row.helpfulCount(), row.wrongCount()));
         }
         return out;
     }
