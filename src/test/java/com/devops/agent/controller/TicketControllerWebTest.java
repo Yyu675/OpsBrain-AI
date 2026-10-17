@@ -424,6 +424,22 @@ class TicketControllerWebTest {
     }
 
     @Test
+    @DisplayName("AI 分析准确率从 typed stats 映射到原有响应字段")
+    void aiAccuracyStatsKeepResponseShape() throws Exception {
+        when(aiAnalysisService.accuracyStats()).thenReturn(
+                new com.devops.agent.domain.biz.entity.TicketAiAccuracyStats(10, 4, 3, 1, 0.75));
+
+        mockMvc.perform(get("/api/v1/tickets/ai-analysis/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(10))
+                .andExpect(jsonPath("$.data.rated").value(4))
+                .andExpect(jsonPath("$.data.helpful").value(3))
+                .andExpect(jsonPath("$.data.unhelpful").value(1))
+                .andExpect(jsonPath("$.data.helpfulRate").value(0.75));
+    }
+
+    @Test
     @DisplayName("未注册的子路径返回 404，不应被当作工单号吞掉")
     void unknownSubPathIsNotSwallowed() throws Exception {
         mockMvc.perform(post("/api/v1/tickets/TKT-1/definitely-not-an-endpoint"))

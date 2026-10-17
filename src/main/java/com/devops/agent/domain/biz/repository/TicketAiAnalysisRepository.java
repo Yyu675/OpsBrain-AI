@@ -1,6 +1,7 @@
 package com.devops.agent.domain.biz.repository;
 
 import com.devops.agent.domain.biz.entity.TicketAiAnalysis;
+import com.devops.agent.domain.biz.entity.TicketAiFeedbackStats;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -17,7 +18,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 工单 AI 分析数据访问层（策略 B）
@@ -142,7 +142,7 @@ public class TicketAiAnalysisRepository {
      * 准确率统计：按 feedback 聚合计数
      * <p>返回 {@code {helpful, unhelpful, total, rated}}，total 含未评价。</p>
      */
-    public Map<String, Long> feedbackStats() {
+    public TicketAiFeedbackStats feedbackStats() {
         String sql = """
             SELECT
                 COUNT(*) AS total,
@@ -151,12 +151,11 @@ public class TicketAiAnalysisRepository {
                 COUNT(*) FILTER (WHERE feedback IS NOT NULL)   AS rated
             FROM sys_ticket_ai_analysis
             """;
-        return jdbcTemplate.queryForObject(sql, (rs, n) -> Map.of(
-                "total", rs.getLong("total"),
-                "helpful", rs.getLong("helpful"),
-                "unhelpful", rs.getLong("unhelpful"),
-                "rated", rs.getLong("rated")
-        ));
+        return jdbcTemplate.queryForObject(sql, (rs, n) -> new TicketAiFeedbackStats(
+                rs.getLong("total"),
+                rs.getLong("rated"),
+                rs.getLong("helpful"),
+                rs.getLong("unhelpful")));
     }
 
     /**
