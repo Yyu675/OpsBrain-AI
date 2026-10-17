@@ -64,6 +64,7 @@ import type { AgentTraceStatsResponse as GenAgentTraceStatsResponse } from './ge
 import type { AgentTraceDetailResponse as GenAgentTraceDetailResponse } from './generated/agentTraceDetailResponse'
 import type { DashboardTrendsResponse as GenDashboardTrendsResponse } from './generated/dashboardTrendsResponse'
 import type { HealingStatsResponse as GenHealingStatsResponse } from './generated/healingStatsResponse'
+import type { DiagnosisBoardResponse as GenDiagnosisBoardResponse } from './generated/diagnosisBoardResponse'
 
 import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
 import type { BackendTicket } from './types/ticket'
@@ -71,7 +72,7 @@ import type { StormStatus, PipelineHeartbeat, LogsHeartbeat } from './alerts'
 import type { ApprovalRequest, ApprovalPage } from './approval'
 import type { AuthUser, LoginResult } from './auth'
 import type { AgentTraceStats, AgentTraceDetail } from './agentTrace'
-import type { TrendData } from './dashboard'
+import type { TrendData, DiagnosisBoard } from './dashboard'
 import type { HealingStats } from './healing'
 import type {
   RiskPolicy,
@@ -159,6 +160,8 @@ export type AgentTraceDetail_Extra = AssertDriftFree<HandOnly<GenAgentTraceDetai
 
 export type TrendData_Missing = AssertDriftFree<GenOnly<GenDashboardTrendsResponse, TrendData>>
 export type TrendData_Extra = AssertDriftFree<HandOnly<GenDashboardTrendsResponse, TrendData>>
+export type DiagnosisBoard_Missing = AssertDriftFree<GenOnly<GenDiagnosisBoardResponse, DiagnosisBoard>>
+export type DiagnosisBoard_Extra = AssertDriftFree<HandOnly<GenDiagnosisBoardResponse, DiagnosisBoard>>
 export type HealingStats_Missing = AssertDriftFree<GenOnly<GenHealingStatsResponse, HealingStats>>
 export type HealingStats_Extra = AssertDriftFree<HandOnly<GenHealingStatsResponse, HealingStats>>
 

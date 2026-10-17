@@ -103,11 +103,12 @@ public class DashboardController {
      * 充分性/方向四态/源故障点名。窗口同 /trends 的 [1,90] 夹紧。
      */
     @GetMapping("/diagnosis-board")
-    public ApiResponse<Map<String, Object>> getDiagnosisBoard(
+    public ApiResponse<com.devops.agent.controller.dto.DiagnosisBoardResponse> getDiagnosisBoard(
             @RequestParam(defaultValue = "7") int days) {
         log.info("📊 [Dashboard] 请求诊断区看板 | days={}", days);
         // 夹紧下沉在实现层（单点口径，不外散到端点）
-        return ApiResponse.success(dashboardService.getDiagnosisBoard(days));
+        Map<String, Object> boardMap = dashboardService.getDiagnosisBoard(days);
+        return ApiResponse.success(com.devops.agent.controller.dto.DiagnosisBoardConverter.fromMap(boardMap));
     }
 
     /**

@@ -319,6 +319,11 @@ class OpenApiSchemaIntegrationTest {
                     "total", "succeeded", "failed", "rejected", "pendingApproval", "undone", "undoFailed",
                     "autoTotal", "autoClosedLoop", "verifyPass", "verifyFail", "verifyUnknown", "verifySkipped",
                     "verifyPending", "autoClosedLoopRate", "verifyFailRate", "undoSuccessRate");
+
+            JsonNode diagnosisBoard = componentSchema("DiagnosisBoardResponse");
+            assertThat(diagnosisBoard).as("DiagnosisBoardResponse 缺失").isNotNull();
+            assertThat(fieldNames(diagnosisBoard.path("properties"))).contains(
+                    "windowDays", "sessions", "sessionTrend", "evidenceDirections", "attentionTypes", "calibration");
         }
     }
 
