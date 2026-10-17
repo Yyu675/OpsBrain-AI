@@ -24595,14 +24595,14 @@
       "KnowledgeChunkPageResponse": {
         "type": "object",
         "properties": {
-          "content": {
+          "list": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/KnowledgeChunkView"
             },
             "description": "切片列表"
           },
-          "totalElements": {
+          "total": {
             "type": "integer",
             "format": "int64",
             "description": "切片总记录数"
@@ -24612,23 +24612,23 @@
             "format": "int32",
             "description": "总页数"
           },
-          "currentPage": {
+          "page": {
             "type": "integer",
             "format": "int32",
             "description": "当前页码"
           },
-          "pageSize": {
+          "size": {
             "type": "integer",
             "format": "int32",
             "description": "每页记录数"
           }
         },
         "required": [
-          "content",
-          "totalElements",
-          "totalPages",
-          "currentPage",
-          "pageSize"
+          "list",
+          "page",
+          "size",
+          "total",
+          "totalPages"
         ],
         "description": "知识切片分页响应"
       },

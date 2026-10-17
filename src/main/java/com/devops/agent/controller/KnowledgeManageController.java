@@ -130,16 +130,35 @@ public class KnowledgeManageController {
 
         Map<String, Object> map = knowledgeStatsService.listChunks(safePage, safeSize, keyword);
         @SuppressWarnings("unchecked")
-        List<com.devops.agent.domain.rag.KnowledgeChunkView> content =
-                (List<com.devops.agent.domain.rag.KnowledgeChunkView>) map.get("content");
-        long totalElements = map.get("totalElements") instanceof Number n ? n.longValue() : 0L;
+        List<com.devops.agent.domain.rag.KnowledgeChunkView> list =
+                map.get("list") instanceof List<?> l
+                        ? (List<com.devops.agent.domain.rag.KnowledgeChunkView>) l
+                        : (map.get("content") instanceof List<?> c
+                                ? (List<com.devops.agent.domain.rag.KnowledgeChunkView>) c
+                                : List.of());
+        long total = 0L;
+        if (map.get("total") instanceof Number n) {
+            total = n.longValue();
+        } else if (map.get("totalElements") instanceof Number n) {
+            total = n.longValue();
+        }
         int totalPages = map.get("totalPages") instanceof Number n ? n.intValue() : 0;
-        int currentPage = map.get("currentPage") instanceof Number n ? n.intValue() : safePage;
-        int pageSize = map.get("pageSize") instanceof Number n ? n.intValue() : safeSize;
+        int currentPage = safePage;
+        if (map.get("page") instanceof Number n) {
+            currentPage = n.intValue();
+        } else if (map.get("currentPage") instanceof Number n) {
+            currentPage = n.intValue();
+        }
+        int pageSize = safeSize;
+        if (map.get("size") instanceof Number n) {
+            pageSize = n.intValue();
+        } else if (map.get("pageSize") instanceof Number n) {
+            pageSize = n.intValue();
+        }
 
         return ApiResponse.success(new com.devops.agent.controller.dto.KnowledgeChunkPageResponse(
-                content != null ? content : List.of(),
-                totalElements,
+                list,
+                total,
                 totalPages,
                 currentPage,
                 pageSize

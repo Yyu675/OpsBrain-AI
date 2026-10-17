@@ -11,13 +11,13 @@ import type { KnowledgeChunkView } from './knowledgeChunkView';
  */
 export interface KnowledgeChunkPageResponse {
   /** 切片列表 */
-  content: KnowledgeChunkView[];
+  list: KnowledgeChunkView[];
   /** 切片总记录数 */
-  totalElements: number;
+  total: number;
   /** 总页数 */
   totalPages: number;
   /** 当前页码 */
-  currentPage: number;
+  page: number;
   /** 每页记录数 */
-  pageSize: number;
+  size: number;
 }

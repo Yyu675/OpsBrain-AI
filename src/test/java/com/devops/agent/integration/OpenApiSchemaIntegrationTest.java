@@ -453,7 +453,7 @@ class OpenApiSchemaIntegrationTest {
 
             JsonNode chunkPage = componentSchema("KnowledgeChunkPageResponse");
             assertThat(chunkPage).as("KnowledgeChunkPageResponse 缺失").isNotNull();
-            assertThat(fieldNames(chunkPage.path("properties"))).contains("content", "totalElements", "totalPages", "currentPage", "pageSize");
+            assertThat(fieldNames(chunkPage.path("properties"))).contains("list", "total", "totalPages", "page", "size");
         }
     }
 
