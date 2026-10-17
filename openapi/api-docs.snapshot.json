@@ -1921,7 +1921,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseItem"
                 }
               }
             }
@@ -6765,7 +6765,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseItem"
                 }
               }
             }
@@ -6856,7 +6856,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeBaseReindexResponse"
                 }
               }
             }
@@ -25258,6 +25258,90 @@
           "moved": {
             "type": "boolean",
             "description": "移动是否成功"
+          }
+        }
+      },
+      "ApiResponseItem": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Item"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseKnowledgeBaseReindexResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeBaseReindexResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "KnowledgeBaseReindexResponse": {
+        "type": "object",
+        "description": "知识库批量重切索引响应",
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "format": "int32",
+            "description": "失败数"
+          },
+          "failures": {
+            "type": "array",
+            "description": "失败详情列表",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "kbId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "知识库 ID"
+          },
+          "kbName": {
+            "type": "string",
+            "description": "知识库名称"
+          },
+          "success": {
+            "type": "integer",
+            "format": "int32",
+            "description": "成功切片入库数"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "description": "待重切文档总数"
           }
         }
       }

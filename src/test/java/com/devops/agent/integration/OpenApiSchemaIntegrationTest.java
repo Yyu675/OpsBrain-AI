@@ -490,6 +490,10 @@ class OpenApiSchemaIntegrationTest {
             JsonNode docMove = componentSchema("DocumentMoveResponse");
             assertThat(docMove).as("DocumentMoveResponse 缺失").isNotNull();
             assertThat(fieldNames(docMove.path("properties"))).contains("id", "moved");
+
+            JsonNode kbReindex = componentSchema("KnowledgeBaseReindexResponse");
+            assertThat(kbReindex).as("KnowledgeBaseReindexResponse 缺失").isNotNull();
+            assertThat(fieldNames(kbReindex.path("properties"))).contains("kbId", "kbName", "total", "success", "failed", "failures");
         }
     }
 
