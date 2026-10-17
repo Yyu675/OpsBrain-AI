@@ -5,6 +5,7 @@ import com.devops.agent.common.dto.ApiCode;
 import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.controller.dto.KnowledgeDocDto;
 import com.devops.agent.domain.rag.KnowledgeDoc;
+import com.devops.agent.domain.rag.KnowledgeDocVersionRow;
 import com.devops.agent.domain.rag.KnowledgeDocService;
 import com.devops.agent.domain.biz.repository.KnowledgeBoostRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -14,9 +15,7 @@ import java.sql.Timestamp;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 知识文档管理 API
@@ -511,10 +510,9 @@ public class KnowledgeDocController {
     @GetMapping("/{id}/versions")
     public ApiResponse<VersionsResponse> versions(@PathVariable Long id) {
         List<VersionItem> list = docService.listVersions(id).stream().map(v -> new VersionItem(
-                number(v.get("id")), number(v.get("docId")), integer(v.get("version")),
-                text(v.get("title")), text(v.get("category")), text(v.get("author")),
-                text(v.get("contentHash")), integer(v.get("contentLength")), text(v.get("changedBy")),
-                text(v.get("changeReason")), text(v.get("changeType")), dateTime(v.get("createTime")))).toList();
+                v.id(), v.docId(), v.version(), v.title(), v.category(), v.author(),
+                v.contentHash(), v.contentLength(), v.changedBy(), v.changeReason(),
+                v.changeType(), v.createTime())).toList();
         return ApiResponse.success(new VersionsResponse(id, list));
     }
 
@@ -585,17 +583,6 @@ public class KnowledgeDocController {
         writeGuard.requireDestructive();
         int succeeded = docService.retryFailedIndexing(limit);
         return ApiResponse.success(new RetryIndexingResponse(succeeded));
-    }
-
-    private static Long number(Object value) { return value instanceof Number n ? n.longValue() : null; }
-    private static Integer integer(Object value) { return value instanceof Number n ? n.intValue() : null; }
-    private static String text(Object value) { return value == null ? null : value.toString(); }
-    private static LocalDateTime dateTime(Object value) {
-        if (value instanceof LocalDateTime dateTime) return dateTime;
-        if (value instanceof Timestamp timestamp) return timestamp.toLocalDateTime();
-        if (value instanceof java.util.Date date) return new Timestamp(date.getTime()).toLocalDateTime();
-        if (value instanceof String text) return LocalDateTime.parse(text);
-        return null;
     }
 
 }
