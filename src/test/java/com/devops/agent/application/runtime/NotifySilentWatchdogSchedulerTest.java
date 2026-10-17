@@ -92,7 +92,7 @@ class NotifySilentWatchdogSchedulerTest {
         assertFalse(s.resolved());
         assertEquals(NotifySilentWatchdogScheduler.SILENT_NAME, s.alertName());
         assertEquals("notification-pipeline", s.service());
-        assertTrue(Boolean.TRUE.equals(scheduler.snapshot().get("silent")));
+        assertTrue(scheduler.snapshot().silent());
     }
 
     @Test
@@ -101,7 +101,7 @@ class NotifySilentWatchdogSchedulerTest {
         twoScans(9L, 12L, 2L, 5L, true);
 
         assertTrue(capturedSignals().get(0).resolved());
-        assertFalse(Boolean.TRUE.equals(scheduler.snapshot().get("silent")));
+        assertFalse(scheduler.snapshot().silent());
     }
 
     @Test
@@ -111,6 +111,6 @@ class NotifySilentWatchdogSchedulerTest {
         twoScans(1L, 4L, 0L, 0L, false);
 
         verify(alertService, never()).processSignals(any());
-        assertFalse(Boolean.TRUE.equals(scheduler.snapshot().get("silent")));
+        assertFalse(scheduler.snapshot().silent());
     }
 }
