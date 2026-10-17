@@ -962,7 +962,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseIngestSecretResponse"
                 }
               }
             }
@@ -26040,6 +26040,73 @@
             "items": {
               "$ref": "#/components/schemas/ListItem"
             }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "MaskedIngestSecretResponse": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "hmacConfigured": {
+            "type": "boolean"
+          },
+          "secretMasked": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "RevealedIngestSecretResponse": {
+        "type": "object",
+        "properties": {
+          "channelKey": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "webhook": {
+            "type": "string"
+          }
+        }
+      },
+      "IngestSecretResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MaskedIngestSecretResponse"
+          },
+          {
+            "$ref": "#/components/schemas/RevealedIngestSecretResponse"
+          }
+        ],
+        "description": "告警接入密钥视图：默认打码；reveal=true 时为明文结果"
+      },
+      "ApiResponseIngestSecretResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/IngestSecretResponse"
           },
           "message": {
             "type": "string"

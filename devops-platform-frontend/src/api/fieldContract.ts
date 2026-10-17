@@ -56,6 +56,8 @@ import type { DocPage as GenDocPage } from './generated/docPage'
 import type { NotifyChannelView as GenNotifyChannelView } from './generated/notifyChannelView'
 import type { NotifyChannelList as GenNotifyChannelList } from './generated/notifyChannelList'
 import type { IngestSecretView as GenIngestSecretView } from './generated/ingestSecretView'
+import type { MaskedIngestSecretResponse as GenMaskedIngestSecretResponse } from './generated/maskedIngestSecretResponse'
+import type { RevealedIngestSecretResponse as GenRevealedIngestSecretResponse } from './generated/revealedIngestSecretResponse'
 import type { Revealed as GenRevealed } from './generated/revealed'
 import type { TestResult as GenTestResult } from './generated/testResult'
 import type { CreateRequest as GenCreateRequest } from './generated/createRequest'
@@ -334,6 +336,10 @@ export type NotifyChannelView_Extra = AssertDriftFree<HandOnly<GenNotifyChannelV
 export type NotifyChannelList_Missing = AssertDriftFree<GenOnly<GenNotifyChannelList, NotifyChannelList>>
 export type NotifyChannelList_Extra = AssertDriftFree<HandOnly<GenNotifyChannelList, NotifyChannelList>>
 export type IngestSecretView_Missing = AssertDriftFree<GenOnly<GenIngestSecretView, IngestSecretView>>
+export type MaskedIngestSecretResponse_Missing = AssertDriftFree<GenOnly<GenMaskedIngestSecretResponse, IngestSecretView>>
+export type MaskedIngestSecretResponse_Extra = AssertDriftFree<HandOnly<GenMaskedIngestSecretResponse, IngestSecretView>>
+export type RevealedIngestSecretResponse_Missing = AssertDriftFree<GenOnly<GenRevealedIngestSecretResponse, NotifySecretRevealed>>
+export type RevealedIngestSecretResponse_Extra = AssertDriftFree<HandOnly<GenRevealedIngestSecretResponse, NotifySecretRevealed>>
 export type IngestSecretView_Extra = AssertDriftFree<HandOnly<GenIngestSecretView, IngestSecretView>>
 export type NotifyTestResult_Missing = AssertDriftFree<GenOnly<GenTestResult, NotifyTestResult>>
 export type NotifyTestResult_Extra = AssertDriftFree<HandOnly<GenTestResult, NotifyTestResult>>
