@@ -494,6 +494,11 @@ class OpenApiSchemaIntegrationTest {
             JsonNode kbReindex = componentSchema("KnowledgeBaseReindexResponse");
             assertThat(kbReindex).as("KnowledgeBaseReindexResponse 缺失").isNotNull();
             assertThat(fieldNames(kbReindex.path("properties"))).contains("kbId", "kbName", "total", "success", "failed", "failures");
+
+            JsonNode serviceOwnerItem = componentSchema("ServiceOwnerItem");
+            assertThat(serviceOwnerItem).as("ServiceOwnerItem 缺失").isNotNull();
+            assertThat(fieldNames(serviceOwnerItem.path("properties")))
+                    .contains("id", "service", "owner", "enabled", "createTime", "updateTime");
         }
     }
 

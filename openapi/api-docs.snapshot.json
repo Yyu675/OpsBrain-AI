@@ -21766,8 +21766,7 @@
           "items": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": true
+              "$ref": "#/components/schemas/ServiceOwnerItem"
             }
           },
           "total": {
@@ -26200,6 +26199,32 @@
           },
           "turboModel": {
             "$ref": "#/components/schemas/ChatModelProbeResponse"
+          }
+        }
+      },
+      "ServiceOwnerItem": {
+        "type": "object",
+        "properties": {
+          "createTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "updateTime": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

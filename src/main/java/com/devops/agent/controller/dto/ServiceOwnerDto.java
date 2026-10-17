@@ -1,7 +1,7 @@
 package com.devops.agent.controller.dto;
 
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 服务值班负责人路由响应 DTO（GET/PUT/DELETE /api/v1/service-owners）。
@@ -13,12 +13,22 @@ public class ServiceOwnerDto {
     private ServiceOwnerDto() {
     }
 
+    /** 一条路由历史记录（数据库列名保持 camelCase JSON 字段）。 */
+    public record ServiceOwnerItem(
+            Long id,
+            String service,
+            String owner,
+            boolean enabled,
+            LocalDateTime createTime,
+            LocalDateTime updateTime
+    ) {}
+
     /**
      * 路由清单响应（GET /api/v1/service-owners）。
      */
     public record ServiceOwnerListResponse(
             int total,
-            List<Map<String, Object>> items
+            List<ServiceOwnerItem> items
     ) {
     }
 

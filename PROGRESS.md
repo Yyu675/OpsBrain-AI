@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-17（批146 收口 HealthCheckController 4 个原始 Map 响应；批145 已将 KnowledgeDocController 15 端点与 NotifyChannelController reveal/masked 联合响应强类型化并合入 main，CI 四腿全绿）
+> **最后更新**：2026-10-17（批147 将 ServiceOwner 路由列表中的嵌套 Map 项改为 ServiceOwnerItem Record，并同步仓储行映射、OpenAPI、Orval 与字段契约；后续核查剩余嵌套 Map DTO）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -160,7 +160,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | # | 任务 | 挂起原因 | 恢复条件 |
 |---|---|---|---|
 | S0-4b | ~~40 条正例话题文档~~（批41 文档面 40/40 收口）——余两件环境型：摄取生效验证（随 S0-2b 首跑）+ expectedDocs 注记真窗回填 | 环境型（真窗/容器），非内容欠账 | S0-2b 首跑窗口 / EVAL_LLM 真窗 |
-| P0-2b 剩余 | Map → record：业务控制器与健康探针的弱响应已清零；批145 收口 KnowledgeDocController 15 端点 + NotifyChannel reveal/masked 联合响应，批146 收口 HealthCheckController 4 条原始响应路由（含 `/health` 与 `/health/ping`） | OpenAPI 快照、Orval 与 fieldContract 双向对账闭环；所有探针保留原始 JSON 字段与状态行为 | 不改请求协议/HTTP 状态或付费探测开关；继续以实际剩余 `Map` 返回签名扫描，不触碰动态 webhook 输入 Map |
+| P0-2b 剩余 | 顶层响应 `ApiResponse<Object>`/`ApiResponse<Map<...>>` 与控制器原始 Map 响应已清零；批147 开始清理已命名 DTO 内的嵌套 Map（本批 ServiceOwnerListResponse.items） | OpenAPI 快照、Orval、fieldContract 双向对账；保留现有 JSON 结构/字段值 | 不改请求协议、HTTP 状态和健康探针行为；继续审计嵌套 Map DTO（诊断回放、Healing steps、按库重建失败项等），Zabbix 动态 webhook 请求 Map 保持不动 |
 | — | ⚠️ **P0-2 的收益边界（前置调研已做，挂起后仍有效）** | 实测 70/130 端点返回 `Map`/`Object`，OpenAPI 只能生成 `additionalProperties: true`。恢复时按模块逐个改，**不要期待一次性全量** | — |
 
 ### 前端优化（方向已重新确认，按序推进）
@@ -551,3 +551,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批94(2026-10-14):**L2 第二个真实信号源——Zabbix 适配器全栈落地,CI 三腿全绿**(决策全文 `docs/09-decisions/多信号源接入-Zabbix适配器-2026-10-14.md`,操作手册 `docs/09-operations/告警接入命名规范.md` §七)。**判据落地**:78 号文档「出现第二个真实接入源时再抽中性模型」——接缝三件新增(`ZabbixSourceAdapter` 归一化 / `AlertSourceNormalizer` 按 supports 选源并列出已注册来源 / `DTO/ZabbixWebhook` 形状不收窄)+接口加 `sourceName()`,核心链零改动。**字段映射**:trigger_name 优先告警名、标签 service 优先于 host、`host/instance/trigger_id` 进 labels、`event_name/description/item_value/opdata` 按 `AlertAnnotationKeys` 字典进注解、**字典键不进 labels**(labels 参与 SHA-256 去重键,文案变动会堆出同源多条且不报错)。**级别 6→5**:Disaster/High/Average/Warning/Information/Not classified→P0/P1/P2/P2/P4/P4,英文/数字/中文三形态与大小写下划线变体都认,认不出**原样透传**(猜 P0 制造误报、猜 P4 漏真故障)。**三处「不许猜」**:时间(`event_date`+`time` 是无时区墙钟,**默认按部署时区**解释、可配 `devops.alert.zabbix.timezone`;解析失败交 null 由核心链标「估算」,**绝不用收到时刻冒充**);去重指纹=`zabbix:<trigger_id>@<host>` **不含 event_id**(真样本 PROBLEM 12002061/OK 12002062 是两条事件,混进指纹会让恢复配不上原告警,表现为「恢复了但告警一直挂着」);适配器不注入 `system` 标签,由核心链回落 `default`(**不是 zabbix**——来源与业务系统两码事,混了按 system 统计全错)。**端点差异有意**:`POST /api/v1/alerts/webhook/zabbix` 负载不认识→**400**(Zabbix 会把动作失败写进事件日志,接入自测即发现;Alertmanager 侧因会给非 200 重投而一律 200),空负载 `{}`→200(媒介类型「测试」按钮),鉴权复用同一 `WebhookGuard`(token/HMAC/限流)。**契约**:body 收 `Map`(springdoc 内联对象,不新增命名 schema)→快照只加一条 path/method 并做**双向自检**(live=新快照绿;摘掉新端点必红且点名);前端生成物随快照刷新(`ReceiveBody`,其余 212 个零漂移=手改快照与活体导出口径一致的实证)。**七处缺陷(全都不报错,详见决策文档 §十)**:①stringify List 缺外层 `[]`②标签合并顺序反(host 盖掉 event)③只认 `event_opdata`④日期只认 ISO 短横线(**Zabbix 默认 `2026.10.13` 点分隔,所有真实事件的时间都解析不出来**)⑤两处 catch 只吞不打⑥`endsAt` 恒为事件时间(**触发中的告警也带结束时间,持续时长算成 0**)⑦漏 import 致编译失败。其中①~⑤由本地闸抓、⑥⑦由 **CI 首轮真跑**抓——本地闸再密也替代不了真编译器。**本地六道闸(全部固化成可复跑的脚本)**:tree-sitter 语法 0 错 / 规则镜像 74 项断言(**含与 Java 源码形态表、尾参三元表达式对账**——镜像不对账等于在核对另一份规则,这条教训来自缺陷④⑥)/ 快照门禁双向 / 静默失效扫描(`样本.replace("A","B")` 的 A 必须是子串)/ 样本变异合法性(变异后必须仍是合法 JSON,否则测试死错地方)/ import 可解析性(tree-sitter 查不出「用了没 import 的类」)。**测试**:适配器 27 例 / 选源 6 例 / 端点契约 8 例 / 服务跨源入口 3 例;后端全量 2011 例、前端五闸、E2E 冒烟**全绿**。
 
 - 批146(2026-10-17):HealthCheckController 原始 `Map<String,Object>` 响应全部 Record 化（`/health`、`/health/ping`、`/health/db`、`/health/ai-model`），仅固定响应结构，不调整路径、HTTP 状态、探针频率语义或付费模型开关。AI 探测的成功/失败子结构用字段可空 Record + `NON_NULL` 精确保留旧 JSON 字段形状；补 ping/disabled 探测的 HTTP 契约断言。OpenAPI/Orval/fieldContract 同步；前端 `gen:check`、`typecheck` 与 Vitest 107 文件/1863 测试通过。后端编译、完整测试和探针 HTTP 行为以当前 PR CI 真跑为合并门禁。
+- 批147(2026-10-17):清理 `ServiceOwnerListResponse.items` 的嵌套 Map 契约。仓储 `listAll()` 改为显式 `ServiceOwnerRow`（时间列映射 `LocalDateTime`），Controller 转为 `ServiceOwnerItem` Record；响应 JSON 字段名和值保持不变。更新 OpenAPI 快照、Orval 类型、`fieldContract.ts` 双向字段断言及 `OpenApiSchemaIntegrationTest` schema 字段断言，新增 Controller 记录映射单测。前端 `gen:check`/`typecheck` 待本轮运行，后端用 PR CI 验证。

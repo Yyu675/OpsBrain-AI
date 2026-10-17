@@ -50,6 +50,7 @@ import type { ActionFilterOptions as GenActionFilterOptions } from './generated/
 import type { ActionStats as GenActionStats } from './generated/actionStats'
 import type { EvaluateResult as GenEvaluateResult } from './generated/evaluateResult'
 import type { HealingExecution as GenHealingExecution } from './generated/healingExecution'
+import type { ServiceOwnerItem as GenServiceOwnerItem } from './generated/serviceOwnerItem'
 import type { KnowledgeTag as GenKnowledgeTag } from './generated/knowledgeTag'
 import type { ListItem as GenListItem } from './generated/listItem'
 import type { DocPage as GenDocPage } from './generated/docPage'
@@ -240,6 +241,11 @@ export type PipelineHeartbeat_Missing = AssertDriftFree<GenOnly<GenPipelineHeart
 export type PipelineHeartbeat_Extra = AssertDriftFree<HandOnly<GenPipelineHeartbeat, PipelineHeartbeat>>
 export type LogsHeartbeat_Missing = AssertDriftFree<GenOnly<GenLogsHeartbeat, LogsHeartbeat>>
 export type LogsHeartbeat_Extra = AssertDriftFree<HandOnly<GenLogsHeartbeat, LogsHeartbeat>>
+
+// 服务负责人路由项：列集合与数据库返回映射的 DTO 必须一致。
+type ServiceOwnerItemKeys = 'id' | 'service' | 'owner' | 'enabled' | 'createTime' | 'updateTime'
+export type ServiceOwnerItem_Missing = AssertDriftFree<GenOnly<GenServiceOwnerItem, Record<ServiceOwnerItemKeys, unknown>>>
+export type ServiceOwnerItem_Extra = AssertDriftFree<HandOnly<GenServiceOwnerItem, Record<ServiceOwnerItemKeys, unknown>>>
 
 // ==================== 知识域 ====================
 

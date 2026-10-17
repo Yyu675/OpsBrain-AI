@@ -7,7 +7,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
 
 /**
  * 服务 → 值班负责人路由管理接口（2026-09-25，待分配积压治理）。
@@ -38,9 +37,12 @@ public class ServiceOwnerController {
 
     @GetMapping
     public ApiResponse<com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerListResponse> list() {
-        var rows = repository.listAll();
+        var items = repository.listAll().stream()
+                .map(row -> new com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerItem(
+                        row.id(), row.service(), row.owner(), row.enabled(), row.createTime(), row.updateTime()))
+                .toList();
         return ApiResponse.success(new com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerListResponse(
-                rows.size(), rows));
+                items.size(), items));
     }
 
     public record UpsertRequest(
