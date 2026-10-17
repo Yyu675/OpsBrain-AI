@@ -360,6 +360,23 @@ class OpenApiSchemaIntegrationTest {
             JsonNode metricDatasource = componentSchema("MetricDatasourceResponse");
             assertThat(metricDatasource).as("MetricDatasourceResponse 缺失").isNotNull();
             assertThat(fieldNames(metricDatasource.path("properties"))).contains("datasources", "total");
+
+            JsonNode knowledgeStats = componentSchema("KnowledgeStatsResponse");
+            assertThat(knowledgeStats).as("KnowledgeStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(knowledgeStats.path("properties"))).contains(
+                    "totalDocuments", "totalChunks", "activeChunks", "filteredOut", "bySource", "lastUpdateTime", "hotQueryCount");
+
+            JsonNode knowledgeTree = componentSchema("KnowledgeCategoryTreeResponse");
+            assertThat(knowledgeTree).as("KnowledgeCategoryTreeResponse 缺失").isNotNull();
+            assertThat(fieldNames(knowledgeTree.path("properties"))).contains("categories", "uncategorized");
+
+            JsonNode sessionList = componentSchema("SessionListResponse");
+            assertThat(sessionList).as("SessionListResponse 缺失").isNotNull();
+            assertThat(fieldNames(sessionList.path("properties"))).contains("sessions", "total", "page", "size", "totalPages");
+
+            JsonNode sessionContext = componentSchema("SessionContextResponse");
+            assertThat(sessionContext).as("SessionContextResponse 缺失").isNotNull();
+            assertThat(fieldNames(sessionContext.path("properties"))).contains("sessionId", "recentHistory", "keyFactsText", "hasHistory");
         }
     }
 

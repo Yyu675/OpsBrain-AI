@@ -42,8 +42,48 @@ public class KnowledgeCategoryController {
     }
 
     @GetMapping("/tree")
-    public ApiResponse<Map<String, Object>> tree() {
-        return ApiResponse.success(service.tree());
+    public ApiResponse<com.devops.agent.controller.dto.KnowledgeCategoryTreeResponse> tree() {
+        Map<String, Object> map = service.tree();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rawCategories = (List<Map<String, Object>>) map.get("categories");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rawUncategorized = (List<Map<String, Object>>) map.get("uncategorized");
+
+        List<com.devops.agent.controller.dto.KnowledgeCategoryTreeNode> categoryNodes = new java.util.ArrayList<>();
+        if (rawCategories != null) {
+            for (Map<String, Object> c : rawCategories) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> docs = (List<Map<String, Object>>) c.get("documents");
+                List<com.devops.agent.controller.dto.KnowledgeTreeDocument> treeDocs = toTreeDocs(docs);
+                categoryNodes.add(new com.devops.agent.controller.dto.KnowledgeCategoryTreeNode(
+                        (Long) c.get("id"),
+                        (Long) c.get("parentId"),
+                        (String) c.get("name"),
+                        (Integer) c.get("sortOrder"),
+                        c.get("docCount") instanceof Number n ? n.longValue() : 0L,
+                        treeDocs));
+            }
+        }
+
+        List<com.devops.agent.controller.dto.KnowledgeTreeDocument> uncategorized = toTreeDocs(rawUncategorized);
+
+        return ApiResponse.success(new com.devops.agent.controller.dto.KnowledgeCategoryTreeResponse(categoryNodes, uncategorized));
+    }
+
+    private static List<com.devops.agent.controller.dto.KnowledgeTreeDocument> toTreeDocs(List<Map<String, Object>> docs) {
+        if (docs == null) return List.of();
+        List<com.devops.agent.controller.dto.KnowledgeTreeDocument> list = new java.util.ArrayList<>();
+        for (Map<String, Object> d : docs) {
+            list.add(new com.devops.agent.controller.dto.KnowledgeTreeDocument(
+                    (Long) d.get("id"),
+                    (String) d.get("title"),
+                    (String) d.get("category"),
+                    (Long) d.get("categoryId"),
+                    d.get("version") instanceof Number n ? n.intValue() : 1,
+                    (String) d.get("status"),
+                    (java.time.LocalDateTime) d.get("updateTime")));
+        }
+        return list;
     }
 
     @PostMapping
