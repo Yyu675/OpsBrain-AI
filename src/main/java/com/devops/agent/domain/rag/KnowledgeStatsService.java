@@ -43,11 +43,9 @@ public class KnowledgeStatsService {
     private SemanticCacheService semanticCacheService;
 
     /**
-     * 查询知识库统计信息
-     *
-     * @return 统计信息 Map（totalDocuments / totalChunks / activeChunks / filteredOut / bySource / lastUpdateTime / hotQueryCount）
+     * 查询知识库统计信息。bySource 是数据驱动的动态来源名到计数映射。
      */
-    public Map<String, Object> getStats() {
+    public KnowledgeStatsData getStats() {
         LocalDateTime now = LocalDateTime.now();
 
         long totalChunks = knowledgeChunkRepo.countTotalChunks();
@@ -62,16 +60,14 @@ public class KnowledgeStatsService {
             }
         }
 
-        Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("totalDocuments", totalDocuments);
-        stats.put("totalChunks", totalChunks);
-        stats.put("activeChunks", activeChunks);
-        stats.put("filteredOut", totalChunks - activeChunks);
-        stats.put("bySource", bySource);
-        stats.put("lastUpdateTime", lastUpdate);
-        stats.put("hotQueryCount", semanticCacheService.hotQueryCount());
-
-        return stats;
+        return new KnowledgeStatsData(
+                totalDocuments,
+                totalChunks,
+                activeChunks,
+                totalChunks - activeChunks,
+                bySource,
+                lastUpdate,
+                semanticCacheService.hotQueryCount());
     }
 
     /**
