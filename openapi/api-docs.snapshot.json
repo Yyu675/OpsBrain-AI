@@ -1241,7 +1241,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeTag"
                 }
               }
             }
@@ -1339,7 +1339,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseEntityDeleteResponse"
                 }
               }
             }
@@ -1630,7 +1630,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeCategory"
                 }
               }
             }
@@ -1719,7 +1719,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseEntityDeleteResponse"
                 }
               }
             }
@@ -1820,7 +1820,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseDocumentMoveResponse"
                 }
               }
             }
@@ -5260,7 +5260,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeTag"
                 }
               }
             }
@@ -5361,7 +5361,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeTag"
                 }
               }
             }
@@ -6597,7 +6597,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeCategory"
                 }
               }
             }
@@ -25140,6 +25140,124 @@
           },
           "traceId": {
             "type": "string"
+          }
+        }
+      },
+      "ApiResponseKnowledgeTag": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeTag"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseKnowledgeCategory": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeCategory"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseEntityDeleteResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EntityDeleteResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseDocumentMoveResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DocumentMoveResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "EntityDeleteResponse": {
+        "type": "object",
+        "description": "实体删除确认响应",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "description": "删除是否成功"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "已删除的实体 ID"
+          }
+        }
+      },
+      "DocumentMoveResponse": {
+        "type": "object",
+        "description": "文档移动分类确认响应",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "文档 ID"
+          },
+          "moved": {
+            "type": "boolean",
+            "description": "移动是否成功"
           }
         }
       }

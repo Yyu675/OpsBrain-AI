@@ -87,7 +87,7 @@ public class KnowledgeCategoryController {
     }
 
     @PostMapping
-    public ApiResponse<Object> create(@RequestBody CategoryRequest request) {
+    public ApiResponse<KnowledgeCategory> create(@RequestBody CategoryRequest request) {
         writeGuard.requireEdit();
         try {
             return ApiResponse.success(service.create(
@@ -101,7 +101,7 @@ public class KnowledgeCategoryController {
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<Object> update(@PathVariable Long id, @RequestBody CategoryRequest request) {
+    public ApiResponse<KnowledgeCategory> update(@PathVariable Long id, @RequestBody CategoryRequest request) {
         writeGuard.requireEdit();
         try {
             return ApiResponse.success(service.update(
@@ -115,11 +115,11 @@ public class KnowledgeCategoryController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Object> delete(@PathVariable Long id) {
+    public ApiResponse<com.devops.agent.controller.dto.EntityDeleteResponse> delete(@PathVariable Long id) {
         writeGuard.requireDestructive();
         try {
             service.delete(id);
-            return ApiResponse.success(Map.of("id", id, "deleted", true));
+            return ApiResponse.success(new com.devops.agent.controller.dto.EntityDeleteResponse(id, true));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
@@ -129,7 +129,7 @@ public class KnowledgeCategoryController {
     }
 
     @PutMapping("/documents/{docId}")
-    public ApiResponse<Object> moveDocument(
+    public ApiResponse<com.devops.agent.controller.dto.DocumentMoveResponse> moveDocument(
             @PathVariable Long docId, @RequestBody MoveDocumentRequest request) {
         writeGuard.requireEdit();
         // 不再自己 catch：异常统一由 GlobalExceptionHandler 映射
@@ -137,6 +137,6 @@ public class KnowledgeCategoryController {
         // 这正是 F2 重构的目的；此前那次改动删了 try 却漏删 catch 链，
         // 留下了无法编译的孤儿 catch。
         service.moveDocument(docId, request.categoryId(), request.version());
-        return ApiResponse.success(Map.of("id", docId, "moved", true));
+        return ApiResponse.success(new com.devops.agent.controller.dto.DocumentMoveResponse(docId, true));
     }
 }

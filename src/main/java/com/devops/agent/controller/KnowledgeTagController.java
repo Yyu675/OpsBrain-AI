@@ -35,13 +35,13 @@ public class KnowledgeTagController {
     }
 
     @PostMapping
-    public ApiResponse<Object> create(@RequestBody TagRequest request) {
+    public ApiResponse<KnowledgeTag> create(@RequestBody TagRequest request) {
         writeGuard.requireEdit();
         return ApiResponse.success(tagService.create(request.name(), request.description(), request.color()));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<Object> rename(@PathVariable long id, @RequestBody TagRequest request) {
+    public ApiResponse<KnowledgeTag> rename(@PathVariable long id, @RequestBody TagRequest request) {
         writeGuard.requireEdit();
         try {
             return ApiResponse.success(tagService.rename(id, request.name(), request.description(), request.color()));
@@ -54,7 +54,7 @@ public class KnowledgeTagController {
     }
 
     @PostMapping("/{id}/merge")
-    public ApiResponse<Object> merge(@PathVariable long id, @RequestBody MergeRequest request) {
+    public ApiResponse<KnowledgeTag> merge(@PathVariable long id, @RequestBody MergeRequest request) {
         writeGuard.requireDestructive();
         try {
             return ApiResponse.success(tagService.merge(id, request.targetId()));
@@ -64,11 +64,11 @@ public class KnowledgeTagController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Object> delete(@PathVariable long id, @RequestBody(required = false) DeleteRequest request) {
+    public ApiResponse<com.devops.agent.controller.dto.EntityDeleteResponse> delete(@PathVariable long id, @RequestBody(required = false) DeleteRequest request) {
         writeGuard.requireDestructive();
         try {
             tagService.delete(id, request == null ? null : request.replacementId());
-            return ApiResponse.success(Map.of("id", id, "deleted", true));
+            return ApiResponse.success(new com.devops.agent.controller.dto.EntityDeleteResponse(id, true));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         }

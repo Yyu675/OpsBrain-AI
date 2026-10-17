@@ -122,6 +122,8 @@ import type {
 } from './types/notify'
 import type { ClosureMetrics, DocHealth } from './dashboard'
 import type { AiAnalysisStats } from './ticketAiAnalysis'
+import type { EntityDeleteResponse as GenEntityDeleteResponse } from './generated/entityDeleteResponse'
+import type { DocumentMoveResponse as GenDocumentMoveResponse } from './generated/documentMoveResponse'
 import type { PostmortemDraftResponse as GenPostmortemDraftResponse } from './generated/postmortemDraftResponse'
 import type { HypothesisFeedbackResponse as GenHypothesisFeedbackResponse } from './generated/hypothesisFeedbackResponse'
 import type { DiagnosisReplayResponse as GenDiagnosisReplayResponse } from './generated/diagnosisReplayResponse'
@@ -324,3 +326,20 @@ export interface DiagnosisReplayData {
 
 export type DiagnosisReplay_Missing = AssertDriftFree<GenOnly<GenDiagnosisReplayResponse, DiagnosisReplayData>>
 export type DiagnosisReplay_Extra = AssertDriftFree<HandOnly<GenDiagnosisReplayResponse, DiagnosisReplayData>>
+
+// ==================== 知识库标签与分类动作弱契约收口（批142）====================
+export interface EntityDeleteData {
+  id: number
+  deleted: boolean
+}
+
+export type EntityDelete_Missing = AssertDriftFree<GenOnly<GenEntityDeleteResponse, EntityDeleteData>>
+export type EntityDelete_Extra = AssertDriftFree<HandOnly<GenEntityDeleteResponse, EntityDeleteData>>
+
+export interface DocumentMoveData {
+  id: number
+  moved: boolean
+}
+
+export type DocumentMove_Missing = AssertDriftFree<GenOnly<GenDocumentMoveResponse, DocumentMoveData>>
+export type DocumentMove_Extra = AssertDriftFree<HandOnly<GenDocumentMoveResponse, DocumentMoveData>>
