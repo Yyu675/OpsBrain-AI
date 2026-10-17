@@ -2,6 +2,7 @@ package com.devops.agent.infrastructure.persistence.repo;
 
 import com.devops.agent.domain.rag.KnowledgeDoc;
 import com.devops.agent.domain.rag.KnowledgeDocLifecycle;
+import com.devops.agent.domain.rag.KnowledgeCategoryCount;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -420,7 +421,7 @@ public class KnowledgeDocRepository {
     /**
      * 扁平分类聚合（侧栏导航用）：仅统计非空分类，按文档数降序
      */
-    public List<Map<String, Object>> findCategories() {
+    public List<KnowledgeCategoryCount> findCategories() {
         String sql = """
             SELECT category AS name, COUNT(*) AS count
               FROM sys_knowledge_doc
@@ -428,12 +429,8 @@ public class KnowledgeDocRepository {
              GROUP BY category
              ORDER BY count DESC, category
             """;
-        return jdbcTemplate.query(sql, (rs, n) -> {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("name", rs.getString("name"));
-            row.put("count", rs.getLong("count"));
-            return row;
-        });
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new KnowledgeCategoryCount(
+                rs.getString("name"), rs.getLong("count")));
     }
 
     private void applyTagFilter(StringBuilder sql, List<Object> args, String tag) {

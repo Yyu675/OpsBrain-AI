@@ -389,16 +389,14 @@ public class KnowledgeDocController {
      */
     @GetMapping("/categories")
     public ApiResponse<List<com.devops.agent.controller.dto.KnowledgeCategoryCountResponse>> categories() {
-        List<Map<String, Object>> cats = docService.findCategories();
-        List<com.devops.agent.controller.dto.KnowledgeCategoryCountResponse> list = new ArrayList<>();
-        if (cats != null) {
-            for (Map<String, Object> c : cats) {
-                String name = (String) c.get("name");
-                long count = c.get("count") instanceof Number n ? n.longValue() : 0L;
-                list.add(new com.devops.agent.controller.dto.KnowledgeCategoryCountResponse(name, count));
-            }
-        }
-        return ApiResponse.success(list);
+        List<com.devops.agent.domain.rag.KnowledgeCategoryCount> categories = docService.findCategories();
+        List<com.devops.agent.controller.dto.KnowledgeCategoryCountResponse> items = categories == null
+                ? List.of()
+                : categories.stream()
+                        .map(category -> new com.devops.agent.controller.dto.KnowledgeCategoryCountResponse(
+                                category.name(), category.count()))
+                        .toList();
+        return ApiResponse.success(items);
     }
 
     /**
