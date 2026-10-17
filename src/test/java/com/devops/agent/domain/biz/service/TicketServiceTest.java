@@ -172,6 +172,26 @@ class TicketServiceTest {
     }
 
     @Test
+    void ticketTrendsAreTypedZeroFilledAndKeepRequestedModule() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        when(ticketRepository.countCreatedByDay(3, "MYSQL")).thenReturn(
+                java.util.Collections.singletonList(new Object[]{java.sql.Date.valueOf(today), 5L}));
+        when(ticketRepository.countResolvedByDay(3, "MYSQL")).thenReturn(
+                java.util.Collections.singletonList(new Object[]{
+                        java.sql.Date.valueOf(today.minusDays(1)), 2L}));
+
+        var trends = service.getTicketTrends(3, "MYSQL");
+
+        assertThat(trends.days()).containsExactly(
+                today.minusDays(2).toString(), today.minusDays(1).toString(), today.toString());
+        assertThat(trends.created()).containsExactly(0L, 0L, 5L);
+        assertThat(trends.resolved()).containsExactly(0L, 2L, 0L);
+        assertThat(trends.module()).isEqualTo("MYSQL");
+        verify(ticketRepository).countCreatedByDay(3, "MYSQL");
+        verify(ticketRepository).countResolvedByDay(3, "MYSQL");
+    }
+
+    @Test
     void getTotalTicketsDelegatesToRepository() {
         when(ticketRepository.countAll()).thenReturn(100L);
 
