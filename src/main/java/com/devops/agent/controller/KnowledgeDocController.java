@@ -493,19 +493,16 @@ public class KnowledgeDocController {
      */
     @GetMapping("/health")
     public ApiResponse<List<com.devops.agent.controller.dto.KnowledgeDocHealthResponse>> docHealth() {
-        List<Map<String, Object>> reports = boostRepository.docHealthReport();
-        List<com.devops.agent.controller.dto.KnowledgeDocHealthResponse> list = new ArrayList<>();
-        if (reports != null) {
-            for (Map<String, Object> r : reports) {
-                Long docId = r.get("docId") instanceof Number n ? n.longValue() : null;
-                String title = (String) r.get("title");
-                long helpful = r.get("helpful") instanceof Number n ? n.longValue() : 0L;
-                long wrong = r.get("wrong") instanceof Number n ? n.longValue() : 0L;
-                long net = wrong - helpful;
-                list.add(new com.devops.agent.controller.dto.KnowledgeDocHealthResponse(docId, title, helpful, wrong, net));
-            }
-        }
-        return ApiResponse.success(list);
+        List<com.devops.agent.domain.biz.repository.KnowledgeBoostRepository.DocHealthRow> reports =
+                boostRepository.docHealthReport();
+        List<com.devops.agent.controller.dto.KnowledgeDocHealthResponse> items = reports == null
+                ? List.of()
+                : reports.stream()
+                        .map(report -> new com.devops.agent.controller.dto.KnowledgeDocHealthResponse(
+                                report.docId(), report.title(), report.helpful(), report.wrong(),
+                                report.wrong() - report.helpful()))
+                        .toList();
+        return ApiResponse.success(items);
     }
 
     /**

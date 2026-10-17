@@ -875,4 +875,21 @@ class KnowledgeDocControllerWebTest {
                 .andExpect(jsonPath("$.data[0].name").value("Kubernetes"))
                 .andExpect(jsonPath("$.data[0].count").value(7));
     }
+
+    @Test
+    @DisplayName("文档反馈健康度从 typed report 计算 net，保留响应 shape")
+    void docHealthMapsTypedReport() throws Exception {
+        when(boostRepository.docHealthReport()).thenReturn(List.of(
+                new com.devops.agent.domain.biz.repository.KnowledgeBoostRepository.DocHealthRow(
+                        14L, "排障手册", 3L, 5L)));
+
+        mockMvc.perform(get("/api/v1/knowledge/docs/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[0].docId").value(14))
+                .andExpect(jsonPath("$.data[0].title").value("排障手册"))
+                .andExpect(jsonPath("$.data[0].helpful").value(3))
+                .andExpect(jsonPath("$.data[0].wrong").value(5))
+                .andExpect(jsonPath("$.data[0].net").value(2));
+    }
 }

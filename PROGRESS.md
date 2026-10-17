@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-17（批155 将知识文档分类聚合从 repository/service/controller Map 映射改为 `KnowledgeCategoryCount` typed row；API 输出不变，待后端 CI）
+> **最后更新**：2026-10-17（批156 将文档反馈健康度 Repository Map 结果改为 `DocHealthRow`；批155 分类计数已合入，PR #64 merge `a9be979`）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -559,4 +559,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批152(2026-10-17):审批角标 Controller 改用 `ApprovalService.listPendingPage(1,1)` 的 typed `ApprovalPageResponse.total()`，移除 `Map<String,Object>` 解包与不必要数字类型分支；保持 size=1、pending 数量及 null page→0 行为。更新 HTTP 契约测试，外部 `PendingApprovalCountResponse` schema 未改变，不需 OpenAPI/Orval 更新；PR #61 前端/后端/工作流/E2E 全绿并合入（merge commit `2681823`）；后续批153继续移除 Service 层分页 Map wrapper。
 - 批153(2026-10-17):将 `ApprovalService.listPending/listByStatus` 遗留 `Map<String,Object>` wrapper 改为直接返回 `ApprovalPageResponse`，删除通用 Map 分页构造器；Controller 可用的分页 API 仍统一字段类型，原分页钳制/排序/count SQL 不变。更新 service test 从 map key 断言改为 record accessor；外部 API schema 不变，无需生成物变更。PR #62 首轮 E2E 失败后由新 CI run 全绿复验，前端/后端/工作流/E2E 全通过并合入（merge commit `2e7f045`）。
 - 批154(2026-10-17):将 KnowledgeCategoryRepository.findDocuments、KnowledgeCategoryService.tree 及 Controller 适配链上的 Map<String,Object> 改为 `KnowledgeCategoryTreeData` typed records；保留按 categoryId/大小写无关 category 名归组、uncategorized 顺序、分类排序、文档顺序与 DTO JSON。新增 service 分组单测，更新 Controller HTTP 测试 stub。外部 `KnowledgeCategoryTreeResponse` 未变；前端 `typecheck`/`gen:check` 本地通过，PR #63 前端/后端/工作流/E2E 全绿并合入（merge commit `0155728`）。
-- 批155(2026-10-17):`KnowledgeDocRepository.findCategories` 从 `List<Map<String,Object>>` 改为 `List<KnowledgeCategoryCount>` typed row；service/controller 同步移除 map key 读取与 Number 转换，仍输出既有 `KnowledgeCategoryCountResponse(name,count)`。SQL filter/group/order 不变；新增 controller HTTP 响应字段断言。外部 schema 不变，无 OpenAPI/Orval 更新；CI 待验证。
+- 批155(2026-10-17):`KnowledgeDocRepository.findCategories` 从 `List<Map<String,Object>>` 改为 `List<KnowledgeCategoryCount>` typed row；service/controller 同步移除 map key 读取与 Number 转换，仍输出既有 `KnowledgeCategoryCountResponse(name,count)`。SQL filter/group/order 不变；新增 controller HTTP 响应字段断言。外部 schema 不变，无 OpenAPI/Orval 更新；PR #64 全部 CI 通过并合入（merge commit `a9be979`）。
+- 批156(2026-10-17):将 `KnowledgeBoostRepository.docHealthReport()` 的 `List<Map<String,Object>>` 改为 `List<DocHealthRow>` RowMapper，Controller 使用 typed fields 计算净反馈并映射原有 `KnowledgeDocHealthResponse`；保留 SQL 分组/排序、missing/nullable fallback、`net=wrong-helpful` 与 JSON 字段语义。新增 WebMvc 响应值断言；外部 DTO 未变，不需 OpenAPI/Orval 更新。本地后端未能编译，交 PR CI 验收。
