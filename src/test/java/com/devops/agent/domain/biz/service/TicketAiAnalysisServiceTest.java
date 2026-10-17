@@ -12,7 +12,6 @@ import org.mockito.ArgumentCaptor;
 import java.math.BigDecimal;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -374,9 +373,9 @@ class TicketAiAnalysisServiceTest {
         @DisplayName("helpfulRate = helpful / rated")
         void computesRate() {
             when(repository.feedbackStats()).thenReturn(
-                    Map.of("total", 10L, "rated", 4L, "helpful", 3L, "unhelpful", 1L));
+                    new com.devops.agent.domain.biz.entity.TicketAiFeedbackStats(10L, 4L, 3L, 1L));
 
-            assertThat(service.accuracyStats()).containsEntry("helpfulRate", 0.75);
+            assertThat(service.accuracyStats().helpfulRate()).isEqualTo(0.75);
         }
 
         @Test
@@ -400,33 +399,33 @@ class TicketAiAnalysisServiceTest {
             // rated=0 而 helpful>0 看似矛盾，却真实存在：feedbackStats
             // 是多个聚合子查询拼出来的，统计口径不一致或并发写入时就会出现。
             when(repository.feedbackStats()).thenReturn(
-                    Map.of("total", 5L, "rated", 0L, "helpful", 3L, "unhelpful", 0L));
+                    new com.devops.agent.domain.biz.entity.TicketAiFeedbackStats(5L, 0L, 3L, 0L));
 
-            Object rate = service.accuracyStats().get("helpfulRate");
+            double rate = service.accuracyStats().helpfulRate();
             assertThat(rate)
                     .as("rated=0 时必须短路为 0，而不是让除法产生 Infinity/NaN")
                     .isEqualTo(0.0);
 
             // 再补一条纯 0/0 的常规场景，确保正常路径也是 0.0
             when(repository.feedbackStats()).thenReturn(
-                    Map.of("total", 5L, "rated", 0L, "helpful", 0L, "unhelpful", 0L));
-            Object plainRate = service.accuracyStats().get("helpfulRate");
+                    new com.devops.agent.domain.biz.entity.TicketAiFeedbackStats(5L, 0L, 0L, 0L));
+            double plainRate = service.accuracyStats().helpfulRate();
             assertThat(plainRate).isEqualTo(0.0);
-            assertThat(Double.isNaN((Double) plainRate)).isFalse();
+            assertThat(Double.isNaN(plainRate)).isFalse();
         }
 
         @Test
-        @DisplayName("仓储缺键时按 0 兜底，不抛 NPE")
-        void missingKeysDefaultToZero() {
-            // feedbackStats 是 SQL 聚合的结果，某些分支下可能不返回全部键
-            when(repository.feedbackStats()).thenReturn(Map.of());
+        @DisplayName("仓储未返回统计行时按 0 兜底，不抛 NPE")
+        void missingStatsDefaultToZero() {
+            // 防御 JdbcTemplate 对无结果行返回 null 的情况；计数均归一化为 0。
+            when(repository.feedbackStats()).thenReturn(null);
 
-            Map<String, Object> s = service.accuracyStats();
-            assertThat(s).containsEntry("total", 0L)
-                    .containsEntry("rated", 0L)
-                    .containsEntry("helpful", 0L)
-                    .containsEntry("unhelpful", 0L)
-                    .containsEntry("helpfulRate", 0.0);
+            var stats = service.accuracyStats();
+            assertThat(stats.total()).isZero();
+            assertThat(stats.rated()).isZero();
+            assertThat(stats.helpful()).isZero();
+            assertThat(stats.unhelpful()).isZero();
+            assertThat(stats.helpfulRate()).isEqualTo(0.0);
         }
 
         @Test
@@ -436,9 +435,9 @@ class TicketAiAnalysisServiceTest {
             // 量级远大于千分位。若哪天精度要求变严（如按万分位对账），
             // 这条断言需要一并收紧
             when(repository.feedbackStats()).thenReturn(
-                    Map.of("total", 3L, "rated", 3L, "helpful", 1L, "unhelpful", 2L));
+                    new com.devops.agent.domain.biz.entity.TicketAiFeedbackStats(3L, 3L, 1L, 2L));
 
-            assertThat(service.accuracyStats()).containsEntry("helpfulRate", 0.333);
+            assertThat(service.accuracyStats().helpfulRate()).isEqualTo(0.333);
         }
 
         @Test
@@ -447,9 +446,9 @@ class TicketAiAnalysisServiceTest {
             // 比率与百分比的口径混淆会让前端显示 10000%。
             // 契约是「0~1 的比率，由前端乘 100」
             when(repository.feedbackStats()).thenReturn(
-                    Map.of("total", 2L, "rated", 2L, "helpful", 2L, "unhelpful", 0L));
+                    new com.devops.agent.domain.biz.entity.TicketAiFeedbackStats(2L, 2L, 2L, 0L));
 
-            assertThat(service.accuracyStats()).containsEntry("helpfulRate", 1.0);
+            assertThat(service.accuracyStats().helpfulRate()).isEqualTo(1.0);
         }
     }
 }

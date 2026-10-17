@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -173,19 +172,16 @@ public class TicketAiAnalysisService {
      * 准确率统计
      * <p>在计数基础上补充 helpfulRate（有用数 / 已评价数），已评价为 0 时为 0。</p>
      */
-    public Map<String, Object> accuracyStats() {
-        Map<String, Long> raw = repository.feedbackStats();
-        long rated = raw.getOrDefault("rated", 0L);
-        long helpful = raw.getOrDefault("helpful", 0L);
+    public com.devops.agent.domain.biz.entity.TicketAiAccuracyStats accuracyStats() {
+        com.devops.agent.domain.biz.entity.TicketAiFeedbackStats raw = repository.feedbackStats();
+        long total = raw != null ? raw.total() : 0L;
+        long rated = raw != null ? raw.rated() : 0L;
+        long helpful = raw != null ? raw.helpful() : 0L;
+        long unhelpful = raw != null ? raw.unhelpful() : 0L;
         double rate = rated > 0 ? (double) helpful / rated : 0.0;
-        return Map.of(
-                "total", raw.getOrDefault("total", 0L),
-                "rated", rated,
-                "helpful", helpful,
-                "unhelpful", raw.getOrDefault("unhelpful", 0L),
-                // 保留 3 位小数，前端按百分比展示
-                "helpfulRate", Math.round(rate * 1000) / 1000.0
-        );
+        // 保留 3 位小数，前端按百分比展示。
+        return new com.devops.agent.domain.biz.entity.TicketAiAccuracyStats(
+                total, rated, helpful, unhelpful, Math.round(rate * 1000) / 1000.0);
     }
 
     /** 工单删除时级联清理 */

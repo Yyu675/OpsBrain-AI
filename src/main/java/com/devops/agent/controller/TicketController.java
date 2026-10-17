@@ -751,14 +751,9 @@ public class TicketController {
      */
     @GetMapping("/ai-analysis/stats")
     public ApiResponse<com.devops.agent.controller.dto.TicketAiAccuracyStatsResponse> aiAnalysisStats() {
-        Map<String, Object> map = aiAnalysisService.accuracyStats();
+        com.devops.agent.domain.biz.entity.TicketAiAccuracyStats stats = aiAnalysisService.accuracyStats();
         return ApiResponse.success(new com.devops.agent.controller.dto.TicketAiAccuracyStatsResponse(
-                map.get("total") instanceof Number n ? n.longValue() : 0L,
-                map.get("rated") instanceof Number n ? n.longValue() : 0L,
-                map.get("helpful") instanceof Number n ? n.longValue() : 0L,
-                map.get("unhelpful") instanceof Number n ? n.longValue() : 0L,
-                map.get("helpfulRate") instanceof Number n ? n.doubleValue() : null
-        ));
+                stats.total(), stats.rated(), stats.helpful(), stats.unhelpful(), stats.helpfulRate()));
     }
 
     /**
