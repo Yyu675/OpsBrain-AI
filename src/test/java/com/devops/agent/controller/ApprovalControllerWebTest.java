@@ -134,15 +134,6 @@ class ApprovalControllerWebTest {
         return r;
     }
 
-    private static Map<String, Object> page(List<ApprovalRequest> items, int total) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("items", items);
-        m.put("total", total);
-        m.put("page", 1);
-        m.put("size", 20);
-        return m;
-    }
-
     private static com.devops.agent.controller.dto.ApprovalPageResponse pageResponse(List<ApprovalRequest> items, int total) {
         return com.devops.agent.controller.dto.ApprovalPageResponse.of(items, total, 1, 20);
     }
@@ -215,20 +206,20 @@ class ApprovalControllerWebTest {
         @Test
         @DisplayName("待审角标只取 total，不把整页数据拉回来")
         void pendingCountReturnsOnlyTotal() throws Exception {
-            when(approvalService.listPending(1, 1)).thenReturn(page(List.of(), 7));
+            when(approvalService.listPendingPage(1, 1)).thenReturn(pageResponse(List.of(), 7));
 
             mockMvc.perform(get("/api/v1/approvals/pending/count"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.pending").value(7));
 
-            // size=1：角标只需要数字，拉整页是浪费（这个端点会被前端轮询）
-            verify(approvalService).listPending(1, 1);
+            // 维持 size=1：角标只需要总数，不拉取整页数据（这个端点会被前端轮询）。
+            verify(approvalService).listPendingPage(1, 1);
         }
 
         @Test
-        @DisplayName("角标在 total 缺失时给 0，不给 null —— 前端角标不能渲染成 \"null\"")
+        @DisplayName("分页查询未返回数据时角标给 0，不给 null")
         void pendingCountFallsBackToZero() throws Exception {
-            when(approvalService.listPending(1, 1)).thenReturn(new LinkedHashMap<>());
+            when(approvalService.listPendingPage(1, 1)).thenReturn(null);
 
             mockMvc.perform(get("/api/v1/approvals/pending/count"))
                     .andExpect(status().isOk())

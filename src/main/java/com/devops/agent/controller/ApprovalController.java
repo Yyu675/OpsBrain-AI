@@ -11,7 +11,6 @@ import com.devops.agent.domain.auth.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
 
 /**
  * 审批中心接口（方向 D：L3 人机协同审批）
@@ -73,12 +72,8 @@ public class ApprovalController {
     /** 待审数（前端角标） */
     @GetMapping("/pending/count")
     public ApiResponse<com.devops.agent.controller.dto.PendingApprovalCountResponse> pendingCount() {
-        Map<String, Object> data = approvalService.listPending(1, 1);
-        Object totalObj = data.getOrDefault("total", 0);
-        long pending = 0;
-        if (totalObj instanceof Number n) {
-            pending = n.longValue();
-        }
+        var page = approvalService.listPendingPage(1, 1);
+        long pending = page == null ? 0 : page.total();
         return ApiResponse.success(new com.devops.agent.controller.dto.PendingApprovalCountResponse(pending));
     }
 
