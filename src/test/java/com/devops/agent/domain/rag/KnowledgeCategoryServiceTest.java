@@ -25,6 +25,27 @@ class KnowledgeCategoryServiceTest {
     }
 
     @Test
+    void treeGroupsDocumentsByIdOrCaseInsensitiveNameAndKeepsUncategorizedOrder() {
+        KnowledgeCategory first = category(1L, null, "K8s", 0, 2);
+        KnowledgeCategory second = category(2L, null, "Databases", 1, 2);
+        when(repository.findAll()).thenReturn(List.of(first, second));
+        when(repository.findDocuments()).thenReturn(List.of(
+                new KnowledgeCategoryTreeData.Document(11L, "关联 ID", "旧名", 2L, 1, "PUBLISHED", null),
+                new KnowledgeCategoryTreeData.Document(12L, "匹配名称", "databases", null, 3, "DRAFT", null),
+                new KnowledgeCategoryTreeData.Document(13L, "无分类", null, null, 1, "DRAFT", null),
+                new KnowledgeCategoryTreeData.Document(14L, "未知名称", "其他", null, 1, "PUBLISHED", null)));
+
+        KnowledgeCategoryTreeData tree = service.tree();
+
+        assertThat(tree.categories()).extracting(KnowledgeCategoryTreeData.Node::id)
+                .containsExactly(1L, 2L);
+        assertThat(tree.categories().get(1).documents()).extracting(KnowledgeCategoryTreeData.Document::id)
+                .containsExactly(11L, 12L);
+        assertThat(tree.uncategorized()).extracting(KnowledgeCategoryTreeData.Document::id)
+                .containsExactly(13L, 14L);
+    }
+
+    @Test
     void renameKeepsDocumentCategoryInSync() {
         KnowledgeCategory before = category(1L, null, "数据库", 0, 2);
         KnowledgeCategory after = category(1L, null, "数据存储", 0, 2);
