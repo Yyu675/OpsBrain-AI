@@ -136,29 +136,6 @@ public final class AuditLogConverter {
         );
     }
 
-    public static AuditFilterOptionsResponse toAuditFilterOptionsResponse(Map<String, Object> m) {
-        if (m == null) {
-            return new AuditFilterOptionsResponse(List.of(), List.of(), List.of(), List.of());
-        }
-        List<String> models = toStringList(m.get("models"));
-        List<String> operationTypes = toStringList(m.get("operationTypes"));
-        List<String> actions = toStringList(m.get("actions"));
-        List<String> targetTypes = toStringList(m.get("targetTypes"));
-        return new AuditFilterOptionsResponse(models, operationTypes, actions, targetTypes);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<String> toStringList(Object obj) {
-        if (obj instanceof List<?> l) {
-            List<String> res = new ArrayList<>();
-            for (Object item : l) {
-                if (item != null) res.add(item.toString());
-            }
-            return res;
-        }
-        return List.of();
-    }
-
     private static String getString(Object obj) {
         return obj == null ? null : obj.toString();
     }

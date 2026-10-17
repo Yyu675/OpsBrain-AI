@@ -299,9 +299,9 @@ class AuditLogControllerWebTest {
     @Test
     @DisplayName("筛选候选值从实际数据聚合，不硬编码——避免列出库里根本没有的选项")
     void filterOptionsComeFromData() throws Exception {
-        when(repository.queryFilterOptions()).thenReturn(Map.of(
-                "actions", List.of("ticket.create", "ticket.close"),
-                "models", List.of("deepseek-chat")));
+        when(repository.queryFilterOptions()).thenReturn(new com.devops.agent.domain.audit.AuditFilterOptionsData(
+                List.of("deepseek-chat"), List.of("CHAT"),
+                List.of("ticket.create", "ticket.close"), List.of("ticket")));
 
         mockMvc.perform(get("/api/v1/audit/filter-options"))
                 .andExpect(status().isOk())

@@ -138,6 +138,13 @@ public class AuditLogController {
     /** 筛选下拉候选值，从实际数据聚合而非硬编码——避免列出库里根本没有的选项 */
     @GetMapping("/filter-options")
     public ApiResponse<AuditFilterOptionsResponse> filterOptions() {
-        return ApiResponse.success(AuditLogConverter.toAuditFilterOptionsResponse(repository.queryFilterOptions()));
+        com.devops.agent.domain.audit.AuditFilterOptionsData options = repository.queryFilterOptions();
+        return ApiResponse.success(options == null
+                ? new AuditFilterOptionsResponse(List.of(), List.of(), List.of(), List.of())
+                : new AuditFilterOptionsResponse(
+                        options.models() == null ? List.of() : options.models(),
+                        options.operationTypes() == null ? List.of() : options.operationTypes(),
+                        options.actions() == null ? List.of() : options.actions(),
+                        options.targetTypes() == null ? List.of() : options.targetTypes()));
     }
 }
