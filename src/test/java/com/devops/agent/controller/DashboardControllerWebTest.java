@@ -295,4 +295,39 @@ class DashboardControllerWebTest {
                     .andExpect(jsonPath("$.data.cost.length()").value(5));
         }
     }
+
+    @Test
+    @DisplayName("效能趋势使用 typed snapshot rows，保持 snake_case JSON 与 days 钳制")
+    void effectivenessTrendKeepsResponseShape() throws Exception {
+        when(snapshotScheduler.trend(30)).thenReturn(List.of(
+                new com.devops.agent.application.runtime.EffectivenessTrendRow(
+                        java.time.LocalDate.of(2026, 10, 18),
+                        20, 15, 6, 4, 30, 22, 12, 10, 8, 5, 3, 2)));
+        when(snapshotScheduler.trend(1)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/dashboard/effectiveness/trend").param("days", "30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].snapshot_date").value("2026-10-18"))
+                .andExpect(jsonPath("$.data[0].total_tickets").value(20))
+                .andExpect(jsonPath("$.data[0].finished_tickets").value(15))
+                .andExpect(jsonPath("$.data[0].postmortem_count").value(6))
+                .andExpect(jsonPath("$.data[0].alert_sourced_tickets").value(4))
+                .andExpect(jsonPath("$.data[0].alerts_total").value(30))
+                .andExpect(jsonPath("$.data[0].events_total").value(22))
+                .andExpect(jsonPath("$.data[0].diagnosis_total").value(12))
+                .andExpect(jsonPath("$.data[0].diagnosis_sufficient").value(10))
+                .andExpect(jsonPath("$.data[0].knowledge_evidence").value(8))
+                .andExpect(jsonPath("$.data[0].knowledge_hits").value(5))
+                .andExpect(jsonPath("$.data[0].healing_total").value(3))
+                .andExpect(jsonPath("$.data[0].healing_succeeded").value(2));
+
+        mockMvc.perform(get("/api/v1/dashboard/effectiveness/trend").param("days", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(0));
+        verify(snapshotScheduler).trend(30);
+        verify(snapshotScheduler).trend(1);
+    }
 }
