@@ -1,7 +1,9 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
+import com.devops.agent.domain.audit.AgentCallTraceRow;
 import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Arrays;
@@ -34,6 +36,24 @@ class AuditLogQueryRepositoryTest {
         assertThat(repository.findAuditByTraceId("trace-7")).containsExactly(row);
         verify(jdbc).query(contains("ORDER BY create_time ASC, id ASC"),
                 any(org.springframework.jdbc.core.RowMapper.class), aryEq(new Object[]{"trace-7"}));
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aiCallTraceQueryReturnsTypedRowAndPreservesLatestRowLimit() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AuditLogQueryRepository repository = new AuditLogQueryRepository(jdbc);
+        AgentCallTraceRow row = new AgentCallTraceRow(
+                7L, "trace-7", "question", "answer", "model", true, 125,
+                new java.math.BigDecimal("0.0123"), "citations", "CHAT", "ticket:T-9", "u-1", null);
+        doReturn(List.of(row)).when(jdbc).query(
+                anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class));
+
+        assertThat(repository.findAgentCallByTraceId("trace-7")).isEqualTo(row);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(),
+                any(org.springframework.jdbc.core.RowMapper.class), aryEq(new Object[]{"trace-7"}));
+        assertThat(sql.getValue()).contains("ORDER BY id DESC", "LIMIT 1");
     }
 
     @Test

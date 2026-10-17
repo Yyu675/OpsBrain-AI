@@ -117,7 +117,7 @@ public class AuditLogController {
      */
     @GetMapping("/trace/{traceId}")
     public ApiResponse<AuditTraceDetailResponse> traceDetail(@PathVariable String traceId) {
-        Map<String, Object> aiCall = repository.findAgentCallByTraceId(traceId);
+        com.devops.agent.domain.audit.AgentCallTraceRow aiCall = repository.findAgentCallByTraceId(traceId);
         List<com.devops.agent.domain.audit.OperationAuditTraceRow> operations =
                 repository.findAuditByTraceId(traceId);
 

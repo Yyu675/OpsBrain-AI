@@ -125,25 +125,13 @@ public final class AuditLogConverter {
         return new AiCallStats(totalCalls, cacheHits, cacheHitRate, totalCost, avgLatencyMs);
     }
 
-    public static AgentCallDetailItem toAgentCallDetailItem(Map<String, Object> m) {
-        if (m == null) return null;
-        String modelName = getString(m.get("model_name"));
-        if (modelName == null) modelName = getString(m.get("modelName"));
+    public static AgentCallDetailItem toAgentCallDetailItem(
+            com.devops.agent.domain.audit.AgentCallTraceRow row) {
+        if (row == null) return null;
         return new AgentCallDetailItem(
-                getLong(m.get("id")),
-                getString(m.get("trace_id")),
-                getString(m.get("user_query")),
-                getString(m.get("agent_answer")),
-                modelName,
-                getBoolean(m.get("is_cached")),
-                getInteger(m.get("latency_ms")),
-                getBigDecimal(m.get("cost_rmb")),
-                getString(m.get("citations")),
-                getString(m.get("operation_type")),
-                getString(m.get("affected_resources")),
-                getString(m.get("operator_id")),
-                toLocalDateTime(m.get("create_time"))
-        );
+                row.id(), row.traceId(), row.userQuery(), row.agentAnswer(), row.modelName(),
+                row.isCached(), row.latencyMs(), row.costRmb(), row.citations(),
+                row.operationType(), row.affectedResources(), row.operatorId(), row.createTime());
     }
 
     private static String getString(Object obj) {
