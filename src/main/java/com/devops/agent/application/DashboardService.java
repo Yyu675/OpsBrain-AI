@@ -53,7 +53,7 @@ public interface DashboardService {
      * @param days 统计窗口天数，Controller 已兜底至 [1, 90]
      * @return {@code { days[], cost[], cacheHitRate[] }} 三个等长对齐数组
      */
-    Map<String, Object> getCallTrends(int days);
+    DashboardCallTrends getCallTrends(int days);
 
     /**
      * S4-4.2 诊断区看板：会话分布 / 平均耗时 / 充分性分布 /

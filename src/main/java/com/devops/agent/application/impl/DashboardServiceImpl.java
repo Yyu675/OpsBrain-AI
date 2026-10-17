@@ -1,5 +1,6 @@
 package com.devops.agent.application.impl;
 
+import com.devops.agent.application.DashboardCallTrends;
 import com.devops.agent.application.DashboardService;
 import com.devops.agent.controller.dto.DashboardOverviewDTO;
 import lombok.RequiredArgsConstructor;
@@ -263,7 +264,7 @@ public class DashboardServiceImpl implements DashboardService {
      * 两处若各写一套必然漂移（6.20「同一事实只允许一处定义」）。
      */
     @Override
-    public Map<String, Object> getCallTrends(int days) {
+    public DashboardCallTrends getCallTrends(int days) {
         // 按天聚合：served=有效查询数，hits=命中数，cost=当日总成本
         // 成本对全部行求和（含失败调用——失败也可能已产生 token 费用），
         // 命中率只对有效查询算，二者口径不同是有意为之。
@@ -315,10 +316,6 @@ public class DashboardServiceImpl implements DashboardService {
             hitRateSeries.add(Math.round(rate * 100.0) / 100.0);
         }
 
-        Map<String, Object> data = new java.util.LinkedHashMap<>();
-        data.put("days", dayLabels);
-        data.put("cost", costSeries);
-        data.put("cacheHitRate", hitRateSeries);
-        return data;
+        return new DashboardCallTrends(dayLabels, costSeries, hitRateSeries);
     }
 }

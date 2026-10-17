@@ -145,10 +145,10 @@ public class DashboardController {
 
         Map<String, Object> ticketTrends = ticketService.getTicketTrends(safeDays, safeModule);
         // AI 调用趋势无服务维度，下钻时仍取全局——差异已在响应中显式标注
-        Map<String, Object> callTrends = dashboardService.getCallTrends(safeDays);
+        com.devops.agent.application.DashboardCallTrends callTrends = dashboardService.getCallTrends(safeDays);
 
         Object ticketDays = ticketTrends.get("days");
-        Object callDays = callTrends.get("days");
+        Object callDays = callTrends.days();
         if (ticketDays instanceof java.util.List<?> td && callDays instanceof java.util.List<?> cd
                 && td.size() != cd.size()) {
             log.warn("⚠️ [Dashboard] 趋势横轴长度不一致 | ticketDays={} | callDays={}", td.size(), cd.size());
@@ -159,8 +159,8 @@ public class DashboardController {
                 : List.of();
         List<?> created = (List<?>) ticketTrends.get("created");
         List<?> resolved = (List<?>) ticketTrends.get("resolved");
-        List<?> cost = (List<?>) callTrends.get("cost");
-        List<?> cacheHitRate = (List<?>) callTrends.get("cacheHitRate");
+        List<?> cost = callTrends.cost();
+        List<?> cacheHitRate = callTrends.cacheHitRate();
 
         var resp = com.devops.agent.controller.dto.DashboardTrendsResponse.of(
                 daysList,

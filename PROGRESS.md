@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批164 将效能快照趋势的固定 Map rows 改为 `EffectivenessTrendRow`；批163 已合入 PR #72 `f84aeba`）
+> **最后更新**：2026-10-18（批165 将 AI 调用趋势 service/controller 固定 Map wrapper 改为 `DashboardCallTrends`；批164 已合入 PR #73 `a2911f0`）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -568,4 +568,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批161(2026-10-18):将 `DevOpsTicketRepository.countClosureMetrics()`、`TicketService.getClosureMetrics()`、`TicketController.closureMetrics()` 的固定 Map 数据流改为 `TicketClosureMetricsData`。保留 SQL 聚合、null 均值/比例语义、舍入、postmortemRate 分母为 0 时 null、days/window/alertRepository 分支条件、缺行/异常回退及 JSON 全部字段；新增 HTTP typed projection 响应断言。对外 DTO/schema 未变，无需 OpenAPI/Orval 更新；PR #70 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `a42a650`）。
 - 批162(2026-10-18):将 `TicketAiAnalysisRepository.feedbackStats()` 的固定聚合 Map 改为 `TicketAiFeedbackStats`，Service 计算层改为 `TicketAiAccuracyStats` typed record，Controller 直接映射到原有响应 DTO；保留计数缺行→0、rated=0 rate→0、三位小数舍入和反馈统计 SQL；更新服务测试并新增 HTTP 字段断言。外部 schema 不变，无 OpenAPI/Orval 更新；PR #71 前端、后端、工作流与 E2E CI 全通过并合入（merge commit `090f829`）。
 - 批163(2026-10-18):将 `TicketService.getTicketStats()` 固定外层 `Map<String,Object>` 改为 `TicketStatsData`，保留 `byStatus`/`byPriority` 为动态 `Map<String,Long>`；仍为已知状态与优先级补 0、resolved 合并 RESOLVED+CLOSED、其他 KPI 计数不变。Controller 由 typed fields 映射原 `TicketStatsResponse`，服务测试改 record accessor 并新增 HTTP 字段/动态键断言；无外部 schema 变化；PR #72 前端、后端、工作流与 E2E CI 全通过并合入（merge commit `f84aeba`）。
-- 批164(2026-10-18):将 `EffectivenessSnapshotScheduler.trend()` 的 JDBC `queryForList`/固定列 Map rows 改为 `EffectivenessTrendRow` typed RowMapper；Controller 通过 typed accessors 映射到原 `EffectivenessTrendItem`，保留 date 值转换、SQL 日期窗口/排序、days [1,90] 钳制、空列表及原 snake_case JSON 字段。新增 WebMvc 全字段响应断言和 days 下限断言；外部 schema 未变，无需 OpenAPI/Orval 更新；PR CI 待验证。
+- 批164(2026-10-18):将 `EffectivenessSnapshotScheduler.trend()` 的 JDBC `queryForList`/固定列 Map rows 改为 `EffectivenessTrendRow` typed RowMapper；Controller 通过 typed accessors 映射到原 `EffectivenessTrendItem`，保留 date 值转换、SQL 日期窗口/排序、days [1,90] 钳制、空列表及原 snake_case JSON 字段。新增 WebMvc 全字段响应断言和 days 下限断言；外部 schema 未变，无需 OpenAPI/Orval 更新；PR #73 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `a2911f0`）。
+- 批165(2026-10-18):将 `DashboardService.getCallTrends()` 与 Controller 的固定 `{days,cost,cacheHitRate}` Map wrapper 改为 `DashboardCallTrends` typed record；底层 SQL、无数据日期补零、有效查询口径、成本/命中率舍入、横轴长度 WARN 条件及 Dashboard JSON 不变。新增 service 测试锁定补零/数值舍入，更新 WebMvc 测试适配 typed call trend；外部 schema 不变，无 OpenAPI/Orval 更新；PR CI 待验证。

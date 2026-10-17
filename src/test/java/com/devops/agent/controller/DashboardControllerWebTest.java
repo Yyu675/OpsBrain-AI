@@ -115,12 +115,11 @@ class DashboardControllerWebTest {
         return m;
     }
 
-    private static Map<String, Object> callTrends(int days) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("days", labels(days));
-        m.put("cost", zeros(days));
-        m.put("cacheHitRate", zeros(days));
-        return m;
+    private static com.devops.agent.application.DashboardCallTrends callTrends(int days) {
+        return new com.devops.agent.application.DashboardCallTrends(
+                labels(days),
+                zeros(days).stream().map(Integer::doubleValue).toList(),
+                zeros(days).stream().map(Integer::doubleValue).toList());
     }
 
     private static List<String> labels(int days) {
