@@ -122,6 +122,7 @@ import type {
 } from './types/notify'
 import type { ClosureMetrics, DocHealth } from './dashboard'
 import type { AiAnalysisStats } from './ticketAiAnalysis'
+import type { KnowledgeBaseReindexResponse as GenKnowledgeBaseReindexResponse } from './generated/knowledgeBaseReindexResponse'
 import type { EntityDeleteResponse as GenEntityDeleteResponse } from './generated/entityDeleteResponse'
 import type { DocumentMoveResponse as GenDocumentMoveResponse } from './generated/documentMoveResponse'
 import type { PostmortemDraftResponse as GenPostmortemDraftResponse } from './generated/postmortemDraftResponse'
@@ -343,3 +344,16 @@ export interface DocumentMoveData {
 
 export type DocumentMove_Missing = AssertDriftFree<GenOnly<GenDocumentMoveResponse, DocumentMoveData>>
 export type DocumentMove_Extra = AssertDriftFree<HandOnly<GenDocumentMoveResponse, DocumentMoveData>>
+
+// ==================== 知识库批量重切索引弱契约收口（批143）====================
+export interface KnowledgeBaseReindexData {
+  kbId: number
+  kbName: string
+  total: number
+  success: number
+  failed: number
+  failures: Array<Record<string, unknown>>
+}
+
+export type KnowledgeBaseReindex_Missing = AssertDriftFree<GenOnly<GenKnowledgeBaseReindexResponse, KnowledgeBaseReindexData>>
+export type KnowledgeBaseReindex_Extra = AssertDriftFree<HandOnly<GenKnowledgeBaseReindexResponse, KnowledgeBaseReindexData>>

@@ -69,7 +69,7 @@ public class KnowledgeBaseController {
      * 新建知识库
      */
     @PostMapping
-    public ApiResponse<Object> create(@RequestBody KnowledgeBaseDto.CreateRequest req) {
+    public ApiResponse<KnowledgeBaseDto.Item> create(@RequestBody KnowledgeBaseDto.CreateRequest req) {
         writeGuard.requireEdit();
         try {
             KnowledgeBase kb = new KnowledgeBase();
@@ -98,7 +98,7 @@ public class KnowledgeBaseController {
      * </p>
      */
     @PutMapping("/{id}")
-    public ApiResponse<Object> update(@PathVariable Long id,
+    public ApiResponse<KnowledgeBaseDto.Item> update(@PathVariable Long id,
                                       @RequestBody KnowledgeBaseDto.UpdateRequest req) {
         writeGuard.requireEdit();
         try {
@@ -140,15 +140,22 @@ public class KnowledgeBaseController {
      * 大库执行前请确认配额。</p>
      */
     @PostMapping("/{id}/reindex-all")
-    public ApiResponse<Object> reindexAll(@PathVariable Long id) {
+    @SuppressWarnings("unchecked")
+    public ApiResponse<com.devops.agent.controller.dto.KnowledgeBaseReindexResponse> reindexAll(@PathVariable Long id) {
         writeGuard.requireDestructive();
         KnowledgeBase kb = kbService.findById(id);
         if (kb == null) {
             return ApiResponse.error(ApiCode.NOT_FOUND, "知识库不存在: " + id);
         }
         Map<String, Object> result = docService.reindexByKnowledgeBase(id);
-        result.put("kbId", id);
-        result.put("kbName", kb.getName());
-        return ApiResponse.success(result);
+        com.devops.agent.controller.dto.KnowledgeBaseReindexResponse response = new com.devops.agent.controller.dto.KnowledgeBaseReindexResponse(
+                id,
+                kb.getName(),
+                ((Number) result.getOrDefault("total", 0)).intValue(),
+                ((Number) result.getOrDefault("success", 0)).intValue(),
+                ((Number) result.getOrDefault("failed", 0)).intValue(),
+                (List<Map<String, Object>>) result.getOrDefault("failures", List.of())
+        );
+        return ApiResponse.success(response);
     }
 }
