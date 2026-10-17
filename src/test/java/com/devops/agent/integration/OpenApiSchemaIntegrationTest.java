@@ -324,6 +324,22 @@ class OpenApiSchemaIntegrationTest {
             assertThat(diagnosisBoard).as("DiagnosisBoardResponse 缺失").isNotNull();
             assertThat(fieldNames(diagnosisBoard.path("properties"))).contains(
                     "windowDays", "sessions", "sessionTrend", "evidenceDirections", "attentionTypes", "calibration");
+
+            JsonNode auditOps = componentSchema("AuditOperationsResponse");
+            assertThat(auditOps).as("AuditOperationsResponse 缺失").isNotNull();
+            assertThat(fieldNames(auditOps.path("properties"))).contains("items", "total", "page", "size", "totalPages");
+
+            JsonNode auditAiCalls = componentSchema("AuditAiCallsResponse");
+            assertThat(auditAiCalls).as("AuditAiCallsResponse 缺失").isNotNull();
+            assertThat(fieldNames(auditAiCalls.path("properties"))).contains("items", "total", "page", "size", "totalPages", "stats");
+
+            JsonNode auditTraceDetail = componentSchema("AuditTraceDetailResponse");
+            assertThat(auditTraceDetail).as("AuditTraceDetailResponse 缺失").isNotNull();
+            assertThat(fieldNames(auditTraceDetail.path("properties"))).contains("traceId", "aiCall", "operations");
+
+            JsonNode auditFilterOptions = componentSchema("AuditFilterOptionsResponse");
+            assertThat(auditFilterOptions).as("AuditFilterOptionsResponse 缺失").isNotNull();
+            assertThat(fieldNames(auditFilterOptions.path("properties"))).contains("models", "operationTypes", "actions", "targetTypes");
         }
     }
 

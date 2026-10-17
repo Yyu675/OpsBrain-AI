@@ -15338,7 +15338,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseAuditTraceDetailResponse"
                 }
               }
             }
@@ -15490,7 +15490,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseAuditOperationsResponse"
                 }
               }
             }
@@ -15570,7 +15570,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseAuditFilterOptionsResponse"
                 }
               }
             }
@@ -15723,7 +15723,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseAuditAiCallsResponse"
                 }
               }
             }
@@ -22760,6 +22760,367 @@
           },
           "traceId": {
             "type": "string"
+          }
+        }
+      },
+      "OperationAuditItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "actor_name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "http_method": {
+            "type": "string"
+          },
+          "http_path": {
+            "type": "string"
+          },
+          "status_code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "biz_code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "error_message": {
+            "type": "string"
+          },
+          "client_ip": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuditOperationsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationAuditItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseAuditOperationsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuditOperationsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AiCallLogItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "model_name": {
+            "type": "string"
+          },
+          "is_cached": {
+            "type": "boolean"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cost_rmb": {
+            "type": "number"
+          },
+          "operation_type": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "string"
+          },
+          "affected_resources": {
+            "type": "string"
+          },
+          "query_preview": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AiCallStats": {
+        "type": "object",
+        "properties": {
+          "totalCalls": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cacheHits": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cacheHitRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "avgLatencyMs": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AuditAiCallsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiCallLogItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/AiCallStats"
+          }
+        }
+      },
+      "ApiResponseAuditAiCallsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuditAiCallsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AgentCallDetailItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "user_query": {
+            "type": "string"
+          },
+          "agent_answer": {
+            "type": "string"
+          },
+          "model_name": {
+            "type": "string"
+          },
+          "is_cached": {
+            "type": "boolean"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cost_rmb": {
+            "type": "number"
+          },
+          "citations": {
+            "type": "string"
+          },
+          "operation_type": {
+            "type": "string"
+          },
+          "affected_resources": {
+            "type": "string"
+          },
+          "operator_id": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuditTraceDetailResponse": {
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": "string"
+          },
+          "aiCall": {
+            "$ref": "#/components/schemas/AgentCallDetailItem"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationAuditItem"
+            }
+          }
+        }
+      },
+      "ApiResponseAuditTraceDetailResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuditTraceDetailResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AuditFilterOptionsResponse": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "operationTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ApiResponseAuditFilterOptionsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuditFilterOptionsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       }

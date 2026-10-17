@@ -65,6 +65,11 @@ import type { AgentTraceDetailResponse as GenAgentTraceDetailResponse } from './
 import type { DashboardTrendsResponse as GenDashboardTrendsResponse } from './generated/dashboardTrendsResponse'
 import type { HealingStatsResponse as GenHealingStatsResponse } from './generated/healingStatsResponse'
 import type { DiagnosisBoardResponse as GenDiagnosisBoardResponse } from './generated/diagnosisBoardResponse'
+import type { OperationAuditItem as GenOperationAuditItem } from './generated/operationAuditItem'
+import type { AiCallLogItem as GenAiCallLogItem } from './generated/aiCallLogItem'
+import type { AiCallStats as GenAiCallStats } from './generated/aiCallStats'
+import type { AuditFilterOptionsResponse as GenAuditFilterOptionsResponse } from './generated/auditFilterOptionsResponse'
+import type { AuditTraceDetailResponse as GenAuditTraceDetailResponse } from './generated/auditTraceDetailResponse'
 
 import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
 import type { BackendTicket } from './types/ticket'
@@ -74,6 +79,13 @@ import type { AuthUser, LoginResult } from './auth'
 import type { AgentTraceStats, AgentTraceDetail } from './agentTrace'
 import type { TrendData, DiagnosisBoard } from './dashboard'
 import type { HealingStats } from './healing'
+import type {
+  OperationAuditItem,
+  AiCallLogItem,
+  AiCallStats,
+  FilterOptions as AuditFilterOptions,
+  TraceDetail as AuditTraceDetail
+} from './auditLogs'
 import type {
   RiskPolicy,
   ApprovalMode,
@@ -164,6 +176,19 @@ export type DiagnosisBoard_Missing = AssertDriftFree<GenOnly<GenDiagnosisBoardRe
 export type DiagnosisBoard_Extra = AssertDriftFree<HandOnly<GenDiagnosisBoardResponse, DiagnosisBoard>>
 export type HealingStats_Missing = AssertDriftFree<GenOnly<GenHealingStatsResponse, HealingStats>>
 export type HealingStats_Extra = AssertDriftFree<HandOnly<GenHealingStatsResponse, HealingStats>>
+
+// ==================== 审计与 AI 调用日志 ====================
+
+export type OperationAuditItem_Missing = AssertDriftFree<GenOnly<GenOperationAuditItem, OperationAuditItem>>
+export type OperationAuditItem_Extra = AssertDriftFree<HandOnly<GenOperationAuditItem, OperationAuditItem>>
+export type AiCallLogItem_Missing = AssertDriftFree<GenOnly<GenAiCallLogItem, AiCallLogItem>>
+export type AiCallLogItem_Extra = AssertDriftFree<HandOnly<GenAiCallLogItem, AiCallLogItem>>
+export type AiCallStats_Missing = AssertDriftFree<GenOnly<GenAiCallStats, AiCallStats>>
+export type AiCallStats_Extra = AssertDriftFree<HandOnly<GenAiCallStats, AiCallStats>>
+export type AuditFilterOptions_Missing = AssertDriftFree<GenOnly<GenAuditFilterOptionsResponse, AuditFilterOptions>>
+export type AuditFilterOptions_Extra = AssertDriftFree<HandOnly<GenAuditFilterOptionsResponse, AuditFilterOptions>>
+export type AuditTraceDetail_Missing = AssertDriftFree<GenOnly<GenAuditTraceDetailResponse, AuditTraceDetail>>
+export type AuditTraceDetail_Extra = AssertDriftFree<HandOnly<GenAuditTraceDetailResponse, AuditTraceDetail>>
 
 export type ActionAllowlistEntry_Missing = AssertDriftFree<GenOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
 export type ActionAllowlistEntry_Extra = AssertDriftFree<HandOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
