@@ -1,7 +1,9 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.exception.GlobalExceptionHandler;
+import com.devops.agent.domain.audit.AgentCallLogRow;
 import com.devops.agent.domain.audit.AuditAgentCallStats;
+import com.devops.agent.domain.audit.AuditPage;
 import com.devops.agent.infrastructure.persistence.repo.AuditLogQueryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -200,8 +202,12 @@ class AuditLogControllerWebTest {
         @Test
         @DisplayName("stats 与列表用同一套筛选条件 —— 否则会出现「列表 20 条、统计 1 万次」")
         void statsShareTheSameFilters() throws Exception {
+            java.time.LocalDateTime createdAt = java.time.LocalDateTime.of(2026, 10, 18, 10, 30);
+            AgentCallLogRow item = new AgentCallLogRow(9L, "trace-9", "deepseek-chat", true,
+                    125, java.math.BigDecimal.valueOf(0.0123), "CHAT", "u-1",
+                    "ticket:T-9", "query preview", createdAt);
             when(repository.queryAgentCallLog(any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(new LinkedHashMap<>(pageResult(List.of(), 0)));
+                    .thenReturn(new AuditPage<>(List.of(item), 1, 1, 20, 1));
             when(repository.queryAgentCallStats(any(), any(), any(), any(), any(), any()))
                     .thenReturn(new AuditAgentCallStats(42, 7, 16.67,
                             java.math.BigDecimal.valueOf(1.25), 125));
@@ -216,7 +222,11 @@ class AuditLogControllerWebTest {
                     .andExpect(jsonPath("$.data.stats.cacheHits").value(7))
                     .andExpect(jsonPath("$.data.stats.cacheHitRate").value(16.67))
                     .andExpect(jsonPath("$.data.stats.totalCost").value(1.25))
-                    .andExpect(jsonPath("$.data.stats.avgLatencyMs").value(125));
+                    .andExpect(jsonPath("$.data.stats.avgLatencyMs").value(125))
+                    .andExpect(jsonPath("$.data.items[0].trace_id").value("trace-9"))
+                    .andExpect(jsonPath("$.data.items[0].model_name").value("deepseek-chat"))
+                    .andExpect(jsonPath("$.data.items[0].query_preview").value("query preview"))
+                    .andExpect(jsonPath("$.data.items[0].create_time").value("2026-10-18T10:30:00"));
 
             // 两次调用的前四个筛选参数必须完全一致
             verify(repository).queryAgentCallLog(
@@ -231,7 +241,7 @@ class AuditLogControllerWebTest {
         @DisplayName("cached=false 是有效筛选（只看未命中缓存的调用），不能被当成 null")
         void cachedFalseIsMeaningful() throws Exception {
             when(repository.queryAgentCallLog(any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(new LinkedHashMap<>(pageResult(List.of(), 0)));
+                    .thenReturn(new AuditPage<AgentCallLogRow>(List.of(), 0, 1, 20, 0));
             when(repository.queryAgentCallStats(any(), any(), any(), any(), any(), any()))
                     .thenReturn(new AuditAgentCallStats(0, 0, 0.0, java.math.BigDecimal.ZERO, 0));
 
@@ -248,7 +258,7 @@ class AuditLogControllerWebTest {
         @DisplayName("stats 字段始终存在（零值统计 Record），前端不必判空")
         void statsAlwaysPresent() throws Exception {
             when(repository.queryAgentCallLog(any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(new LinkedHashMap<>(pageResult(List.of(), 0)));
+                    .thenReturn(new AuditPage<AgentCallLogRow>(List.of(), 0, 1, 20, 0));
             when(repository.queryAgentCallStats(any(), any(), any(), any(), any(), any()))
                     .thenReturn(new AuditAgentCallStats(0, 0, 0.0, java.math.BigDecimal.ZERO, 0));
 

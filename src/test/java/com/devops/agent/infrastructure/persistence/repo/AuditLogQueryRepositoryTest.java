@@ -1,6 +1,8 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
+import com.devops.agent.domain.audit.AgentCallLogRow;
 import com.devops.agent.domain.audit.AgentCallTraceRow;
+import com.devops.agent.domain.audit.AuditPage;
 import com.devops.agent.domain.audit.AuditAgentCallStats;
 import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import org.junit.jupiter.api.Test;
@@ -56,6 +58,45 @@ class AuditLogQueryRepositoryTest {
         verify(jdbc).query(sql.capture(),
                 any(org.springframework.jdbc.core.RowMapper.class), aryEq(new Object[]{"trace-7"}));
         assertThat(sql.getValue()).contains("ORDER BY id DESC", "LIMIT 1");
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aiCallPageUsesTypedRowsAndPreservesFiltersOrderAndPagination() throws Exception {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AuditLogQueryRepository repository = new AuditLogQueryRepository(jdbc);
+        when(jdbc.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(1);
+        java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+        java.time.LocalDateTime createdAt = java.time.LocalDateTime.of(2026, 10, 18, 10, 0);
+        when(rs.getObject("id", Long.class)).thenReturn(9L);
+        when(rs.getString("trace_id")).thenReturn("trace-9");
+        when(rs.getString("model_name")).thenReturn("model-a");
+        when(rs.getObject("is_cached", Boolean.class)).thenReturn(false);
+        when(rs.getObject("latency_ms", Integer.class)).thenReturn(125);
+        when(rs.getBigDecimal("cost_rmb")).thenReturn(new java.math.BigDecimal("0.0123"));
+        when(rs.getString("operation_type")).thenReturn("CHAT");
+        when(rs.getString("operator_id")).thenReturn("u-1");
+        when(rs.getString("affected_resources")).thenReturn("ticket:T-9");
+        when(rs.getString("query_preview")).thenReturn("query preview");
+        when(rs.getObject("create_time", java.time.LocalDateTime.class)).thenReturn(createdAt);
+        doAnswer(invocation -> List.of(((org.springframework.jdbc.core.RowMapper<?>) invocation.getArgument(1))
+                .mapRow(rs, 0))).when(jdbc).query(anyString(),
+                any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class));
+
+        AuditPage<AgentCallLogRow> page = repository.queryAgentCallLog(
+                " model-a ", null, false, 100, null, null, 2, 30);
+
+        assertThat(page).isEqualTo(new AuditPage<>(List.of(new AgentCallLogRow(
+                9L, "trace-9", "model-a", false, 125, new java.math.BigDecimal("0.0123"),
+                "CHAT", "u-1", "ticket:T-9", "query preview", createdAt)), 1, 2, 30, 1));
+        verify(jdbc).queryForObject(contains("SELECT COUNT(*)"), eq(Integer.class),
+                aryEq(new Object[]{"model-a", false, 100}));
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(), any(org.springframework.jdbc.core.RowMapper.class),
+                aryEq(new Object[]{"model-a", false, 100, 30, 30L}));
+        assertThat(sql.getValue()).contains("ORDER BY create_time DESC, id DESC LIMIT ? OFFSET ?",
+                "LEFT(COALESCE(user_query, ''), 120) AS query_preview")
+                .doesNotContain("SELECT user_query", "agent_answer");
     }
 
     @Test

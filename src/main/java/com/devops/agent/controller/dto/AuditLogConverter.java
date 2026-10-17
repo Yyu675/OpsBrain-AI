@@ -1,6 +1,8 @@
 package com.devops.agent.controller.dto;
 
+import com.devops.agent.domain.audit.AgentCallLogRow;
 import com.devops.agent.domain.audit.AuditAgentCallStats;
+import com.devops.agent.domain.audit.AuditPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,44 +73,23 @@ public final class AuditLogConverter {
         );
     }
 
-    public static AuditAiCallsResponse toAuditAiCallsResponse(Map<String, Object> map, AuditAgentCallStats rawStats) {
-        if (map == null) {
-            return new AuditAiCallsResponse(List.of(), 0, 1, 20, 0, new AiCallStats(0, 0, 0.0, BigDecimal.ZERO, 0));
+    public static AuditAiCallsResponse toAuditAiCallsResponse(
+            AuditPage<AgentCallLogRow> page, AuditAgentCallStats rawStats) {
+        if (page == null) {
+            return new AuditAiCallsResponse(List.of(), 0, 1, 20, 0,
+                    new AiCallStats(0, 0, 0.0, BigDecimal.ZERO, 0));
         }
-        List<?> rawItems = (List<?>) map.get("items");
-        List<AiCallLogItem> items = new ArrayList<>();
-        if (rawItems != null) {
-            for (Object obj : rawItems) {
-                if (obj instanceof Map<?, ?> m) {
-                    items.add(toAiCallLogItem((Map<String, Object>) m));
-                }
-            }
-        }
-        int total = getInt(map.get("total"), 0);
-        int page = getInt(map.get("page"), 1);
-        int size = getInt(map.get("size"), 20);
-        int totalPages = getInt(map.get("totalPages"), 0);
-
-        AiCallStats stats = toAiCallStats(rawStats);
-
-        return new AuditAiCallsResponse(items, total, page, size, totalPages, stats);
+        List<AiCallLogItem> items = page.items() == null ? List.of() : page.items().stream()
+                .map(AuditLogConverter::toAiCallLogItem).toList();
+        return new AuditAiCallsResponse(items, page.total(), page.page(), page.size(),
+                page.totalPages(), toAiCallStats(rawStats));
     }
 
-    public static AiCallLogItem toAiCallLogItem(Map<String, Object> m) {
-        if (m == null) return null;
-        return new AiCallLogItem(
-                getLong(m.get("id")),
-                getString(m.get("trace_id")),
-                getString(m.get("model_name")),
-                getBoolean(m.get("is_cached")),
-                getInteger(m.get("latency_ms")),
-                getBigDecimal(m.get("cost_rmb")),
-                getString(m.get("operation_type")),
-                getString(m.get("operator_id")),
-                getString(m.get("affected_resources")),
-                getString(m.get("query_preview")),
-                toLocalDateTime(m.get("create_time"))
-        );
+    public static AiCallLogItem toAiCallLogItem(AgentCallLogRow row) {
+        if (row == null) return null;
+        return new AiCallLogItem(row.id(), row.traceId(), row.modelName(), row.isCached(),
+                row.latencyMs(), row.costRmb(), row.operationType(), row.operatorId(),
+                row.affectedResources(), row.queryPreview(), row.createTime());
     }
 
     public static AiCallStats toAiCallStats(AuditAgentCallStats stats) {
@@ -152,28 +133,6 @@ public final class AuditLogConverter {
     private static int getInt(Object obj, int def) {
         Integer val = getInteger(obj);
         return val != null ? val : def;
-    }
-
-    private static Double getDouble(Object obj, double def) {
-        if (obj instanceof Number n) return n.doubleValue();
-        if (obj instanceof String s) {
-            try { return Double.parseDouble(s); } catch (NumberFormatException ignored) {}
-        }
-        return def;
-    }
-
-    private static BigDecimal getBigDecimal(Object obj) {
-        if (obj == null) return null;
-        if (obj instanceof BigDecimal b) return b;
-        if (obj instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
-        if (obj instanceof String s) {
-            try {
-                return new BigDecimal(s);
-            } catch (Exception e) {
-                log.debug("[AuditLogConverter] BigDecimal 解析失败，回落 null: {}", s, e);
-            }
-        }
-        return null;
     }
 
     private static Boolean getBoolean(Object obj) {
