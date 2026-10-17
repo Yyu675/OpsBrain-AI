@@ -429,17 +429,13 @@ public class KnowledgeDocController {
      * 热门标签（仅 PUBLISHED 文档计数，全库跨页）
      */
     @GetMapping("/tags/hot")
-    public ApiResponse<List<Map<String, Object>>> hotTags(
+    public ApiResponse<List<com.devops.agent.controller.dto.KnowledgeHotTagResponse>> hotTags(
             @RequestParam(defaultValue = "20") int limit) {
         int safeLimit = Math.min(Math.max(1, limit), 100);
-        List<Map<String, Object>> rows = docService.findHotTags(safeLimit)
+        List<com.devops.agent.controller.dto.KnowledgeHotTagResponse> rows = docService.findHotTags(safeLimit)
                 .entrySet().stream()
-                .map(e -> {
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("tag", e.getKey());
-                    row.put("count", e.getValue());
-                    return row;
-                }).toList();
+                .map(e -> new com.devops.agent.controller.dto.KnowledgeHotTagResponse(e.getKey(), e.getValue()))
+                .toList();
         return ApiResponse.success(rows);
     }
 

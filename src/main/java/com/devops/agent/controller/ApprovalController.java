@@ -59,15 +59,15 @@ public class ApprovalController {
      * @param status 状态筛选：省略/PENDING=待审队列（最早优先）；ALL=全部；其他=指定状态（最新优先）
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> list(
+    public ApiResponse<com.devops.agent.controller.dto.ApprovalPageResponse> list(
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         if (status == null || status.isBlank() || "PENDING".equalsIgnoreCase(status)) {
-            return ApiResponse.success(approvalService.listPending(page, size));
+            return ApiResponse.success(approvalService.listPendingPage(page, size));
         }
         String filter = "ALL".equalsIgnoreCase(status) ? null : status.trim().toUpperCase();
-        return ApiResponse.success(approvalService.listByStatus(filter, page, size));
+        return ApiResponse.success(approvalService.listByStatusPage(filter, page, size));
     }
 
     /** 待审数（前端角标） */

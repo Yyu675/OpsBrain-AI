@@ -269,6 +269,22 @@ class OpenApiSchemaIntegrationTest {
             JsonNode serviceOwnerDisable = componentSchema("ServiceOwnerDisableResponse");
             assertThat(serviceOwnerDisable).as("ServiceOwnerDisableResponse 缺失").isNotNull();
             assertThat(fieldNames(serviceOwnerDisable.path("properties"))).contains("service", "disabled");
+
+            JsonNode approvalPage = componentSchema("ApprovalPageResponse");
+            assertThat(approvalPage).as("ApprovalPageResponse 缺失").isNotNull();
+            assertThat(fieldNames(approvalPage.path("properties"))).contains("items", "total", "page", "size", "totalPages");
+
+            JsonNode ticketHotTags = componentSchema("TicketHotTagsResponse");
+            assertThat(ticketHotTags).as("TicketHotTagsResponse 缺失").isNotNull();
+            assertThat(fieldNames(ticketHotTags.path("properties"))).contains("tags", "counts");
+
+            JsonNode downloadUrl = componentSchema("AttachmentDownloadUrlResponse");
+            assertThat(downloadUrl).as("AttachmentDownloadUrlResponse 缺失").isNotNull();
+            assertThat(fieldNames(downloadUrl.path("properties"))).contains("url", "expiresInSeconds");
+
+            JsonNode knowledgeHotTag = componentSchema("KnowledgeHotTagResponse");
+            assertThat(knowledgeHotTag).as("KnowledgeHotTagResponse 缺失").isNotNull();
+            assertThat(fieldNames(knowledgeHotTag.path("properties"))).contains("tag", "count");
         }
     }
 
