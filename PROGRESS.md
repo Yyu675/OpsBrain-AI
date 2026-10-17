@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批158 将知识库统计 service/controller 的固定 Map 结构改为 `KnowledgeStatsData`；动态 `bySource` 保留 Map，PR CI 待验证）
+> **最后更新**：2026-10-18（批159 将知识库切片分页 service/controller 的固定 Map wrapper 改为 `KnowledgeChunkPageData`；API 响应保持不变，PR CI 待验证）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -562,4 +562,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批155(2026-10-17):`KnowledgeDocRepository.findCategories` 从 `List<Map<String,Object>>` 改为 `List<KnowledgeCategoryCount>` typed row；service/controller 同步移除 map key 读取与 Number 转换，仍输出既有 `KnowledgeCategoryCountResponse(name,count)`。SQL filter/group/order 不变；新增 controller HTTP 响应字段断言。外部 schema 不变，无 OpenAPI/Orval 更新；PR #64 全部 CI 通过并合入（merge commit `a9be979`）。
 - 批156(2026-10-17):将 `KnowledgeBoostRepository.docHealthReport()` 的 `List<Map<String,Object>>` 改为 `List<DocHealthRow>` RowMapper，Controller 使用 typed fields 计算净反馈并映射原有 `KnowledgeDocHealthResponse`；保留 SQL 分组/排序、null 返回空列表、`net=wrong-helpful` 与 JSON 字段语义。新增 WebMvc 响应值断言；外部 DTO 未变，不需 OpenAPI/Orval 更新。本地后端未能编译，PR #65 CI 后端/前端/工作流/E2E 全通过。
 - 批157(2026-10-18):将 `SearchController` 三类全局搜索的 JDBC `queryForList`/Map key 解包改为直接 RowMapper 构造既有 `SearchResultItem`；保留查询条件、各类别 LIMIT/排序、合并顺序、总量截断及 null→空字符串语义。新增 WebMvc 测试锁定 HTTP 字段和类别顺序；外部 DTO schema 未变，无需 OpenAPI/Orval 更新。本地因无 Java 且 Maven Wrapper 下载失败未能运行后端测试；PR #66 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `ecff86c`）。
-- 批158(2026-10-18):`KnowledgeStatsService.getStats()` 与 `KnowledgeManageController` 由 `Map<String,Object>` 固定字段解包改为 `KnowledgeStatsData`；来源名为动态键的 `bySource` 继续保留 `Map<String,Long>`。统计查询、active/filtered 计算、空 bySource fallback 与 `KnowledgeStatsResponse` JSON 字段保持不变；WebMvc 测试更新为 typed stub 并断言统计值/动态来源键。无外部 schema 变化；PR CI 待验证。本地尝试下载 Temurin JDK 21（GitHub release asset），但重定向到 release-assets.githubusercontent.com 被环境网络拒绝；Maven Wrapper 下载亦失败。
+- 批158(2026-10-18):`KnowledgeStatsService.getStats()` 与 `KnowledgeManageController` 由 `Map<String,Object>` 固定字段解包改为 `KnowledgeStatsData`；来源名为动态键的 `bySource` 继续保留 `Map<String,Long>`。统计查询、active/filtered 计算、空 bySource fallback 与 `KnowledgeStatsResponse` JSON 字段保持不变；WebMvc 测试更新为 typed stub 并断言统计值/动态来源键。无外部 schema 变化；PR #67 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `69d680e`）。本地尝试下载 Temurin JDK 21（GitHub release asset），但重定向到 `release-assets.githubusercontent.com` 被环境网络拒绝；Maven Wrapper 下载亦失败。
+- 批159(2026-10-18):将 `KnowledgeStatsService.listChunks()` 的分页 wrapper 从 `Map<String,Object>` 改为 `KnowledgeChunkPageData`，Controller 直接映射 typed fields 到既有 `KnowledgeChunkPageResponse`。查询筛选、分页钳制、参数透传和输出 page/size/total/list 字段保持不变；WebMvc 测试改 typed stub 并锁定分页 JSON。外部 schema 不变，无需 OpenAPI/Orval 更新；PR CI 待验证。

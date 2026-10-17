@@ -18,7 +18,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -92,13 +91,8 @@ class KnowledgeManageControllerWebTest {
                 .build();
     }
 
-    private static Map<String, Object> chunkPage(int total, int page, int size) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("total", total);
-        m.put("page", page);
-        m.put("size", size);
-        m.put("list", List.of());
-        return m;
+    private static com.devops.agent.domain.rag.KnowledgeChunkPageData chunkPage(int total, int page, int size) {
+        return new com.devops.agent.domain.rag.KnowledgeChunkPageData(List.of(), total, 0, page, size);
     }
 
     // ==================================================================
@@ -191,6 +185,9 @@ class KnowledgeManageControllerWebTest {
             mockMvc.perform(get("/api/v1/knowledge/chunks"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.total").value(62))
+                    .andExpect(jsonPath("$.data.totalPages").value(0))
+                    .andExpect(jsonPath("$.data.page").value(1))
+                    .andExpect(jsonPath("$.data.size").value(10))
                     .andExpect(jsonPath("$.data.list").isArray());
 
             verify(knowledgeStatsService).listChunks(1, 10, null);

@@ -71,14 +71,9 @@ public class KnowledgeStatsService {
     }
 
     /**
-     * 分页浏览知识库切片
-     *
-     * @param page    页码（已归一化为 ≥ 1）
-     * @param size    每页大小（已归一化为 1~200）
-     * @param keyword 搜索关键词（可选，null 或空表示不筛选）
-     * @return 分页结果 Map（content / totalElements / totalPages / currentPage / pageSize）
+     * 分页浏览知识库切片；page/size 已由调用方归一化，keyword 为 null/blank 时不筛选。
      */
-    public Map<String, Object> listChunks(int page, int size, String keyword) {
+    public KnowledgeChunkPageData listChunks(int page, int size, String keyword) {
         LocalDateTime now = LocalDateTime.now();
         Pageable pageable = PageRequest.of(page - 1, size);
 
@@ -94,14 +89,12 @@ public class KnowledgeStatsService {
                 .map(this::toView)
                 .toList();
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("content", list);
-        result.put("totalElements", pageResult.getTotalElements());
-        result.put("totalPages", pageResult.getTotalPages());
-        result.put("currentPage", page);
-        result.put("pageSize", size);
-
-        return result;
+        return new KnowledgeChunkPageData(
+                list,
+                pageResult.getTotalElements(),
+                pageResult.getTotalPages(),
+                page,
+                size);
     }
 
     /**
