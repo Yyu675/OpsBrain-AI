@@ -12,9 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 审计与 AI 调用日志的查询侧（只读）。
@@ -64,7 +62,7 @@ public class AuditLogQueryRepository {
      * @param page       页码，从 1 开始
      * @param size       每页条数，上限 {@link #MAX_PAGE_SIZE}
      */
-    public Map<String, Object> queryOperationAudit(
+    public AuditPage<OperationAuditTraceRow> queryOperationAudit(
             String actorId, String action, String targetType, Boolean success,
             LocalDateTime from, LocalDateTime to, int page, int size) {
 
@@ -109,7 +107,7 @@ public class AuditLogQueryRepository {
         pageArgs.add(safeSize);
         pageArgs.add((long) (safePage - 1) * safeSize);
 
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+        List<OperationAuditTraceRow> rows = jdbcTemplate.query(
                 """
                 SELECT id, trace_id, actor_id, actor_name, action,
                        target_type, target_id, http_method, http_path,
@@ -117,9 +115,19 @@ public class AuditLogQueryRepository {
                        client_ip, duration_ms, create_time
                 FROM sys_operation_audit
                 """ + where + " ORDER BY create_time DESC, id DESC LIMIT ? OFFSET ?",
+                (rs, rowNum) -> new OperationAuditTraceRow(
+                        rs.getObject("id", Long.class), rs.getString("trace_id"),
+                        rs.getString("actor_id"), rs.getString("actor_name"), rs.getString("action"),
+                        rs.getString("target_type"), rs.getString("target_id"),
+                        rs.getString("http_method"), rs.getString("http_path"),
+                        rs.getObject("status_code", Integer.class), rs.getObject("success", Boolean.class),
+                        rs.getObject("biz_code", Integer.class), rs.getString("error_message"),
+                        rs.getString("client_ip"), rs.getObject("duration_ms", Integer.class),
+                        rs.getObject("create_time", LocalDateTime.class)),
                 pageArgs.toArray());
 
-        return page(rows, totalCount, safePage, safeSize);
+        int totalPages = (int) Math.ceil((double) totalCount / safeSize);
+        return new AuditPage<>(rows, totalCount, safePage, safeSize, totalPages);
     }
 
     // ==================== AI 调用日志 ====================
@@ -343,16 +351,6 @@ public class AuditLogQueryRepository {
                                            java.math.BigDecimal totalCost, double avgLatencyMs) {}
 
     // ==================== 内部工具 ====================
-
-    private Map<String, Object> page(List<Map<String, Object>> rows, int total, int page, int size) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("items", rows);
-        result.put("total", total);
-        result.put("page", page);
-        result.put("size", size);
-        result.put("totalPages", size > 0 ? (int) Math.ceil((double) total / size) : 0);
-        return result;
-    }
 
     private int clampSize(int size) {
         if (size <= 0) return 20;

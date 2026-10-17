@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批179 审计 AI 调用分页行端到端类型化；批178 已合入 PR #89）
+> **最后更新**：2026-10-18（批180 操作审计分页行类型化；批179 已合入 PR #90）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -119,7 +119,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T34** | **固定结构 Map 清理：Prometheus 健康检查响应类型化**（批176） | 固定 `baseUrl/enabled/reachable/latencyMs/error` 改为 DTO，覆盖 client 的禁用/连通/失败/fallback 与 controller 的 HTTP JSON 行为测试；保留 optional latency/error 语义 | PR #87 已合并，CI 四道门全绿 |
 | **T35** | **固定结构 Map 清理：审计 AI 调用统计类型化**（批177） | JDBC 统计聚合行改 RowMapper；统计结果改领域 Record，经 converter 映射到既有 API DTO；移除统计 Map 与 `result.put("stats", ...)`，同筛选条件、四舍五入与零分母语义不变，Web 测试锁住各字段 | PR #88 已合并，CI 四道门全绿 |
 | **T36** | **固定结构 Map 清理：冷归档 transcript 行类型化**（批178） | `findBySession()` 固定 SQL 行改为 Record RowMapper；序列化保留原 snake_case JSON 字段及 null/时间戳值，归档的 FULL_TRANSCRIPT/SUMMARY_ONLY 与异常降级测试覆盖不变 | PR #89 已合并（0f8a4ea），CI 四道门全绿 |
-| **T37** | **固定结构 Map 清理：审计 AI 调用分页行端到端类型化**（批179） | `queryAgentCallLog()` 固定行及分页封套改为 Record + typed RowMapper；converter、controller 同步类型化，保留查询筛选、排序、隐私摘要截断与分页口径；新增仓储测试验证 SQL 参数和 typed projection | 2026-10-18，待 CI 验证 |
+| **T37** | **固定结构 Map 清理：审计 AI 调用分页行端到端类型化**（批179） | `queryAgentCallLog()` 固定行及分页封套改为 Record + typed RowMapper；converter、controller 同步类型化，保留查询筛选、排序、隐私摘要截断与分页口径；新增仓储测试验证 SQL 参数和 typed projection | PR #90 已合并（d8bc20f），修复测试 stub 后 CI 四道门全绿 |
+| **T38** | **固定结构 Map 清理：操作审计分页行类型化**（批180） | `queryOperationAudit()` 固定行与分页封套改 typed Record/RowMapper；converter/controller 改 DTO 投影，保留 SQL 筛选、LIKE 转义、排序、分页及 snake_case JSON 语义，新增仓储映射/SQL 测试 | 2026-10-18，待 CI 验证 |
 
 ---
 

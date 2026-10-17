@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 审计与 AI 调用日志查询接口。
@@ -74,9 +73,9 @@ public class AuditLogController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        Map<String, Object> raw = repository.queryOperationAudit(
+        var pageResult = repository.queryOperationAudit(
                 actorId, action, targetType, success, from, to, page, size);
-        return ApiResponse.success(AuditLogConverter.toAuditOperationsResponse(raw));
+        return ApiResponse.success(AuditLogConverter.toAuditOperationsResponse(pageResult));
     }
 
     /**

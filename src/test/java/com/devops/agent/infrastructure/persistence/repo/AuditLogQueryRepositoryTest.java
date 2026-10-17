@@ -62,6 +62,49 @@ class AuditLogQueryRepositoryTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
+    void operationAuditPageUsesTypedRowsAndPreservesFiltersLikeEscapeAndPagination() throws Exception {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AuditLogQueryRepository repository = new AuditLogQueryRepository(jdbc);
+        when(jdbc.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(1);
+        java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+        java.time.LocalDateTime createdAt = java.time.LocalDateTime.of(2026, 10, 18, 9, 30);
+        when(rs.getObject("id", Long.class)).thenReturn(12L);
+        when(rs.getString("trace_id")).thenReturn("trace-12");
+        when(rs.getString("actor_id")).thenReturn("u-1");
+        when(rs.getString("actor_name")).thenReturn("Alice");
+        when(rs.getString("action")).thenReturn("ticket_create");
+        when(rs.getString("target_type")).thenReturn("ticket");
+        when(rs.getString("target_id")).thenReturn("T-9");
+        when(rs.getString("http_method")).thenReturn("POST");
+        when(rs.getString("http_path")).thenReturn("/api/v1/tickets");
+        when(rs.getObject("status_code", Integer.class)).thenReturn(200);
+        when(rs.getObject("success", Boolean.class)).thenReturn(false);
+        when(rs.getObject("biz_code", Integer.class)).thenReturn(40001);
+        when(rs.getString("error_message")).thenReturn("rejected");
+        when(rs.getString("client_ip")).thenReturn("127.0.0.1");
+        when(rs.getObject("duration_ms", Integer.class)).thenReturn(42);
+        when(rs.getObject("create_time", java.time.LocalDateTime.class)).thenReturn(createdAt);
+        doAnswer(invocation -> List.of(((org.springframework.jdbc.core.RowMapper<?>) invocation.getArgument(1))
+                .mapRow(rs, 0))).when(jdbc).query(anyString(),
+                any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class));
+
+        AuditPage<OperationAuditTraceRow> page = repository.queryOperationAudit(
+                " u-1 ", "ticket_%", "ticket", false, null, null, 3, 50);
+
+        assertThat(page).isEqualTo(new AuditPage<>(List.of(new OperationAuditTraceRow(
+                12L, "trace-12", "u-1", "Alice", "ticket_create", "ticket", "T-9",
+                "POST", "/api/v1/tickets", 200, false, 40001, "rejected", "127.0.0.1", 42, createdAt)),
+                1, 3, 50, 1));
+        verify(jdbc).queryForObject(contains("SELECT COUNT(*)"), eq(Integer.class),
+                aryEq(new Object[]{"u-1", "ticket\_\%%", "ticket", false}));
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(), any(org.springframework.jdbc.core.RowMapper.class),
+                aryEq(new Object[]{"u-1", "ticket\_\%%", "ticket", false, 50, 100L}));
+        assertThat(sql.getValue()).contains("action LIKE ? ESCAPE", "ORDER BY create_time DESC, id DESC LIMIT ? OFFSET ?");
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
     void aiCallPageUsesTypedRowsAndPreservesFiltersOrderAndPagination() throws Exception {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         AuditLogQueryRepository repository = new AuditLogQueryRepository(jdbc);

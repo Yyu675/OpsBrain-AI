@@ -4,6 +4,7 @@ import com.devops.agent.common.exception.GlobalExceptionHandler;
 import com.devops.agent.domain.audit.AgentCallLogRow;
 import com.devops.agent.domain.audit.AuditAgentCallStats;
 import com.devops.agent.domain.audit.AuditPage;
+import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import com.devops.agent.infrastructure.persistence.repo.AuditLogQueryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,9 +22,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -101,13 +100,10 @@ class AuditLogControllerWebTest {
                 .build();
     }
 
-    private static Map<String, Object> pageResult(List<Map<String, Object>> rows, int total) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("items", rows);
-        m.put("total", total);
-        m.put("page", 1);
-        m.put("size", 20);
-        return m;
+    private static AuditPage<OperationAuditTraceRow> pageResult(
+            List<OperationAuditTraceRow> rows, int total) {
+        int totalPages = total == 0 ? 0 : (int) Math.ceil(total / 20.0);
+        return new AuditPage<>(rows, total, 1, 20, totalPages);
     }
 
     private static com.devops.agent.domain.audit.OperationAuditTraceRow traceOperation(String action) {
@@ -134,12 +130,15 @@ class AuditLogControllerWebTest {
         @DisplayName("无筛选时全部条件传 null，由 Repository 决定默认口径")
         void noFiltersPassesNulls() throws Exception {
             when(repository.queryOperationAudit(any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
-                    .thenReturn(pageResult(List.of(), 0));
+                    .thenReturn(pageResult(List.of(traceOperation("ticket.create")), 1));
 
             mockMvc.perform(get("/api/v1/audit/operations"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(0))
-                    .andExpect(jsonPath("$.data.total").value(0))
+                    .andExpect(jsonPath("$.data.total").value(1))
+                    .andExpect(jsonPath("$.data.items[0].trace_id").value("trace-row"))
+                    .andExpect(jsonPath("$.data.items[0].actor_name").value("Alice"))
+                    .andExpect(jsonPath("$.data.items[0].action").value("ticket.create"))
                     .andExpect(jsonPath("$.traceId").exists());
 
             verify(repository).queryOperationAudit(
