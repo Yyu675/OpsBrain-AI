@@ -26,6 +26,8 @@ import java.util.Set;
 @Repository
 public class KnowledgeBoostRepository {
 
+    public record DocHealthRow(Long docId, String title, long helpful, long wrong) {}
+
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBoostRepository.class);
 
     /** 单次反馈解析出的 chunk 上限：一条分析的引用不该扇出成百条 boost 写 */
@@ -128,7 +130,7 @@ public class KnowledgeBoostRepository {
      *
      * @return [{docId, title, helpful, wrong, net}]，只含有过反馈的文档
      */
-    public List<Map<String, Object>> docHealthReport() {
+    public List<DocHealthRow> docHealthReport() {
         String sql = """
                 SELECT d.id AS "docId", d.title,
                        SUM(b.helpful_count) AS helpful, SUM(b.wrong_count) AS wrong
@@ -138,7 +140,9 @@ public class KnowledgeBoostRepository {
                  GROUP BY d.id, d.title
                  ORDER BY (SUM(b.wrong_count) - SUM(b.helpful_count)) DESC, d.id
                 """;
-        return jdbcTemplate.queryForList(sql);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new DocHealthRow(
+                rs.getLong("docId"), rs.getString("title"),
+                rs.getLong("helpful"), rs.getLong("wrong")));
     }
 
     /**
