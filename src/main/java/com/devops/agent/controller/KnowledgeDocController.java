@@ -421,8 +421,17 @@ public class KnowledgeDocController {
      * 扁平分类聚合（侧栏导航，全库跨页）
      */
     @GetMapping("/categories")
-    public ApiResponse<List<Map<String, Object>>> categories() {
-        return ApiResponse.success(docService.findCategories());
+    public ApiResponse<List<com.devops.agent.controller.dto.KnowledgeCategoryCountResponse>> categories() {
+        List<Map<String, Object>> cats = docService.findCategories();
+        List<com.devops.agent.controller.dto.KnowledgeCategoryCountResponse> list = new ArrayList<>();
+        if (cats != null) {
+            for (Map<String, Object> c : cats) {
+                String name = (String) c.get("name");
+                long count = c.get("count") instanceof Number n ? n.longValue() : 0L;
+                list.add(new com.devops.agent.controller.dto.KnowledgeCategoryCountResponse(name, count));
+            }
+        }
+        return ApiResponse.success(list);
     }
 
     /**
@@ -473,7 +482,7 @@ public class KnowledgeDocController {
      * 不是内容编辑；boost 是检索权重遥测，不是知识内容。</p>
      */
     @PostMapping("/feedback/citations")
-    public ApiResponse<Map<String, Object>> citationsFeedback(@RequestBody CitationsFeedbackRequest req) {
+    public ApiResponse<com.devops.agent.controller.dto.KnowledgeCitationsFeedbackResponse> citationsFeedback(@RequestBody CitationsFeedbackRequest req) {
         String verdict = normalizeCitationVerdict(req.verdict());
         if (verdict == null) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, "verdict 必须是 HELPFUL / WRONG / UNHELPFUL 之一");
@@ -484,7 +493,7 @@ public class KnowledgeDocController {
             boostRepository.recordFeedback(chunkId, verdict);
             boosted++;
         }
-        return ApiResponse.success(Map.of("boosted", boosted));
+        return ApiResponse.success(new com.devops.agent.controller.dto.KnowledgeCitationsFeedbackResponse(boosted));
     }
 
     /** 请求体（record 字段即 JSON 键名，零转换）。 */
@@ -518,8 +527,20 @@ public class KnowledgeDocController {
      * @return [{docId, title, helpful, wrong, net}]，仅含有过反馈的文档
      */
     @GetMapping("/health")
-    public ApiResponse<List<Map<String, Object>>> docHealth() {
-        return ApiResponse.success(boostRepository.docHealthReport());
+    public ApiResponse<List<com.devops.agent.controller.dto.KnowledgeDocHealthResponse>> docHealth() {
+        List<Map<String, Object>> reports = boostRepository.docHealthReport();
+        List<com.devops.agent.controller.dto.KnowledgeDocHealthResponse> list = new ArrayList<>();
+        if (reports != null) {
+            for (Map<String, Object> r : reports) {
+                Long docId = r.get("docId") instanceof Number n ? n.longValue() : null;
+                String title = (String) r.get("title");
+                long helpful = r.get("helpful") instanceof Number n ? n.longValue() : 0L;
+                long wrong = r.get("wrong") instanceof Number n ? n.longValue() : 0L;
+                long net = wrong - helpful;
+                list.add(new com.devops.agent.controller.dto.KnowledgeDocHealthResponse(docId, title, helpful, wrong, net));
+            }
+        }
+        return ApiResponse.success(list);
     }
 
     /**

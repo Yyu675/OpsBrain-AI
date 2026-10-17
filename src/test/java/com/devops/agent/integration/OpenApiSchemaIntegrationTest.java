@@ -434,6 +434,26 @@ class OpenApiSchemaIntegrationTest {
             assertThat(fieldNames(closureMetrics.path("properties"))).contains(
                     "total", "firstResponded", "mitigated", "rootCauseConfirmed", "verified", "verifySkipped",
                     "mttaMinutes", "mttmMinutes", "mttrMinutes", "skipRate");
+
+            JsonNode categoryCount = componentSchema("KnowledgeCategoryCountResponse");
+            assertThat(categoryCount).as("KnowledgeCategoryCountResponse 缺失").isNotNull();
+            assertThat(fieldNames(categoryCount.path("properties"))).contains("name", "count");
+
+            JsonNode docHealth = componentSchema("KnowledgeDocHealthResponse");
+            assertThat(docHealth).as("KnowledgeDocHealthResponse 缺失").isNotNull();
+            assertThat(fieldNames(docHealth.path("properties"))).contains("docId", "title", "helpful", "wrong", "net");
+
+            JsonNode citationsFeedback = componentSchema("KnowledgeCitationsFeedbackResponse");
+            assertThat(citationsFeedback).as("KnowledgeCitationsFeedbackResponse 缺失").isNotNull();
+            assertThat(fieldNames(citationsFeedback.path("properties"))).contains("boosted");
+
+            JsonNode endpointDeprecated = componentSchema("EndpointDeprecatedResponse");
+            assertThat(endpointDeprecated).as("EndpointDeprecatedResponse 缺失").isNotNull();
+            assertThat(fieldNames(endpointDeprecated.path("properties"))).contains("deprecated", "reason", "migrateTo");
+
+            JsonNode chunkPage = componentSchema("KnowledgeChunkPageResponse");
+            assertThat(chunkPage).as("KnowledgeChunkPageResponse 缺失").isNotNull();
+            assertThat(fieldNames(chunkPage.path("properties"))).contains("list", "total", "totalPages", "page", "size");
         }
     }
 

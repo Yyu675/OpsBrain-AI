@@ -5451,7 +5451,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseEndpointDeprecatedResponse"
                 }
               }
             }
@@ -6339,7 +6339,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeCitationsFeedbackResponse"
                 }
               }
             }
@@ -13368,7 +13368,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseListMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseListKnowledgeDocHealthResponse"
                 }
               }
             }
@@ -13448,7 +13448,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseListMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseListKnowledgeCategoryCountResponse"
                 }
               }
             }
@@ -13738,7 +13738,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseKnowledgeChunkPageResponse"
                 }
               }
             }
@@ -24435,6 +24435,313 @@
           },
           "data": {
             "$ref": "#/components/schemas/TicketClosureMetricsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "KnowledgeCategoryCountResponse": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "分类名称"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "文档数量"
+          }
+        },
+        "required": [
+          "name",
+          "count"
+        ],
+        "description": "知识库扁平分类项"
+      },
+      "KnowledgeDocHealthResponse": {
+        "type": "object",
+        "properties": {
+          "docId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "文档ID"
+          },
+          "title": {
+            "type": "string",
+            "description": "文档标题"
+          },
+          "helpful": {
+            "type": "integer",
+            "format": "int64",
+            "description": "点赞（有用）次数"
+          },
+          "wrong": {
+            "type": "integer",
+            "format": "int64",
+            "description": "点踩（有误）次数"
+          },
+          "net": {
+            "type": "integer",
+            "format": "int64",
+            "description": "净反馈（点踩 - 点赞）"
+          }
+        },
+        "required": [
+          "helpful",
+          "net",
+          "wrong"
+        ],
+        "description": "文档级反馈健康度"
+      },
+      "KnowledgeCitationsFeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "boosted": {
+            "type": "integer",
+            "format": "int32",
+            "description": "回流更新权重（boost）的切片数量"
+          }
+        },
+        "required": [
+          "boosted"
+        ],
+        "description": "知识库引用权重回流响应"
+      },
+      "EndpointDeprecatedResponse": {
+        "type": "object",
+        "properties": {
+          "deprecated": {
+            "type": "boolean",
+            "description": "是否已废弃"
+          },
+          "reason": {
+            "type": "string",
+            "description": "停用原因"
+          },
+          "migrateTo": {
+            "type": "string",
+            "description": "建议迁移的新端点"
+          }
+        },
+        "required": [
+          "deprecated",
+          "reason",
+          "migrateTo"
+        ],
+        "description": "废弃端点停用引导响应"
+      },
+      "KnowledgeChunkView": {
+        "type": "object",
+        "properties": {
+          "contentLength": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "contentPreview": {
+            "type": "string"
+          },
+          "createTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "docTitle": {
+            "type": "string"
+          },
+          "effectiveAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hasParentText": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "knowledgeSource": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string"
+          },
+          "sectionHeader": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updateTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "description": "知识切片视图",
+        "required": [
+          "contentLength",
+          "hasParentText",
+          "version"
+        ]
+      },
+      "KnowledgeChunkPageResponse": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeChunkView"
+            },
+            "description": "切片列表"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "切片总记录数"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32",
+            "description": "总页数"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "description": "当前页码"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32",
+            "description": "每页记录数"
+          }
+        },
+        "required": [
+          "list",
+          "page",
+          "size",
+          "total",
+          "totalPages"
+        ],
+        "description": "知识切片分页响应"
+      },
+      "ApiResponseListKnowledgeCategoryCountResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeCategoryCountResponse"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseListKnowledgeDocHealthResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeDocHealthResponse"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseKnowledgeCitationsFeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeCitationsFeedbackResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseEndpointDeprecatedResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EndpointDeprecatedResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseKnowledgeChunkPageResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KnowledgeChunkPageResponse"
           },
           "traceId": {
             "type": "string"

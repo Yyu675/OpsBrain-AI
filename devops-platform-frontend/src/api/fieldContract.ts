@@ -77,8 +77,10 @@ import type { MetricOverviewResponse as GenMetricOverviewResponse } from './gene
 import type { MetricDatasourceResponse as GenMetricDatasourceResponse } from './generated/metricDatasourceResponse'
 import type { TicketAiAccuracyStatsResponse as GenTicketAiAccuracyStatsResponse } from './generated/ticketAiAccuracyStatsResponse'
 import type { TicketClosureMetricsResponse as GenTicketClosureMetricsResponse } from './generated/ticketClosureMetricsResponse'
+import type { KnowledgeCategoryCountResponse as GenKnowledgeCategoryCountResponse } from './generated/knowledgeCategoryCountResponse'
+import type { KnowledgeDocHealthResponse as GenKnowledgeDocHealthResponse } from './generated/knowledgeDocHealthResponse'
 
-import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
+import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag, KnowledgeDocCategory } from './types'
 import type { BackendTicket } from './types/ticket'
 import type { StormStatus, PipelineHeartbeat, LogsHeartbeat } from './alerts'
 import type { ApprovalRequest, ApprovalPage } from './approval'
@@ -118,7 +120,7 @@ import type {
   NotifyChannelView, NotifyChannelList, IngestSecretView,
   NotifyTestResult, NotifySecretRevealed
 } from './types/notify'
-import type { ClosureMetrics } from './dashboard'
+import type { ClosureMetrics, DocHealth } from './dashboard'
 import type { AiAnalysisStats } from './ticketAiAnalysis'
 
 /** 生成有、手写无（后端加字段没跟） */
@@ -164,6 +166,10 @@ export type KnowledgeDocUpdateRequest_Missing = AssertDriftFree<GenOnly<GenUpdat
 export type KnowledgeDocUpdateRequest_Extra = AssertDriftFree<HandOnly<GenUpdateRequest, KnowledgeDocUpdateRequest>>
 export type KnowledgeHotTag_Missing = AssertDriftFree<GenOnly<GenKnowledgeHotTagResponse, KnowledgeHotTag>>
 export type KnowledgeHotTag_Extra = AssertDriftFree<HandOnly<GenKnowledgeHotTagResponse, KnowledgeHotTag>>
+export type KnowledgeCategory_Missing = AssertDriftFree<GenOnly<GenKnowledgeCategoryCountResponse, KnowledgeDocCategory>>
+export type KnowledgeCategory_Extra = AssertDriftFree<HandOnly<GenKnowledgeCategoryCountResponse, KnowledgeDocCategory>>
+export type KnowledgeDocHealth_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocHealthResponse, DocHealth>>
+export type KnowledgeDocHealth_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocHealthResponse, DocHealth>>
 
 // ==================== 审批 / 治理域 ====================
 
