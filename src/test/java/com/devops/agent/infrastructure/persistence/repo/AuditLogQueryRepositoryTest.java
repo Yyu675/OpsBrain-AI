@@ -96,10 +96,10 @@ class AuditLogQueryRepositoryTest {
                 "POST", "/api/v1/tickets", 200, false, 40001, "rejected", "127.0.0.1", 42, createdAt)),
                 1, 3, 50, 1));
         verify(jdbc).queryForObject(contains("SELECT COUNT(*)"), eq(Integer.class),
-                aryEq(new Object[]{"u-1", "ticket\_\%%", "ticket", false}));
+                aryEq(new Object[]{"u-1", "ticket\\_\\%%", "ticket", false}));
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).query(sql.capture(), any(org.springframework.jdbc.core.RowMapper.class),
-                aryEq(new Object[]{"u-1", "ticket\_\%%", "ticket", false, 50, 100L}));
+                aryEq(new Object[]{"u-1", "ticket\\_\\%%", "ticket", false, 50, 100L}));
         assertThat(sql.getValue()).contains("action LIKE ? ESCAPE", "ORDER BY create_time DESC, id DESC LIMIT ? OFFSET ?");
     }
 
