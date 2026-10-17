@@ -482,6 +482,14 @@ class OpenApiSchemaIntegrationTest {
             JsonNode hypoFeedback = componentSchema("HypothesisFeedbackResponse");
             assertThat(hypoFeedback).as("HypothesisFeedbackResponse 缺失").isNotNull();
             assertThat(fieldNames(hypoFeedback.path("properties"))).contains("hypothesisId", "feedback", "knowledgeBoosted");
+
+            JsonNode entityDelete = componentSchema("EntityDeleteResponse");
+            assertThat(entityDelete).as("EntityDeleteResponse 缺失").isNotNull();
+            assertThat(fieldNames(entityDelete.path("properties"))).contains("id", "deleted");
+
+            JsonNode docMove = componentSchema("DocumentMoveResponse");
+            assertThat(docMove).as("DocumentMoveResponse 缺失").isNotNull();
+            assertThat(fieldNames(docMove.path("properties"))).contains("id", "moved");
         }
     }
 
