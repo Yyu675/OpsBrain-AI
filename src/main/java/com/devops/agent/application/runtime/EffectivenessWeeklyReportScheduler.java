@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 效能周报（FR-7.3 飞轮报表，2026-09-25）。
@@ -26,6 +25,11 @@ import java.util.Map;
  */
 @Component
 public class EffectivenessWeeklyReportScheduler {
+
+    record SnapshotRow(LocalDate snapshotDate, Long totalTickets, Long finishedTickets, Long postmortemCount,
+                       Long alertSourcedTickets, Long alertsTotal, Long diagnosisTotal, Long diagnosisSufficient,
+                       Long knowledgeEvidence, Long knowledgeHits, Long healingTotal, Long healingSucceeded,
+                       Long alertsFalsePositive, boolean hasAlertsFalsePositiveColumn) {}
 
     private static final Logger log = LoggerFactory.getLogger(EffectivenessWeeklyReportScheduler.class);
 
@@ -65,7 +69,7 @@ public class EffectivenessWeeklyReportScheduler {
      * @return 报告正文；快照不足两周对比时返回 null（不硬凑数据）
      */
     String build() {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        List<SnapshotRow> rows = jdbcTemplate.query("""
                 SELECT snapshot_date, total_tickets, finished_tickets, postmortem_count,
                        alert_sourced_tickets, alerts_total, diagnosis_total, diagnosis_sufficient,
                        knowledge_evidence, knowledge_hits, healing_total, healing_succeeded,
@@ -73,31 +77,44 @@ public class EffectivenessWeeklyReportScheduler {
                   FROM sys_effectiveness_snapshot
                  ORDER BY snapshot_date DESC
                  LIMIT 14
-                """);
+                """, (rs, rowNum) -> new SnapshotRow(
+                rs.getObject("snapshot_date", LocalDate.class),
+                rs.getObject("total_tickets", Long.class),
+                rs.getObject("finished_tickets", Long.class),
+                rs.getObject("postmortem_count", Long.class),
+                rs.getObject("alert_sourced_tickets", Long.class),
+                rs.getObject("alerts_total", Long.class),
+                rs.getObject("diagnosis_total", Long.class),
+                rs.getObject("diagnosis_sufficient", Long.class),
+                rs.getObject("knowledge_evidence", Long.class),
+                rs.getObject("knowledge_hits", Long.class),
+                rs.getObject("healing_total", Long.class),
+                rs.getObject("healing_succeeded", Long.class),
+                rs.getObject("alerts_false_positive", Long.class), true));
         if (rows.size() < 2) {
             log.info("📈 [WeeklyReport] 快照不足（{} 行），本周不报", rows.size());
             return null;
         }
 
-        Map<String, Object> latest = rows.get(0);                       // 最近一天
-        Map<String, Object> weekAgo = rows.get(Math.min(7, rows.size() - 1)); // 7 天前（不足 7 天取最早）
+        SnapshotRow latest = rows.get(0);                       // 最近一天
+        SnapshotRow weekAgo = rows.get(Math.min(7, rows.size() - 1)); // 7 天前（不足 7 天取最早）
 
         StringBuilder md = new StringBuilder();
-        md.append("**周期**：").append(weekAgo.get("snapshot_date")).append(" → ")
-                .append(latest.get("snapshot_date")).append("\n\n");
+        md.append("**周期**：").append(weekAgo.snapshotDate()).append(" → ")
+                .append(latest.snapshotDate()).append("\n\n");
 
         reportRate(md, "复盘完成率",
-                ratio(latest, "postmortem_count", "finished_tickets"),
-                ratio(weekAgo, "postmortem_count", "finished_tickets"), "%");
+                ratio(latest.postmortemCount(), latest.finishedTickets()),
+                ratio(weekAgo.postmortemCount(), weekAgo.finishedTickets()), "%");
         reportRatio(md, "告警压缩比",
-                ratio(latest, "alerts_total", "alert_sourced_tickets"),
-                ratio(weekAgo, "alerts_total", "alert_sourced_tickets"), ":1");
+                ratio(latest.alertsTotal(), latest.alertSourcedTickets()),
+                ratio(weekAgo.alertsTotal(), weekAgo.alertSourcedTickets()), ":1");
         reportRate(md, "知识命中率",
-                ratio(latest, "knowledge_hits", "knowledge_evidence"),
-                ratio(weekAgo, "knowledge_hits", "knowledge_evidence"), "%");
+                ratio(latest.knowledgeHits(), latest.knowledgeEvidence()),
+                ratio(weekAgo.knowledgeHits(), weekAgo.knowledgeEvidence()), "%");
         reportRate(md, "诊断充分率",
-                ratio(latest, "diagnosis_sufficient", "diagnosis_total"),
-                ratio(weekAgo, "diagnosis_sufficient", "diagnosis_total"), "%");
+                ratio(latest.diagnosisSufficient(), latest.diagnosisTotal()),
+                ratio(weekAgo.diagnosisSufficient(), weekAgo.diagnosisTotal()), "%");
         // 误报率（A1 Feedback 回流闭环，V18 快照列）：累计误报/累计告警。
         // 它不追求当下好看——灰度初期样本小，看的是趋势：该数往上走=阈值有问题，
         // 值班在用标注投票。列缺失（迁移前的旧快照行）整行不渲染。
@@ -107,9 +124,9 @@ public class EffectivenessWeeklyReportScheduler {
             reportRate(md, "告警误报率", fpNow, fpBefore, "%");
         }
 
-        md.append("\n**存量**：工单 ").append(num(latest, "total_tickets"))
-                .append(" ｜ 完结 ").append(num(latest, "finished_tickets"))
-                .append(" ｜ 复盘 ").append(num(latest, "postmortem_count")).append("\n");
+        md.append("\n**存量**：工单 ").append(num(latest.totalTickets()))
+                .append(" ｜ 完结 ").append(num(latest.finishedTickets()))
+                .append(" ｜ 复盘 ").append(num(latest.postmortemCount())).append("\n");
 
         return md.toString();
     }
@@ -145,20 +162,19 @@ public class EffectivenessWeeklyReportScheduler {
                 .append("（较上周期 ").append(arrow).append(" ").append(String.format("%.1f", Math.abs(diff))).append(unit).append("）\n");
     }
 
-    private Double ratio(Map<String, Object> row, String num, String den) {
-        long d = num(row, den);
-        return d == 0 ? null : num(row, num) / (double) d;
+    private Double ratio(Long numerator, Long denominator) {
+        long d = num(denominator);
+        return d == 0 ? null : num(numerator) / (double) d;
     }
 
     /** 误报率：列缺席（V18 前的旧快照行）返回 null 交给上层整行省略，不当 0% 渲染 */
-    private Double fpRatio(Map<String, Object> row) {
-        return row.containsKey("alerts_false_positive")
-                ? ratio(row, "alerts_false_positive", "alerts_total")
+    private Double fpRatio(SnapshotRow row) {
+        return row.hasAlertsFalsePositiveColumn()
+                ? ratio(row.alertsFalsePositive(), row.alertsTotal())
                 : null;
     }
 
-    private long num(Map<String, Object> row, String key) {
-        Object v = row.get(key);
-        return v == null ? 0L : ((Number) v).longValue();
+    private long num(Long value) {
+        return value == null ? 0L : value;
     }
 }
