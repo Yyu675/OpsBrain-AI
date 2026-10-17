@@ -9936,7 +9936,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTeamMemberListResponse"
                 }
               }
             }
@@ -10640,7 +10640,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseMapStringLong"
                 }
               }
             }
@@ -11484,7 +11484,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseListMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseListSearchResultItem"
                 }
               }
             }
@@ -15076,7 +15076,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseListMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseListEffectivenessTrendItem"
                 }
               }
             }
@@ -24749,6 +24749,281 @@
           "timestamp": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "TeamMember": {
+        "type": "object",
+        "properties": {
+          "activeTicketCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "createTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updateTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "运维团队成员实体"
+      },
+      "TeamMemberListResponse": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "description": "成员总数"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamMember"
+            },
+            "description": "成员列表"
+          }
+        },
+        "required": [
+          "total",
+          "users"
+        ],
+        "description": "团队成员列表响应"
+      },
+      "EffectivenessTrendItem": {
+        "type": "object",
+        "properties": {
+          "alert_sourced_tickets": {
+            "type": "integer",
+            "format": "int64",
+            "description": "告警触发的工单数"
+          },
+          "alerts_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "告警总数"
+          },
+          "diagnosis_sufficient": {
+            "type": "integer",
+            "format": "int64",
+            "description": "充分诊断数"
+          },
+          "diagnosis_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "诊断总数"
+          },
+          "events_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "事件总数"
+          },
+          "finished_tickets": {
+            "type": "integer",
+            "format": "int64",
+            "description": "已完结工单数"
+          },
+          "healing_succeeded": {
+            "type": "integer",
+            "format": "int64",
+            "description": "自愈成功总数"
+          },
+          "healing_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "自愈执行总数"
+          },
+          "knowledge_evidence": {
+            "type": "integer",
+            "format": "int64",
+            "description": "知识证据数"
+          },
+          "knowledge_hits": {
+            "type": "integer",
+            "format": "int64",
+            "description": "知识命中数"
+          },
+          "postmortem_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "复盘文档数"
+          },
+          "snapshot_date": {
+            "type": "string",
+            "format": "date",
+            "description": "快照日期"
+          },
+          "total_tickets": {
+            "type": "integer",
+            "format": "int64",
+            "description": "工单总数"
+          }
+        },
+        "required": [
+          "alert_sourced_tickets",
+          "alerts_total",
+          "diagnosis_sufficient",
+          "diagnosis_total",
+          "events_total",
+          "finished_tickets",
+          "healing_succeeded",
+          "healing_total",
+          "knowledge_evidence",
+          "knowledge_hits",
+          "postmortem_count",
+          "snapshot_date",
+          "total_tickets"
+        ],
+        "description": "效能指标每日快照行"
+      },
+      "SearchResultItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "实体ID"
+          },
+          "kind": {
+            "type": "string",
+            "description": "实体类型（ticket / knowledge / alert）"
+          },
+          "sub": {
+            "type": "string",
+            "description": "子状态或关联信息"
+          },
+          "title": {
+            "type": "string",
+            "description": "实体标题/名称"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "sub",
+          "title"
+        ],
+        "description": "跨模块全局搜索项"
+      },
+      "ApiResponseMapStringLong": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseTeamMemberListResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TeamMemberListResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseListEffectivenessTrendItem": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EffectivenessTrendItem"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseListSearchResultItem": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchResultItem"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
           }
         }
       }

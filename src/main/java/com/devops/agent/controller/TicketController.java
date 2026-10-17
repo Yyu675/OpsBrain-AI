@@ -351,8 +351,16 @@ public class TicketController {
      * 根因分类聚合统计
      */
     @GetMapping("/root-cause/stats")
-    public ApiResponse<Map<String, Object>> rootCauseStats() {
-        return ApiResponse.success(ticketService.getRootCauseStats());
+    public ApiResponse<Map<String, Long>> rootCauseStats() {
+        Map<String, Object> map = ticketService.getRootCauseStats();
+        Map<String, Long> result = new LinkedHashMap<>();
+        if (map != null) {
+            for (Map.Entry<String, Object> entry : map.entrySet()) {
+                long count = entry.getValue() instanceof Number n ? n.longValue() : 0L;
+                result.put(entry.getKey(), count);
+            }
+        }
+        return ApiResponse.success(result);
     }
 
     /**

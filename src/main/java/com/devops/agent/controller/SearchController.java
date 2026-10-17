@@ -32,11 +32,11 @@ public class SearchController {
     }
 
     @GetMapping
-    public ApiResponse<List<Map<String, Object>>> search(
+    public ApiResponse<List<com.devops.agent.controller.dto.SearchResultItem>> search(
             @RequestParam("q") @NotBlank @Size(min = 1, max = 100) String q) {
 
         String like = "%" + q.trim().replace("%", "\\%").replace("_", "\\_") + "%";
-        List<Map<String, Object>> results = new ArrayList<>(8);
+        List<com.devops.agent.controller.dto.SearchResultItem> results = new ArrayList<>(8);
 
         // 1) 工单（按 ID 完全匹配优先，其次标题模糊匹配）
         List<Map<String, Object>> tickets = jdbc.queryForList("""
@@ -46,7 +46,14 @@ public class SearchController {
              ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, id DESC
              LIMIT 4
             """, like, like, q.trim());
-        results.addAll(tickets);
+        for (Map<String, Object> m : tickets) {
+            results.add(new com.devops.agent.controller.dto.SearchResultItem(
+                    Objects.toString(m.get("id"), ""),
+                    Objects.toString(m.get("title"), ""),
+                    "ticket",
+                    Objects.toString(m.get("sub"), "")
+            ));
+        }
 
         // 2) 知识库文档（按标题匹配）
         List<Map<String, Object>> docs = jdbc.queryForList("""
@@ -56,7 +63,14 @@ public class SearchController {
              ORDER BY update_time DESC
              LIMIT 3
             """, like);
-        results.addAll(docs);
+        for (Map<String, Object> m : docs) {
+            results.add(new com.devops.agent.controller.dto.SearchResultItem(
+                    Objects.toString(m.get("id"), ""),
+                    Objects.toString(m.get("title"), ""),
+                    "knowledge",
+                    Objects.toString(m.get("sub"), "")
+            ));
+        }
 
         // 3) 告警（按告警名匹配）
         List<Map<String, Object>> alerts = jdbc.queryForList("""
@@ -67,7 +81,14 @@ public class SearchController {
              ORDER BY id DESC
              LIMIT 3
             """, like);
-        results.addAll(alerts);
+        for (Map<String, Object> m : alerts) {
+            results.add(new com.devops.agent.controller.dto.SearchResultItem(
+                    Objects.toString(m.get("id"), ""),
+                    Objects.toString(m.get("title"), ""),
+                    "alert",
+                    Objects.toString(m.get("sub"), "")
+            ));
+        }
 
         // 总结果上限 8 条：优先保证工单完整，知识库和告警按 LIMIT 各自收束后合并
         if (results.size() > 8) {
