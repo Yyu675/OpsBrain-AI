@@ -359,11 +359,8 @@ class MetricsControllerWebTest {
         @Test
         @DisplayName("可达时回传延迟，结构是列表——将来接 K8s/云平台不用改契约")
         void reportsReachable() throws Exception {
-            when(prometheus.health()).thenReturn(Map.of(
-                    "baseUrl", "http://localhost:9090",
-                    "enabled", true,
-                    "reachable", true,
-                    "latencyMs", 12L));
+            when(prometheus.health()).thenReturn(new com.devops.agent.infrastructure.metrics.PrometheusHealth(
+                    "http://localhost:9090", true, true, 12L, null));
 
             mockMvc.perform(get("/api/v1/metrics/datasource"))
                     .andExpect(status().isOk())
@@ -376,11 +373,8 @@ class MetricsControllerWebTest {
         @Test
         @DisplayName("连不上时仍返回 200 —— 「连不上」正是这个端点要报告的结果")
         void unreachableIsStillHttp200() throws Exception {
-            when(prometheus.health()).thenReturn(Map.of(
-                    "baseUrl", "http://localhost:9090",
-                    "enabled", true,
-                    "reachable", false,
-                    "error", "Connection refused"));
+            when(prometheus.health()).thenReturn(new com.devops.agent.infrastructure.metrics.PrometheusHealth(
+                    "http://localhost:9090", true, false, null, "Connection refused"));
 
             mockMvc.perform(get("/api/v1/metrics/datasource"))
                     // 若这里返回 503，接入管理页自己就打不开了，

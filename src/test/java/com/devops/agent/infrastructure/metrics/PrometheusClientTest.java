@@ -244,9 +244,9 @@ class PrometheusClientTest {
             var health = client.health();
             // 接入管理页要能显示「未启用」这个状态本身，
             // 抛异常会让那个页面自己也打不开
-            assertEquals(false, health.get("reachable"));
-            assertEquals(false, health.get("enabled"));
-            assertTrue(String.valueOf(health.get("error")).contains("未启用"));
+            assertEquals(false, health.reachable());
+            assertEquals(false, health.enabled());
+            assertTrue(String.valueOf(health.error()).contains("未启用"));
         }
 
         @Test
