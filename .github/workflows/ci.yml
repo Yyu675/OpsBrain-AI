@@ -472,7 +472,9 @@ jobs:
         # 每次导出（当次代码活体反射）；对账随库快照 path/method + schema 属性集。
         # 后端改契约没跑 api:refresh → 此步红——apiContract（前端↔快照）与
         # fieldContract（手写↔生成）都站在快照上，底不新鲜则两闸空转。
-        run: node tools/ci/check-openapi-freshness.js
+        run: |
+          set -o pipefail
+          node tools/ci/check-openapi-freshness.js 2>&1 | tee /tmp/freshness.log
 
       - name: 失败诊断回帖（沙箱日志取证道 · 批 45 红案催生）
         # 背景：托管 runner 日志归档在 azure blob，开发沙箱 egress 不通该域，
@@ -513,6 +515,13 @@ jobs:
             echo '```'
             tail -50 /tmp/mvn-verify.log
             echo '```'
+            if [ -f /tmp/freshness.log ]; then
+              echo
+              echo "**OpenAPI 快照新鲜度对账日志**："
+              echo '```'
+              cat /tmp/freshness.log
+              echo '```'
+            fi
           } > /tmp/red-diag.md
           # commit comment：push / workflow_dispatch 运行时唯一可读通道（沙箱读不了 blob 日志）
           gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \

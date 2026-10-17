@@ -5,4 +5,7 @@
  * OpenAPI spec version: v0
  */
 
-export type ApiResponseListMapStringObjectDataItem = {[key: string]: unknown};
+/**
+ * 根因分类与工单数映射表
+ */
+export type TicketRootCauseStatsResponseStats = {[key: string]: number};

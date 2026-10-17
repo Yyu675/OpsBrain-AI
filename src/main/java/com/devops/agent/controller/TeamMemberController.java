@@ -51,12 +51,9 @@ public class TeamMemberController {
      * @return {@code {total, users:[{id,name,email,role,title,status,sortOrder,activeTicketCount}]}}
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> listUsers(
+    public ApiResponse<com.devops.agent.controller.dto.TeamMemberListResponse> listUsers(
             @RequestParam(defaultValue = "false") boolean includeDisabled) {
         List<TeamMember> members = teamMemberService.listAssignableMembers(includeDisabled);
-        return ApiResponse.success(Map.of(
-                "total", members.size(),
-                "users", members
-        ));
+        return ApiResponse.success(new com.devops.agent.controller.dto.TeamMemberListResponse(members.size(), members));
     }
 }

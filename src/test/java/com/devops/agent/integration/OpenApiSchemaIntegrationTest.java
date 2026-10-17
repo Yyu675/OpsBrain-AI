@@ -454,6 +454,22 @@ class OpenApiSchemaIntegrationTest {
             JsonNode chunkPage = componentSchema("KnowledgeChunkPageResponse");
             assertThat(chunkPage).as("KnowledgeChunkPageResponse 缺失").isNotNull();
             assertThat(fieldNames(chunkPage.path("properties"))).contains("list", "total", "totalPages", "page", "size");
+
+            JsonNode teamMembers = componentSchema("TeamMemberListResponse");
+            assertThat(teamMembers).as("TeamMemberListResponse 缺失").isNotNull();
+            assertThat(fieldNames(teamMembers.path("properties"))).contains("total", "users");
+
+            JsonNode effTrend = componentSchema("EffectivenessTrendItem");
+            assertThat(effTrend).as("EffectivenessTrendItem 缺失").isNotNull();
+            assertThat(fieldNames(effTrend.path("properties"))).contains("snapshot_date", "total_tickets", "finished_tickets");
+
+            JsonNode searchItem = componentSchema("SearchResultItem");
+            assertThat(searchItem).as("SearchResultItem 缺失").isNotNull();
+            assertThat(fieldNames(searchItem.path("properties"))).contains("id", "title", "kind", "sub");
+
+            JsonNode rootCauseStats = componentSchema("TicketRootCauseStatsResponse");
+            assertThat(rootCauseStats).as("TicketRootCauseStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(rootCauseStats.path("properties"))).contains("stats");
         }
     }
 

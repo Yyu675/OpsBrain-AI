@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -118,10 +119,42 @@ public class DashboardController {
      * 本端点只读快照不回算——趋势页要的是「当时的水位」，不是每次重算的近似。</p>
      */
     @GetMapping("/effectiveness/trend")
-    public ApiResponse<List<Map<String, Object>>> effectivenessTrend(
+    public ApiResponse<List<com.devops.agent.controller.dto.EffectivenessTrendItem>> effectivenessTrend(
             @RequestParam(defaultValue = "30") int days) {
         int safeDays = Math.min(Math.max(1, days), 90);
-        return ApiResponse.success(snapshotScheduler.trend(safeDays));
+        List<Map<String, Object>> list = snapshotScheduler.trend(safeDays);
+        List<com.devops.agent.controller.dto.EffectivenessTrendItem> items = new ArrayList<>();
+        if (list != null) {
+            for (Map<String, Object> r : list) {
+                Object d = r.get("snapshot_date");
+                java.time.LocalDate date = null;
+                if (d instanceof java.time.LocalDate ld) {
+                    date = ld;
+                } else if (d instanceof java.sql.Date sd) {
+                    date = sd.toLocalDate();
+                } else if (d != null) {
+                    date = java.time.LocalDate.parse(d.toString());
+                }
+                long totalTickets = toLong(r.get("total_tickets"));
+                long finishedTickets = toLong(r.get("finished_tickets"));
+                long postmortemCount = toLong(r.get("postmortem_count"));
+                long alertSourcedTickets = toLong(r.get("alert_sourced_tickets"));
+                long alertsTotal = toLong(r.get("alerts_total"));
+                long eventsTotal = toLong(r.get("events_total"));
+                long diagnosisTotal = toLong(r.get("diagnosis_total"));
+                long diagnosisSufficient = toLong(r.get("diagnosis_sufficient"));
+                long knowledgeEvidence = toLong(r.get("knowledge_evidence"));
+                long knowledgeHits = toLong(r.get("knowledge_hits"));
+                long healingTotal = toLong(r.get("healing_total"));
+                long healingSucceeded = toLong(r.get("healing_succeeded"));
+                items.add(new com.devops.agent.controller.dto.EffectivenessTrendItem(
+                        date, totalTickets, finishedTickets, postmortemCount, alertSourcedTickets,
+                        alertsTotal, eventsTotal, diagnosisTotal, diagnosisSufficient,
+                        knowledgeEvidence, knowledgeHits, healingTotal, healingSucceeded
+                ));
+            }
+        }
+        return ApiResponse.success(items);
     }
 
     @GetMapping("/trends")
@@ -165,4 +198,18 @@ public class DashboardController {
         );
         return ApiResponse.success(resp);
     }
+    private static long toLong(Object val) {
+        if (val instanceof Number n) {
+            return n.longValue();
+        }
+        if (val != null) {
+            try {
+                return Long.parseLong(val.toString());
+            } catch (Exception e) {
+                log.warn("⚠️ [Dashboard] 数值解析失败: val={}, error={}", val, e.getMessage());
+            }
+        }
+        return 0L;
+    }
+
 }

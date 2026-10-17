@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -351,8 +352,16 @@ public class TicketController {
      * 根因分类聚合统计
      */
     @GetMapping("/root-cause/stats")
-    public ApiResponse<Map<String, Object>> rootCauseStats() {
-        return ApiResponse.success(ticketService.getRootCauseStats());
+    public ApiResponse<com.devops.agent.controller.dto.TicketRootCauseStatsResponse> rootCauseStats() {
+        Map<String, Object> map = ticketService.getRootCauseStats();
+        Map<String, Long> result = new LinkedHashMap<>();
+        if (map != null) {
+            for (Map.Entry<String, Object> entry : map.entrySet()) {
+                long count = entry.getValue() instanceof Number n ? n.longValue() : 0L;
+                result.put(entry.getKey(), count);
+            }
+        }
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketRootCauseStatsResponse(result));
     }
 
     /**
