@@ -274,13 +274,9 @@ public class TicketController {
      */
     @GetMapping("/sla/first-response-stats")
     public ApiResponse<com.devops.agent.controller.dto.TicketFirstResponseStatsResponse> firstResponseStats() {
-        Map<String, Object> map = ticketService.getFirstResponseStats();
-        long responded = map.get("responded") instanceof Number n ? n.longValue() : 0L;
-        long notResponded = map.get("notResponded") instanceof Number n ? n.longValue() : 0L;
-        long breached = map.get("breached") instanceof Number n ? n.longValue() : 0L;
-        Double avg = map.get("avgFirstResponseMinutes") instanceof Number n ? n.doubleValue() : null;
+        com.devops.agent.domain.biz.entity.TicketFirstResponseStats stats = ticketService.getFirstResponseStats();
         return ApiResponse.success(new com.devops.agent.controller.dto.TicketFirstResponseStatsResponse(
-                responded, notResponded, breached, avg));
+                stats.responded(), stats.notResponded(), stats.breached(), stats.avgFirstResponseMinutes()));
     }
 
     // ==================== B2 现场处置 ====================
