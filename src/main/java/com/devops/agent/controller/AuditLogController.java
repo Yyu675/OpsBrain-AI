@@ -102,10 +102,10 @@ public class AuditLogController {
 
         // 统计与列表用同一套筛选条件——否则「列表 20 条、统计说 1 万次」
         // 这种自相矛盾会让用户不知道该信哪个
-        result.put("stats", repository.queryAgentCallStats(
-                modelName, operationType, cached, minLatencyMs, from, to));
+        var stats = repository.queryAgentCallStats(
+                modelName, operationType, cached, minLatencyMs, from, to);
 
-        return ApiResponse.success(AuditLogConverter.toAuditAiCallsResponse(result));
+        return ApiResponse.success(AuditLogConverter.toAuditAiCallsResponse(result, stats));
     }
 
     /**

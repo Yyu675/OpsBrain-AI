@@ -1,6 +1,7 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.exception.GlobalExceptionHandler;
+import com.devops.agent.domain.audit.AuditAgentCallStats;
 import com.devops.agent.infrastructure.persistence.repo.AuditLogQueryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -202,7 +203,8 @@ class AuditLogControllerWebTest {
             when(repository.queryAgentCallLog(any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
                     .thenReturn(new LinkedHashMap<>(pageResult(List.of(), 0)));
             when(repository.queryAgentCallStats(any(), any(), any(), any(), any(), any()))
-                    .thenReturn(Map.of("totalCalls", 42, "totalCostRmb", 1.25));
+                    .thenReturn(new AuditAgentCallStats(42, 7, 16.67,
+                            java.math.BigDecimal.valueOf(1.25), 125));
 
             mockMvc.perform(get("/api/v1/audit/ai-calls")
                             .param("modelName", "deepseek-chat")
@@ -210,7 +212,11 @@ class AuditLogControllerWebTest {
                             .param("cached", "true")
                             .param("minLatencyMs", "2000"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.stats.totalCalls").value(42));
+                    .andExpect(jsonPath("$.data.stats.totalCalls").value(42))
+                    .andExpect(jsonPath("$.data.stats.cacheHits").value(7))
+                    .andExpect(jsonPath("$.data.stats.cacheHitRate").value(16.67))
+                    .andExpect(jsonPath("$.data.stats.totalCost").value(1.25))
+                    .andExpect(jsonPath("$.data.stats.avgLatencyMs").value(125));
 
             // 两次调用的前四个筛选参数必须完全一致
             verify(repository).queryAgentCallLog(
@@ -227,7 +233,7 @@ class AuditLogControllerWebTest {
             when(repository.queryAgentCallLog(any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
                     .thenReturn(new LinkedHashMap<>(pageResult(List.of(), 0)));
             when(repository.queryAgentCallStats(any(), any(), any(), any(), any(), any()))
-                    .thenReturn(Map.of());
+                    .thenReturn(new AuditAgentCallStats(0, 0, 0.0, java.math.BigDecimal.ZERO, 0));
 
             mockMvc.perform(get("/api/v1/audit/ai-calls").param("cached", "false"))
                     .andExpect(status().isOk());
@@ -239,12 +245,12 @@ class AuditLogControllerWebTest {
         }
 
         @Test
-        @DisplayName("stats 字段始终存在（哪怕为空 Map），前端不必判空")
+        @DisplayName("stats 字段始终存在（零值统计 Record），前端不必判空")
         void statsAlwaysPresent() throws Exception {
             when(repository.queryAgentCallLog(any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
                     .thenReturn(new LinkedHashMap<>(pageResult(List.of(), 0)));
             when(repository.queryAgentCallStats(any(), any(), any(), any(), any(), any()))
-                    .thenReturn(Map.of());
+                    .thenReturn(new AuditAgentCallStats(0, 0, 0.0, java.math.BigDecimal.ZERO, 0));
 
             mockMvc.perform(get("/api/v1/audit/ai-calls"))
                     .andExpect(status().isOk())
