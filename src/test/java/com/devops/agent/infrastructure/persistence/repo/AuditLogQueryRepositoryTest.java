@@ -79,8 +79,8 @@ class AuditLogQueryRepositoryTest {
         when(rs.getString("affected_resources")).thenReturn("ticket:T-9");
         when(rs.getString("query_preview")).thenReturn("query preview");
         when(rs.getObject("create_time", java.time.LocalDateTime.class)).thenReturn(createdAt);
-        doAnswer(invocation -> ((org.springframework.jdbc.core.RowMapper<?>) invocation.getArgument(1))
-                .mapRow(rs, 0)).when(jdbc).query(anyString(),
+        doAnswer(invocation -> List.of(((org.springframework.jdbc.core.RowMapper<?>) invocation.getArgument(1))
+                .mapRow(rs, 0))).when(jdbc).query(anyString(),
                 any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class));
 
         AuditPage<AgentCallLogRow> page = repository.queryAgentCallLog(
