@@ -58,11 +58,17 @@ import type { PipelineHeartbeat as GenPipelineHeartbeat } from './generated/pipe
 import type { LogsHeartbeat as GenLogsHeartbeat } from './generated/logsHeartbeat'
 import type { KnowledgeHotTagResponse as GenKnowledgeHotTagResponse } from './generated/knowledgeHotTagResponse'
 import type { ApprovalPageResponse as GenApprovalPageResponse } from './generated/approvalPageResponse'
+import type { UserView as GenUserView } from './generated/userView'
+import type { LoginResponse as GenLoginResponse } from './generated/loginResponse'
+import type { AgentTraceStatsResponse as GenAgentTraceStatsResponse } from './generated/agentTraceStatsResponse'
+import type { AgentTraceDetailResponse as GenAgentTraceDetailResponse } from './generated/agentTraceDetailResponse'
 
 import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
 import type { BackendTicket } from './types/ticket'
 import type { StormStatus, PipelineHeartbeat, LogsHeartbeat } from './alerts'
 import type { ApprovalRequest, ApprovalPage } from './approval'
+import type { AuthUser, LoginResult } from './auth'
+import type { AgentTraceStats, AgentTraceDetail } from './agentTrace'
 import type {
   RiskPolicy,
   ApprovalMode,
@@ -130,6 +136,20 @@ export type ApprovalPage_Missing = AssertDriftFree<GenOnly<GenApprovalPageRespon
 export type ApprovalPage_Extra = AssertDriftFree<HandOnly<GenApprovalPageResponse, ApprovalPage>>
 export type RiskPolicy_Missing = AssertDriftFree<GenOnly<GenRiskPolicy, RiskPolicy>>
 export type RiskPolicy_Extra = AssertDriftFree<HandOnly<GenRiskPolicy, RiskPolicy>>
+
+// ==================== 鉴权 / 会话域 ====================
+
+export type AuthUser_Missing = AssertDriftFree<GenOnly<GenUserView, AuthUser>>
+export type AuthUser_Extra = AssertDriftFree<HandOnly<GenUserView, AuthUser>>
+export type LoginResult_Missing = AssertDriftFree<GenOnly<GenLoginResponse, LoginResult>>
+export type LoginResult_Extra = AssertDriftFree<HandOnly<GenLoginResponse, LoginResult>>
+
+// ==================== Agent 轨迹与监控 ====================
+
+export type AgentTraceStats_Missing = AssertDriftFree<GenOnly<GenAgentTraceStatsResponse, AgentTraceStats>>
+export type AgentTraceStats_Extra = AssertDriftFree<HandOnly<GenAgentTraceStatsResponse, AgentTraceStats>>
+export type AgentTraceDetail_Missing = AssertDriftFree<GenOnly<GenAgentTraceDetailResponse, AgentTraceDetail>>
+export type AgentTraceDetail_Extra = AssertDriftFree<HandOnly<GenAgentTraceDetailResponse, AgentTraceDetail>>
 export type ActionAllowlistEntry_Missing = AssertDriftFree<GenOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
 export type ActionAllowlistEntry_Extra = AssertDriftFree<HandOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
 export type ActionStats_Missing = AssertDriftFree<GenOnly<GenActionStats, ActionStats>>

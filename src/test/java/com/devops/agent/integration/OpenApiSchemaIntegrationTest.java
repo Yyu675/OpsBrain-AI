@@ -285,6 +285,24 @@ class OpenApiSchemaIntegrationTest {
             JsonNode knowledgeHotTag = componentSchema("KnowledgeHotTagResponse");
             assertThat(knowledgeHotTag).as("KnowledgeHotTagResponse 缺失").isNotNull();
             assertThat(fieldNames(knowledgeHotTag.path("properties"))).contains("tag", "count");
+
+            JsonNode userView = componentSchema("UserView");
+            assertThat(userView).as("UserView 缺失").isNotNull();
+            assertThat(fieldNames(userView.path("properties"))).contains("id", "username", "displayName", "role");
+
+            JsonNode loginResponse = componentSchema("LoginResponse");
+            assertThat(loginResponse).as("LoginResponse 缺失").isNotNull();
+            assertThat(fieldNames(loginResponse.path("properties"))).contains("token", "tokenName", "user");
+
+            JsonNode agentTraceStats = componentSchema("AgentTraceStatsResponse");
+            assertThat(agentTraceStats).as("AgentTraceStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(agentTraceStats.path("properties"))).contains("activeSessions", "idleTimeoutMinutes");
+
+            JsonNode agentTraceDetail = componentSchema("AgentTraceDetailResponse");
+            assertThat(agentTraceDetail).as("AgentTraceDetailResponse 缺失").isNotNull();
+            assertThat(fieldNames(agentTraceDetail.path("properties"))).contains(
+                    "traceId", "found", "currentState", "currentStateText", "settled", "terminal",
+                    "transitions", "transitionCount", "totalDurationMs");
         }
     }
 

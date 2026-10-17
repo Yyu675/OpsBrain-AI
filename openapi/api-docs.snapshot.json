@@ -8681,7 +8681,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseLoginResponse"
                 }
               }
             }
@@ -15248,7 +15248,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseUserView"
                 }
               }
             }
@@ -16910,7 +16910,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseAgentTraceDetailResponse"
                 }
               }
             }
@@ -16990,7 +16990,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseAgentTraceStatsResponse"
                 }
               }
             }
@@ -22095,6 +22095,222 @@
             "items": {
               "$ref": "#/components/schemas/KnowledgeHotTagResponse"
             }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "UserView": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "role": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseUserView": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserView"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "tokenName": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserView"
+          }
+        }
+      },
+      "ApiResponseLoginResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LoginResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTraceStatsResponse": {
+        "type": "object",
+        "properties": {
+          "activeSessions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "idleTimeoutMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseAgentTraceStatsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AgentTraceStatsResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTransitionItemResponse": {
+        "type": "object",
+        "properties": {
+          "durationMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fromState": {
+            "type": "string"
+          },
+          "fromStateText": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "toState": {
+            "type": "string"
+          },
+          "toStateText": {
+            "type": "string"
+          },
+          "triggerDetail": {
+            "type": "string"
+          },
+          "triggerType": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentTraceDetailResponse": {
+        "type": "object",
+        "properties": {
+          "currentState": {
+            "type": "string"
+          },
+          "currentStateText": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "settled": {
+            "type": "boolean"
+          },
+          "terminal": {
+            "type": "boolean"
+          },
+          "totalDurationMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "transitionCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentTransitionItemResponse"
+            }
+          }
+        }
+      },
+      "ApiResponseAgentTraceDetailResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AgentTraceDetailResponse"
           },
           "message": {
             "type": "string"

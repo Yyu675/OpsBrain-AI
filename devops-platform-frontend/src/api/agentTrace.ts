@@ -63,7 +63,7 @@ export interface AgentTraceDetail {
 }
 
 /** 状态管理器容量统计 */
-interface AgentTraceStats {
+export interface AgentTraceStats {
   activeSessions: number
   idleTimeoutMinutes: number
 }
