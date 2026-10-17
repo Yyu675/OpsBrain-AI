@@ -143,11 +143,12 @@ public class DashboardController {
         log.info("📈 [Dashboard] 请求趋势数据: days={} (入参 {}) | module={}",
                 safeDays, days, safeModule == null ? "全局" : safeModule);
 
-        Map<String, Object> ticketTrends = ticketService.getTicketTrends(safeDays, safeModule);
+        com.devops.agent.domain.biz.entity.TicketTrendData ticketTrends =
+                ticketService.getTicketTrends(safeDays, safeModule);
         // AI 调用趋势无服务维度，下钻时仍取全局——差异已在响应中显式标注
         com.devops.agent.application.DashboardCallTrends callTrends = dashboardService.getCallTrends(safeDays);
 
-        Object ticketDays = ticketTrends.get("days");
+        Object ticketDays = ticketTrends.days();
         Object callDays = callTrends.days();
         if (ticketDays instanceof java.util.List<?> td && callDays instanceof java.util.List<?> cd
                 && td.size() != cd.size()) {
@@ -157,8 +158,8 @@ public class DashboardController {
         List<String> daysList = (ticketDays instanceof List<?> td)
                 ? td.stream().map(Object::toString).toList()
                 : List.of();
-        List<?> created = (List<?>) ticketTrends.get("created");
-        List<?> resolved = (List<?>) ticketTrends.get("resolved");
+        List<?> created = ticketTrends.created();
+        List<?> resolved = ticketTrends.resolved();
         List<?> cost = callTrends.cost();
         List<?> cacheHitRate = callTrends.cacheHitRate();
 

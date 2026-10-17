@@ -21,9 +21,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -107,12 +105,12 @@ class DashboardControllerWebTest {
 
     // ==================== 夹具 ====================
 
-    private static Map<String, Object> ticketTrends(int days) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("days", labels(days));
-        m.put("created", zeros(days));
-        m.put("resolved", zeros(days));
-        return m;
+    private static com.devops.agent.domain.biz.entity.TicketTrendData ticketTrends(int days) {
+        return new com.devops.agent.domain.biz.entity.TicketTrendData(
+                labels(days),
+                java.util.Collections.nCopies(days, 0L),
+                java.util.Collections.nCopies(days, 0L),
+                null);
     }
 
     private static com.devops.agent.application.DashboardCallTrends callTrends(int days) {

@@ -1755,7 +1755,7 @@ public class TicketService {
      * @param days 统计窗口天数，Controller 已兜底至 [1, 90]
      * @return { days, created[], resolved[] } 三个对齐数组，长度均为 days
      */
-    public Map<String, Object> getTicketTrends(int days) {
+    public com.devops.agent.domain.biz.entity.TicketTrendData getTicketTrends(int days) {
         return getTicketTrends(days, null);
     }
 
@@ -1770,7 +1770,7 @@ public class TicketService {
      * @param module 服务模块（K8S/MYSQL/NETWORK 等），null/空=全局
      * @return { days, created[], resolved[], module } 三个对齐数组 + 生效口径
      */
-    public Map<String, Object> getTicketTrends(int days, String module) {
+    public com.devops.agent.domain.biz.entity.TicketTrendData getTicketTrends(int days, String module) {
         java.time.LocalDate today = java.time.LocalDate.now();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -1796,13 +1796,10 @@ public class TicketService {
             resolved.add(resolvedByDay.getOrDefault(day, 0L));
         }
 
-        Map<String, Object> data = new java.util.HashMap<>();
-        data.put("days", daysList);
-        data.put("created", created);
-        data.put("resolved", resolved);
         // 回传生效口径：前端据此显示「全局」或具体服务名，避免用户误读（6.41 契约）
-        data.put("module", (module == null || module.isBlank()) ? null : module);
-        return data;
+        String effectiveModule = (module == null || module.isBlank()) ? null : module;
+        return new com.devops.agent.domain.biz.entity.TicketTrendData(
+                daysList, created, resolved, effectiveModule);
     }
 
     /**
