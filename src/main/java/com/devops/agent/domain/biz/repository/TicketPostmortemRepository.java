@@ -28,6 +28,8 @@ import java.util.Map;
 @Repository
 public class TicketPostmortemRepository {
 
+    public record MissingPostmortemRow(String id, String title, String status, LocalDateTime createTime) {}
+
     private static final Logger log = LoggerFactory.getLogger(TicketPostmortemRepository.class);
 
     private final JdbcTemplate jdbcTemplate;
@@ -72,7 +74,7 @@ public class TicketPostmortemRepository {
      * 已完结但没有复盘的工单清单（效能大盘「复盘完成率」的行动出口）。
      * <p>指标只告诉主管「复盘率 0%」，这张清单告诉他「哪几张单欠着」。</p>
      */
-    public List<Map<String, Object>> findFinishedWithoutPostmortem(int limit) {
+    public List<MissingPostmortemRow> findFinishedWithoutPostmortem(int limit) {
         String sql = """
             SELECT t.id, t.title, t.status, t.create_time
               FROM sys_devops_ticket t
@@ -81,7 +83,9 @@ public class TicketPostmortemRepository {
              ORDER BY t.create_time DESC
              LIMIT ?
             """;
-        return jdbcTemplate.queryForList(sql, limit);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new MissingPostmortemRow(
+                rs.getString("id"), rs.getString("title"), rs.getString("status"),
+                rs.getObject("create_time", LocalDateTime.class)), limit);
     }
 
     /** 新建复盘 */

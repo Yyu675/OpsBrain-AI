@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-17（批150 将诊断回放 session/evidence/hypothesis 内嵌 Map 改为类型化记录；保留 SQL snake_case 字段与无会话 `{}` 语义；OpenAPI/生成类型/字段断言同步中）
+> **最后更新**：2026-10-17（批151 将缺失复盘清单查询从仓储 Map 改为 typed row，保持 Ticket API DTO 输出；后端测试由 PR CI 门禁）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -554,4 +554,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批147(2026-10-17):清理 `ServiceOwnerListResponse.items` 的嵌套 Map 契约。仓储 `listAll()` 改为显式 `ServiceOwnerRow`（时间列映射 `LocalDateTime`），Controller 转为 `ServiceOwnerItem` Record；响应 JSON 字段名和值保持不变。更新 OpenAPI 快照、Orval 类型、`fieldContract.ts` 双向字段断言及 `OpenApiSchemaIntegrationTest` schema 字段断言，新增 Controller 记录映射单测。前端类型与生成新鲜度、后端编译/测试、OpenAPI 与 E2E 均由 PR #56 CI 验证通过并合入 main（commit `68d212c`）。
 - 批148(2026-10-17):将 `KnowledgeBaseReindexResponse.failures` 从嵌套 `List<Map<String,Object>>` 收口为 `KnowledgeBaseReindexFailure` Record，并把 `KnowledgeDocService.reindexByKnowledgeBase` 的内部统计/失败结果一并强类型化，去掉 Controller 中 unchecked Map 转换；保持失败列表字段 `docId/title/indexStatus/error` 与原值一致。同步 OpenAPI/Orval/fieldContract；`KnowledgeBaseControllerWebTest` 改用 typed service result，`OpenApiSchemaIntegrationTest` 锁定失败项 schema。前端 typecheck 与 CI 前端/后端/OpenAPI/工作流/E2E 全绿；PR #57 已 squash 合入（merge commit `7aabbe7`）。
 - 批149(2026-10-17):将 `HealingExecutionDetailResponse.steps` 由 `List<Map<String,Object>>` 改为 `List<HealingExecutionStep>`；保留 `name/status/detail/at` 四字段、损坏 JSON 降级空列表行为，并对未知旧字段容错。同步 OpenAPI 快照、Orval 与 `fieldContract.ts` 双向 key assertions；新增 controller 单测覆盖标准回放与损坏回退，OpenAPI 集成测试锁定 schema。前端生成/类型检查通过，CI 前端/后端/OpenAPI/工作流/E2E 全绿；PR #58 已 squash 合入（merge commit `c7709c8`）。
-- 批150(2026-10-17):诊断回放 API 强类型化。session/evidence/hypothesis 由 Map 改成 DTO Records；三个 Repository 回放查询改 RowMapper typed rows，保持原 SQL 列名序列化为 snake_case、原排序/字段值及 null 字段；无 session 采用空对象 record union 保留 `{}` 响应。同步 OpenAPI/Orval 与 `fieldContract.ts` 三组 key 双向断言；补 controller 序列化断言（snake_case + 空对象）、活体 OpenAPI schema 属性/oneOf 断言，更新仓储/Controller 测试。前端 typecheck 通过；后端无本地 Java，需 PR CI 编译、测试和快照新鲜度确认。
+- 批150(2026-10-17):诊断回放 API 强类型化。session/evidence/hypothesis 由 Map 改成 DTO Records；三个 Repository 回放查询改 RowMapper typed rows，保持原 SQL 列名序列化为 snake_case、原排序/字段值及 null 字段；无 session 采用空对象 record union 保留 `{}` 响应。同步 OpenAPI/Orval 与 `fieldContract.ts` 三组 key 双向断言；补 controller 序列化断言（snake_case + 空对象）、活体 OpenAPI schema 属性/oneOf 断言，更新仓储/Controller 测试。前端 typecheck、后端编译/2109 项测试、OpenAPI 新鲜度、工作流和 E2E 均由 PR #59 CI 验证通过并合入 main（merge commit `056f6b9`）。
+- 批151(2026-10-17):将 `GET /api/v1/tickets/metrics/closure/missing-postmortem` 的 repository/ service/ controller 内部 `Map<String,Object>` 数据流改为 `MissingPostmortemRow` record + RowMapper。API 仍返回现有 `MissingPostmortemItemDto`，不改 JSON 字段、时间表示、排序、limit 钳制、空结果语义；新增 WebMvc 契约用例锁定数据值。无 OpenAPI/Orval 变更，因为外部 DTO schema 未改变；后端编译/测试走 PR CI。
