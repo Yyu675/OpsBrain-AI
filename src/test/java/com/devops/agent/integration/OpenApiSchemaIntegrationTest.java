@@ -363,7 +363,8 @@ class OpenApiSchemaIntegrationTest {
 
             JsonNode knowledgeStats = componentSchema("KnowledgeStatsResponse");
             assertThat(knowledgeStats).as("KnowledgeStatsResponse 缺失").isNotNull();
-            assertThat(fieldNames(knowledgeStats.path("properties"))).contains("totalDocuments", "totalChunks");
+            assertThat(fieldNames(knowledgeStats.path("properties"))).contains(
+                    "totalDocuments", "totalChunks", "activeChunks", "filteredOut", "bySource", "lastUpdateTime", "hotQueryCount");
 
             JsonNode knowledgeTree = componentSchema("KnowledgeCategoryTreeResponse");
             assertThat(knowledgeTree).as("KnowledgeCategoryTreeResponse 缺失").isNotNull();

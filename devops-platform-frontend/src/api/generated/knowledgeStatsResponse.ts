@@ -4,8 +4,14 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
+import type { KnowledgeStatsResponseBySource } from './knowledgeStatsResponseBySource';
 
 export interface KnowledgeStatsResponse {
+  activeChunks?: number;
+  bySource?: KnowledgeStatsResponseBySource;
+  filteredOut?: number;
+  hotQueryCount?: number;
+  lastUpdateTime?: string;
   totalChunks?: number;
   totalDocuments?: number;
 }

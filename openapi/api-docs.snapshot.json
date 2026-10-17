@@ -23444,6 +23444,29 @@
       "KnowledgeStatsResponse": {
         "type": "object",
         "properties": {
+          "activeChunks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bySource": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "filteredOut": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hotQueryCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastUpdateTime": {
+            "type": "string",
+            "format": "date-time"
+          },
           "totalChunks": {
             "type": "integer",
             "format": "int64"
