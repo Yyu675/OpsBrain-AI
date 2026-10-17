@@ -20278,32 +20278,6 @@
           }
         }
       },
-      "ApiResponseListMapStringObject": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": {}
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "traceId": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponseNotifyChannelList": {
         "type": "object",
         "properties": {
