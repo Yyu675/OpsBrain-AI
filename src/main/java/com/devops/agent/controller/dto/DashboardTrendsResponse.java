@@ -19,12 +19,40 @@ import java.util.List;
  */
 public record DashboardTrendsResponse(
         List<String> days,
-        List<Long> created,
-        List<Long> resolved,
-        List<Double> cost,
-        List<Double> cacheHitRate,
+        List<? extends Number> created,
+        List<? extends Number> resolved,
+        List<? extends Number> cost,
+        List<? extends Number> cacheHitRate,
         int windowDays,
         String module,
         String callTrendScope
 ) {
+    public static DashboardTrendsResponse of(
+            List<String> days,
+            List<?> created,
+            List<?> resolved,
+            List<?> cost,
+            List<?> cacheHitRate,
+            int windowDays,
+            String module,
+            String callTrendScope
+    ) {
+        return new DashboardTrendsResponse(
+                days,
+                toNumberList(created),
+                toNumberList(resolved),
+                toNumberList(cost),
+                toNumberList(cacheHitRate),
+                windowDays,
+                module,
+                callTrendScope
+        );
+    }
+
+    private static List<Number> toNumberList(List<?> raw) {
+        if (raw == null) return List.of();
+        return raw.stream()
+                .map(item -> item instanceof Number n ? n : 0)
+                .toList();
+    }
 }

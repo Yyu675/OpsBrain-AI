@@ -144,12 +144,20 @@ public class DashboardController {
             log.warn("⚠️ [Dashboard] 趋势横轴长度不一致 | ticketDays={} | callDays={}", td.size(), cd.size());
         }
 
-        var resp = new com.devops.agent.controller.dto.DashboardTrendsResponse(
-                (List<String>) ticketDays,
-                (List<Long>) ticketTrends.get("created"),
-                (List<Long>) ticketTrends.get("resolved"),
-                (List<Double>) callTrends.get("cost"),
-                (List<Double>) callTrends.get("cacheHitRate"),
+        List<String> daysList = (ticketDays instanceof List<?> td)
+                ? td.stream().map(Object::toString).toList()
+                : List.of();
+        List<?> created = (List<?>) ticketTrends.get("created");
+        List<?> resolved = (List<?>) ticketTrends.get("resolved");
+        List<?> cost = (List<?>) callTrends.get("cost");
+        List<?> cacheHitRate = (List<?>) callTrends.get("cacheHitRate");
+
+        var resp = com.devops.agent.controller.dto.DashboardTrendsResponse.of(
+                daysList,
+                created,
+                resolved,
+                cost,
+                cacheHitRate,
                 safeDays,
                 safeModule,
                 "GLOBAL"
