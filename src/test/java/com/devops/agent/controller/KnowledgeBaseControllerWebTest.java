@@ -295,12 +295,10 @@ class KnowledgeBaseControllerWebTest {
         @DisplayName("成功：返回 total/success/failed 明细与库名，部分失败不吞")
         void reindexSuccessWithFailures() throws Exception {
             when(kbService.findById(2L)).thenReturn(kb(2L, "faq", true));
-            Map<String, Object> serviceResult = new LinkedHashMap<>();
-            serviceResult.put("total", 5);
-            serviceResult.put("success", 4);
-            serviceResult.put("failed", 1);
-            serviceResult.put("failures", List.of(Map.of(
-                    "docId", 42L, "title", "坏文档", "indexStatus", "FAILED", "error", "embedding 超时")));
+            var failure = new KnowledgeDocService.KnowledgeBaseReindexFailure(
+                    42L, "坏文档", "FAILED", "embedding 超时");
+            var serviceResult = new KnowledgeDocService.KnowledgeBaseReindexResult(
+                    5, 4, 1, List.of(failure));
             when(docService.reindexByKnowledgeBase(2L)).thenReturn(serviceResult);
 
             mockMvc.perform(post("/api/v1/knowledge/bases/2/reindex-all"))

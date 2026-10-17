@@ -51,6 +51,7 @@ import type { ActionStats as GenActionStats } from './generated/actionStats'
 import type { EvaluateResult as GenEvaluateResult } from './generated/evaluateResult'
 import type { HealingExecution as GenHealingExecution } from './generated/healingExecution'
 import type { ServiceOwnerItem as GenServiceOwnerItem } from './generated/serviceOwnerItem'
+import type { KnowledgeBaseReindexFailure as GenKnowledgeBaseReindexFailure } from './generated/knowledgeBaseReindexFailure'
 import type { KnowledgeTag as GenKnowledgeTag } from './generated/knowledgeTag'
 import type { ListItem as GenListItem } from './generated/listItem'
 import type { DocPage as GenDocPage } from './generated/docPage'
@@ -438,15 +439,23 @@ export interface DocumentMoveData {
 export type DocumentMove_Missing = AssertDriftFree<GenOnly<GenDocumentMoveResponse, DocumentMoveData>>
 export type DocumentMove_Extra = AssertDriftFree<HandOnly<GenDocumentMoveResponse, DocumentMoveData>>
 
-// ==================== 知识库批量重切索引弱契约收口（批143）====================
+// ==================== 知识库批量重切索引契约（批143 / 批148）====================
+export interface KnowledgeBaseReindexFailureData {
+  docId: number
+  title: string
+  indexStatus: string
+  error: string
+}
 export interface KnowledgeBaseReindexData {
   kbId: number
   kbName: string
   total: number
   success: number
   failed: number
-  failures: Array<Record<string, unknown>>
+  failures: KnowledgeBaseReindexFailureData[]
 }
 
 export type KnowledgeBaseReindex_Missing = AssertDriftFree<GenOnly<GenKnowledgeBaseReindexResponse, KnowledgeBaseReindexData>>
 export type KnowledgeBaseReindex_Extra = AssertDriftFree<HandOnly<GenKnowledgeBaseReindexResponse, KnowledgeBaseReindexData>>
+export type KnowledgeBaseReindexFailure_Missing = AssertDriftFree<GenOnly<GenKnowledgeBaseReindexFailure, KnowledgeBaseReindexFailureData>>
+export type KnowledgeBaseReindexFailure_Extra = AssertDriftFree<HandOnly<GenKnowledgeBaseReindexFailure, KnowledgeBaseReindexFailureData>>

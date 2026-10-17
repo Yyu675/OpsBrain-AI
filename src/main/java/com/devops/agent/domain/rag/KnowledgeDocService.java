@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -677,34 +676,30 @@ public class KnowledgeDocService {
      *
      * @return 统计明细：total / success / failed / failures[docId,title,error]
      */
-    public Map<String, Object> reindexByKnowledgeBase(Long kbId) {
+    public record KnowledgeBaseReindexFailure(Long docId, String title, String indexStatus, String error) {}
+    public record KnowledgeBaseReindexResult(int total, int success, int failed,
+                                             List<KnowledgeBaseReindexFailure> failures) {}
+
+    public KnowledgeBaseReindexResult reindexByKnowledgeBase(Long kbId) {
         List<KnowledgeDoc> docs = docRepo.findPublishedByKbId(kbId);
         int succeeded = 0;
-        List<Map<String, Object>> failures = new ArrayList<>();
+        List<KnowledgeBaseReindexFailure> failures = new ArrayList<>();
 
         for (KnowledgeDoc doc : docs) {
             IndexOutcome outcome = indexIfNeeded(doc);
             if (outcome.status() == IndexOutcome.Status.INDEXED) {
                 succeeded++;
             } else {
-                Map<String, Object> failure = new LinkedHashMap<>();
-                failure.put("docId", doc.getId());
-                failure.put("title", doc.getTitle());
-                failure.put("indexStatus", outcome.status().name());
-                failure.put("error", outcome.error() != null ? outcome.error() : "");
-                failures.add(failure);
+                failures.add(new KnowledgeBaseReindexFailure(
+                        doc.getId(), doc.getTitle(), outcome.status().name(),
+                        outcome.error() != null ? outcome.error() : ""));
             }
         }
 
         log.info("🔄 [KnowledgeDoc] 按库重建索引 | kbId={} | 总数={} | 成功={} | 失败={}",
                 kbId, docs.size(), succeeded, failures.size());
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("total", docs.size());
-        result.put("success", succeeded);
-        result.put("failed", failures.size());
-        result.put("failures", failures);
-        return result;
+        return new KnowledgeBaseReindexResult(docs.size(), succeeded, failures.size(), List.copyOf(failures));
     }
 
     // ==================== 辅助 ====================

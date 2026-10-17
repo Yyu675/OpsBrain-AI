@@ -4,7 +4,7 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
-import type { KnowledgeBaseReindexResponseFailuresItem } from './knowledgeBaseReindexResponseFailuresItem';
+import type { KnowledgeBaseReindexFailure } from './knowledgeBaseReindexFailure';
 
 /**
  * 知识库批量重切索引响应
@@ -13,7 +13,7 @@ export interface KnowledgeBaseReindexResponse {
   /** 失败数 */
   failed?: number;
   /** 失败详情列表 */
-  failures?: KnowledgeBaseReindexResponseFailuresItem[];
+  failures?: KnowledgeBaseReindexFailure[];
   /** 知识库 ID */
   kbId?: number;
   /** 知识库名称 */
