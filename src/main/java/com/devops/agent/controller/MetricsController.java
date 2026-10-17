@@ -1,6 +1,17 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.controller.dto.MetricCatalogResponse;
+import com.devops.agent.controller.dto.MetricDatasourceDto;
+import com.devops.agent.controller.dto.MetricDatasourceResponse;
+import com.devops.agent.controller.dto.MetricInstantResponse;
+import com.devops.agent.controller.dto.MetricMetaDto;
+import com.devops.agent.controller.dto.MetricOverviewResponse;
+import com.devops.agent.controller.dto.MetricRangeResponse;
+import com.devops.agent.controller.dto.MetricSampleDto;
+import com.devops.agent.controller.dto.MetricSeriesDto;
+import com.devops.agent.controller.dto.OverviewCardDto;
+import com.devops.agent.controller.dto.SeriesPointDto;
 import com.devops.agent.infrastructure.metrics.MetricsCatalog;
 import com.devops.agent.infrastructure.metrics.PromQuery;
 import com.devops.agent.infrastructure.metrics.PrometheusClient;
@@ -11,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,10 +67,15 @@ public class MetricsController {
 
     /** 内置指标目录 */
     @GetMapping("/catalog")
-    public ApiResponse<Map<String, Object>> catalog() {
-        return ApiResponse.success(Map.of(
-                "metrics", MetricsCatalog.describeAll(),
-                "enabled", prometheus.isEnabled()));
+    public ApiResponse<MetricCatalogResponse> catalog() {
+        List<MetricMetaDto> metaList = MetricsCatalog.describeAll().stream()
+                .map(m -> new MetricMetaDto(
+                        (String) m.get("id"),
+                        (String) m.get("name"),
+                        (String) m.get("unit"),
+                        (String) m.get("describe")))
+                .toList();
+        return ApiResponse.success(new MetricCatalogResponse(metaList, prometheus.isEnabled()));
     }
 
     /**
@@ -67,14 +84,14 @@ public class MetricsController {
      * @param metric 指标 ID，见 {@code /catalog}
      */
     @GetMapping("/instant")
-    public ApiResponse<Map<String, Object>> instant(@RequestParam String metric) {
+    public ApiResponse<MetricInstantResponse> instant(@RequestParam String metric) {
         String promql = MetricsCatalog.promqlOf(metric);
         List<PromQuery.Sample> samples = prometheus.query(promql);
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("metric", metric);
-        data.put("samples", samples.stream().map(PromQuery::toView).toList());
-        return ApiResponse.success(data);
+        List<MetricSampleDto> sampleDtos = samples.stream()
+                .map(s -> new MetricSampleDto(s.labels(), s.hasValue() ? s.value() : null, s.timestampMs()))
+                .toList();
+        return ApiResponse.success(new MetricInstantResponse(metric, sampleDtos));
     }
 
     /**
@@ -86,14 +103,11 @@ public class MetricsController {
      *                见 {@code PrometheusClient.queryRange} 的点数上限保护
      */
     @GetMapping("/range")
-    public ApiResponse<Map<String, Object>> range(
+    public ApiResponse<MetricRangeResponse> range(
             @RequestParam String metric,
             @RequestParam(defaultValue = "1") int hours,
             @RequestParam(defaultValue = "60") int step) {
 
-        // 参数钳制：负数或超大跨度都会打到 Prometheus 上。
-        // 不静默纠正而是先夹紧再执行——返回错误会让「手滑填了 0」变成一次失败请求，
-        // 而这里给出一个合理的最小窗口对用户更友好
         int safeHours = Math.max(1, Math.min(hours, (int) (MAX_RANGE_DAYS * 24)));
         int safeStep = Math.max(1, Math.min(step, 3600));
 
@@ -103,16 +117,21 @@ public class MetricsController {
         String promql = MetricsCatalog.promqlOf(metric);
         List<PromQuery.Series> series = prometheus.queryRange(promql, from, to, safeStep);
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("metric", metric);
-        data.put("from", from.toEpochMilli());
-        data.put("to", to.toEpochMilli());
-        data.put("step", safeStep);
-        // 如实回报生效值：用户传了 hours=999 却只看到 31 天数据时，
-        // 得能从响应里看出被夹紧了，而不是以为数据缺失
-        data.put("hours", safeHours);
-        data.put("series", series.stream().map(PromQuery::toView).toList());
-        return ApiResponse.success(data);
+        List<MetricSeriesDto> seriesDtos = series.stream()
+                .map(s -> new MetricSeriesDto(
+                        s.labels(),
+                        s.points().stream()
+                                .map(p -> new SeriesPointDto(p.timestampMs(), Double.isNaN(p.value()) ? null : p.value()))
+                                .toList()))
+                .toList();
+
+        return ApiResponse.success(new MetricRangeResponse(
+                metric,
+                from.toEpochMilli(),
+                to.toEpochMilli(),
+                safeStep,
+                safeHours,
+                seriesDtos));
     }
 
     /**
@@ -126,35 +145,26 @@ public class MetricsController {
      * 不该让整个总览页空白。失败项以 {@code error} 字段如实标注。</p>
      */
     @GetMapping("/overview")
-    public ApiResponse<Map<String, Object>> overview() {
+    public ApiResponse<MetricOverviewResponse> overview() {
         List<String> ids = List.of("cpu.usage", "memory.usage", "disk.usage",
                 "load.avg1", "target.up");
 
-        Map<String, Object> cards = new LinkedHashMap<>();
+        Map<String, OverviewCardDto> cards = new LinkedHashMap<>();
         for (String id : ids) {
-            Map<String, Object> card = new LinkedHashMap<>();
             MetricsCatalog.Metric meta = MetricsCatalog.get(id);
-            card.put("name", meta.name());
-            card.put("unit", meta.unit());
-            card.put("describe", meta.describe());
             try {
                 List<PromQuery.Sample> samples = prometheus.query(meta.promql());
-                card.put("samples", samples.stream().map(PromQuery::toView).toList());
-                card.put("ok", true);
+                List<MetricSampleDto> sampleDtos = samples.stream()
+                        .map(s -> new MetricSampleDto(s.labels(), s.hasValue() ? s.value() : null, s.timestampMs()))
+                        .toList();
+                cards.put(id, new OverviewCardDto(meta.name(), meta.unit(), meta.describe(), true, null, sampleDtos));
             } catch (Exception e) {
-                // 逐条兜底：一个 exporter 挂了不该让整页空白
-                card.put("ok", false);
-                card.put("error", e.getMessage());
-                card.put("samples", List.of());
+                cards.put(id, new OverviewCardDto(meta.name(), meta.unit(), meta.describe(), false, e.getMessage(), List.of()));
                 log.debug("[Metrics] 总览单项失败 | metric={} | {}", id, e.getMessage());
             }
-            cards.put(id, card);
         }
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("cards", cards);
-        data.put("timestamp", System.currentTimeMillis());
-        return ApiResponse.success(data);
+        return ApiResponse.success(new MetricOverviewResponse(cards, System.currentTimeMillis()));
     }
 
     /**
@@ -164,17 +174,24 @@ public class MetricsController {
      * 把它变成 503 会让接入管理页自己也打不开，那就本末倒置了。</p>
      */
     @GetMapping("/datasource")
-    public ApiResponse<Map<String, Object>> datasource() {
+    public ApiResponse<MetricDatasourceResponse> datasource() {
         Map<String, Object> health = prometheus.health();
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("type", "prometheus");
-        data.put("name", "Prometheus");
-        data.putAll(health);
-        // 数据源接入是「有几个」的概念，用列表包一层，
-        // 将来接 K8s / 云平台时结构不用变
-        return ApiResponse.success(Map.of(
-                "datasources", List.of(data),
-                "total", 1));
+        String baseUrl = (String) health.get("baseUrl");
+        boolean enabled = Boolean.TRUE.equals(health.get("enabled"));
+        boolean reachable = Boolean.TRUE.equals(health.get("reachable"));
+        Long latencyMs = health.get("latencyMs") instanceof Number n ? n.longValue() : null;
+        String error = (String) health.get("error");
+
+        MetricDatasourceDto dto = new MetricDatasourceDto(
+                "prometheus",
+                "Prometheus",
+                baseUrl,
+                enabled,
+                reachable,
+                latencyMs,
+                error);
+
+        return ApiResponse.success(new MetricDatasourceResponse(List.of(dto), 1));
     }
 }

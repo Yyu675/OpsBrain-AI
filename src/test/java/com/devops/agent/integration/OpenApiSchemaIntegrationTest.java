@@ -340,6 +340,26 @@ class OpenApiSchemaIntegrationTest {
             JsonNode auditFilterOptions = componentSchema("AuditFilterOptionsResponse");
             assertThat(auditFilterOptions).as("AuditFilterOptionsResponse 缺失").isNotNull();
             assertThat(fieldNames(auditFilterOptions.path("properties"))).contains("models", "operationTypes", "actions", "targetTypes");
+
+            JsonNode metricCatalog = componentSchema("MetricCatalogResponse");
+            assertThat(metricCatalog).as("MetricCatalogResponse 缺失").isNotNull();
+            assertThat(fieldNames(metricCatalog.path("properties"))).contains("metrics", "enabled");
+
+            JsonNode metricInstant = componentSchema("MetricInstantResponse");
+            assertThat(metricInstant).as("MetricInstantResponse 缺失").isNotNull();
+            assertThat(fieldNames(metricInstant.path("properties"))).contains("metric", "samples");
+
+            JsonNode metricRange = componentSchema("MetricRangeResponse");
+            assertThat(metricRange).as("MetricRangeResponse 缺失").isNotNull();
+            assertThat(fieldNames(metricRange.path("properties"))).contains("metric", "from", "to", "step", "hours", "series");
+
+            JsonNode metricOverview = componentSchema("MetricOverviewResponse");
+            assertThat(metricOverview).as("MetricOverviewResponse 缺失").isNotNull();
+            assertThat(fieldNames(metricOverview.path("properties"))).contains("cards", "timestamp");
+
+            JsonNode metricDatasource = componentSchema("MetricDatasourceResponse");
+            assertThat(metricDatasource).as("MetricDatasourceResponse 缺失").isNotNull();
+            assertThat(fieldNames(metricDatasource.path("properties"))).contains("datasources", "total");
         }
     }
 

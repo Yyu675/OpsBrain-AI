@@ -70,6 +70,11 @@ import type { AiCallLogItem as GenAiCallLogItem } from './generated/aiCallLogIte
 import type { AiCallStats as GenAiCallStats } from './generated/aiCallStats'
 import type { AuditFilterOptionsResponse as GenAuditFilterOptionsResponse } from './generated/auditFilterOptionsResponse'
 import type { AuditTraceDetailResponse as GenAuditTraceDetailResponse } from './generated/auditTraceDetailResponse'
+import type { MetricCatalogResponse as GenMetricCatalogResponse } from './generated/metricCatalogResponse'
+import type { MetricInstantResponse as GenMetricInstantResponse } from './generated/metricInstantResponse'
+import type { MetricRangeResponse as GenMetricRangeResponse } from './generated/metricRangeResponse'
+import type { MetricOverviewResponse as GenMetricOverviewResponse } from './generated/metricOverviewResponse'
+import type { MetricDatasourceResponse as GenMetricDatasourceResponse } from './generated/metricDatasourceResponse'
 
 import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
 import type { BackendTicket } from './types/ticket'
@@ -86,6 +91,13 @@ import type {
   FilterOptions as AuditFilterOptions,
   TraceDetail as AuditTraceDetail
 } from './auditLogs'
+import type {
+  MetricCatalog,
+  InstantResult as MetricInstantResult,
+  RangeResult as MetricRangeResult,
+  OverviewResult as MetricOverviewResult,
+  DatasourceResult as MetricDatasourceResult
+} from './metrics'
 import type {
   RiskPolicy,
   ApprovalMode,
@@ -189,6 +201,19 @@ export type AuditFilterOptions_Missing = AssertDriftFree<GenOnly<GenAuditFilterO
 export type AuditFilterOptions_Extra = AssertDriftFree<HandOnly<GenAuditFilterOptionsResponse, AuditFilterOptions>>
 export type AuditTraceDetail_Missing = AssertDriftFree<GenOnly<GenAuditTraceDetailResponse, AuditTraceDetail>>
 export type AuditTraceDetail_Extra = AssertDriftFree<HandOnly<GenAuditTraceDetailResponse, AuditTraceDetail>>
+
+// ==================== 监控指标域（L2） ====================
+
+export type MetricCatalog_Missing = AssertDriftFree<GenOnly<GenMetricCatalogResponse, MetricCatalog>>
+export type MetricCatalog_Extra = AssertDriftFree<HandOnly<GenMetricCatalogResponse, MetricCatalog>>
+export type MetricInstant_Missing = AssertDriftFree<GenOnly<GenMetricInstantResponse, MetricInstantResult>>
+export type MetricInstant_Extra = AssertDriftFree<HandOnly<GenMetricInstantResponse, MetricInstantResult>>
+export type MetricRange_Missing = AssertDriftFree<GenOnly<GenMetricRangeResponse, MetricRangeResult>>
+export type MetricRange_Extra = AssertDriftFree<HandOnly<GenMetricRangeResponse, MetricRangeResult>>
+export type MetricOverview_Missing = AssertDriftFree<GenOnly<GenMetricOverviewResponse, MetricOverviewResult>>
+export type MetricOverview_Extra = AssertDriftFree<HandOnly<GenMetricOverviewResponse, MetricOverviewResult>>
+export type MetricDatasource_Missing = AssertDriftFree<GenOnly<GenMetricDatasourceResponse, MetricDatasourceResult>>
+export type MetricDatasource_Extra = AssertDriftFree<HandOnly<GenMetricDatasourceResponse, MetricDatasourceResult>>
 
 export type ActionAllowlistEntry_Missing = AssertDriftFree<GenOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
 export type ActionAllowlistEntry_Extra = AssertDriftFree<HandOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
