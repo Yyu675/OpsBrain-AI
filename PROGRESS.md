@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批174 诊断看板固定结构端到端 DTO 化，待 CI 验证）
+> **最后更新**：2026-10-18（批175 诊断队列 fixed row DTO 化；批174 已合入 PR #85）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -114,7 +114,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T29** | **S4-2b：证据门第三支柱**（报告 116 **已产**） | 审计完整度进 evidenceReady（近 50 条 steps_json/gate_decision 缺失一行即卡）+ promotable 解耦 + 阈值三派生字段下发 + 前端 title 富化；测试 +4、smoke 26/26、tsc 0 错；PRD L5 三支柱进度过半（零误✓ 审计✓ 观测挂账） | 2026-09-08 |
 | **T30** | **真·阶段 4 起跑：S4-1 评测判据升级**（路线图 §8.1，报告 117 **已产**） | **编号勘误**：T27~T29 曾借号 S4-x，实为阶段 3 自愈信任阶梯延伸，自本批起按路线图重排（S4-1 判据升级→S4-2 校准→S4-3 CI 回归→S4-4 看板）。本批：EvalItem +expectedDocs/expectedRootCause（docTitle 为判据键）、RetrievalRankMetrics 纯计算+8 钉测、RAG 层接线（连通红线口径不变、注记子集出 Recall@1/@3/MRR、无注记留空拒伪造）、首组注记 5/65、校验器双档本地通；幻觉率/负例强化/扩集 150 挂账 EVAL_LLM 窗口 | 2026-09-08 |
 | **T31** | **S4-3 前半：评测持久化与基线对比**（路线图 §8.3，报告 118 **已产**） | `EvalMetricsWriter` 分层合并落 target/eval-metrics.json（契约常驻必落/RAG 门内落/落盘失败只 WARN）+ `eval_compare.js`（±2pt 比率阈、leaked/blocked 反向零容忍、只比双侧共有指标、首跑 rc=0 拒假绿）；四路径本地实证；ci.yml 四触点继续挂账 workflows 权限 | 2026-09-08 |
-| **T32** | **固定结构 Map 清理：诊断看板 DTO 端到端类型化**（批174） | `DashboardService` 返回既有 `DiagnosisBoardResponse`；JDBC 聚合行、趋势和校准行均改为 typed RowMapper/Record；composer 直接构造 DTO，移除 Map→DTO 转换器；既有聚合/趋势/舍入/空值测试改断言 DTO | PR #85，CI run 39071669531 前端/后端/工作流/E2E 全绿，待合并 |
+| **T32** | **固定结构 Map 清理：诊断看板 DTO 端到端类型化**（批174） | `DashboardService` 返回既有 `DiagnosisBoardResponse`；JDBC 聚合行、趋势和校准行均改为 typed RowMapper/Record；composer 直接构造 DTO，移除 Map→DTO 转换器；既有聚合/趋势/舍入/空值测试改断言 DTO | PR #85 已合并（7428fbe），合并前 CI 四道门全绿 |
+| **T33** | **固定结构 Map 清理：诊断队列会话行类型化**（批175） | `findQueued()` 固定字段行改 `QueuedSessionRow` RowMapper，调度器移除字符串键读取；新增测试覆盖池满不查询、CAS 赢者才恢复、每轮最多 20 条；筛选排序和恢复条件未改 | 2026-10-18，待 CI 验证 |
 
 ---
 
