@@ -18010,26 +18010,6 @@
           }
         }
       },
-      "ApiResponseObject": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {},
-          "message": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "traceId": {
-            "type": "string"
-          }
-        }
-      },
       "UpdateRequest": {
         "type": "object",
         "properties": {
