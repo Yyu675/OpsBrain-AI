@@ -331,12 +331,16 @@ export interface KnowledgeDocSaveResult {
  * 历史版本项（不含正文）
  */
 export interface KnowledgeDocVersion {
+  /** 历史记录行 ID */
+  id?: number
   docId: number
   version: number
   title: string
   category: string | null
   author: string | null
   contentLength: number
+  /** 内容哈希用于版本审计 */
+  contentHash?: string
   changeType: string
   changedBy: string | null
   changeReason: string | null

@@ -22,6 +22,21 @@
  * 刷新：后端契约变更 → `npm run api:refresh`（sync 快照 + orval 生成）→
  * `npm run typecheck` 即对出新漂移。
  */
+import type { SaveResponse as GenKnowledgeDocSaveResponse } from './generated/saveResponse'
+import type { UploadResponse as GenKnowledgeDocUploadResponse } from './generated/uploadResponse'
+import type { BatchImportResponse as GenKnowledgeDocBatchImportResponse } from './generated/batchImportResponse'
+import type { BatchItemResponse as GenKnowledgeDocBatchItemResponse } from './generated/batchItemResponse'
+import type { OriginalUrlResponse as GenKnowledgeDocOriginalUrlResponse } from './generated/originalUrlResponse'
+import type { PublishResponse as GenKnowledgeDocPublishResponse } from './generated/publishResponse'
+import type { DeprecateResponse as GenKnowledgeDocDeprecateResponse } from './generated/deprecateResponse'
+import type { RestoreResponse as GenKnowledgeDocRestoreResponse } from './generated/restoreResponse'
+import type { RetryIndexingResponse as GenKnowledgeDocRetryResponse } from './generated/retryIndexingResponse'
+import type { VersionsResponse as GenKnowledgeDocVersionsResponse } from './generated/versionsResponse'
+import type { VersionItem as GenKnowledgeDocVersionItem } from './generated/versionItem'
+import type { VersionItem as GenKnowledgeDocVersionContract } from './generated/versionItem'
+import type { VersionDiffResult as GenKnowledgeDocVersionDiffResult } from './generated/versionDiffResult'
+import type { Detail as GenKnowledgeDocDetail } from './generated/detail'
+
 import type { Alert as GenAlert } from './generated/alert'
 import type { AlertPage as GenAlertPage } from './generated/alertPage'
 import type { ApprovalRequest as GenApprovalRequest } from './generated/approvalRequest'
@@ -80,7 +95,7 @@ import type { TicketClosureMetricsResponse as GenTicketClosureMetricsResponse } 
 import type { KnowledgeCategoryCountResponse as GenKnowledgeCategoryCountResponse } from './generated/knowledgeCategoryCountResponse'
 import type { KnowledgeDocHealthResponse as GenKnowledgeDocHealthResponse } from './generated/knowledgeDocHealthResponse'
 
-import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag, KnowledgeDocCategory } from './types'
+import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, KnowledgeDocVersion, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag, KnowledgeDocCategory } from './types'
 import type { BackendTicket } from './types/ticket'
 import type { StormStatus, PipelineHeartbeat, LogsHeartbeat } from './alerts'
 import type { ApprovalRequest, ApprovalPage } from './approval'
@@ -146,6 +161,49 @@ export type TicketAiStats_Missing = AssertDriftFree<GenOnly<GenTicketAiAccuracyS
 export type TicketAiStats_Extra = AssertDriftFree<HandOnly<GenTicketAiAccuracyStatsResponse, AiAnalysisStats>>
 
 // ==================== 告警域 ====================
+
+// 知识文档全生命周期 Record 响应字段闭环：DTO/快照变更必须显式对账。
+type KnowledgeDocSaveKeys = 'id' | 'version' | 'status' | 'indexStatus' | 'retrievable' | 'nearDuplicates' | 'indexError' | 'duplicateDocId' | 'duplicateTitle'
+type KnowledgeDocUploadKeys = KnowledgeDocSaveKeys | 'title' | 'parsedLength' | 'originalStored'
+type KnowledgeDocBatchKeys = 'total' | 'success' | 'failed' | 'results'
+type KnowledgeDocBatchItemKeys = 'index' | 'title' | 'status' | 'docId' | 'indexStatus' | 'retrievable' | 'duplicateDocId' | 'duplicateTitle' | 'error'
+type KnowledgeDocOriginalUrlKeys = 'url' | 'filename' | 'expiresInSeconds'
+type KnowledgeDocPublishKeys = 'id' | 'indexStatus' | 'retrievable' | 'indexError'
+type KnowledgeDocDeprecateKeys = 'id' | 'status'
+type KnowledgeDocRestoreKeys = 'id' | 'version' | 'retrievable'
+type KnowledgeDocRetryKeys = 'retried'
+type KnowledgeDocVersionsKeys = 'docId' | 'versions'
+type KnowledgeDocVersionItemKeys = 'id' | 'docId' | 'version' | 'title' | 'category' | 'author' | 'contentHash' | 'contentLength' | 'changedBy' | 'changeReason' | 'changeType' | 'createTime'
+type KnowledgeDocVersionDiffKeys = 'fromVersion' | 'toVersion' | 'fromTitle' | 'toTitle' | 'segments'
+type KnowledgeDocDetailKeys = 'id' | 'title' | 'category' | 'categoryId' | 'author' | 'content' | 'summary' | 'version' | 'status' | 'indexStatus' | 'indexError' | 'chunkCount' | 'indexedAt' | 'effectiveAt' | 'expiredAt' | 'knowledgeSource' | 'sourceTicketId' | 'sourceType' | 'createTime' | 'updateTime' | 'tags' | 'retrievable' | 'kbId' | 'originalFilename' | 'originalStored'
+export type KnowledgeDocSaveResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocSaveResponse, Record<KnowledgeDocSaveKeys, unknown>>>
+export type KnowledgeDocSaveResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocSaveResponse, Record<KnowledgeDocSaveKeys, unknown>>>
+export type KnowledgeDocUploadResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocUploadResponse, Record<KnowledgeDocUploadKeys, unknown>>>
+export type KnowledgeDocUploadResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocUploadResponse, Record<KnowledgeDocUploadKeys, unknown>>>
+export type KnowledgeDocBatchImportResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocBatchImportResponse, Record<KnowledgeDocBatchKeys, unknown>>>
+export type KnowledgeDocBatchImportResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocBatchImportResponse, Record<KnowledgeDocBatchKeys, unknown>>>
+export type KnowledgeDocBatchItemResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocBatchItemResponse, Record<KnowledgeDocBatchItemKeys, unknown>>>
+export type KnowledgeDocBatchItemResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocBatchItemResponse, Record<KnowledgeDocBatchItemKeys, unknown>>>
+export type KnowledgeDocOriginalUrlResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocOriginalUrlResponse, Record<KnowledgeDocOriginalUrlKeys, unknown>>>
+export type KnowledgeDocOriginalUrlResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocOriginalUrlResponse, Record<KnowledgeDocOriginalUrlKeys, unknown>>>
+export type KnowledgeDocPublishResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocPublishResponse, Record<KnowledgeDocPublishKeys, unknown>>>
+export type KnowledgeDocPublishResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocPublishResponse, Record<KnowledgeDocPublishKeys, unknown>>>
+export type KnowledgeDocDeprecateResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocDeprecateResponse, Record<KnowledgeDocDeprecateKeys, unknown>>>
+export type KnowledgeDocDeprecateResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocDeprecateResponse, Record<KnowledgeDocDeprecateKeys, unknown>>>
+export type KnowledgeDocRestoreResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocRestoreResponse, Record<KnowledgeDocRestoreKeys, unknown>>>
+export type KnowledgeDocRestoreResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocRestoreResponse, Record<KnowledgeDocRestoreKeys, unknown>>>
+export type KnowledgeDocRetryResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocRetryResponse, Record<KnowledgeDocRetryKeys, unknown>>>
+export type KnowledgeDocRetryResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocRetryResponse, Record<KnowledgeDocRetryKeys, unknown>>>
+export type KnowledgeDocVersionsResponse_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocVersionsResponse, Record<KnowledgeDocVersionsKeys, unknown>>>
+export type KnowledgeDocVersionsResponse_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocVersionsResponse, Record<KnowledgeDocVersionsKeys, unknown>>>
+export type KnowledgeDocVersionItem_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocVersionItem, Record<KnowledgeDocVersionItemKeys, unknown>>>
+export type KnowledgeDocVersionItem_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocVersionItem, Record<KnowledgeDocVersionItemKeys, unknown>>>
+export type KnowledgeDocVersionManual_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocVersionContract, KnowledgeDocVersion>>
+export type KnowledgeDocVersionManual_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocVersionContract, KnowledgeDocVersion>>
+export type KnowledgeDocVersionDiff_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocVersionDiffResult, Record<KnowledgeDocVersionDiffKeys, unknown>>>
+export type KnowledgeDocVersionDiff_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocVersionDiffResult, Record<KnowledgeDocVersionDiffKeys, unknown>>>
+export type KnowledgeDocDetail_Missing = AssertDriftFree<GenOnly<GenKnowledgeDocDetail, Record<KnowledgeDocDetailKeys, unknown>>>
+export type KnowledgeDocDetail_Extra = AssertDriftFree<HandOnly<GenKnowledgeDocDetail, Record<KnowledgeDocDetailKeys, unknown>>>
 
 export type Alert_Missing = AssertDriftFree<GenOnly<GenAlert, Alert>>
 export type Alert_Extra = AssertDriftFree<HandOnly<GenAlert, Alert>>

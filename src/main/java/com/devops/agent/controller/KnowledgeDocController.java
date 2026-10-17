@@ -8,6 +8,9 @@ import com.devops.agent.domain.rag.KnowledgeDoc;
 import com.devops.agent.domain.rag.KnowledgeDocService;
 import com.devops.agent.domain.biz.repository.KnowledgeBoostRepository;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.time.LocalDateTime;
+import java.sql.Timestamp;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -48,6 +51,33 @@ public class KnowledgeDocController {
         this.boostRepository = boostRepository;
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record SaveResponse(Long id, Integer version, String status, String indexStatus, Boolean retrievable,
+                               List<KnowledgeDocDto.NearDuplicate> nearDuplicates, String indexError,
+                               Long duplicateDocId, String duplicateTitle) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BatchItemResponse(int index, String title, String status, Long docId, String indexStatus,
+                                    Boolean retrievable, Long duplicateDocId, String duplicateTitle, String error) {}
+    public record BatchImportResponse(int total, int success, int failed, List<BatchItemResponse> results) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record UploadResponse(Long id, String title, Integer version, String status, String indexStatus,
+                                 Boolean retrievable, Integer parsedLength, Boolean originalStored,
+                                 List<KnowledgeDocDto.NearDuplicate> nearDuplicates, String indexError,
+                                 Long duplicateDocId, String duplicateTitle) {}
+    public record OriginalUrlResponse(String url, String filename, long expiresInSeconds) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PublishResponse(Long id, String indexStatus, boolean retrievable, String indexError) {}
+    public record DeprecateResponse(Long id, String status) {}
+    public record RestoreResponse(Long id, int version, boolean retrievable) {}
+    public record RetryIndexingResponse(int retried) {}
+    public record VersionsResponse(Long docId, List<VersionItem> versions) {}
+    public record DeprecateRequest(String reason) {}
+    public record RestoreRequest(Integer version) {}
+    public record PurgeRequest(String complianceReason) {}
+    public record VersionItem(Long id, Long docId, Integer version, String title, String category, String author,
+                               String contentHash, Integer contentLength, String changedBy, String changeReason,
+                               String changeType, LocalDateTime createTime) {}
+
     // ==================== 创建 / 更新 ====================
 
     /**
@@ -60,7 +90,7 @@ public class KnowledgeDocController {
      * </ul>
      */
     @PostMapping
-    public ApiResponse<Object> create(@RequestBody KnowledgeDocDto.CreateRequest req) {
+    public ApiResponse<SaveResponse> create(@RequestBody KnowledgeDocDto.CreateRequest req) {
         writeGuard.requireEdit();
         try {
             KnowledgeDoc doc = new KnowledgeDoc();
@@ -81,26 +111,17 @@ public class KnowledgeDocController {
             KnowledgeDocService.SaveResult r
                     = docService.create(doc, req.tags(), req.publish(), "SYSTEM");
 
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", r.docId());
-            data.put("version", r.version());
-            // status 是文档生命周期状态（发布/草稿），indexStatus 才是向量化状态，
-            // 二者不能混用，否则前端「已发布」会被误读为「可检索」（见 6.21 状态机分离决策）
-            data.put("status", req.publish() ? "PUBLISHED" : "DRAFT");
-            data.put("indexStatus", r.indexOutcome().status());
-            data.put("retrievable", r.indexOutcome().isRetrievable());
-            data.put("nearDuplicates", r.nearDuplicates().stream()
-                    .map(KnowledgeDocDto.NearDuplicate::from).toList());
-            if (r.indexOutcome().status() == KnowledgeDocService.IndexOutcome.Status.FAILED) {
-                data.put("indexError", r.indexOutcome().error());
-            }
-            return ApiResponse.success(data);
+            return ApiResponse.success(new SaveResponse(r.docId(), r.version(),
+                    req.publish() ? "PUBLISHED" : "DRAFT", r.indexOutcome().status().name(),
+                    r.indexOutcome().isRetrievable(), r.nearDuplicates().stream()
+                    .map(KnowledgeDocDto.NearDuplicate::from).toList(),
+                    r.indexOutcome().status() == KnowledgeDocService.IndexOutcome.Status.FAILED
+                            ? r.indexOutcome().error() : null, null, null));
 
         } catch (KnowledgeDocService.DuplicateContentException e) {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("duplicateDocId", e.getDuplicateDocId());
-            data.put("duplicateTitle", e.getDuplicateTitle());
-            return ApiResponse.<Object>error(ApiCode.DUPLICATE_CONTENT, e.getMessage(), data);
+            SaveResponse data = new SaveResponse(null, null, null, null, null, List.of(), null,
+                    e.getDuplicateDocId(), e.getDuplicateTitle());
+            return ApiResponse.error(ApiCode.DUPLICATE_CONTENT, e.getMessage(), data);
         } catch (IllegalArgumentException e) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
@@ -121,7 +142,7 @@ public class KnowledgeDocController {
      * 一次性灌入，无需逐篇手动创建。</p>
      */
     @PostMapping("/batch-import")
-    public ApiResponse<Object> batchImport(@RequestBody KnowledgeDocDto.BatchImportRequest req) {
+    public ApiResponse<BatchImportResponse> batchImport(@RequestBody KnowledgeDocDto.BatchImportRequest req) {
         writeGuard.requireEdit();
         if (req == null || req.items() == null || req.items().isEmpty()) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, "批量导入条目不能为空");
@@ -129,7 +150,7 @@ public class KnowledgeDocController {
 
         int successCount = 0;
         int failCount = 0;
-        List<Map<String, Object>> results = new ArrayList<>();
+        List<BatchItemResponse> results = new ArrayList<>();
 
         for (int i = 0; i < req.items().size(); i++) {
             KnowledgeDocDto.CreateRequest item = req.items().get(i);
@@ -151,24 +172,11 @@ public class KnowledgeDocController {
                 KnowledgeDocService.SaveResult r
                         = docService.create(doc, item.tags(), req.publish(), "BATCH_IMPORT");
 
-                Map<String, Object> itemResult = new LinkedHashMap<>();
-                itemResult.put("index", i);
-                itemResult.put("title", item.title());
-                itemResult.put("status", "SUCCESS");
-                itemResult.put("docId", r.docId());
-                itemResult.put("indexStatus", r.indexOutcome().status());
-                itemResult.put("retrievable", r.indexOutcome().isRetrievable());
-                results.add(itemResult);
+                results.add(new BatchItemResponse(i, item.title(), "SUCCESS", r.docId(), r.indexOutcome().status().name(), r.indexOutcome().isRetrievable(), null, null, null));
                 successCount++;
 
             } catch (KnowledgeDocService.DuplicateContentException e) {
-                Map<String, Object> itemResult = new LinkedHashMap<>();
-                itemResult.put("index", i);
-                itemResult.put("title", item.title());
-                itemResult.put("status", "SKIPPED_DUPLICATE");
-                itemResult.put("duplicateDocId", e.getDuplicateDocId());
-                itemResult.put("duplicateTitle", e.getDuplicateTitle());
-                results.add(itemResult);
+                results.add(new BatchItemResponse(i, item.title(), "SKIPPED_DUPLICATE", null, null, null, e.getDuplicateDocId(), e.getDuplicateTitle(), null));
                 failCount++;
 
             } catch (Exception e) {
@@ -176,22 +184,12 @@ public class KnowledgeDocController {
                 // 结果里的 FAILED 计数，没有任何指向失败原因的现场证据
                 log.warn("⚠️ [KnowledgeDoc] 批量导入单条失败 | index={} | title={} | {}",
                         i, item.title(), e.getMessage());
-                Map<String, Object> itemResult = new LinkedHashMap<>();
-                itemResult.put("index", i);
-                itemResult.put("title", item.title());
-                itemResult.put("status", "FAILED");
-                itemResult.put("error", e.getMessage());
-                results.add(itemResult);
+                results.add(new BatchItemResponse(i, item.title(), "FAILED", null, null, null, null, null, e.getMessage()));
                 failCount++;
             }
         }
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("total", req.items().size());
-        data.put("success", successCount);
-        data.put("failed", failCount);
-        data.put("results", results);
-        return ApiResponse.success(data);
+        return ApiResponse.success(new BatchImportResponse(req.items().size(), successCount, failCount, results));
     }
 
     /**
@@ -209,7 +207,7 @@ public class KnowledgeDocController {
      * @param publish true=发布并向量化；false=存草稿
      */
     @PostMapping("/upload")
-    public ApiResponse<Object> upload(
+    public ApiResponse<UploadResponse> upload(
             @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
             @RequestParam(required = false) String title,
             @RequestParam(required = false) Long kbId,
@@ -225,27 +223,17 @@ public class KnowledgeDocController {
                     uploadService.upload(file, title, kbId, categoryId, category,
                             author, tags, publish, knowledgeSource, "UPLOAD");
 
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", r.docId());
-            data.put("title", r.title());
-            data.put("version", r.version());
-            data.put("status", publish ? "PUBLISHED" : "DRAFT");
-            data.put("indexStatus", r.indexOutcome().status());
-            data.put("retrievable", r.indexOutcome().isRetrievable());
-            data.put("parsedLength", r.parsedLength());
-            data.put("originalStored", r.objectKey() != null);
-            data.put("nearDuplicates", r.nearDuplicates().stream()
-                    .map(KnowledgeDocDto.NearDuplicate::from).toList());
-            if (r.indexOutcome().status() == KnowledgeDocService.IndexOutcome.Status.FAILED) {
-                data.put("indexError", r.indexOutcome().error());
-            }
-            return ApiResponse.success(data);
+            return ApiResponse.success(new UploadResponse(r.docId(), r.title(), r.version(),
+                    publish ? "PUBLISHED" : "DRAFT", r.indexOutcome().status().name(),
+                    r.indexOutcome().isRetrievable(), r.parsedLength(), r.objectKey() != null,
+                    r.nearDuplicates().stream().map(KnowledgeDocDto.NearDuplicate::from).toList(),
+                    r.indexOutcome().status() == KnowledgeDocService.IndexOutcome.Status.FAILED
+                            ? r.indexOutcome().error() : null, null, null));
 
         } catch (KnowledgeDocService.DuplicateContentException e) {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("duplicateDocId", e.getDuplicateDocId());
-            data.put("duplicateTitle", e.getDuplicateTitle());
-            return ApiResponse.<Object>error(ApiCode.DUPLICATE_CONTENT, e.getMessage(), data);
+            UploadResponse data = new UploadResponse(null, null, null, null, null, null, null, null,
+                    List.of(), null, e.getDuplicateDocId(), e.getDuplicateTitle());
+            return ApiResponse.error(ApiCode.DUPLICATE_CONTENT, e.getMessage(), data);
         } catch (IllegalArgumentException e) {
             return ApiResponse.error(ApiCode.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
@@ -264,18 +252,14 @@ public class KnowledgeDocController {
      * 没有原件，如实返回 40400 而非伪造一个空文件。</p>
      */
     @GetMapping("/{id}/original-url")
-    public ApiResponse<Object> originalUrl(@PathVariable Long id) {
+    public ApiResponse<OriginalUrlResponse> originalUrl(@PathVariable Long id) {
         try {
             com.devops.agent.domain.rag.KnowledgeUploadService.OriginalDownload download =
                     uploadService.presignOriginalUrl(id);
             if (download == null) {
                 return ApiResponse.error(ApiCode.NOT_FOUND, "文档不存在");
             }
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("url", download.url());
-            data.put("filename", download.filename());
-            data.put("expiresInSeconds", download.expiresInSeconds());
-            return ApiResponse.success(data);
+            return ApiResponse.success(new OriginalUrlResponse(download.url(), download.filename(), download.expiresInSeconds()));
         } catch (IllegalStateException e) {
             // 无留存原件 / 签名失败——消息可直接展示
             return ApiResponse.error(ApiCode.NOT_FOUND, e.getMessage());
@@ -289,7 +273,7 @@ public class KnowledgeDocController {
      * 更新文档（带乐观锁）
      */
     @PutMapping("/{id}")
-    public ApiResponse<Object> update(
+    public ApiResponse<SaveResponse> update(
             @PathVariable Long id,
             @RequestBody KnowledgeDocDto.UpdateRequest req) {
         writeGuard.requireEdit();
@@ -309,15 +293,9 @@ public class KnowledgeDocController {
 
         KnowledgeDoc doc = docService.findById(id, false);
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("id", id);
-        data.put("version", r.version());
-        data.put("status", doc != null ? doc.getStatus() : null);
-        data.put("retrievable", doc != null && doc.isRetrievable());
-        data.put("indexStatus", r.indexOutcome().status());
-        data.put("nearDuplicates", r.nearDuplicates().stream()
-                .map(KnowledgeDocDto.NearDuplicate::from).toList());
-        return ApiResponse.success(data);
+        return ApiResponse.success(new SaveResponse(id, r.version(), doc != null ? doc.getStatus() : null,
+                r.indexOutcome().status().name(), doc != null && doc.isRetrievable(),
+                r.nearDuplicates().stream().map(KnowledgeDocDto.NearDuplicate::from).toList(), null, null, null));
     }
 
     // ==================== 生命周期 ====================
@@ -326,17 +304,11 @@ public class KnowledgeDocController {
      * 发布（草稿 → 已发布）+ 触发向量化
      */
     @PostMapping("/{id}/publish")
-    public ApiResponse<Object> publish(@PathVariable Long id) {
+    public ApiResponse<PublishResponse> publish(@PathVariable Long id) {
         writeGuard.requireEdit();
         KnowledgeDocService.IndexOutcome o = docService.publish(id, "SYSTEM");
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("id", id);
-        data.put("indexStatus", o.status());
-        data.put("retrievable", o.isRetrievable());
-        if (o.status() == KnowledgeDocService.IndexOutcome.Status.FAILED) {
-            data.put("indexError", o.error());
-        }
-        return ApiResponse.success(data);
+        return ApiResponse.success(new PublishResponse(id, o.status().name(), o.isRetrievable(),
+                o.status() == KnowledgeDocService.IndexOutcome.Status.FAILED ? o.error() : null));
     }
 
     /**
@@ -344,32 +316,27 @@ public class KnowledgeDocController {
      * <p>不物理删除：保留正文供历史查阅，删向量使其退出检索。</p>
      */
     @PostMapping("/{id}/deprecate")
-    public ApiResponse<Object> deprecate(@PathVariable Long id,
-                                        @RequestBody(required = false) Map<String, String> body) {
+    public ApiResponse<DeprecateResponse> deprecate(@PathVariable Long id,
+                                        @RequestBody(required = false) DeprecateRequest body) {
         writeGuard.requireDestructive();
-        String reason = body != null ? body.get("reason") : null;
+        String reason = body != null ? body.reason() : null;
         docService.deprecate(id, "SYSTEM", reason);
-        return ApiResponse.success(Map.of("id", id, "status", "DEPRECATED"));
+        return ApiResponse.success(new DeprecateResponse(id, "DEPRECATED"));
     }
 
     /**
      * 回滚到历史版本
      */
     @PostMapping("/{id}/restore")
-    public ApiResponse<Object> restore(@PathVariable Long id,
-                                       @RequestBody(required = false) Map<String, Object> body) {
+    public ApiResponse<RestoreResponse> restore(@PathVariable Long id,
+                                       @RequestBody(required = false) RestoreRequest body) {
         writeGuard.requireEdit();
-        // 回滚目标版本是必填项：不传/非数字直接 400 参数错误而非 50001——
-        // NPE 堆栈对排障无益，调用方拿到明确提示才能自纠
-        Object raw = body == null ? null : body.get("version");
-        if (!(raw instanceof Number version)) {
+        // 回滚目标版本是必填项：不传直接返回明确参数错误。
+        if (body == null || body.version() == null) {
             throw new IllegalArgumentException("version 是必填字段（要回滚到的历史版本号）");
         }
-        KnowledgeDocService.SaveResult r = docService.restore(id, version.intValue(), "SYSTEM");
-        return ApiResponse.success(Map.of(
-                "id", id,
-                "version", r.version(),
-                "retrievable", r.indexOutcome().isRetrievable()));
+        KnowledgeDocService.SaveResult r = docService.restore(id, body.version(), "SYSTEM");
+        return ApiResponse.success(new RestoreResponse(id, r.version(), r.indexOutcome().isRetrievable()));
     }
 
     /**
@@ -379,11 +346,11 @@ public class KnowledgeDocController {
      */
     @DeleteMapping("/{id}/purge")
     @cn.dev33.satoken.annotation.SaCheckRole("ADMIN")   // 方向 F：物理删除不可逆，限管理员
-    public ApiResponse<Object> purge(@PathVariable Long id,
-                                     @RequestBody(required = false) Map<String, String> body) {
-        String reason = body != null ? body.get("complianceReason") : null;
+    public ApiResponse<com.devops.agent.controller.dto.EntityDeleteResponse> purge(@PathVariable Long id,
+                                     @RequestBody(required = false) PurgeRequest body) {
+        String reason = body != null ? body.complianceReason() : null;
         docService.purge(id, "SYSTEM", reason);
-        return ApiResponse.success(Map.of("id", id, "deleted", true));
+        return ApiResponse.success(new com.devops.agent.controller.dto.EntityDeleteResponse(id, true));
     }
 
     // ==================== 查询 ====================
@@ -452,7 +419,7 @@ public class KnowledgeDocController {
      * 文档详情（含正文）
      */
     @GetMapping("/{id}")
-    public ApiResponse<Object> detail(@PathVariable Long id) {
+    public ApiResponse<KnowledgeDocDto.Detail> detail(@PathVariable Long id) {
         KnowledgeDoc doc = docService.findById(id, true);
         if (doc == null) {
             return ApiResponse.error(ApiCode.NOT_FOUND, "文档不存在");
@@ -466,7 +433,7 @@ public class KnowledgeDocController {
      * 工单号是字符串流水号（TKT-…），路径变量不能按 Long 解析。</p>
      */
     @GetMapping("/by-source-ticket/{ticketId}")
-    public ApiResponse<Object> bySourceTicket(@PathVariable String ticketId) {
+    public ApiResponse<List<KnowledgeDocDto.ListItem>> bySourceTicket(@PathVariable String ticketId) {
         List<KnowledgeDoc> docs = docService.findBySourceTicketId(ticketId);
         List<KnowledgeDocDto.ListItem> items = docs.stream()
                 .map(KnowledgeDocDto.ListItem::from).toList();
@@ -547,9 +514,13 @@ public class KnowledgeDocController {
      * 版本历史列表（不含正文，需正文用 /{id}/versions/{version}）
      */
     @GetMapping("/{id}/versions")
-    public ApiResponse<Object> versions(@PathVariable Long id) {
-        List<Map<String, Object>> list = docService.listVersions(id);
-        return ApiResponse.success(Map.of("docId", id, "versions", list));
+    public ApiResponse<VersionsResponse> versions(@PathVariable Long id) {
+        List<VersionItem> list = docService.listVersions(id).stream().map(v -> new VersionItem(
+                number(v.get("id")), number(v.get("docId")), integer(v.get("version")),
+                text(v.get("title")), text(v.get("category")), text(v.get("author")),
+                text(v.get("contentHash")), integer(v.get("contentLength")), text(v.get("changedBy")),
+                text(v.get("changeReason")), text(v.get("changeType")), dateTime(v.get("createTime")))).toList();
+        return ApiResponse.success(new VersionsResponse(id, list));
     }
 
     /**
@@ -564,7 +535,7 @@ public class KnowledgeDocController {
      * @param toV   新版本号
      */
     @GetMapping("/{id}/compare")
-    public ApiResponse<Object> compare(
+    public ApiResponse<KnowledgeDocDto.VersionDiffResult> compare(
             @PathVariable Long id,
             @RequestParam int fromV,
             @RequestParam int toV) {
@@ -602,7 +573,7 @@ public class KnowledgeDocController {
      * 取指定历史版本全文
      */
     @GetMapping("/{id}/versions/{version}")
-    public ApiResponse<Object> version(
+    public ApiResponse<KnowledgeDocDto.Detail> version(
             @PathVariable Long id, @PathVariable int version) {
         KnowledgeDoc doc = docService.findVersion(id, version);
         if (doc == null) {
@@ -615,9 +586,21 @@ public class KnowledgeDocController {
      * 手动触发向量化重试（针对 index_status=FAILED/PENDING 的文档）
      */
     @PostMapping("/reindex/pending")
-    public ApiResponse<Object> retryIndexing(@RequestParam(defaultValue = "20") int limit) {
+    public ApiResponse<RetryIndexingResponse> retryIndexing(@RequestParam(defaultValue = "20") int limit) {
         writeGuard.requireDestructive();
         int succeeded = docService.retryFailedIndexing(limit);
-        return ApiResponse.success(Map.of("retried", succeeded));
+        return ApiResponse.success(new RetryIndexingResponse(succeeded));
     }
+
+    private static Long number(Object value) { return value instanceof Number n ? n.longValue() : null; }
+    private static Integer integer(Object value) { return value instanceof Number n ? n.intValue() : null; }
+    private static String text(Object value) { return value == null ? null : value.toString(); }
+    private static LocalDateTime dateTime(Object value) {
+        if (value instanceof LocalDateTime dateTime) return dateTime;
+        if (value instanceof Timestamp timestamp) return timestamp.toLocalDateTime();
+        if (value instanceof java.util.Date date) return new Timestamp(date.getTime()).toLocalDateTime();
+        if (value instanceof String text) return LocalDateTime.parse(text);
+        return null;
+    }
+
 }
