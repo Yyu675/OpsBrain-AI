@@ -56,12 +56,12 @@ class DiagnosisControllerTest {
         when(hypothesisRepository.findBySessionTraceId("t-1")).thenReturn(List.of(
                 Map.of("rank", 1, "statement", "变更回归")));
 
-        ApiResponse<Map<String, Object>> resp = controller.detail("t-1");
-        Map<String, Object> body = resp.getData();
-        assertThat(body.get("traceId")).isEqualTo("t-1");
-        assertThat(((Map<?, ?>) body.get("session")).get("sufficiency")).isEqualTo("SUFFICIENT");
-        assertThat(((List<?>) body.get("evidences"))).hasSize(2);
-        assertThat(((List<?>) body.get("hypotheses"))).hasSize(1);
+        var resp = controller.detail("t-1");
+        var body = resp.getData();
+        assertThat(body.traceId()).isEqualTo("t-1");
+        assertThat(((Map<?, ?>) body.session()).get("sufficiency")).isEqualTo("SUFFICIENT");
+        assertThat(((List<?>) body.evidences())).hasSize(2);
+        assertThat(((List<?>) body.hypotheses())).hasSize(1);
     }
 
     @Test
@@ -71,10 +71,10 @@ class DiagnosisControllerTest {
         when(evidenceRepository.findByTraceId("t-x")).thenReturn(List.of(
                 Map.of("id", 9L, "evidence_type", "metrics")));
         when(hypothesisRepository.findBySessionTraceId("t-x")).thenReturn(List.of());
-        ApiResponse<Map<String, Object>> resp = controller.detail("t-x");
-        Map<String, Object> body = resp.getData();
-        assertThat(((Map<?, ?>) body.get("session"))).isEmpty();
-        assertThat(((List<?>) body.get("evidences"))).hasSize(1);
+        var resp = controller.detail("t-x");
+        var body = resp.getData();
+        assertThat(((Map<?, ?>) body.session())).isEmpty();
+        assertThat(((List<?>) body.evidences())).hasSize(1);
     }
 
     @Test
@@ -90,14 +90,14 @@ class DiagnosisControllerTest {
         when(hypothesisRepository.findBySessionTraceId("diag-trace-1")).thenReturn(List.of(
                 Map.of("rank", 1, "statement", "连接池耗尽")));
 
-        ApiResponse<Map<String, Object>> resp = controller.detail(dedupKey);
-        Map<String, Object> body = resp.getData();
+        var resp = controller.detail(dedupKey);
+        var body = resp.getData();
 
         // 回放用的是诊断自己的 traceId，而不是工单带来的去重键
-        assertThat(body.get("traceId")).isEqualTo("diag-trace-1");
-        assertThat(((Map<?, ?>) body.get("session")).get("sufficiency")).isEqualTo("WEAK");
-        assertThat(((List<?>) body.get("evidences"))).hasSize(1);
-        assertThat(((List<?>) body.get("hypotheses"))).hasSize(1);
+        assertThat(body.traceId()).isEqualTo("diag-trace-1");
+        assertThat(((Map<?, ?>) body.session()).get("sufficiency")).isEqualTo("WEAK");
+        assertThat(((List<?>) body.evidences())).hasSize(1);
+        assertThat(((List<?>) body.hypotheses())).hasSize(1);
     }
 
     @Test
@@ -106,11 +106,11 @@ class DiagnosisControllerTest {
         when(hypothesisRepository.updateFeedback(42L, "HELPFUL")).thenReturn(1);
         var req = new DiagnosisController.FeedbackRequest(
                 42L, "helpful", java.util.List.of(7L, 8L));
-        ApiResponse<Map<String, Object>> resp = controller.feedback(req);
+        var resp = controller.feedback(req);
         // ApiResponse 语义：code 0 = 成功，非 0 = 业务错误码（见 common/dto/ApiResponse）
         assertThat(resp.getCode()).isZero();
-        assertThat(resp.getData().get("feedback")).isEqualTo("HELPFUL");
-        assertThat(resp.getData().get("knowledgeBoosted")).isEqualTo(2);
+        assertThat(resp.getData().feedback()).isEqualTo("HELPFUL");
+        assertThat(resp.getData().knowledgeBoosted()).isEqualTo(2);
         verify(knowledgeBoostRepository, times(2)).recordFeedback(anyLong(), eq("HELPFUL"));
     }
 
@@ -118,10 +118,10 @@ class DiagnosisControllerTest {
     @DisplayName("2-3.5 反馈入口：hypothesis 不存在 → 404；非法判定 → 400")
     void feedbackEntryValidation() {
         when(hypothesisRepository.updateFeedback(99L, "HELPFUL")).thenReturn(0);
-        ApiResponse<Map<String, Object>> notFound = controller.feedback(
+        var notFound = controller.feedback(
                 new DiagnosisController.FeedbackRequest(99L, "helpful", null));
         assertThat(notFound.getCode()).isEqualTo(404);
-        ApiResponse<Map<String, Object>> bad = controller.feedback(
+        var bad = controller.feedback(
                 new DiagnosisController.FeedbackRequest(1L, "helpful-ish", null));
         assertThat(bad.getCode()).isEqualTo(400);
     }
@@ -136,14 +136,14 @@ class DiagnosisControllerTest {
         when(knowledgeBoostRepository.resolveChunkIds(any())).thenReturn(java.util.Set.of(11L));
 
         // 字段缺失（旧客户端/未升级前端）：反查兜底，回流照做
-        ApiResponse<Map<String, Object>> fallback = controller.feedback(
+        var fallback = controller.feedback(
                 new DiagnosisController.FeedbackRequest(42L, "wrong", null));
         assertThat(fallback.getCode()).isZero();
         assertThat(fallback.getData().get("knowledgeBoosted")).isEqualTo(1);
         verify(knowledgeBoostRepository).recordFeedback(11L, "WRONG");
 
         // 空数组（前端明确说本次没有可引用切片）：不反查、不回流
-        ApiResponse<Map<String, Object>> explicit = controller.feedback(
+        var explicit = controller.feedback(
                 new DiagnosisController.FeedbackRequest(42L, "wrong", List.of()));
         assertThat(explicit.getData().get("knowledgeBoosted")).isEqualTo(0);
         verify(knowledgeBoostRepository, times(1)).recordFeedback(anyLong(), anyString());

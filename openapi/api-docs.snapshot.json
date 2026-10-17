@@ -3358,7 +3358,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponsePostmortemDraftResponse"
                 }
               }
             }
@@ -8145,7 +8145,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseHypothesisFeedbackResponse"
                 }
               }
             }
@@ -14804,7 +14804,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseDiagnosisReplayResponse"
                 }
               }
             }
@@ -25001,6 +25001,158 @@
           },
           "data": {
             "$ref": "#/components/schemas/TicketRootCauseStatsResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "PostmortemDraftResponse": {
+        "type": "object",
+        "properties": {
+          "timeline": {
+            "type": "string",
+            "description": "生成的时间线草稿内容"
+          }
+        },
+        "required": [
+          "timeline"
+        ],
+        "description": "工单复盘时间线草稿响应"
+      },
+      "ApiResponsePostmortemDraftResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PostmortemDraftResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "DiagnosisReplayResponse": {
+        "type": "object",
+        "properties": {
+          "aiMode": {
+            "type": "string",
+            "description": "AI 执行模式"
+          },
+          "evidences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object"
+              }
+            },
+            "description": "证据采集项列表"
+          },
+          "hypotheses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object"
+              }
+            },
+            "description": "假设推导项列表"
+          },
+          "session": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            },
+            "description": "诊断会话详情"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "诊断链路追踪 ID"
+          }
+        },
+        "required": [
+          "aiMode",
+          "evidences",
+          "hypotheses",
+          "session",
+          "traceId"
+        ],
+        "description": "诊断链回放详情响应"
+      },
+      "ApiResponseDiagnosisReplayResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DiagnosisReplayResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "HypothesisFeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "feedback": {
+            "type": "string",
+            "description": "反馈判定结果(HELPFUL/PARTIAL/WRONG)"
+          },
+          "hypothesisId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "假设 ID"
+          },
+          "knowledgeBoosted": {
+            "type": "integer",
+            "format": "int32",
+            "description": "知识库回流命中并增强的切片数"
+          }
+        },
+        "required": [
+          "feedback",
+          "hypothesisId",
+          "knowledgeBoosted"
+        ],
+        "description": "诊断假设质量反馈响应"
+      },
+      "ApiResponseHypothesisFeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HypothesisFeedbackResponse"
           },
           "message": {
             "type": "string"

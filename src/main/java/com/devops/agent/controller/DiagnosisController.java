@@ -67,7 +67,7 @@ public class DiagnosisController {
      */
     @GetMapping("/{traceId}")
     @Operation(summary = "按 traceId 回放完整诊断链（会话+证据+假设）")
-    public ApiResponse<Map<String, Object>> detail(@PathVariable String traceId) {
+    public ApiResponse<com.devops.agent.controller.dto.DiagnosisReplayResponse> detail(@PathVariable String traceId) {
         Map<String, Object> session = sessionRepository.findByTraceId(traceId);
         // 工单「查看诊断回放」带来的是告警去重键（source_trace_id 存的就是它），
         // 不是诊断自己的 traceId。按 traceId 查空时，尝试把它当去重键桥接到
@@ -79,14 +79,13 @@ public class DiagnosisController {
                 session = sessionRepository.findByTraceId(traceId);
             }
         }
-        Map<String, Object> view = new LinkedHashMap<>();
-        view.put("traceId", traceId);
-        view.put("session", session);
-        view.put("aiMode", aiMode);
-        // 会话缺失时证据/假设仍可能是孤证→各自按仓储返回（不掩盖已落数据）
-        view.put("evidences", evidenceRepository.findByTraceId(traceId));
-        view.put("hypotheses", hypothesisRepository.findBySessionTraceId(traceId));
-        return ApiResponse.success(view);
+        return ApiResponse.success(new com.devops.agent.controller.dto.DiagnosisReplayResponse(
+                traceId,
+                session,
+                evidenceRepository.findByTraceId(traceId),
+                hypothesisRepository.findBySessionTraceId(traceId),
+                aiMode
+        ));
     }
 
     /**
@@ -100,7 +99,7 @@ public class DiagnosisController {
      */
     @org.springframework.web.bind.annotation.PostMapping("/hypothesis/feedback")
     @Operation(summary = "标记假设质量 + 可选的知识 boost 回流")
-    public ApiResponse<java.util.Map<String, Object>> feedback(
+    public ApiResponse<com.devops.agent.controller.dto.HypothesisFeedbackResponse> feedback(
             @org.springframework.web.bind.annotation.RequestBody FeedbackRequest req) {
         String verdict = normalizeVerdict(req.feedback());
         if (verdict == null) {
@@ -131,10 +130,10 @@ public class DiagnosisController {
                 }
             }
         }
-        return ApiResponse.success(java.util.Map.of(
-                "hypothesisId", req.hypothesisId(),
-                "feedback", verdict,
-                "knowledgeBoosted", boosted));
+        return ApiResponse.success(new com.devops.agent.controller.dto.HypothesisFeedbackResponse(
+                req.hypothesisId(),
+                verdict,
+                boosted));
     }
 
     /**
