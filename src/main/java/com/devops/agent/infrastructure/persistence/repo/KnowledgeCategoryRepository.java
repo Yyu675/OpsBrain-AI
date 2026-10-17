@@ -1,15 +1,14 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
 import com.devops.agent.domain.rag.KnowledgeCategory;
+import com.devops.agent.domain.rag.KnowledgeCategoryTreeData;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 @Repository
 public class KnowledgeCategoryRepository {
@@ -113,22 +112,15 @@ public class KnowledgeCategoryRepository {
         return count == null ? 0 : count;
     }
 
-    public List<Map<String, Object>> findDocuments() {
+    public List<KnowledgeCategoryTreeData.Document> findDocuments() {
         return jdbcTemplate.query("""
             SELECT id, title, category, category_id, version, status, update_time
               FROM sys_knowledge_doc
              ORDER BY update_time DESC, id DESC
-            """, (rs, rowNum) -> {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("id", rs.getLong("id"));
-                item.put("title", rs.getString("title"));
-                item.put("category", rs.getString("category"));
-                item.put("categoryId", rs.getObject("category_id", Long.class));
-                item.put("version", rs.getInt("version"));
-                item.put("status", rs.getString("status"));
-                item.put("updateTime", rs.getObject("update_time", java.time.LocalDateTime.class));
-                return item;
-            });
+            """, (rs, rowNum) -> new KnowledgeCategoryTreeData.Document(
+                rs.getLong("id"), rs.getString("title"), rs.getString("category"),
+                rs.getObject("category_id", Long.class), rs.getInt("version"),
+                rs.getString("status"), rs.getObject("update_time", java.time.LocalDateTime.class)));
     }
 
     public int moveDocument(Long docId, Long categoryId, String categoryName) {

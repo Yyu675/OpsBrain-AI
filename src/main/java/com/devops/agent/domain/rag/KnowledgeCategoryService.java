@@ -32,40 +32,32 @@ public class KnowledgeCategoryService {
         return repository.findAll();
     }
 
-    public Map<String, Object> tree() {
+    public KnowledgeCategoryTreeData tree() {
         List<KnowledgeCategory> categories = repository.findAll();
-        List<Map<String, Object>> docs = repository.findDocuments();
-        Map<Long, List<Map<String, Object>>> docsByCategory = new LinkedHashMap<>();
+        List<KnowledgeCategoryTreeData.Document> docs = repository.findDocuments();
+        Map<Long, List<KnowledgeCategoryTreeData.Document>> docsByCategory = new LinkedHashMap<>();
         Map<String, Long> categoryIdsByName = new LinkedHashMap<>();
         for (KnowledgeCategory category : categories) {
             categoryIdsByName.put(category.name().toLowerCase(Locale.ROOT), category.id());
         }
-        List<Map<String, Object>> uncategorized = new ArrayList<>();
-        for (Map<String, Object> doc : docs) {
-            Long categoryId = (Long) doc.get("categoryId");
+        List<KnowledgeCategoryTreeData.Document> uncategorized = new ArrayList<>();
+        for (KnowledgeCategoryTreeData.Document doc : docs) {
+            Long categoryId = doc.categoryId();
             if (categoryId == null) {
-                String category = (String) doc.get("category");
+                String category = doc.category();
                 categoryId = category == null ? null : categoryIdsByName.get(category.toLowerCase(Locale.ROOT));
             }
             if (categoryId == null) uncategorized.add(doc);
             else docsByCategory.computeIfAbsent(categoryId, key -> new ArrayList<>()).add(doc);
         }
 
-        List<Map<String, Object>> nodes = new ArrayList<>();
+        List<KnowledgeCategoryTreeData.Node> nodes = new ArrayList<>();
         for (KnowledgeCategory category : categories) {
-            Map<String, Object> node = new LinkedHashMap<>();
-            node.put("id", category.id());
-            node.put("parentId", category.parentId());
-            node.put("name", category.name());
-            node.put("sortOrder", category.sortOrder());
-            node.put("docCount", category.docCount());
-            node.put("documents", docsByCategory.getOrDefault(category.id(), List.of()));
-            nodes.add(node);
+            nodes.add(new KnowledgeCategoryTreeData.Node(
+                    category.id(), category.parentId(), category.name(), category.sortOrder(),
+                    category.docCount(), docsByCategory.getOrDefault(category.id(), List.of())));
         }
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("categories", nodes);
-        result.put("uncategorized", uncategorized);
-        return result;
+        return new KnowledgeCategoryTreeData(nodes, uncategorized);
     }
 
     @Transactional

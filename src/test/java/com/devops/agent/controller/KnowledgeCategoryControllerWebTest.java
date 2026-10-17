@@ -3,6 +3,7 @@ package com.devops.agent.controller;
 import com.devops.agent.common.exception.GlobalExceptionHandler;
 import com.devops.agent.common.exception.OptimisticLockException;
 import com.devops.agent.domain.rag.KnowledgeCategory;
+import com.devops.agent.domain.rag.KnowledgeCategoryTreeData;
 import com.devops.agent.domain.rag.KnowledgeCategoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -158,9 +159,9 @@ class KnowledgeCategoryControllerWebTest {
         @Test
         @DisplayName("树结构里 uncategorized 必须始终存在（哪怕为空）")
         void treeAlwaysCarriesUncategorizedBucket() throws Exception {
-            when(service.tree()).thenReturn(Map.of(
-                    "categories", List.of(Map.of("id", 1L, "name", "K8s 运维", "documents", List.of())),
-                    "uncategorized", List.of()));
+            when(service.tree()).thenReturn(new KnowledgeCategoryTreeData(
+                    List.of(new KnowledgeCategoryTreeData.Node(1L, null, "K8s 运维", 0, 3L, List.of())),
+                    List.of()));
 
             mockMvc.perform(get("/api/v1/knowledge/categories/tree"))
                     .andExpect(status().isOk())
