@@ -385,6 +385,21 @@ class TicketControllerWebTest {
     }
 
     @Test
+    @DisplayName("首响统计从 typed projection 映射，保留可空 MTTA 字段")
+    void firstResponseStatsKeepResponseShape() throws Exception {
+        when(ticketService.getFirstResponseStats()).thenReturn(
+                new com.devops.agent.domain.biz.entity.TicketFirstResponseStats(8L, 3L, 2L, 12.3));
+
+        mockMvc.perform(get("/api/v1/tickets/sla/first-response-stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.responded").value(8))
+                .andExpect(jsonPath("$.data.notResponded").value(3))
+                .andExpect(jsonPath("$.data.breached").value(2))
+                .andExpect(jsonPath("$.data.avgFirstResponseMinutes").value(12.3));
+    }
+
+    @Test
     @DisplayName("未注册的子路径返回 404，不应被当作工单号吞掉")
     void unknownSubPathIsNotSwallowed() throws Exception {
         mockMvc.perform(post("/api/v1/tickets/TKT-1/definitely-not-an-endpoint"))

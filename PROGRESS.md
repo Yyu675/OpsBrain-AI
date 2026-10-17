@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批159 将知识库切片分页 service/controller 的固定 Map wrapper 改为 `KnowledgeChunkPageData`；API 响应保持不变，PR CI 待验证）
+> **最后更新**：2026-10-18（批160 将工单首响 SLA 聚合从 repository/service/controller Map 改为 typed record；批159 已合入 PR #68 `1e85f0f`）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -563,4 +563,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批156(2026-10-17):将 `KnowledgeBoostRepository.docHealthReport()` 的 `List<Map<String,Object>>` 改为 `List<DocHealthRow>` RowMapper，Controller 使用 typed fields 计算净反馈并映射原有 `KnowledgeDocHealthResponse`；保留 SQL 分组/排序、null 返回空列表、`net=wrong-helpful` 与 JSON 字段语义。新增 WebMvc 响应值断言；外部 DTO 未变，不需 OpenAPI/Orval 更新。本地后端未能编译，PR #65 CI 后端/前端/工作流/E2E 全通过。
 - 批157(2026-10-18):将 `SearchController` 三类全局搜索的 JDBC `queryForList`/Map key 解包改为直接 RowMapper 构造既有 `SearchResultItem`；保留查询条件、各类别 LIMIT/排序、合并顺序、总量截断及 null→空字符串语义。新增 WebMvc 测试锁定 HTTP 字段和类别顺序；外部 DTO schema 未变，无需 OpenAPI/Orval 更新。本地因无 Java 且 Maven Wrapper 下载失败未能运行后端测试；PR #66 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `ecff86c`）。
 - 批158(2026-10-18):`KnowledgeStatsService.getStats()` 与 `KnowledgeManageController` 由 `Map<String,Object>` 固定字段解包改为 `KnowledgeStatsData`；来源名为动态键的 `bySource` 继续保留 `Map<String,Long>`。统计查询、active/filtered 计算、空 bySource fallback 与 `KnowledgeStatsResponse` JSON 字段保持不变；WebMvc 测试更新为 typed stub 并断言统计值/动态来源键。无外部 schema 变化；PR #67 后端、前端、工作流与 E2E CI 全通过并合入（merge commit `69d680e`）。本地尝试下载 Temurin JDK 21（GitHub release asset），但重定向到 `release-assets.githubusercontent.com` 被环境网络拒绝；Maven Wrapper 下载亦失败。
-- 批159(2026-10-18):将 `KnowledgeStatsService.listChunks()` 的分页 wrapper 从 `Map<String,Object>` 改为 `KnowledgeChunkPageData`，Controller 直接映射 typed fields 到既有 `KnowledgeChunkPageResponse`。查询筛选、分页钳制、参数透传和输出 page/size/total/list 字段保持不变；WebMvc 测试改 typed stub 并锁定分页 JSON。外部 schema 不变，无需 OpenAPI/Orval 更新；PR CI 待验证。
+- 批159(2026-10-18):将 `KnowledgeStatsService.listChunks()` 的分页 wrapper 从 `Map<String,Object>` 改为 `KnowledgeChunkPageData`，Controller 直接映射 typed fields 到既有 `KnowledgeChunkPageResponse`。查询筛选、分页钳制、参数透传和输出 page/size/total/list 字段保持不变；WebMvc 测试改 typed stub 并锁定分页 JSON。外部 schema 不变，无需 OpenAPI/Orval 更新；PR #68 前端、后端、工作流与 E2E CI 全绿并合入（merge commit `1e85f0f`）。
+- 批160(2026-10-18):`DevOpsTicketRepository.countFirstResponseStats()`、`TicketService.getFirstResponseStats()` 与 Controller 的固定 Map 数据流改为 `TicketFirstResponseStats` typed record。SQL 条件及有记录才计算均值、NULL MTTA 保持 null、平均值一位小数舍入与异常回退零计数/null 均值不变；新增 HTTP 契约断言。响应 DTO/schema 未变，无 OpenAPI/Orval 更新；后端 CI 待验证。

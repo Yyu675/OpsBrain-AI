@@ -858,10 +858,8 @@ public class DevOpsTicketRepository {
      * 只统计**有首响记录**的工单求均值——历史数据 first_response_at 为 NULL
      * （v17 迁移刻意不回填，见其注释），计入会把 MTTA 严重拉偏。
      * </p>
-     *
-     * @return {@code {responded, notResponded, breached, avgFirstResponseMinutes}}
      */
-    public java.util.Map<String, Object> countFirstResponseStats() {
+    public com.devops.agent.domain.biz.entity.TicketFirstResponseStats countFirstResponseStats() {
         String sql = """
             SELECT
                 COUNT(*) FILTER (WHERE first_response_at IS NOT NULL) AS responded,
@@ -872,20 +870,22 @@ public class DevOpsTicketRepository {
                     FILTER (WHERE first_response_at IS NOT NULL) AS avg_minutes
               FROM sys_devops_ticket
             """;
-        java.util.Map<String, Object> result = new java.util.HashMap<>();
         try {
-            jdbcTemplate.query(sql, rs -> {
-                result.put("responded", rs.getLong("responded"));
-                result.put("notResponded", rs.getLong("not_responded"));
-                result.put("breached", rs.getLong("breached"));
+            return jdbcTemplate.query(sql, (rs, rowNum) -> {
                 double avg = rs.getDouble("avg_minutes");
-                // NULL（无任何首响记录）→ null，不用 0 冒充「秒级响应」
-                result.put("avgFirstResponseMinutes", rs.wasNull() ? null : Math.round(avg * 10) / 10.0);
-            });
+                // SQL NULL（无任何首响记录）必须保留为 null，不可伪装成 0 分钟。
+                Double avgMinutes = rs.wasNull() ? null : Math.round(avg * 10) / 10.0;
+                return new com.devops.agent.domain.biz.entity.TicketFirstResponseStats(
+                        rs.getLong("responded"),
+                        rs.getLong("not_responded"),
+                        rs.getLong("breached"),
+                        avgMinutes);
+            }).stream().findFirst().orElseGet(() ->
+                    new com.devops.agent.domain.biz.entity.TicketFirstResponseStats(0L, 0L, 0L, null));
         } catch (Exception e) {
             log.warn("⚠️ [Repository] 首响统计失败: {}", e.getMessage());
+            return new com.devops.agent.domain.biz.entity.TicketFirstResponseStats(0L, 0L, 0L, null);
         }
-        return result;
     }
 
     /**

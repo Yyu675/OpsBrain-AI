@@ -891,7 +891,7 @@ public class TicketService {
     }
 
     /** 首响统计（供看板 MTTA） */
-    public java.util.Map<String, Object> getFirstResponseStats() {
+    public com.devops.agent.domain.biz.entity.TicketFirstResponseStats getFirstResponseStats() {
         return ticketRepository.countFirstResponseStats();
     }
 
