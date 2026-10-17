@@ -1,5 +1,6 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
+import com.devops.agent.domain.audit.AgentCallTraceRow;
 import com.devops.agent.domain.audit.AuditFilterOptionsData;
 import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import lombok.extern.slf4j.Slf4j;
@@ -195,8 +196,8 @@ public class AuditLogQueryRepository {
     }
 
     /** 单条 AI 调用详情（含问答全文与引用） */
-    public Map<String, Object> findAgentCallByTraceId(String traceId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+    public AgentCallTraceRow findAgentCallByTraceId(String traceId) {
+        List<AgentCallTraceRow> rows = jdbcTemplate.query(
                 """
                 SELECT id, trace_id, user_query, agent_answer, model_name,
                        is_cached, latency_ms, cost_rmb, citations,
@@ -205,7 +206,22 @@ public class AuditLogQueryRepository {
                 WHERE trace_id = ?
                 ORDER BY id DESC
                 LIMIT 1
-                """, traceId);
+                """,
+                (rs, rowNum) -> new AgentCallTraceRow(
+                        rs.getObject("id", Long.class),
+                        rs.getString("trace_id"),
+                        rs.getString("user_query"),
+                        rs.getString("agent_answer"),
+                        rs.getString("model_name"),
+                        rs.getObject("is_cached", Boolean.class),
+                        rs.getObject("latency_ms", Integer.class),
+                        rs.getBigDecimal("cost_rmb"),
+                        rs.getString("citations"),
+                        rs.getString("operation_type"),
+                        rs.getString("affected_resources"),
+                        rs.getString("operator_id"),
+                        rs.getObject("create_time", LocalDateTime.class)),
+                traceId);
         return rows.isEmpty() ? null : rows.get(0);
     }
 

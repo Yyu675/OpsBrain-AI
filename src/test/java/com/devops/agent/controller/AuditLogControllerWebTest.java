@@ -114,6 +114,13 @@ class AuditLogControllerWebTest {
                 java.time.LocalDateTime.of(2026, 10, 18, 10, 30));
     }
 
+    private static com.devops.agent.domain.audit.AgentCallTraceRow aiCallTrace() {
+        return new com.devops.agent.domain.audit.AgentCallTraceRow(
+                7L, "t-1", "question", "answer", "deepseek-chat", true, 125,
+                new java.math.BigDecimal("0.0123"), "[source]", "CHAT", "ticket:T-9", "u-1",
+                java.time.LocalDateTime.of(2026, 10, 18, 10, 31));
+    }
+
     // ==================================================================
 
     @Nested
@@ -260,15 +267,20 @@ class AuditLogControllerWebTest {
         @Test
         @DisplayName("AI 调用与操作审计一并返回 —— 这是本模块相对通用日志查看器的核心价值")
         void returnsBothSides() throws Exception {
-            when(repository.findAgentCallByTraceId("t-1"))
-                    .thenReturn(Map.of("id", 1, "model_name", "deepseek-chat", "modelName", "deepseek-chat"));
+            when(repository.findAgentCallByTraceId("t-1")).thenReturn(aiCallTrace());
             when(repository.findAuditByTraceId("t-1"))
                     .thenReturn(List.of(traceOperation("ticket.create")));
 
             mockMvc.perform(get("/api/v1/audit/trace/t-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.traceId").value("t-1"))
+                    .andExpect(jsonPath("$.data.aiCall.id").value(7))
                     .andExpect(jsonPath("$.data.aiCall.model_name").value("deepseek-chat"))
+                    .andExpect(jsonPath("$.data.aiCall.user_query").value("question"))
+                    .andExpect(jsonPath("$.data.aiCall.agent_answer").value("answer"))
+                    .andExpect(jsonPath("$.data.aiCall.is_cached").value(true))
+                    .andExpect(jsonPath("$.data.aiCall.latency_ms").value(125))
+                    .andExpect(jsonPath("$.data.aiCall.cost_rmb").value(0.0123))
                     .andExpect(jsonPath("$.data.operations[0].action").value("ticket.create"))
                     .andExpect(jsonPath("$.data.operations[0].actor_id").value("u-1"))
                     .andExpect(jsonPath("$.data.operations[0].actor_name").value("Alice"))
