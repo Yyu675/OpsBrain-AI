@@ -257,23 +257,28 @@ public class TicketController {
      * @param size          上限，默认 50，最大 200
      */
     @GetMapping("/sla/at-risk")
-    public ApiResponse<Map<String, Object>> slaAtRisk(
+    public ApiResponse<com.devops.agent.controller.dto.TicketSlaAtRiskResponse> slaAtRisk(
             @RequestParam(defaultValue = "30") int withinMinutes,
             @RequestParam(defaultValue = "50") int size) {
         List<DevOpsTicket> list = ticketService.findSlaAtRisk(withinMinutes, size);
-        Map<String, Object> data = new HashMap<>();
-        data.put("total", list.size());
-        data.put("withinMinutes", Math.max(0, withinMinutes));
-        data.put("tickets", list);
-        return ApiResponse.success(data);
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketSlaAtRiskResponse(
+                list.size(),
+                Math.max(0, withinMinutes),
+                list));
     }
 
     /**
      * 首响统计（MTTA）
      */
     @GetMapping("/sla/first-response-stats")
-    public ApiResponse<Map<String, Object>> firstResponseStats() {
-        return ApiResponse.success(ticketService.getFirstResponseStats());
+    public ApiResponse<com.devops.agent.controller.dto.TicketFirstResponseStatsResponse> firstResponseStats() {
+        Map<String, Object> map = ticketService.getFirstResponseStats();
+        long responded = map.get("responded") instanceof Number n ? n.longValue() : 0L;
+        long notResponded = map.get("notResponded") instanceof Number n ? n.longValue() : 0L;
+        long breached = map.get("breached") instanceof Number n ? n.longValue() : 0L;
+        Double avg = map.get("avgFirstResponseMinutes") instanceof Number n ? n.doubleValue() : null;
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketFirstResponseStatsResponse(
+                responded, notResponded, breached, avg));
     }
 
     // ==================== B2 现场处置 ====================
@@ -283,13 +288,13 @@ public class TicketController {
      * <p>effective 允许为 false——失败尝试同样有价值（PRD §2.1 排查占 40% 且依赖经验）。</p>
      */
     @PostMapping("/{id}/actions")
-    public ApiResponse<Map<String, Object>> addAction(@PathVariable String id,
-                                                     @RequestBody ActionRequest req) {
+    public ApiResponse<com.devops.agent.controller.dto.TicketActionResponse> addAction(@PathVariable String id,
+                                                                                      @RequestBody ActionRequest req) {
         writeGuard.requireWrite();
         log.info("[TicketController] 记录处置动作: id={}, type={}", id, req.actionType());
         var action = ticketService.addAction(id, req.actionType(), req.summary(),
                 req.detail(), req.operator(), req.effective());
-        return ApiResponse.success(Map.of("id", action.getId(), "action", action));
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketActionResponse(action.getId(), action));
     }
 
     /**
@@ -381,8 +386,29 @@ public class TicketController {
      * 传 days 时附带同窗口的告警压缩比分子分母（效能大盘用）。
      */
     @GetMapping("/metrics/closure")
-    public ApiResponse<Map<String, Object>> closureMetrics(@RequestParam(required = false) Integer days) {
-        return ApiResponse.success(ticketService.getClosureMetrics(days));
+    public ApiResponse<com.devops.agent.controller.dto.TicketClosureMetricsResponse> closureMetrics(@RequestParam(required = false) Integer days) {
+        Map<String, Object> m = ticketService.getClosureMetrics(days);
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketClosureMetricsResponse(
+                m.get("total") instanceof Number n ? n.longValue() : 0L,
+                m.get("firstResponded") instanceof Number n ? n.longValue() : 0L,
+                m.get("mitigated") instanceof Number n ? n.longValue() : 0L,
+                m.get("rootCauseConfirmed") instanceof Number n ? n.longValue() : 0L,
+                m.get("verified") instanceof Number n ? n.longValue() : 0L,
+                m.get("verifySkipped") instanceof Number n ? n.longValue() : 0L,
+                m.get("mttaMinutes") instanceof Number n ? n.doubleValue() : null,
+                m.get("mttmMinutes") instanceof Number n ? n.doubleValue() : null,
+                m.get("mttrMinutes") instanceof Number n ? n.doubleValue() : null,
+                m.get("skipRate") instanceof Number n ? n.doubleValue() : null,
+                m.get("alertSourced") instanceof Number n ? n.longValue() : null,
+                m.get("postmortemTotal") instanceof Number n ? n.longValue() : null,
+                m.get("finishedTotal") instanceof Number n ? n.longValue() : null,
+                m.get("postmortemRate") instanceof Number n ? n.doubleValue() : null,
+                m.get("windowDays") instanceof Number n ? n.intValue() : null,
+                m.get("alertsInWindow") instanceof Number n ? n.longValue() : null,
+                m.get("alertSourcedInWindow") instanceof Number n ? n.longValue() : null,
+                m.get("incidentsInWindow") instanceof Number n ? n.longValue() : null,
+                m.get("incidentsTotal") instanceof Number n ? n.longValue() : null
+        ));
     }
 
     /**
@@ -390,10 +416,20 @@ public class TicketController {
      * 指标只告诉主管「复盘率 0%」，这张清单告诉他「哪几张单欠着」。
      */
     @GetMapping("/metrics/closure/missing-postmortem")
-    public ApiResponse<List<Map<String, Object>>> missingPostmortem(
+    public ApiResponse<List<com.devops.agent.controller.dto.MissingPostmortemItemDto>> missingPostmortem(
             @RequestParam(defaultValue = "20") int limit) {
-        return ApiResponse.success(
-                ticketService.findFinishedWithoutPostmortem(Math.min(Math.max(1, limit), 100)));
+        List<Map<String, Object>> list = ticketService.findFinishedWithoutPostmortem(Math.min(Math.max(1, limit), 100));
+        List<com.devops.agent.controller.dto.MissingPostmortemItemDto> items = new ArrayList<>();
+        if (list != null) {
+            for (Map<String, Object> m : list) {
+                items.add(new com.devops.agent.controller.dto.MissingPostmortemItemDto(
+                        (String) m.get("id"),
+                        (String) m.get("title"),
+                        (String) m.get("status"),
+                        (LocalDateTime) m.get("create_time")));
+            }
+        }
+        return ApiResponse.success(items);
     }
 
     /**
@@ -442,17 +478,14 @@ public class TicketController {
      * @return 作废结果描述
      */
     @PostMapping("/{id}/void")
-    public ApiResponse<Map<String, Object>> voidTicket(@PathVariable String id,
-                                                       @RequestBody(required = false) VoidRequest req) {
+    public ApiResponse<com.devops.agent.controller.dto.TicketVoidResponse> voidTicket(@PathVariable String id,
+                                                                                      @RequestBody(required = false) VoidRequest req) {
         writeGuard.requireWrite();
         String reason = (req != null && req.reason() != null && !req.reason().isBlank())
                 ? req.reason() : "人工作废";
         log.warn("[TicketController] 作废工单: id={}, reason={}", id, reason);
         String message = ticketService.voidTicket(id, reason);
-        Map<String, Object> data = new HashMap<>();
-        data.put("ticketId", id);
-        data.put("message", message);
-        return ApiResponse.success(data);
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketVoidResponse(id, message));
     }
 
     /**
@@ -464,8 +497,23 @@ public class TicketController {
      * @return 各状态数量 + 今日新增 + 总数
      */
     @GetMapping("/stats")
-    public ApiResponse<Map<String, Object>> getStats() {
-        return ApiResponse.success(ticketService.getTicketStats());
+    public ApiResponse<com.devops.agent.controller.dto.TicketStatsResponse> getStats() {
+        Map<String, Object> map = ticketService.getTicketStats();
+        @SuppressWarnings("unchecked")
+        Map<String, Long> byStatus = (Map<String, Long>) map.get("byStatus");
+        @SuppressWarnings("unchecked")
+        Map<String, Long> byPriority = (Map<String, Long>) map.get("byPriority");
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketStatsResponse(
+                map.get("total") instanceof Number n ? n.longValue() : 0L,
+                map.get("todayNew") instanceof Number n ? n.longValue() : 0L,
+                byStatus != null ? byStatus : Map.of(),
+                map.get("pending") instanceof Number n ? n.longValue() : 0L,
+                map.get("processing") instanceof Number n ? n.longValue() : 0L,
+                map.get("resolved") instanceof Number n ? n.longValue() : 0L,
+                byPriority != null ? byPriority : Map.of(),
+                map.get("urgentPending") instanceof Number n ? n.longValue() : 0L,
+                map.get("unassignedOpen") instanceof Number n ? n.longValue() : 0L
+        ));
     }
 
     // ==================== 请求体 ====================
@@ -685,24 +733,31 @@ public class TicketController {
      * 被引 chunk 数（0=该分析无引用或回流降级，不视为失败）。</p>
      */
     @PostMapping("/ai-analysis/{analysisId}/feedback")
-    public ApiResponse<Map<String, Object>> aiAnalysisFeedback(@PathVariable Long analysisId,
-                                                               @RequestBody FeedbackRequest req) {
+    public ApiResponse<com.devops.agent.controller.dto.TicketAiFeedbackResponse> aiAnalysisFeedback(@PathVariable Long analysisId,
+                                                                                                    @RequestBody FeedbackRequest req) {
         var result = aiAnalysisService.recordFeedback(analysisId, req.helpful());
         if (!result.recorded()) {
             return ApiResponse.error(ApiCode.NOT_FOUND, "分析不存在: " + analysisId);
         }
-        return ApiResponse.success(Map.of(
-                "analysisId", analysisId,
-                "helpful", req.helpful(),
-                "knowledgeBoosted", result.knowledgeBoosted()));
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketAiFeedbackResponse(
+                analysisId,
+                req.helpful(),
+                result.knowledgeBoosted()));
     }
 
     /**
      * AI 分析准确率统计（供数据概览展示）
      */
     @GetMapping("/ai-analysis/stats")
-    public ApiResponse<Map<String, Object>> aiAnalysisStats() {
-        return ApiResponse.success(aiAnalysisService.accuracyStats());
+    public ApiResponse<com.devops.agent.controller.dto.TicketAiAccuracyStatsResponse> aiAnalysisStats() {
+        Map<String, Object> map = aiAnalysisService.accuracyStats();
+        return ApiResponse.success(new com.devops.agent.controller.dto.TicketAiAccuracyStatsResponse(
+                map.get("total") instanceof Number n ? n.longValue() : 0L,
+                map.get("rated") instanceof Number n ? n.longValue() : 0L,
+                map.get("helpful") instanceof Number n ? n.longValue() : 0L,
+                map.get("unhelpful") instanceof Number n ? n.longValue() : 0L,
+                map.get("helpfulRate") instanceof Number n ? n.doubleValue() : null
+        ));
     }
 
     /**

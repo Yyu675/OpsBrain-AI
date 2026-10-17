@@ -75,6 +75,8 @@ import type { MetricInstantResponse as GenMetricInstantResponse } from './genera
 import type { MetricRangeResponse as GenMetricRangeResponse } from './generated/metricRangeResponse'
 import type { MetricOverviewResponse as GenMetricOverviewResponse } from './generated/metricOverviewResponse'
 import type { MetricDatasourceResponse as GenMetricDatasourceResponse } from './generated/metricDatasourceResponse'
+import type { TicketAiAccuracyStatsResponse as GenTicketAiAccuracyStatsResponse } from './generated/ticketAiAccuracyStatsResponse'
+import type { TicketClosureMetricsResponse as GenTicketClosureMetricsResponse } from './generated/ticketClosureMetricsResponse'
 
 import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
 import type { BackendTicket } from './types/ticket'
@@ -116,6 +118,8 @@ import type {
   NotifyChannelView, NotifyChannelList, IngestSecretView,
   NotifyTestResult, NotifySecretRevealed
 } from './types/notify'
+import type { ClosureMetrics } from './dashboard'
+import type { AiAnalysisStats } from './ticketAiAnalysis'
 
 /** 生成有、手写无（后端加字段没跟） */
 type GenOnly<G, H> = Exclude<keyof G, keyof H>
@@ -128,6 +132,10 @@ type AssertDriftFree<T extends never> = T
 
 export type BackendTicket_Missing = AssertDriftFree<GenOnly<GenDevOpsTicket, BackendTicket>>
 export type BackendTicket_Extra = AssertDriftFree<HandOnly<GenDevOpsTicket, BackendTicket>>
+export type TicketClosureMetrics_Missing = AssertDriftFree<GenOnly<GenTicketClosureMetricsResponse, ClosureMetrics>>
+export type TicketClosureMetrics_Extra = AssertDriftFree<HandOnly<GenTicketClosureMetricsResponse, ClosureMetrics>>
+export type TicketAiStats_Missing = AssertDriftFree<GenOnly<GenTicketAiAccuracyStatsResponse, AiAnalysisStats>>
+export type TicketAiStats_Extra = AssertDriftFree<HandOnly<GenTicketAiAccuracyStatsResponse, AiAnalysisStats>>
 
 // ==================== 告警域 ====================
 

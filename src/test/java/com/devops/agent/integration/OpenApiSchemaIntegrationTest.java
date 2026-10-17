@@ -394,6 +394,46 @@ class OpenApiSchemaIntegrationTest {
             assertThat(sagaCompensate).as("SagaCompensateResponse 缺失").isNotNull();
             assertThat(fieldNames(sagaCompensate.path("properties"))).contains(
                     "sagaId", "compensatedCount", "failedCount", "compensated", "failed", "fullySucceeded");
+
+            JsonNode slaAtRisk = componentSchema("TicketSlaAtRiskResponse");
+            assertThat(slaAtRisk).as("TicketSlaAtRiskResponse 缺失").isNotNull();
+            assertThat(fieldNames(slaAtRisk.path("properties"))).contains("total", "withinMinutes", "tickets");
+
+            JsonNode firstResponseStats = componentSchema("TicketFirstResponseStatsResponse");
+            assertThat(firstResponseStats).as("TicketFirstResponseStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(firstResponseStats.path("properties"))).contains(
+                    "responded", "notResponded", "breached", "avgFirstResponseMinutes");
+
+            JsonNode ticketAction = componentSchema("TicketActionResponse");
+            assertThat(ticketAction).as("TicketActionResponse 缺失").isNotNull();
+            assertThat(fieldNames(ticketAction.path("properties"))).contains("id", "action");
+
+            JsonNode missingPostmortem = componentSchema("MissingPostmortemItemDto");
+            assertThat(missingPostmortem).as("MissingPostmortemItemDto 缺失").isNotNull();
+            assertThat(fieldNames(missingPostmortem.path("properties"))).contains("id", "title", "status", "createTime");
+
+            JsonNode ticketVoid = componentSchema("TicketVoidResponse");
+            assertThat(ticketVoid).as("TicketVoidResponse 缺失").isNotNull();
+            assertThat(fieldNames(ticketVoid.path("properties"))).contains("ticketId", "message");
+
+            JsonNode ticketStats = componentSchema("TicketStatsResponse");
+            assertThat(ticketStats).as("TicketStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(ticketStats.path("properties"))).contains(
+                    "total", "todayNew", "byStatus", "pending", "processing", "resolved", "byPriority", "urgentPending", "unassignedOpen");
+
+            JsonNode aiFeedback = componentSchema("TicketAiFeedbackResponse");
+            assertThat(aiFeedback).as("TicketAiFeedbackResponse 缺失").isNotNull();
+            assertThat(fieldNames(aiFeedback.path("properties"))).contains("analysisId", "helpful", "knowledgeBoosted");
+
+            JsonNode aiAccuracy = componentSchema("TicketAiAccuracyStatsResponse");
+            assertThat(aiAccuracy).as("TicketAiAccuracyStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(aiAccuracy.path("properties"))).contains("total", "rated", "helpful", "unhelpful", "helpfulRate");
+
+            JsonNode closureMetrics = componentSchema("TicketClosureMetricsResponse");
+            assertThat(closureMetrics).as("TicketClosureMetricsResponse 缺失").isNotNull();
+            assertThat(fieldNames(closureMetrics.path("properties"))).contains(
+                    "total", "firstResponded", "mitigated", "rootCauseConfirmed", "verified", "verifySkipped",
+                    "mttaMinutes", "mttmMinutes", "mttrMinutes", "skipRate");
         }
     }
 
