@@ -1,6 +1,6 @@
 package com.devops.agent.controller.dto;
 
-import java.util.Map;
+import java.time.LocalDateTime;
 
 /**
  * Agent 状态机迁移单项记录（GET /api/v1/agent/traces/{traceId} -> transitions 项）。
@@ -28,8 +28,8 @@ public record AgentTransitionItemResponse(
         String triggerType,
         String triggerDetail,
         String operator,
-        String timestamp,
+        LocalDateTime timestamp,
         long durationMs,
-        Map<String, Object> metadata
+        String metadata
 ) {
 }

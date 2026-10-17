@@ -4,14 +4,13 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
-import type { AgentTransitionItemResponseMetadata } from './agentTransitionItemResponseMetadata';
 
 export interface AgentTransitionItemResponse {
   durationMs?: number;
   fromState?: string;
   fromStateText?: string;
   id?: string;
-  metadata?: AgentTransitionItemResponseMetadata;
+  metadata?: string;
   operator?: string;
   sessionId?: string;
   timestamp?: string;

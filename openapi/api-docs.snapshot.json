@@ -22236,10 +22236,7 @@
             "type": "string"
           },
           "metadata": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object"
-            }
+            "type": "string"
           },
           "operator": {
             "type": "string"
@@ -22248,7 +22245,8 @@
             "type": "string"
           },
           "timestamp": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "toState": {
             "type": "string"
