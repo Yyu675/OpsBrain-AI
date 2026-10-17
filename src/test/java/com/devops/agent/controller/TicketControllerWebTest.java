@@ -368,6 +368,23 @@ class TicketControllerWebTest {
     }
 
     @Test
+    @DisplayName("缺失复盘清单由 typed row 映射，保留接口字段与时间值")
+    void missingPostmortemItemsKeepResponseShape() throws Exception {
+        var created = java.time.LocalDateTime.of(2026, 10, 17, 12, 0);
+        when(ticketService.findFinishedWithoutPostmortem(20)).thenReturn(List.of(
+                new com.devops.agent.domain.biz.repository.TicketPostmortemRepository.MissingPostmortemRow(
+                        "TK-2026-0007", "支付超时", "RESOLVED", created)));
+
+        mockMvc.perform(get("/api/v1/tickets/metrics/closure/missing-postmortem"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[0].id").value("TK-2026-0007"))
+                .andExpect(jsonPath("$.data[0].title").value("支付超时"))
+                .andExpect(jsonPath("$.data[0].status").value("RESOLVED"))
+                .andExpect(jsonPath("$.data[0].createTime").value("2026-10-17T12:00:00"));
+    }
+
+    @Test
     @DisplayName("未注册的子路径返回 404，不应被当作工单号吞掉")
     void unknownSubPathIsNotSwallowed() throws Exception {
         mockMvc.perform(post("/api/v1/tickets/TKT-1/definitely-not-an-endpoint"))

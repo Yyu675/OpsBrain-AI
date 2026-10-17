@@ -1274,7 +1274,8 @@ public class TicketService {
     /**
      * 已完结但没有复盘的工单清单（复盘完成率的行动出口）。
      */
-    public java.util.List<java.util.Map<String, Object>> findFinishedWithoutPostmortem(int limit) {
+    public List<com.devops.agent.domain.biz.repository.TicketPostmortemRepository.MissingPostmortemRow>
+            findFinishedWithoutPostmortem(int limit) {
         return postmortemRepository.findFinishedWithoutPostmortem(limit);
     }
 

@@ -428,17 +428,12 @@ public class TicketController {
     @GetMapping("/metrics/closure/missing-postmortem")
     public ApiResponse<List<com.devops.agent.controller.dto.MissingPostmortemItemDto>> missingPostmortem(
             @RequestParam(defaultValue = "20") int limit) {
-        List<Map<String, Object>> list = ticketService.findFinishedWithoutPostmortem(Math.min(Math.max(1, limit), 100));
-        List<com.devops.agent.controller.dto.MissingPostmortemItemDto> items = new ArrayList<>();
-        if (list != null) {
-            for (Map<String, Object> m : list) {
-                items.add(new com.devops.agent.controller.dto.MissingPostmortemItemDto(
-                        (String) m.get("id"),
-                        (String) m.get("title"),
-                        (String) m.get("status"),
-                        (LocalDateTime) m.get("create_time")));
-            }
-        }
+        List<com.devops.agent.domain.biz.repository.TicketPostmortemRepository.MissingPostmortemRow> rows =
+                ticketService.findFinishedWithoutPostmortem(Math.min(Math.max(1, limit), 100));
+        List<com.devops.agent.controller.dto.MissingPostmortemItemDto> items = rows == null ? List.of() : rows.stream()
+                .map(row -> new com.devops.agent.controller.dto.MissingPostmortemItemDto(
+                        row.id(), row.title(), row.status(), row.createTime()))
+                .toList();
         return ApiResponse.success(items);
     }
 
