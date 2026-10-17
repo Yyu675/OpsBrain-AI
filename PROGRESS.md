@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批171 将知识反馈 boost 固定行投影 typed 化；批170 已合入 PR #80）
+> **最后更新**：2026-10-18（批172 将知识库索引健康聚合固定行 typed 化；批171 已合入 PR #82）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -575,4 +575,5 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批168(2026-10-18):针对已有 `/audit/trace/{traceId}` WebMvc 覆盖的固定操作审计行，将 `AuditLogQueryRepository.findAuditByTraceId()` 从 `List<Map<String,Object>>` 改为 `List<OperationAuditTraceRow>` RowMapper，Controller 通过 typed converter 映射既有 `OperationAuditItem`；保留 SELECT 字段、traceId filter、创建时间/id 排序、空链路/单侧链路行为和 JSON snake_case 字段。增强 WebMvc 字段断言并添加 typed repository 查询测试；外部 schema 不变，无 OpenAPI/Orval 更新；PR #77 后端、前端、工作流及 E2E CI 全通过并合入（merge commit `f4b5b0e`）。
 - 批169(2026-10-18):仅针对已有 trace-detail WebMvc 用例覆盖的固定 AI 调用行，将 `AuditLogQueryRepository.findAgentCallByTraceId()` 从 Map/queryForList 改为 `AgentCallTraceRow` typed RowMapper，并映射原 `AgentCallDetailItem`。保留 traceId 条件、id DESC/LIMIT 1、无行返回 null、可空查询字段与 JSON snake_case；增强已有 trace HTTP 用例、增加 repository 查询约束断言。外部 schema 未变，无 OpenAPI/Orval 更新；PR #78 后端（2126 tests, 0 failures, 2 skipped）、前端（107 files/1863 tests）、工作流和 E2E 全绿并合入（merge commit `a82592c`）。
 - 批170(2026-10-18):将知识文档版本历史固定字段链从 `KnowledgeDocHistoryRepository.listVersions()` 至 Controller 的 Map 改为 `KnowledgeDocVersionRow` typed projection；保留 SQL 字段别名（camelCase）、docId 参数、版本倒序、列表字段/空值与 HTTP JSON。扩展已有版本历史 WebMvc 测试断言全部 12 个字段，新增 repository typed result/SQL 约束测试；外部 DTO/schema 未变，无 OpenAPI/Orval 更新。首轮 CI 发现新 repository test 错误静态导入 `aryEq` 导致测试编译失败，修正为 `AdditionalMatchers.aryEq` 后后端、前端、工作流及 E2E 全通过，PR #80 合入（merge commit `46da521`）。
-- 批171(2026-10-18):将 `KnowledgeBoostRepository.boostBatch()` 内固定查询投影从 `List<Map<String,Object>>` 改为 `BoostCountsRow` typed RowMapper；输出仍是由动态 chunkId 索引的 `Map<Long,Double>`，空输入行为、SQL placeholders、boost 公式与上下限均不变。新增 Repository 测试锁定 typed row 到 dynamic result map 的公式与参数传递。PR 尚未创建/验证。
+- 批171(2026-10-18):将 `KnowledgeBoostRepository.boostBatch()` 内固定查询投影从 `List<Map<String,Object>>` 改为 `BoostCountsRow` typed RowMapper；输出仍是由动态 chunkId 索引的 `Map<Long,Double>`，空输入行为、SQL placeholders、boost 公式与上下限均不变。新增 Repository 测试锁定 typed row 到 dynamic result map 的公式与参数传递。PR #82 全部四腿 CI 通过（后端 2128 tests, 0 failures, 2 skipped；前端 1863 tests；E2E 60 passed），合入 main（merge commit `df4ebdf`）。
+- 批172(2026-10-18):将 `KnowledgeBaseRepository.docStatsByBase()` 的固定聚合行从 `queryForList`/Map 改为 `KbDocIndexStatusRow`；动态 `Map<Long,KbDocStats>` 仍保留。保持 null kb_id 跳过、全部状态计总量、INDEXED/FAILED 分类计数与聚合口径不变。新增 Repository 测试覆盖多个状态聚合、空闲散列库 ID 与 null kb_id。当前实现/PR CI 待验证。
