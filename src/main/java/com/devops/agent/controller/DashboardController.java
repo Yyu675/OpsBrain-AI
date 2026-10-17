@@ -124,7 +124,8 @@ public class DashboardController {
     }
 
     @GetMapping("/trends")
-    public ApiResponse<Map<String, Object>> getTrends(
+    @SuppressWarnings("unchecked")
+    public ApiResponse<com.devops.agent.controller.dto.DashboardTrendsResponse> getTrends(
             @RequestParam(defaultValue = "7") int days,
             @RequestParam(required = false) String module) {
         int safeDays = Math.min(Math.max(MIN_TREND_DAYS, days), MAX_TREND_DAYS);
@@ -143,17 +144,24 @@ public class DashboardController {
             log.warn("⚠️ [Dashboard] 趋势横轴长度不一致 | ticketDays={} | callDays={}", td.size(), cd.size());
         }
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("days", ticketDays);
-        data.put("created", ticketTrends.get("created"));
-        data.put("resolved", ticketTrends.get("resolved"));
-        data.put("cost", callTrends.get("cost"));
-        data.put("cacheHitRate", callTrends.get("cacheHitRate"));
-        data.put("windowDays", safeDays);
-        // 生效的下钻口径：null=全局。前端据此显示「全局」或服务名
-        data.put("module", safeModule);
-        // 明示成本/命中率不随 module 变化，防止误读为该服务的成本
-        data.put("callTrendScope", "GLOBAL");
-        return ApiResponse.success(data);
+        List<String> daysList = (ticketDays instanceof List<?> td)
+                ? td.stream().map(Object::toString).toList()
+                : List.of();
+        List<?> created = (List<?>) ticketTrends.get("created");
+        List<?> resolved = (List<?>) ticketTrends.get("resolved");
+        List<?> cost = (List<?>) callTrends.get("cost");
+        List<?> cacheHitRate = (List<?>) callTrends.get("cacheHitRate");
+
+        var resp = com.devops.agent.controller.dto.DashboardTrendsResponse.of(
+                daysList,
+                created,
+                resolved,
+                cost,
+                cacheHitRate,
+                safeDays,
+                safeModule,
+                "GLOBAL"
+        );
+        return ApiResponse.success(resp);
     }
 }

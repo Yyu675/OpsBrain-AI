@@ -106,12 +106,13 @@ public class HealingController {
      * 前端不再碰 raw JSON；损坏的序列在此被降级为空数组并留 note）。
      */
     @GetMapping("/executions/{id}")
-    public ApiResponse<Map<String, Object>> detail(@PathVariable long id) {
+    public ApiResponse<com.devops.agent.controller.dto.HealingExecutionDetailResponse> detail(@PathVariable long id) {
         return repository.findById(id)
                 .map(row -> {
-                    Map<String, Object> body = new LinkedHashMap<>();
-                    body.put("execution", row);
-                    body.put("steps", parseSteps(repository.readStepsJson(id)));
+                    var body = new com.devops.agent.controller.dto.HealingExecutionDetailResponse(
+                            row,
+                            parseSteps(repository.readStepsJson(id))
+                    );
                     return ApiResponse.success(body);
                 })
                 .orElseGet(() -> ApiResponse.error(ApiCode.NOT_FOUND, "执行台账不存在: " + id));
@@ -166,7 +167,7 @@ public class HealingController {
      * 比率是 0~1 小数，由前端乘 100 展示，与 TicketAiAnalysis.accuracyStats 同契约。</p>
      */
     @GetMapping("/stats")
-    public ApiResponse<Map<String, Object>> stats() {
+    public ApiResponse<com.devops.agent.controller.dto.HealingStatsResponse> stats() {
         Map<String, Long> raw = repository.stats();
         long autoTotal = raw.getOrDefault("autoTotal", 0L);
         long closedLoop = raw.getOrDefault("autoClosedLoop", 0L);
@@ -174,11 +175,26 @@ public class HealingController {
         long undone = raw.getOrDefault("undone", 0L);
         long undoFailed = raw.getOrDefault("undoFailed", 0L);
 
-        Map<String, Object> out = new LinkedHashMap<>(raw);
-        out.put("autoClosedLoopRate", rate(closedLoop, autoTotal));
-        out.put("verifyFailRate", rate(verifyFail, autoTotal));
-        out.put("undoSuccessRate", rate(undone, undone + undoFailed));
-        return ApiResponse.success(out);
+        var resp = new com.devops.agent.controller.dto.HealingStatsResponse(
+                raw.getOrDefault("total", 0L),
+                raw.getOrDefault("succeeded", 0L),
+                raw.getOrDefault("failed", 0L),
+                raw.getOrDefault("rejected", 0L),
+                raw.getOrDefault("pendingApproval", 0L),
+                undone,
+                undoFailed,
+                autoTotal,
+                closedLoop,
+                raw.getOrDefault("verifyPass", 0L),
+                verifyFail,
+                raw.getOrDefault("verifyUnknown", 0L),
+                raw.getOrDefault("verifySkipped", 0L),
+                raw.getOrDefault("verifyPending", 0L),
+                rate(closedLoop, autoTotal),
+                rate(verifyFail, autoTotal),
+                rate(undone, undone + undoFailed)
+        );
+        return ApiResponse.success(resp);
     }
 
     /** 比率（0~1，3 位小数）；分母为 0 时给 0 而非 NaN（与 accuracyStats 同径）。 */

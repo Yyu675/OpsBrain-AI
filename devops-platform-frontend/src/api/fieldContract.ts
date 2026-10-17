@@ -62,6 +62,8 @@ import type { UserView as GenUserView } from './generated/userView'
 import type { LoginResponse as GenLoginResponse } from './generated/loginResponse'
 import type { AgentTraceStatsResponse as GenAgentTraceStatsResponse } from './generated/agentTraceStatsResponse'
 import type { AgentTraceDetailResponse as GenAgentTraceDetailResponse } from './generated/agentTraceDetailResponse'
+import type { DashboardTrendsResponse as GenDashboardTrendsResponse } from './generated/dashboardTrendsResponse'
+import type { HealingStatsResponse as GenHealingStatsResponse } from './generated/healingStatsResponse'
 
 import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult, KnowledgeHotTag } from './types'
 import type { BackendTicket } from './types/ticket'
@@ -69,6 +71,8 @@ import type { StormStatus, PipelineHeartbeat, LogsHeartbeat } from './alerts'
 import type { ApprovalRequest, ApprovalPage } from './approval'
 import type { AuthUser, LoginResult } from './auth'
 import type { AgentTraceStats, AgentTraceDetail } from './agentTrace'
+import type { TrendData } from './dashboard'
+import type { HealingStats } from './healing'
 import type {
   RiskPolicy,
   ApprovalMode,
@@ -150,6 +154,14 @@ export type AgentTraceStats_Missing = AssertDriftFree<GenOnly<GenAgentTraceStats
 export type AgentTraceStats_Extra = AssertDriftFree<HandOnly<GenAgentTraceStatsResponse, AgentTraceStats>>
 export type AgentTraceDetail_Missing = AssertDriftFree<GenOnly<GenAgentTraceDetailResponse, AgentTraceDetail>>
 export type AgentTraceDetail_Extra = AssertDriftFree<HandOnly<GenAgentTraceDetailResponse, AgentTraceDetail>>
+
+// ==================== 仪表盘趋势与自愈中心 ====================
+
+export type TrendData_Missing = AssertDriftFree<GenOnly<GenDashboardTrendsResponse, TrendData>>
+export type TrendData_Extra = AssertDriftFree<HandOnly<GenDashboardTrendsResponse, TrendData>>
+export type HealingStats_Missing = AssertDriftFree<GenOnly<GenHealingStatsResponse, HealingStats>>
+export type HealingStats_Extra = AssertDriftFree<HandOnly<GenHealingStatsResponse, HealingStats>>
+
 export type ActionAllowlistEntry_Missing = AssertDriftFree<GenOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
 export type ActionAllowlistEntry_Extra = AssertDriftFree<HandOnly<GenActionAllowlistEntry, ActionAllowlistEntry>>
 export type ActionStats_Missing = AssertDriftFree<GenOnly<GenActionStats, ActionStats>>

@@ -14222,7 +14222,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseHealingStatsResponse"
                 }
               }
             }
@@ -14393,7 +14393,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseHealingExecutionDetailResponse"
                 }
               }
             }
@@ -14904,7 +14904,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseDashboardTrendsResponse"
                 }
               }
             }
@@ -22311,6 +22311,211 @@
           },
           "data": {
             "$ref": "#/components/schemas/AgentTraceDetailResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "DashboardTrendsResponse": {
+        "type": "object",
+        "properties": {
+          "cacheHitRate": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "callTrendScope": {
+            "type": "string"
+          },
+          "cost": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "created": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "module": {
+            "type": "string"
+          },
+          "resolved": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "windowDays": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseDashboardTrendsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DashboardTrendsResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "HealingExecutionDetailResponse": {
+        "type": "object",
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/HealingExecution"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      },
+      "ApiResponseHealingExecutionDetailResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HealingExecutionDetailResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "HealingStatsResponse": {
+        "type": "object",
+        "properties": {
+          "autoClosedLoop": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "autoClosedLoopRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "autoTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pendingApproval": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "succeeded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "undoFailed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "undoSuccessRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "undone": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verifyFail": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verifyFailRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "verifyPass": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verifyPending": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verifySkipped": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verifyUnknown": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseHealingStatsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HealingStatsResponse"
           },
           "message": {
             "type": "string"

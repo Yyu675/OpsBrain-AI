@@ -303,6 +303,22 @@ class OpenApiSchemaIntegrationTest {
             assertThat(fieldNames(agentTraceDetail.path("properties"))).contains(
                     "traceId", "found", "currentState", "currentStateText", "settled", "terminal",
                     "transitions", "transitionCount", "totalDurationMs");
+
+            JsonNode dashboardTrends = componentSchema("DashboardTrendsResponse");
+            assertThat(dashboardTrends).as("DashboardTrendsResponse 缺失").isNotNull();
+            assertThat(fieldNames(dashboardTrends.path("properties"))).contains(
+                    "days", "created", "resolved", "cost", "cacheHitRate", "windowDays", "module", "callTrendScope");
+
+            JsonNode healingDetail = componentSchema("HealingExecutionDetailResponse");
+            assertThat(healingDetail).as("HealingExecutionDetailResponse 缺失").isNotNull();
+            assertThat(fieldNames(healingDetail.path("properties"))).contains("execution", "steps");
+
+            JsonNode healingStats = componentSchema("HealingStatsResponse");
+            assertThat(healingStats).as("HealingStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(healingStats.path("properties"))).contains(
+                    "total", "succeeded", "failed", "rejected", "pendingApproval", "undone", "undoFailed",
+                    "autoTotal", "autoClosedLoop", "verifyPass", "verifyFail", "verifyUnknown", "verifySkipped",
+                    "verifyPending", "autoClosedLoopRate", "verifyFailRate", "undoSuccessRate");
         }
     }
 
