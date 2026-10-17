@@ -9,7 +9,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -369,11 +368,11 @@ class ApprovalServiceTest {
                     .thenReturn(List.of(approval(1L, ApprovalStatus.PENDING)));
             when(repository.countByStatus(ApprovalStatus.PENDING.name())).thenReturn(21);
 
-            Map<String, Object> page = service.listPending(2, 10);
+            var page = service.listPending(2, 10);
 
-            assertThat(page.get("total")).isEqualTo(21);
-            assertThat(page.get("page")).isEqualTo(2);
-            assertThat(page.get("totalPages")).isEqualTo(3);
+            assertThat(page.total()).isEqualTo(21);
+            assertThat(page.page()).isEqualTo(2);
+            assertThat(page.totalPages()).isEqualTo(3);
             // 第 2 页 × 每页 10 → offset 20
             verify(repository).findPending(10, 10);
         }
