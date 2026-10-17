@@ -5,4 +5,4 @@
  * OpenAPI spec version: v0
  */
 
-export type DiagnosisReplayResponseHypothesesItem = {[key: string]: { [key: string]: unknown }};
+export interface EmptyDiagnosisSession { [key: string]: unknown }

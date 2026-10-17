@@ -1,6 +1,11 @@
 package com.devops.agent.controller;
 
 import com.devops.agent.common.dto.ApiResponse;
+import com.devops.agent.controller.dto.DiagnosisEvidenceItem;
+import com.devops.agent.controller.dto.DiagnosisHypothesisItem;
+import com.devops.agent.controller.dto.DiagnosisReplaySession;
+import com.devops.agent.controller.dto.DiagnosisReplaySessionView;
+import com.devops.agent.controller.dto.EmptyDiagnosisSession;
 import com.devops.agent.domain.biz.repository.DiagnosisEvidenceRepository;
 import com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository;
 import com.devops.agent.domain.biz.repository.DiagnosisSessionRepository;
@@ -11,9 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 诊断详情 API（S2-3，路线图 §6.3 2-3.2）。
@@ -68,7 +71,7 @@ public class DiagnosisController {
     @GetMapping("/{traceId}")
     @Operation(summary = "按 traceId 回放完整诊断链（会话+证据+假设）")
     public ApiResponse<com.devops.agent.controller.dto.DiagnosisReplayResponse> detail(@PathVariable String traceId) {
-        Map<String, Object> session = sessionRepository.findByTraceId(traceId);
+        var session = sessionRepository.findByTraceId(traceId);
         // 工单「查看诊断回放」带来的是告警去重键（source_trace_id 存的就是它），
         // 不是诊断自己的 traceId。按 traceId 查空时，尝试把它当去重键桥接到
         // 该告警最新一次诊断——桥不上就维持原样返回空，不改变旧调用方的语义。
@@ -79,13 +82,23 @@ public class DiagnosisController {
                 session = sessionRepository.findByTraceId(traceId);
             }
         }
+        DiagnosisReplaySessionView sessionView = session
+                .<DiagnosisReplaySessionView>map(row -> new DiagnosisReplaySession(
+                        row.id(), row.traceId(), row.alertId(), row.ticketId(), row.service(), row.status(),
+                        row.sufficiency(), row.summary(), row.createdAt(), row.updatedAt()))
+                .orElseGet(EmptyDiagnosisSession::new);
+        var evidences = evidenceRepository.findByTraceId(traceId).stream()
+                .map(row -> new DiagnosisEvidenceItem(row.id(), row.traceId(), row.agentName(),
+                        row.evidenceType(), row.status(), row.title(), row.content(), row.sourceRef(),
+                        row.relevanceScore(), row.collectedAt()))
+                .toList();
+        var hypotheses = hypothesisRepository.findBySessionTraceId(traceId).stream()
+                .map(row -> new DiagnosisHypothesisItem(row.id(), row.sessionTraceId(), row.rank(),
+                        row.statement(), row.reasoning(), row.confidence(), row.evidenceIds(),
+                        row.contradictIds(), row.suggestedAction(), row.createdAt()))
+                .toList();
         return ApiResponse.success(new com.devops.agent.controller.dto.DiagnosisReplayResponse(
-                traceId,
-                session,
-                evidenceRepository.findByTraceId(traceId),
-                hypothesisRepository.findBySessionTraceId(traceId),
-                aiMode
-        ));
+                traceId, sessionView, evidences, hypotheses, aiMode));
     }
 
     /**

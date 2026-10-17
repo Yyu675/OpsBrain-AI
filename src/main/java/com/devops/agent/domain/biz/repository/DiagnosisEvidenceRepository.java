@@ -6,7 +6,6 @@ import org.springframework.stereotype.Repository;
 import java.sql.Timestamp;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 /**
  * sys_diagnosis_evidence 仓储（S1-5）。
@@ -17,6 +16,10 @@ import java.util.Map;
  */
 @Repository
 public class DiagnosisEvidenceRepository {
+
+    public record EvidenceRow(Long id, String traceId, String agentName, String evidenceType,
+                              String status, String title, String content, String sourceRef,
+                              Double relevanceScore, Timestamp collectedAt) {}
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -46,7 +49,7 @@ public class DiagnosisEvidenceRepository {
     }
 
     /** 回放：按 traceId 拉全链（按落库顺序）。 */
-    public List<Map<String, Object>> findByTraceId(String traceId) {
+    public List<EvidenceRow> findByTraceId(String traceId) {
         String sql = """
                 SELECT id, trace_id, agent_name, evidence_type, status, title,
                        content, source_ref, relevance_score, collected_at
@@ -54,7 +57,11 @@ public class DiagnosisEvidenceRepository {
                 WHERE trace_id = ?
                 ORDER BY id
                 """;
-        return jdbcTemplate.queryForList(sql, traceId);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new EvidenceRow(
+                rs.getLong("id"), rs.getString("trace_id"), rs.getString("agent_name"),
+                rs.getString("evidence_type"), rs.getString("status"), rs.getString("title"),
+                rs.getString("content"), rs.getString("source_ref"),
+                (Double) rs.getObject("relevance_score"), rs.getTimestamp("collected_at")), traceId);
     }
 
     /** 诊断反馈回流兜底：从若干证据行里取「知识类型」的 citation 串（source_ref）。 */

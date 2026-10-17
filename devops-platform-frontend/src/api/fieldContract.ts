@@ -91,6 +91,9 @@ import type { AgentTraceDetailResponse as GenAgentTraceDetailResponse } from './
 import type { DashboardTrendsResponse as GenDashboardTrendsResponse } from './generated/dashboardTrendsResponse'
 import type { HealingStatsResponse as GenHealingStatsResponse } from './generated/healingStatsResponse'
 import type { DiagnosisBoardResponse as GenDiagnosisBoardResponse } from './generated/diagnosisBoardResponse'
+import type { DiagnosisEvidenceItem as GenDiagnosisEvidenceItem } from './generated/diagnosisEvidenceItem'
+import type { DiagnosisHypothesisItem as GenDiagnosisHypothesisItem } from './generated/diagnosisHypothesisItem'
+import type { DiagnosisReplaySession as GenDiagnosisReplaySession } from './generated/diagnosisReplaySession'
 import type { OperationAuditItem as GenOperationAuditItem } from './generated/operationAuditItem'
 import type { AiCallLogItem as GenAiCallLogItem } from './generated/aiCallLogItem'
 import type { AiCallStats as GenAiCallStats } from './generated/aiCallStats'
@@ -113,6 +116,7 @@ import type { ApprovalRequest, ApprovalPage } from './approval'
 import type { AuthUser, LoginResult } from './auth'
 import type { AgentTraceStats, AgentTraceDetail } from './agentTrace'
 import type { TrendData, DiagnosisBoard } from './dashboard'
+import type { DiagnosisEvidenceView, DiagnosisHypothesisView, DiagnosisSessionView } from './diagnosis'
 import type { HealingStats } from './healing'
 import type {
   OperationAuditItem,
@@ -416,14 +420,20 @@ export type HypothesisFeedback_Extra = AssertDriftFree<HandOnly<GenHypothesisFee
 
 export interface DiagnosisReplayData {
   traceId: string
-  session: Record<string, unknown>
-  evidences: Record<string, unknown>[]
-  hypotheses: Record<string, unknown>[]
+  session: DiagnosisSessionView
+  evidences: DiagnosisEvidenceView[]
+  hypotheses: DiagnosisHypothesisView[]
   aiMode: string
 }
 
 export type DiagnosisReplay_Missing = AssertDriftFree<GenOnly<GenDiagnosisReplayResponse, DiagnosisReplayData>>
 export type DiagnosisReplay_Extra = AssertDriftFree<HandOnly<GenDiagnosisReplayResponse, DiagnosisReplayData>>
+export type DiagnosisReplaySession_Missing = AssertDriftFree<GenOnly<GenDiagnosisReplaySession, DiagnosisSessionView>>
+export type DiagnosisReplaySession_Extra = AssertDriftFree<HandOnly<GenDiagnosisReplaySession, DiagnosisSessionView>>
+export type DiagnosisEvidence_Missing = AssertDriftFree<GenOnly<GenDiagnosisEvidenceItem, DiagnosisEvidenceView>>
+export type DiagnosisEvidence_Extra = AssertDriftFree<HandOnly<GenDiagnosisEvidenceItem, DiagnosisEvidenceView>>
+export type DiagnosisHypothesis_Missing = AssertDriftFree<GenOnly<GenDiagnosisHypothesisItem, Omit<DiagnosisHypothesisView, 'feedback'>>>
+export type DiagnosisHypothesis_Extra = AssertDriftFree<HandOnly<GenDiagnosisHypothesisItem, Omit<DiagnosisHypothesisView, 'feedback'>>>
 
 // ==================== 知识库标签与分类动作弱契约收口（批142）====================
 export interface EntityDeleteData {

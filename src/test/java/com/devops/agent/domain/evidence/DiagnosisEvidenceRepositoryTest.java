@@ -14,7 +14,6 @@ import org.springframework.test.context.TestPropertySource;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,12 +60,12 @@ class DiagnosisEvidenceRepositoryTest extends AbstractIntegrationTest {
         assertThat(id1).isPositive();
         assertThat(id2).isGreaterThan(id1);
 
-        List<Map<String, Object>> rows = repository.findByTraceId("trace-42");
+        var rows = repository.findByTraceId("trace-42");
         assertThat(rows).hasSize(2);
-        assertThat(rows.get(0).get("evidence_type")).isEqualTo("metrics");
-        assertThat(rows.get(1).get("evidence_type")).isEqualTo("changes");
-        assertThat(rows.get(0).get("relevance_score")).isEqualTo(1.0);
-        assertThat(rows.get(1).get("relevance_score")).isNull();
+        assertThat(rows.get(0).evidenceType()).isEqualTo("metrics");
+        assertThat(rows.get(1).evidenceType()).isEqualTo("changes");
+        assertThat(rows.get(0).relevanceScore()).isEqualTo(1.0);
+        assertThat(rows.get(1).relevanceScore()).isNull();
         // 孤证不写 trace_id 也可落
         long orphan = repository.save(null, "eval", "metrics", "UNAVAILABLE",
                 "未启用", "{}", null, null, t2);

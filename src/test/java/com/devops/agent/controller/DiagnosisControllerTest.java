@@ -4,12 +4,13 @@ import com.devops.agent.common.dto.ApiResponse;
 import com.devops.agent.domain.biz.repository.DiagnosisEvidenceRepository;
 import com.devops.agent.domain.biz.repository.DiagnosisHypothesisRepository;
 import com.devops.agent.domain.biz.repository.DiagnosisSessionRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -47,57 +48,78 @@ class DiagnosisControllerTest {
 
     @Test
     @DisplayName("完整链路：会话+证据+假设按 traceId 汇总出同一份回放视图")
-    void fullReplayView() {
-        when(sessionRepository.findByTraceId("t-1")).thenReturn(Map.of(
-                "trace_id", "t-1", "status", "COMPLETED", "sufficiency", "SUFFICIENT"));
+    void fullReplayView() throws Exception {
+        when(sessionRepository.findByTraceId("t-1")).thenReturn(Optional.of(
+                new DiagnosisSessionRepository.SessionRow(5L, "t-1", 17L, null, "payments",
+                        "COMPLETED", "SUFFICIENT", null, null, null)));
         when(evidenceRepository.findByTraceId("t-1")).thenReturn(List.of(
-                Map.of("id", 1L, "evidence_type", "metrics"),
-                Map.of("id", 2L, "evidence_type", "logs")));
+                new DiagnosisEvidenceRepository.EvidenceRow(1L, "t-1", "engine", "metrics",
+                        "SUCCESS", "CPU", "{}", "promql", 0.9, null),
+                new DiagnosisEvidenceRepository.EvidenceRow(2L, "t-1", "engine", "logs",
+                        "SUCCESS", "Errors", "{}", "logql", 0.8, null)));
         when(hypothesisRepository.findBySessionTraceId("t-1")).thenReturn(List.of(
-                Map.of("rank", 1, "statement", "变更回归")));
+                new DiagnosisHypothesisRepository.HypothesisRow(3L, "t-1", 1, "变更回归",
+                        "最近发布后发生", 0.95, "[1]", "[]", "回滚", null)));
 
         var resp = controller.detail("t-1");
         var body = resp.getData();
         assertThat(body.traceId()).isEqualTo("t-1");
-        assertThat(((Map<?, ?>) body.session()).get("sufficiency")).isEqualTo("SUFFICIENT");
-        assertThat(((List<?>) body.evidences())).hasSize(2);
-        assertThat(((List<?>) body.hypotheses())).hasSize(1);
+        assertThat(body.session()).isInstanceOf(com.devops.agent.controller.dto.DiagnosisReplaySession.class);
+        assertThat(((com.devops.agent.controller.dto.DiagnosisReplaySession) body.session()).sufficiency())
+                .isEqualTo("SUFFICIENT");
+        assertThat(body.evidences()).hasSize(2);
+        assertThat(body.hypotheses()).hasSize(1);
+        assertThat(body.evidences().get(0).evidenceType()).isEqualTo("metrics");
+        assertThat(body.hypotheses().get(0).statement()).isEqualTo("变更回归");
+        ObjectMapper mapper = new ObjectMapper();
+        String json = mapper.writeValueAsString(body);
+        assertThat(json).contains("\"trace_id\"", "\"evidence_type\"", "\"session_trace_id\"");
+        var serialized = mapper.readTree(json);
+        assertThat(serialized.path("session").has("traceId")).isFalse();
+        assertThat(serialized.path("evidences").get(0).has("evidenceType")).isFalse();
+        assertThat(serialized.path("hypotheses").get(0).has("sessionTraceId")).isFalse();
     }
 
     @Test
     @DisplayName("会话不存在时不抛异常——空对象 + 孤证仍可见（不掩盖已落数据）")
-    void orphanEvidenceStillVisible() {
-        when(sessionRepository.findByTraceId("t-x")).thenReturn(Map.of());
+    void orphanEvidenceStillVisible() throws Exception {
+        when(sessionRepository.findByTraceId("t-x")).thenReturn(Optional.empty());
         when(evidenceRepository.findByTraceId("t-x")).thenReturn(List.of(
-                Map.of("id", 9L, "evidence_type", "metrics")));
+                new DiagnosisEvidenceRepository.EvidenceRow(9L, "t-x", "engine", "metrics",
+                        "SUCCESS", "CPU", "{}", "promql", 0.9, null)));
         when(hypothesisRepository.findBySessionTraceId("t-x")).thenReturn(List.of());
         var resp = controller.detail("t-x");
         var body = resp.getData();
-        assertThat(((Map<?, ?>) body.session())).isEmpty();
-        assertThat(((List<?>) body.evidences())).hasSize(1);
+        assertThat(body.session()).isInstanceOf(com.devops.agent.controller.dto.EmptyDiagnosisSession.class);
+        assertThat(new ObjectMapper().writeValueAsString(body.session())).isEqualTo("{}");
+        assertThat(body.evidences()).hasSize(1);
     }
 
     @Test
     @DisplayName("传入告警去重键（工单 source_trace_id）时桥接到该告警的诊断会话")
     void dedupKeyResolvesToDiagnosisTrace() {
         String dedupKey = "3600dfab9a6c";
-        when(sessionRepository.findByTraceId(dedupKey)).thenReturn(Map.of());
+        when(sessionRepository.findByTraceId(dedupKey)).thenReturn(Optional.empty());
         when(sessionRepository.findTraceIdByAlertDedupKey(dedupKey)).thenReturn("diag-trace-1");
-        when(sessionRepository.findByTraceId("diag-trace-1")).thenReturn(Map.of(
-                "trace_id", "diag-trace-1", "sufficiency", "WEAK"));
+        when(sessionRepository.findByTraceId("diag-trace-1")).thenReturn(Optional.of(
+                new DiagnosisSessionRepository.SessionRow(6L, "diag-trace-1", 8L, null, "payments",
+                        "COMPLETED", "WEAK", null, null, null)));
         when(evidenceRepository.findByTraceId("diag-trace-1")).thenReturn(List.of(
-                Map.of("id", 3L, "evidence_type", "knowledge")));
+                new DiagnosisEvidenceRepository.EvidenceRow(3L, "diag-trace-1", "engine", "knowledge",
+                        "SUCCESS", "Docs", "{}", "kb:7", 0.7, null)));
         when(hypothesisRepository.findBySessionTraceId("diag-trace-1")).thenReturn(List.of(
-                Map.of("rank", 1, "statement", "连接池耗尽")));
+                new DiagnosisHypothesisRepository.HypothesisRow(9L, "diag-trace-1", 1, "连接池耗尽",
+                        "连接耗尽", 0.8, "[3]", "[]", "扩容", null)));
 
         var resp = controller.detail(dedupKey);
         var body = resp.getData();
 
         // 回放用的是诊断自己的 traceId，而不是工单带来的去重键
         assertThat(body.traceId()).isEqualTo("diag-trace-1");
-        assertThat(((Map<?, ?>) body.session()).get("sufficiency")).isEqualTo("WEAK");
-        assertThat(((List<?>) body.evidences())).hasSize(1);
-        assertThat(((List<?>) body.hypotheses())).hasSize(1);
+        assertThat(((com.devops.agent.controller.dto.DiagnosisReplaySession) body.session()).sufficiency())
+                .isEqualTo("WEAK");
+        assertThat(body.evidences()).hasSize(1);
+        assertThat(body.hypotheses()).hasSize(1);
     }
 
     @Test

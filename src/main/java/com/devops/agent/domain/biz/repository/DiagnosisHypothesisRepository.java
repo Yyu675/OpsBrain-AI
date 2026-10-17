@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 import java.sql.Timestamp;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 /**
  * sys_diagnosis_hypothesis 仓储（S2-2，路线图 §6.2 2-2.2/2-2.6）。
@@ -18,6 +17,10 @@ import java.util.Map;
  */
 @Repository
 public class DiagnosisHypothesisRepository {
+
+    public record HypothesisRow(Long id, String sessionTraceId, Integer rank, String statement,
+                                String reasoning, Double confidence, String evidenceIds,
+                                String contradictIds, String suggestedAction, Timestamp createdAt) {}
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -47,7 +50,7 @@ public class DiagnosisHypothesisRepository {
     }
 
     /** 按 session trace 回放（诊断详情 API 的同族入口）。 */
-    public List<Map<String, Object>> findBySessionTraceId(String sessionTraceId) {
+    public List<HypothesisRow> findBySessionTraceId(String sessionTraceId) {
         String sql = """
                 SELECT id, session_trace_id, rank, statement, reasoning, confidence,
                        evidence_ids, contradict_ids, suggested_action, created_at
@@ -55,7 +58,12 @@ public class DiagnosisHypothesisRepository {
                 WHERE session_trace_id = ?
                 ORDER BY rank
                 """;
-        return jdbcTemplate.queryForList(sql, sessionTraceId);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new HypothesisRow(
+                rs.getLong("id"), rs.getString("session_trace_id"), rs.getInt("rank"),
+                rs.getString("statement"), rs.getString("reasoning"),
+                rs.getDouble("confidence"), rs.getString("evidence_ids"),
+                rs.getString("contradict_ids"), rs.getString("suggested_action"),
+                rs.getTimestamp("created_at")), sessionTraceId);
     }
 
     /** JSON 数组原文（Long 列表 → "[1,2,3]"；空 → "[]"）。 */
