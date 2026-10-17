@@ -424,6 +424,26 @@ class TicketControllerWebTest {
     }
 
     @Test
+    @DisplayName("工单统计保留固定字段与动态状态/优先级字典")
+    void ticketStatsKeepResponseShape() throws Exception {
+        when(ticketService.getTicketStats()).thenReturn(new com.devops.agent.domain.biz.entity.TicketStatsData(
+                12, 2, Map.of("PENDING", 4L, "PROCESSING", 3L),
+                4, 3, 2, Map.of("P0", 1L, "P1", 5L), 1, 2));
+
+        mockMvc.perform(get("/api/v1/tickets/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(12))
+                .andExpect(jsonPath("$.data.todayNew").value(2))
+                .andExpect(jsonPath("$.data.byStatus.PENDING").value(4))
+                .andExpect(jsonPath("$.data.byStatus.PROCESSING").value(3))
+                .andExpect(jsonPath("$.data.pending").value(4))
+                .andExpect(jsonPath("$.data.byPriority.P0").value(1))
+                .andExpect(jsonPath("$.data.urgentPending").value(1))
+                .andExpect(jsonPath("$.data.unassignedOpen").value(2));
+    }
+
+    @Test
     @DisplayName("AI 分析准确率从 typed stats 映射到原有响应字段")
     void aiAccuracyStatsKeepResponseShape() throws Exception {
         when(aiAnalysisService.accuracyStats()).thenReturn(

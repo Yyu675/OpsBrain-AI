@@ -499,22 +499,17 @@ public class TicketController {
      */
     @GetMapping("/stats")
     public ApiResponse<com.devops.agent.controller.dto.TicketStatsResponse> getStats() {
-        Map<String, Object> map = ticketService.getTicketStats();
-        @SuppressWarnings("unchecked")
-        Map<String, Long> byStatus = (Map<String, Long>) map.get("byStatus");
-        @SuppressWarnings("unchecked")
-        Map<String, Long> byPriority = (Map<String, Long>) map.get("byPriority");
+        com.devops.agent.domain.biz.entity.TicketStatsData stats = ticketService.getTicketStats();
         return ApiResponse.success(new com.devops.agent.controller.dto.TicketStatsResponse(
-                map.get("total") instanceof Number n ? n.longValue() : 0L,
-                map.get("todayNew") instanceof Number n ? n.longValue() : 0L,
-                byStatus != null ? byStatus : Map.of(),
-                map.get("pending") instanceof Number n ? n.longValue() : 0L,
-                map.get("processing") instanceof Number n ? n.longValue() : 0L,
-                map.get("resolved") instanceof Number n ? n.longValue() : 0L,
-                byPriority != null ? byPriority : Map.of(),
-                map.get("urgentPending") instanceof Number n ? n.longValue() : 0L,
-                map.get("unassignedOpen") instanceof Number n ? n.longValue() : 0L
-        ));
+                stats.total(),
+                stats.todayNew(),
+                stats.byStatus() != null ? stats.byStatus() : Map.of(),
+                stats.pending(),
+                stats.processing(),
+                stats.resolved(),
+                stats.byPriority() != null ? stats.byPriority() : Map.of(),
+                stats.urgentPending(),
+                stats.unassignedOpen()));
     }
 
     // ==================== 请求体 ====================
