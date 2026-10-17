@@ -126,6 +126,7 @@ class HealthCheckControllerWebTest {
             mockMvc.perform(get("/api/v1/health"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("UP"))
+                    .andExpect(jsonPath("$.service").value("OpsBrain AI DevOps Platform"))
                     .andExpect(jsonPath("$.mode").value("MOCK"))
                     .andExpect(jsonPath("$.timestamp").isNumber());
 
@@ -139,8 +140,8 @@ class HealthCheckControllerWebTest {
         }
 
         @Test
-        @DisplayName("/ping 不走 ApiResponse 包装 —— 探针要的是最小响应体")
-        void pingReturnsRawMap() throws Exception {
+        @DisplayName("/ping 不走 ApiResponse 包装 —— 强类型响应仍保持探针 JSON 形状")
+        void pingReturnsRawProbeResponse() throws Exception {
             mockMvc.perform(get("/api/v1/health/ping"))
                     .andExpect(status().isOk())
                     // 这里刻意不是 {code,message,data,traceId} 结构：
@@ -220,6 +221,9 @@ class HealthCheckControllerWebTest {
             mockMvc.perform(get("/api/v1/health/ai-model"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.overallStatus").value("DISABLED"))
+                    .andExpect(jsonPath("$.turboModel").doesNotExist())
+                    .andExpect(jsonPath("$.reasonerModel").doesNotExist())
+                    .andExpect(jsonPath("$.embeddingModel").doesNotExist())
                     // 要说清为什么被关掉、以及怎么打开，
                     // 否则运维只会看到一个没有解释的 DISABLED
                     .andExpect(jsonPath("$.reason").value(

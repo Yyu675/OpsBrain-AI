@@ -15,8 +15,8 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
-import java.util.HashMap;
-import java.util.Map;
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 
 /**
  * 健康检查 Controller
@@ -77,6 +77,24 @@ public class HealthCheckController {
     @Value("${devops.ai.health.ai-model-enabled:false}")
     private boolean aiModelProbeEnabled;
 
+    /** Strongly typed probe payloads; NON_NULL keeps each probe's historic wire shape unchanged. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PingResponse(String status, String service, String mode, long timestamp) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record DatabaseProbeResponse(long timestamp, String status, String database, String error) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ChatModelProbeResponse(String status, String response, String modelClass,
+                                         String error, String hint) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record EmbeddingModelProbeResponse(String status, Integer dimension, String modelClass,
+                                              String error, String hint) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record AiModelProbeResponse(String mode, long timestamp, String overallStatus,
+                                       String reason, String hint,
+                                       ChatModelProbeResponse turboModel,
+                                       ChatModelProbeResponse reasonerModel,
+                                       EmbeddingModelProbeResponse embeddingModel) {}
+
     /**
      * 基础健康检查（进程存活探针）
      * <p>
@@ -84,13 +102,8 @@ public class HealthCheckController {
      * <b>始终开放</b>，零外部调用，零成本，可被 LB/K8s livenessProbe 高频拉取。
      */
     @GetMapping({"", "/ping"})
-    public Map<String, Object> ping() {
-        return Map.of(
-                "status", "UP",
-                "service", "OpsBrain AI DevOps Platform",
-                "mode", aiMode,
-                "timestamp", System.currentTimeMillis()
-        );
+    public PingResponse ping() {
+        return new PingResponse("UP", "OpsBrain AI DevOps Platform", aiMode, System.currentTimeMillis());
     }
 
     /**
@@ -100,22 +113,16 @@ public class HealthCheckController {
      * 失败返回 503 + 错误信息，便于运维定位数据库故障。
      */
     @GetMapping("/db")
-    public Map<String, Object> db() {
-        Map<String, Object> result = new HashMap<>();
-        result.put("timestamp", System.currentTimeMillis());
+    public DatabaseProbeResponse db() {
+        long timestamp = System.currentTimeMillis();
         try (Connection conn = dataSource.getConnection()) {
             boolean valid = conn.isValid(3); // 3s 超时
-            result.put("status", valid ? "UP" : "DEGRADED");
-            result.put("database", "PostgreSQL/pgvector");
-            if (!valid) {
-                result.put("error", "Connection.isValid returned false within 3s");
-            }
+            return new DatabaseProbeResponse(timestamp, valid ? "UP" : "DEGRADED",
+                    "PostgreSQL/pgvector", valid ? null : "Connection.isValid returned false within 3s");
         } catch (Exception e) {
             log.error("❌ [HealthCheck] 数据库连通性探测失败", e);
-            result.put("status", "DOWN");
-            result.put("error", e.getMessage());
+            return new DatabaseProbeResponse(timestamp, "DOWN", null, e.getMessage());
         }
-        return result;
     }
 
     /**
@@ -131,116 +138,70 @@ public class HealthCheckController {
      * 即便开启，也仅供运维手动触发——不要接入 K8s probe 高频拉取。
      */
     @GetMapping("/ai-model")
-    public Map<String, Object> checkAiModel() {
-        Map<String, Object> result = new HashMap<>();
-        result.put("mode", aiMode);
-        result.put("timestamp", System.currentTimeMillis());
-
-        // 开关判断必须在**调用模型之前**。这一段替代了原来那个无效的
-        // @ConditionalOnProperty（它标在方法上不生效，见字段注释）。
-        //
-        // 不抛异常而是返回 DISABLED：健康检查端点被 K8s probe 高频拉取，
-        // 抛 5xx 会让探针把整个实例判为不健康并重启它——
-        // 而「这个探测被关掉了」根本不是实例不健康。
+    public AiModelProbeResponse checkAiModel() {
+        long timestamp = System.currentTimeMillis();
         if (!aiModelProbeEnabled) {
             log.debug("⏸️ [HealthCheck] AI 模型探测已关闭（devops.ai.health.ai-model-enabled=false）");
-            result.put("overallStatus", "DISABLED");
-            result.put("reason", "AI 模型探测默认关闭：它会真实调用付费 LLM 与 embedding API，"
-                    + "每次拉取都产生计费。需要时请设置 devops.ai.health.ai-model-enabled=true，"
-                    + "并且不要接入 K8s probe 高频拉取。");
-            return result;
+            return new AiModelProbeResponse(aiMode, timestamp, "DISABLED",
+                    "AI 模型探测默认关闭：它会真实调用付费 LLM 与 embedding API，"
+                            + "每次拉取都产生计费。需要时请设置 devops.ai.health.ai-model-enabled=true，"
+                            + "并且不要接入 K8s probe 高频拉取。", null, null, null, null);
         }
 
         log.info("🔍 [HealthCheck] 开始验证 AI 模型连通性，当前模式: {}", aiMode);
-
-        // 多渠道后必须分渠道捕获（方案 C，批 74）：chat 与 embedding 可能来自
-        // 不同厂商——一个渠道挂不该把另一个渠道的探测结果连带吞掉，
-        // overallStatus 汇总要能指认「哪条腿断了」。
-        boolean chatUp = false;
-        boolean embeddingUp = false;
-
-        // 1. 验证 Turbo 模型（chat 渠道）
-        try {
-            log.info("   -> 测试 Turbo 模型（chat 渠道）...");
-            ChatResponse turboResponse = turboModel.chat(
-                    ChatRequest.builder()
-                            .messages(UserMessage.from("ping"))
-                            .build()
-            );
-            result.put("turboModel", Map.of(
-                    "status", "SUCCESS",
-                    "response", turboResponse.aiMessage().text(),
-                    "modelClass", turboModel.getClass().getSimpleName()
-            ));
-            chatUp = true;
-        } catch (Exception e) {
-            log.error("❌ [HealthCheck] chat 渠道（turbo）探测失败", e);
-            result.put("turboModel", Map.of(
-                    "status", "FAILED",
-                    "error", String.valueOf(e.getMessage()),
-                    "hint", "检查 devops.ai.chat.base-url / api-key / turbo-model"
-            ));
-        }
-
-        // 2. 验证 Reasoner 模型（chat 渠道，与 turbo 同渠道——挂则同挂，单列只为独立看响应）
-        try {
-            log.info("   -> 测试 Reasoner 模型（chat 渠道）...");
-            ChatResponse reasonerResponse = reasonerModel.chat(
-                    ChatRequest.builder()
-                            .messages(UserMessage.from("ping"))
-                            .build()
-            );
-            result.put("reasonerModel", Map.of(
-                    "status", "SUCCESS",
-                    "response", reasonerResponse.aiMessage().text(),
-                    "modelClass", reasonerModel.getClass().getSimpleName()
-            ));
-            chatUp = true;
-        } catch (Exception e) {
-            log.error("❌ [HealthCheck] chat 渠道（reasoner）探测失败", e);
-            result.put("reasonerModel", Map.of(
-                    "status", "FAILED",
-                    "error", String.valueOf(e.getMessage()),
-                    "hint", "检查 devops.ai.chat.base-url / api-key / reasoner-model"
-            ));
-        }
-
-        // 3. 验证 Embedding 模型（embedding 独立渠道）
-        try {
-            log.info("   -> 测试 Embedding 模型（embedding 渠道）...");
-            var embeddingResponse = embeddingModel.embed("test");
-            int dim = embeddingResponse.content().vector().length;
-            result.put("embeddingModel", Map.of(
-                    "status", "SUCCESS",
-                    "dimension", dim,
-                    "modelClass", embeddingModel.getClass().getSimpleName()
-            ));
-            embeddingUp = true;
-        } catch (Exception e) {
-            log.error("❌ [HealthCheck] embedding 渠道探测失败", e);
-            result.put("embeddingModel", Map.of(
-                    "status", "FAILED",
-                    "error", String.valueOf(e.getMessage()),
-                    "hint", "检查 devops.ai.embedding.base-url / api-key / model"
-            ));
-        }
+        ChatModelProbeResponse turbo = probeChatModel("Turbo", turboModel,
+                "devops.ai.chat.base-url / api-key / turbo-model");
+        ChatModelProbeResponse reasoner = probeChatModel("Reasoner", reasonerModel,
+                "devops.ai.chat.base-url / api-key / reasoner-model");
+        EmbeddingModelProbeResponse embedding = probeEmbeddingModel();
+        boolean chatUp = "SUCCESS".equals(turbo.status()) || "SUCCESS".equals(reasoner.status());
+        boolean embeddingUp = "SUCCESS".equals(embedding.status());
 
         if (chatUp && embeddingUp) {
-            result.put("overallStatus", "SUCCESS");
             log.info("✅ [HealthCheck] AI 双渠道连通性验证成功");
-        } else if (chatUp) {
-            result.put("overallStatus", "DEGRADED_EMBEDDING_DOWN");
-            result.put("hint", "chat 渠道正常，embedding 渠道不可用——检索/摄取将降级，纯对话不受影响");
-            log.warn("⚠️ [HealthCheck] embedding 渠道不可用（chat 正常）");
-        } else if (embeddingUp) {
-            result.put("overallStatus", "DEGRADED_CHAT_DOWN");
-            result.put("hint", "embedding 渠道正常，chat 渠道不可用——对话能力不可用，摄取/重建不受影响");
-            log.warn("⚠️ [HealthCheck] chat 渠道不可用（embedding 正常）");
-        } else {
-            result.put("overallStatus", "FAILED");
-            log.error("❌ [HealthCheck] AI 双渠道均不可用");
+            return new AiModelProbeResponse(aiMode, timestamp, "SUCCESS", null, null, turbo, reasoner, embedding);
         }
-
-        return result;
+        if (chatUp) {
+            log.warn("⚠️ [HealthCheck] embedding 渠道不可用（chat 正常）");
+            return new AiModelProbeResponse(aiMode, timestamp, "DEGRADED_EMBEDDING_DOWN", null,
+                    "chat 渠道正常，embedding 渠道不可用——检索/摄取将降级，纯对话不受影响",
+                    turbo, reasoner, embedding);
+        }
+        if (embeddingUp) {
+            log.warn("⚠️ [HealthCheck] chat 渠道不可用（embedding 正常）");
+            return new AiModelProbeResponse(aiMode, timestamp, "DEGRADED_CHAT_DOWN", null,
+                    "embedding 渠道正常，chat 渠道不可用——对话能力不可用，摄取/重建不受影响",
+                    turbo, reasoner, embedding);
+        }
+        log.error("❌ [HealthCheck] AI 双渠道均不可用");
+        return new AiModelProbeResponse(aiMode, timestamp, "FAILED", null, null, turbo, reasoner, embedding);
     }
+
+    private ChatModelProbeResponse probeChatModel(String label, ChatModel model, String hint) {
+        try {
+            log.info("   -> 测试 {} 模型（chat 渠道）...", label);
+            ChatResponse response = model.chat(ChatRequest.builder()
+                    .messages(UserMessage.from("ping"))
+                    .build());
+            return new ChatModelProbeResponse("SUCCESS", response.aiMessage().text(),
+                    model.getClass().getSimpleName(), null, null);
+        } catch (Exception e) {
+            log.error("❌ [HealthCheck] chat 渠道（{}）探测失败", label, e);
+            return new ChatModelProbeResponse("FAILED", null, null, String.valueOf(e.getMessage()), hint);
+        }
+    }
+
+    private EmbeddingModelProbeResponse probeEmbeddingModel() {
+        try {
+            log.info("   -> 测试 Embedding 模型（embedding 渠道）...");
+            var response = embeddingModel.embed("test");
+            return new EmbeddingModelProbeResponse("SUCCESS", response.content().vector().length,
+                    embeddingModel.getClass().getSimpleName(), null, null);
+        } catch (Exception e) {
+            log.error("❌ [HealthCheck] embedding 渠道探测失败", e);
+            return new EmbeddingModelProbeResponse("FAILED", null, null, String.valueOf(e.getMessage()),
+                    "检查 devops.ai.embedding.base-url / api-key / model");
+        }
+    }
+
 }
