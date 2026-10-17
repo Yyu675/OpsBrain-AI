@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -197,4 +198,17 @@ public class DashboardController {
         );
         return ApiResponse.success(resp);
     }
+    private static long toLong(Object val) {
+        if (val instanceof Number n) {
+            return n.longValue();
+        }
+        if (val != null) {
+            try {
+                return Long.parseLong(val.toString());
+            } catch (Exception ignored) {
+            }
+        }
+        return 0L;
+    }
+
 }
