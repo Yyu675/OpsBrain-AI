@@ -77,10 +77,10 @@ public class TicketPostmortemController {
      * <p>基于处置动作 + 根因 + 验证信息自动拼接，供用户编辑后保存。</p>
      */
     @PostMapping("/{id}/postmortem/draft")
-    public ApiResponse<Map<String, Object>> generateDraft(@PathVariable String id) {
+    public ApiResponse<com.devops.agent.controller.dto.PostmortemDraftResponse> generateDraft(@PathVariable String id) {
         writeGuard.requireWrite();   // 纯拼接无副作用，但入口语义是复盘编辑流，与保存同闸口
         String timeline = pmService.generateTimelineDraft(id);
-        return ApiResponse.success(Map.of("timeline", timeline));
+        return ApiResponse.success(new com.devops.agent.controller.dto.PostmortemDraftResponse(timeline));
     }
 
     // ==================== 改进项 ====================

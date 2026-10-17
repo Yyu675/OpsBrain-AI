@@ -470,6 +470,18 @@ class OpenApiSchemaIntegrationTest {
             JsonNode rootCauseStats = componentSchema("TicketRootCauseStatsResponse");
             assertThat(rootCauseStats).as("TicketRootCauseStatsResponse 缺失").isNotNull();
             assertThat(fieldNames(rootCauseStats.path("properties"))).contains("stats");
+
+            JsonNode pmDraft = componentSchema("PostmortemDraftResponse");
+            assertThat(pmDraft).as("PostmortemDraftResponse 缺失").isNotNull();
+            assertThat(fieldNames(pmDraft.path("properties"))).contains("timeline");
+
+            JsonNode diagReplay = componentSchema("DiagnosisReplayResponse");
+            assertThat(diagReplay).as("DiagnosisReplayResponse 缺失").isNotNull();
+            assertThat(fieldNames(diagReplay.path("properties"))).contains("traceId", "session", "evidences", "hypotheses", "aiMode");
+
+            JsonNode hypoFeedback = componentSchema("HypothesisFeedbackResponse");
+            assertThat(hypoFeedback).as("HypothesisFeedbackResponse 缺失").isNotNull();
+            assertThat(fieldNames(hypoFeedback.path("properties"))).contains("hypothesisId", "feedback", "knowledgeBoosted");
         }
     }
 

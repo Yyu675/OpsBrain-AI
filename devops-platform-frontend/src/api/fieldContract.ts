@@ -122,6 +122,9 @@ import type {
 } from './types/notify'
 import type { ClosureMetrics, DocHealth } from './dashboard'
 import type { AiAnalysisStats } from './ticketAiAnalysis'
+import type { PostmortemDraftResponse as GenPostmortemDraftResponse } from './generated/postmortemDraftResponse'
+import type { HypothesisFeedbackResponse as GenHypothesisFeedbackResponse } from './generated/hypothesisFeedbackResponse'
+import type { DiagnosisReplayResponse as GenDiagnosisReplayResponse } from './generated/diagnosisReplayResponse'
 
 /** 生成有、手写无（后端加字段没跟） */
 type GenOnly<G, H> = Exclude<keyof G, keyof H>
@@ -293,3 +296,31 @@ export type EscalateTarget_HandOnly = AssertDriftFree<Exclude<EscalateTarget, Ge
 // dto-converter 下游的**前端渲染模型**（time=格式化时刻、user=展示名、
 // color/text=渲染态）——传输字段（id/ticketId/createTime/userName）在转换
 // 函数两侧维护，字段集对账不适用映射层。传输真相归 api 模块的入参出参。
+
+// ==================== 复盘与诊断弱契约收口（批141）====================
+export interface PostmortemDraftData {
+  timeline: string
+}
+
+export type PostmortemDraft_Missing = AssertDriftFree<GenOnly<GenPostmortemDraftResponse, PostmortemDraftData>>
+export type PostmortemDraft_Extra = AssertDriftFree<HandOnly<GenPostmortemDraftResponse, PostmortemDraftData>>
+
+export interface HypothesisFeedbackData {
+  hypothesisId: number
+  feedback: string
+  knowledgeBoosted: number
+}
+
+export type HypothesisFeedback_Missing = AssertDriftFree<GenOnly<GenHypothesisFeedbackResponse, HypothesisFeedbackData>>
+export type HypothesisFeedback_Extra = AssertDriftFree<HandOnly<GenHypothesisFeedbackResponse, HypothesisFeedbackData>>
+
+export interface DiagnosisReplayData {
+  traceId: string
+  session: Record<string, unknown>
+  evidences: Record<string, unknown>[]
+  hypotheses: Record<string, unknown>[]
+  aiMode: string
+}
+
+export type DiagnosisReplay_Missing = AssertDriftFree<GenOnly<GenDiagnosisReplayResponse, DiagnosisReplayData>>
+export type DiagnosisReplay_Extra = AssertDriftFree<HandOnly<GenDiagnosisReplayResponse, DiagnosisReplayData>>
