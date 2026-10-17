@@ -11,7 +11,6 @@ import org.springframework.stereotype.Repository;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -161,7 +160,8 @@ public class ActionAllowlistRepository {
 
     /** 启用/停用条目的计数，供页面顶部统计条 */
     public GovernanceViews.ActionStats stats() {
-        Map<String, Object> row = jdbcTemplate.queryForMap("""
+        // 后两个是「该警惕」的数字，单独拎出来让管理员一眼看到风险敞口。
+        return jdbcTemplate.queryForObject("""
             SELECT COUNT(*)                                        AS total,
                    COUNT(*) FILTER (WHERE enabled)                 AS enabled_count,
                    COUNT(*) FILTER (WHERE risk_level = 'HIGH_RISK_EXECUTION' AND enabled)
@@ -169,19 +169,12 @@ public class ActionAllowlistRepository {
                    COUNT(*) FILTER (WHERE enabled AND environments ILIKE '%prod%')
                                                                    AS prod_enabled
               FROM sys_action_allowlist
-            """);
-        // 后两个是「该警惕」的数字，单独拎出来让管理员一眼看到风险敞口
-        return new GovernanceViews.ActionStats(
-                toLong(row.get("total")),
-                toLong(row.get("enabled_count")),
-                toLong(row.get("high_risk_enabled")),
-                toLong(row.get("prod_enabled")));
+            """, (rs, rowNum) -> new GovernanceViews.ActionStats(
+                rs.getLong("total"), rs.getLong("enabled_count"),
+                rs.getLong("high_risk_enabled"), rs.getLong("prod_enabled")));
     }
 
-    /** COUNT(*) 在 PG 里是 BIGINT（JDBC 返回 Long），统一过 Number 兜底，防止驱动实现差异 */
-    private static long toLong(Object value) {
-        return value instanceof Number n ? n.longValue() : 0L;
-    }
+
 
     // ==================== 写入 ====================
 
