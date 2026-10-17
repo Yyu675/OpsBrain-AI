@@ -54,10 +54,12 @@ import type { RiskPolicyEscalateTarget as GenRiskPolicyEscalateTarget } from './
 import type { SimulatedRow as GenSimulatedRow } from './generated/simulatedRow'
 import type { SimulateResult as GenSimulateResult } from './generated/simulateResult'
 import type { StormStatus as GenStormStatus } from './generated/stormStatus'
+import type { PipelineHeartbeat as GenPipelineHeartbeat } from './generated/pipelineHeartbeat'
+import type { LogsHeartbeat as GenLogsHeartbeat } from './generated/logsHeartbeat'
 
 import type { Alert, AlertsResponse, ChannelTemplate, ConnectivityResult, CapabilityItem, KnowledgeTag, KnowledgeDocListItem, KnowledgeDocPageResponse, KnowledgeDocCreateRequest, KnowledgeDocUpdateRequest, AiChannelHistoryView, ChannelProbeResult } from './types'
 import type { BackendTicket } from './types/ticket'
-import type { StormStatus } from './alerts'
+import type { StormStatus, PipelineHeartbeat, LogsHeartbeat } from './alerts'
 import type { ApprovalRequest } from './approval'
 import type {
   RiskPolicy,
@@ -98,6 +100,10 @@ export type AlertsResponse_Missing = AssertDriftFree<GenOnly<GenAlertPage, Alert
 export type AlertsResponse_Extra = AssertDriftFree<HandOnly<GenAlertPage, AlertsResponse>>
 export type StormStatus_Missing = AssertDriftFree<GenOnly<GenStormStatus, StormStatus>>
 export type StormStatus_Extra = AssertDriftFree<HandOnly<GenStormStatus, StormStatus>>
+export type PipelineHeartbeat_Missing = AssertDriftFree<GenOnly<GenPipelineHeartbeat, PipelineHeartbeat>>
+export type PipelineHeartbeat_Extra = AssertDriftFree<HandOnly<GenPipelineHeartbeat, PipelineHeartbeat>>
+export type LogsHeartbeat_Missing = AssertDriftFree<GenOnly<GenLogsHeartbeat, LogsHeartbeat>>
+export type LogsHeartbeat_Extra = AssertDriftFree<HandOnly<GenLogsHeartbeat, LogsHeartbeat>>
 
 // ==================== 知识域 ====================
 

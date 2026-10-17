@@ -37,9 +37,10 @@ public class ServiceOwnerController {
     }
 
     @GetMapping
-    public ApiResponse<Map<String, Object>> list() {
+    public ApiResponse<com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerListResponse> list() {
         var rows = repository.listAll();
-        return ApiResponse.success(Map.of("total", rows.size(), "items", rows));
+        return ApiResponse.success(new com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerListResponse(
+                rows.size(), rows));
     }
 
     public record UpsertRequest(
@@ -48,14 +49,18 @@ public class ServiceOwnerController {
     }
 
     @PutMapping
-    public ApiResponse<Map<String, Object>> upsert(@RequestBody @jakarta.validation.Valid UpsertRequest req) {
+    public ApiResponse<com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerUpsertResponse> upsert(
+            @RequestBody @jakarta.validation.Valid UpsertRequest req) {
         Long id = repository.upsert(req.service(), req.owner());
-        return ApiResponse.success(Map.of("id", id, "service", req.service().trim(), "owner", req.owner().trim()));
+        return ApiResponse.success(new com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerUpsertResponse(
+                id, req.service().trim(), req.owner().trim()));
     }
 
     @DeleteMapping("/{service}")
-    public ApiResponse<Map<String, Object>> disable(@PathVariable String service) {
+    public ApiResponse<com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerDisableResponse> disable(
+            @PathVariable String service) {
         int n = repository.disable(service);
-        return ApiResponse.success(Map.of("service", service, "disabled", n > 0));
+        return ApiResponse.success(new com.devops.agent.controller.dto.ServiceOwnerDto.ServiceOwnerDisableResponse(
+                service, n > 0));
     }
 }

@@ -295,6 +295,26 @@ public class BusinessMetrics {
         return notifySuccesses.get();
     }
 
+    public long notifyFailed() {
+        return notifyFailed.get();
+    }
+
+    public long notifyDegraded() {
+        return notifyDegraded.get();
+    }
+
+    public long notifyDeliveryFailed() {
+        return notifyDeliveryFailed.get();
+    }
+
+    public long notifyLastDeliveredAt() {
+        return notifyLastDeliveredAt;
+    }
+
+    public long notifyLastSuccessAt() {
+        return notifyLastSuccessAt;
+    }
+
     /**
      * 通知健康快照（看门狗 delta 源 + 效能卡读它）。
      * {@code lastSuccessAt} 为 ISO 时间或 null（尚无成功）。

@@ -113,19 +113,19 @@ public class LogsPipelineWatchdogScheduler {
     /**
      * 日志管道心跳快照（效能大盘「日志管道」卡用）。
      *
-     * @return {freshestLogAt, silent, silenceMinutes, probed}；
+     * @return 强类型 LogsHeartbeat；
      *         probed=false 表示还没探过（启动宽限内），前端显示「未知」而非误报静默
      */
-    public Map<String, Object> snapshot() {
-        Map<String, Object> body = new java.util.LinkedHashMap<>();
-        body.put("freshestLogAt", lastFreshLogAt == null ? null : lastFreshLogAt.toString());
+    public com.devops.agent.domain.alert.DTO.LogsHeartbeat snapshot() {
         boolean silent = lastFreshLogAt != null
                 && lastFreshLogAt.isBefore(Instant.now().minusSeconds(silenceMinutes * 60L));
-        body.put("silent", silent);
-        body.put("silenceMinutes", silenceMinutes);
-        body.put("probed", lastFreshLogAt != null);
-        body.put("lokiEnabled", lokiClient.isEnabled());
-        return body;
+        return new com.devops.agent.domain.alert.DTO.LogsHeartbeat(
+                lastFreshLogAt == null ? null : lastFreshLogAt.toString(),
+                silent,
+                silenceMinutes,
+                lastFreshLogAt != null,
+                lokiClient.isEnabled()
+        );
     }
 
     /** 静默超阈值 → 通过告警单写者构造元告警（warning 级：采集断流要紧但不致命）。 */

@@ -54,19 +54,18 @@ public class AlertQueryService {
      * 长期空白会被误读成「天下太平」。</p>
      *
      * @param silenceMinutes 静默阈值，与 PipelineHeartbeatScheduler 同配置键
-     * @return {lastSeenAt, silent, silenceMinutes}；从未收到看门狗时 lastSeenAt 为 null
+     * @return 强类型 PipelineHeartbeat；从未收到看门狗时 lastSeenAt 为 null
      */
-    public java.util.Map<String, Object> pipelineHeartbeat(int silenceMinutes) {
+    public com.devops.agent.domain.alert.DTO.PipelineHeartbeat pipelineHeartbeat(int silenceMinutes) {
         java.util.Optional<java.time.LocalDateTime> lastSeen =
                 alertRepository.findLatestOccurredAtByName(
                         com.devops.agent.domain.alert.ReservedAlertNames.PIPELINE_WATCHDOG);
         boolean silent = lastSeen.isEmpty()
                 || lastSeen.get().isBefore(java.time.LocalDateTime.now().minusMinutes(silenceMinutes));
-        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
-        body.put("lastSeenAt", lastSeen.map(java.time.LocalDateTime::toString).orElse(null));
-        body.put("silent", silent);
-        body.put("silenceMinutes", silenceMinutes);
-        return body;
+        return new com.devops.agent.domain.alert.DTO.PipelineHeartbeat(
+                lastSeen.map(java.time.LocalDateTime::toString).orElse(null),
+                silent,
+                silenceMinutes);
     }
 
     /**
