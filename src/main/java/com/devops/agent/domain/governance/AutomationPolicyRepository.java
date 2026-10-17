@@ -11,7 +11,6 @@ import org.springframework.stereotype.Repository;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -145,7 +144,8 @@ public class AutomationPolicyRepository {
     }
 
     public GovernanceViews.PolicyStats stats() {
-        Map<String, Object> row = jdbcTemplate.queryForMap("""
+        // 后两个是真正「会动手」的策略数——风险敞口，单独拎出来。
+        return jdbcTemplate.queryForObject("""
             SELECT COUNT(*)                                          AS total,
                    COUNT(*) FILTER (WHERE enabled)                   AS enabled_count,
                    COUNT(*) FILTER (WHERE enabled AND dry_run)       AS dry_run_count,
@@ -153,20 +153,12 @@ public class AutomationPolicyRepository {
                    COUNT(*) FILTER (WHERE enabled AND NOT dry_run
                                       AND environment = 'prod')      AS prod_live_count
               FROM sys_automation_policy
-            """);
-        // 后两个是真正「会动手」的策略数——风险敞口，单独拎出来
-        return new GovernanceViews.PolicyStats(
-                toLong(row.get("total")),
-                toLong(row.get("enabled_count")),
-                toLong(row.get("dry_run_count")),
-                toLong(row.get("live_count")),
-                toLong(row.get("prod_live_count")));
+            """, (rs, rowNum) -> new GovernanceViews.PolicyStats(
+                rs.getLong("total"), rs.getLong("enabled_count"), rs.getLong("dry_run_count"),
+                rs.getLong("live_count"), rs.getLong("prod_live_count")));
     }
 
-    /** COUNT(*) 在 PG 里是 BIGINT（JDBC 返回 Long），统一过 Number 兜底，防止驱动实现差异 */
-    private static long toLong(Object value) {
-        return value instanceof Number n ? n.longValue() : 0L;
-    }
+
 
     // ==================== 写入 ====================
 
