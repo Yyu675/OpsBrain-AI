@@ -63,17 +63,18 @@ public class KnowledgeManageController {
      */
     @Deprecated
     @PostMapping("/ingest")
-    public ApiResponse<Map<String, Object>> ingestKnowledge(
+    public ApiResponse<com.devops.agent.controller.dto.EndpointDeprecatedResponse> ingestKnowledge(
             @RequestBody(required = false) Map<String, Object> request) {
 
         log.warn("⚠️ 调用了已停用的 /ingest 端点（已返回 410 Gone，不再执行摄取）。"
                 + "迁移路径：POST /api/v1/knowledge/docs 创建并发布文档，向量化自动触发，切片归属明确。");
 
         // 旧链路的孤儿切片由定时任务清理，此处无需也无法在请求内清理。
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("deprecated", true);
-        body.put("reason", "此端点产生的切片 doc_id=NULL，无法被文档生命周期治理覆盖，已停用。");
-        body.put("migrateTo", "POST /api/v1/knowledge/docs");
+        com.devops.agent.controller.dto.EndpointDeprecatedResponse body =
+                new com.devops.agent.controller.dto.EndpointDeprecatedResponse(
+                        true,
+                        "此端点产生的切片 doc_id=NULL，无法被文档生命周期治理覆盖，已停用。",
+                        "POST /api/v1/knowledge/docs");
         // 40010：4xx 段，语义「端点已废弃」。沿用项目 4 位业务码惯例（40001/40004/40009/40021）。
         // 虽 HTTP 层仍返回 200（本项目 ApiResponse 统一包装），body 含 deprecated=true 与 migrateTo，
         // 调用方可据此判断并迁移。
@@ -114,7 +115,7 @@ public class KnowledgeManageController {
      * @return 分页结果
      */
     @GetMapping("/chunks")
-    public ApiResponse<Map<String, Object>> listChunks(
+    public ApiResponse<com.devops.agent.controller.dto.KnowledgeChunkPageResponse> listChunks(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String keyword) {
@@ -126,6 +127,21 @@ public class KnowledgeManageController {
 
         log.info("查询知识库切片：page={}, size={}, keyword={}", safePage, safeSize, keyword);
 
-        return ApiResponse.success(knowledgeStatsService.listChunks(safePage, safeSize, keyword));
+        Map<String, Object> map = knowledgeStatsService.listChunks(safePage, safeSize, keyword);
+        @SuppressWarnings("unchecked")
+        List<com.devops.agent.domain.rag.KnowledgeChunkView> content =
+                (List<com.devops.agent.domain.rag.KnowledgeChunkView>) map.get("content");
+        long totalElements = map.get("totalElements") instanceof Number n ? n.longValue() : 0L;
+        int totalPages = map.get("totalPages") instanceof Number n ? n.intValue() : 0;
+        int currentPage = map.get("currentPage") instanceof Number n ? n.intValue() : safePage;
+        int pageSize = map.get("pageSize") instanceof Number n ? n.intValue() : safeSize;
+
+        return ApiResponse.success(new com.devops.agent.controller.dto.KnowledgeChunkPageResponse(
+                content != null ? content : List.of(),
+                totalElements,
+                totalPages,
+                currentPage,
+                pageSize
+        ));
     }
 }
