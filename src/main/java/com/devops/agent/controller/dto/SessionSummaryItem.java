@@ -1,6 +1,5 @@
 package com.devops.agent.controller.dto;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -13,7 +12,7 @@ public record SessionSummaryItem(
         String summary,
         Integer turnCount,
         Integer totalTokens,
-        BigDecimal totalCostRmb,
+        Double totalCostRmb,
         String finalState,
         List<String> relatedTickets,
         SessionKeyFactsDto keyFacts,
