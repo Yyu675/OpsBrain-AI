@@ -4439,7 +4439,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseSagaCompensateResponse"
                 }
               }
             }
@@ -8511,7 +8511,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseChangeEventReportResponse"
                 }
               }
             }
@@ -11574,7 +11574,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseSagaStepsResponse"
                 }
               }
             }
@@ -11666,7 +11666,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseSagaAttentionResponse"
                 }
               }
             }
@@ -23744,6 +23744,253 @@
           },
           "data": {
             "$ref": "#/components/schemas/SessionContextResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ChangeEventReportResponse": {
+        "type": "object",
+        "properties": {
+          "deduplicated": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiResponseChangeEventReportResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ChangeEventReportResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SagaRecordDetailDto": {
+        "type": "object",
+        "properties": {
+          "attemptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "businessKey": {
+            "type": "string"
+          },
+          "compensable": {
+            "type": "boolean"
+          },
+          "compensationAction": {
+            "type": "string"
+          },
+          "compensationError": {
+            "type": "string"
+          },
+          "compensatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "failureHint": {
+            "type": "string"
+          },
+          "failureType": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "needsAttention": {
+            "type": "boolean"
+          },
+          "riskLevel": {
+            "type": "string"
+          },
+          "riskLevelLabel": {
+            "type": "string"
+          },
+          "sagaId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stateLabel": {
+            "type": "string"
+          },
+          "stepSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "updateTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SagaAttentionResponse": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SagaRecordDetailDto"
+            }
+          }
+        }
+      },
+      "ApiResponseSagaAttentionResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SagaAttentionResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SagaStepsResponse": {
+        "type": "object",
+        "properties": {
+          "sagaId": {
+            "type": "string"
+          },
+          "stepCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SagaRecordDetailDto"
+            }
+          }
+        }
+      },
+      "ApiResponseSagaStepsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SagaStepsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SagaCompensateResponse": {
+        "type": "object",
+        "properties": {
+          "compensated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "compensatedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fullySucceeded": {
+            "type": "boolean"
+          },
+          "sagaId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseSagaCompensateResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SagaCompensateResponse"
           },
           "traceId": {
             "type": "string"

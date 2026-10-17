@@ -69,7 +69,7 @@ public class ChangeEventController {
             @Size(max = 191) String externalId) {}
 
     @PostMapping
-    public ApiResponse<Map<String, Object>> report(@Valid @RequestBody ChangeEventRequest req) {
+    public ApiResponse<com.devops.agent.controller.dto.ChangeEventReportResponse> report(@Valid @RequestBody ChangeEventRequest req) {
         guard.requireEdit();
 
         LocalDateTime changeTime;
@@ -90,15 +90,13 @@ public class ChangeEventController {
                 (req.operator() == null || req.operator().isBlank()) ? "unknown" : req.operator(),
                 summary, changeTime, source, req.externalId()));
 
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("success", true);
-        body.put("deduplicated", inserted == 0);
-        body.put("message", inserted == 0
+        boolean deduplicated = (inserted == 0);
+        String message = deduplicated
                 ? "同一 (source, externalId) 事件已存在，按幂等约束忽略（CI 重发属正常）"
-                : "变更事件已登记");
-        if (inserted == 0) {
+                : "变更事件已登记";
+        if (deduplicated) {
             log.info("[S1-2] 变更事件幂等去重 | source={} externalId={}", source, req.externalId());
         }
-        return ApiResponse.success(body);
+        return ApiResponse.success(new com.devops.agent.controller.dto.ChangeEventReportResponse(true, deduplicated, message));
     }
 }
