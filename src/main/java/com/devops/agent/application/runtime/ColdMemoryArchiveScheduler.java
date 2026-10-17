@@ -1,6 +1,7 @@
 package com.devops.agent.application.runtime;
 
 import com.devops.agent.domain.memory.SessionSummary;
+import com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository.ConversationTurnRow;
 import com.devops.agent.infrastructure.persistence.repo.SessionSummaryRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.BucketExistsArgs;
@@ -170,7 +171,7 @@ public class ColdMemoryArchiveScheduler {
         // 此前这里恒为 SUMMARY_ONLY，根因是热记忆 TTL 仅 120 分钟、
         // 归档按天执行，原文早已过期。现在原文由 AgentMemoryManager
         // 每轮旁路转写到库里，归档时可直接取。
-        List<Map<String, Object>> turns = turnRepository.findBySession(s.getSessionId());
+        List<ConversationTurnRow> turns = turnRepository.findBySession(s.getSessionId());
 
         // contentScope 必须**据实**反映这一份归档的真实内容，不能写死。
         //

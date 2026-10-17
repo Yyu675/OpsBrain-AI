@@ -1,11 +1,11 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 对话原文数据访问层（B-2 冷归档补全）。
@@ -29,6 +29,19 @@ import java.util.Map;
 @Slf4j
 @Repository
 public class ConversationTurnRepository {
+
+    /** Transcript row with the legacy snake_case archive JSON names. */
+    public record ConversationTurnRow(
+            @JsonProperty("turn_seq") Integer turnSeq,
+            @JsonProperty("trace_id") String traceId,
+            @JsonProperty("user_query") String userQuery,
+            @JsonProperty("ai_answer") String aiAnswer,
+            @JsonProperty("tool_results") Object toolResults,
+            @JsonProperty("tokens") Integer tokens,
+            @JsonProperty("cost_rmb") java.math.BigDecimal costRmb,
+            @JsonProperty("final_state") String finalState,
+            @JsonProperty("create_time") java.sql.Timestamp createTime
+    ) {}
 
     /**
      * 单字段长度上限。
@@ -107,7 +120,7 @@ public class ConversationTurnRepository {
     /**
      * 按会话取全部对话原文（轮次正序），供归档与审计回放。
      */
-    public List<Map<String, Object>> findBySession(String sessionId) {
+    public List<ConversationTurnRow> findBySession(String sessionId) {
         String sql = """
                 SELECT turn_seq, trace_id, user_query, ai_answer, tool_results,
                        tokens, cost_rmb, final_state, create_time
@@ -116,7 +129,11 @@ public class ConversationTurnRepository {
                  ORDER BY turn_seq
                 """;
         try {
-            return jdbcTemplate.queryForList(sql, sessionId);
+            return jdbcTemplate.query(sql, (rs, rowNum) -> new ConversationTurnRow(
+                    rs.getObject("turn_seq", Integer.class), rs.getString("trace_id"),
+                    rs.getString("user_query"), rs.getString("ai_answer"), rs.getObject("tool_results"),
+                    rs.getObject("tokens", Integer.class), rs.getBigDecimal("cost_rmb"),
+                    rs.getString("final_state"), rs.getTimestamp("create_time")), sessionId);
         } catch (Exception e) {
             // 与 ToolExecutionRepository.findBySaga 同型：空列表与「这个会话
             // 真的没有原文」无法区分，故必须记 ERROR。

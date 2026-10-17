@@ -2,6 +2,7 @@ package com.devops.agent.application.runtime;
 
 import com.devops.agent.domain.memory.SessionSummary;
 import com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository;
+import com.devops.agent.infrastructure.persistence.repo.ConversationTurnRepository.ConversationTurnRow;
 import com.devops.agent.infrastructure.persistence.repo.SessionSummaryRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.MinioClient;
@@ -83,6 +84,10 @@ class ColdMemoryArchiveScopeTest {
         return s;
     }
 
+    private ConversationTurnRow turn(int seq, String query, String answer) {
+        return new ConversationTurnRow(seq, null, query, answer, null, null, null, null, null);
+    }
+
     /** 反射调 private archiveOne，并捕获真正上传的 JSON */
     private Map<String, Object> archiveAndCapture(SessionSummary s) throws Exception {
         Method m = ColdMemoryArchiveScheduler.class
@@ -104,14 +109,19 @@ class ColdMemoryArchiveScopeTest {
     @DisplayName("有原文时标 FULL_TRANSCRIPT，并带上逐轮内容")
     void withTranscriptMarksFull() throws Exception {
         when(turnRepo.findBySession("S1")).thenReturn(List.of(
-                Map.of("turn_seq", 1, "user_query", "Pod 起不来", "ai_answer", "看事件日志"),
-                Map.of("turn_seq", 2, "user_query", "还是不行", "ai_answer", "查资源配额")));
+                turn(1, "Pod 起不来", "看事件日志"),
+                turn(2, "还是不行", "查资源配额")));
 
         Map<String, Object> payload = archiveAndCapture(summary("S1"));
 
         assertThat(payload.get("contentScope")).isEqualTo("FULL_TRANSCRIPT");
         assertThat(payload.get("transcriptTurnCount")).isEqualTo(2);
         assertThat(payload.get("transcript").toString()).contains("Pod 起不来");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstTurn = ((List<Map<String, Object>>) payload.get("transcript")).get(0);
+        assertThat(firstTurn).containsKeys("turn_seq", "trace_id", "user_query", "ai_answer",
+                "tool_results", "tokens", "cost_rmb", "final_state", "create_time")
+                .doesNotContainKey("turnSeq");
     }
 
     @Test
@@ -137,7 +147,7 @@ class ColdMemoryArchiveScopeTest {
         // 说明文字是给人读的。scope 变了而说明没变，
         // 等于归档文件自己前后矛盾
         when(turnRepo.findBySession("S1")).thenReturn(List.of(
-                Map.of("turn_seq", 1, "user_query", "q", "ai_answer", "a")));
+                turn(1, "q", "a")));
         assertThat(archiveAndCapture(summary("S1")).get("contentScopeNote").toString())
                 .contains("原文");
 
