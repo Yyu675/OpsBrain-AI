@@ -1,5 +1,6 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
+import com.devops.agent.domain.audit.AuditFilterOptionsData;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -228,20 +229,24 @@ public class AuditLogQueryRepository {
     }
 
     /** 筛选下拉的候选值（模型名 / 操作类型 / 操作者），从实际数据聚合而非硬编码 */
-    public Map<String, Object> queryFilterOptions() {
-        Map<String, Object> options = new LinkedHashMap<>();
-        options.put("models", jdbcTemplate.queryForList(
-                "SELECT DISTINCT model_name FROM sys_agent_call_log "
-                        + "WHERE model_name IS NOT NULL ORDER BY model_name", String.class));
-        options.put("operationTypes", jdbcTemplate.queryForList(
-                "SELECT DISTINCT operation_type FROM sys_agent_call_log "
-                        + "WHERE operation_type IS NOT NULL ORDER BY operation_type", String.class));
-        options.put("actions", jdbcTemplate.queryForList(
-                "SELECT DISTINCT action FROM sys_operation_audit ORDER BY action", String.class));
-        options.put("targetTypes", jdbcTemplate.queryForList(
-                "SELECT DISTINCT target_type FROM sys_operation_audit "
-                        + "WHERE target_type IS NOT NULL ORDER BY target_type", String.class));
-        return options;
+    public AuditFilterOptionsData queryFilterOptions() {
+        return new AuditFilterOptionsData(
+                nonNullStrings(jdbcTemplate.queryForList(
+                        "SELECT DISTINCT model_name FROM sys_agent_call_log "
+                                + "WHERE model_name IS NOT NULL ORDER BY model_name", String.class)),
+                nonNullStrings(jdbcTemplate.queryForList(
+                        "SELECT DISTINCT operation_type FROM sys_agent_call_log "
+                                + "WHERE operation_type IS NOT NULL ORDER BY operation_type", String.class)),
+                nonNullStrings(jdbcTemplate.queryForList(
+                        "SELECT DISTINCT action FROM sys_operation_audit ORDER BY action", String.class)),
+                nonNullStrings(jdbcTemplate.queryForList(
+                        "SELECT DISTINCT target_type FROM sys_operation_audit "
+                                + "WHERE target_type IS NOT NULL ORDER BY target_type", String.class)));
+    }
+
+    /** Preserve the previous converter's behavior of filtering NULL candidates. */
+    private static List<String> nonNullStrings(List<String> values) {
+        return values == null ? List.of() : values.stream().filter(java.util.Objects::nonNull).toList();
     }
 
     /**
