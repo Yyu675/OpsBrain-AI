@@ -1,7 +1,6 @@
 package com.devops.agent.controller.dto;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 自愈执行台账详情响应（GET /api/v1/healing/executions/{id}）。
@@ -14,6 +13,6 @@ import java.util.Map;
  */
 public record HealingExecutionDetailResponse(
         com.devops.agent.domain.healing.HealingExecution execution,
-        List<Map<String, Object>> steps
+        List<HealingExecutionStep> steps
 ) {
 }

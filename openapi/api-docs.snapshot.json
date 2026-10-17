@@ -22323,10 +22323,7 @@
           "steps": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object"
-              }
+              "$ref": "#/components/schemas/HealingExecutionStep"
             }
           }
         }
@@ -26239,6 +26236,23 @@
             "type": "string"
           },
           "title": {
+            "type": "string"
+          }
+        }
+      },
+      "HealingExecutionStep": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         }
