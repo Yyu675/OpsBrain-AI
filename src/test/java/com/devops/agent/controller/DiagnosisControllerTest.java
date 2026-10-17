@@ -73,7 +73,7 @@ class DiagnosisControllerTest {
         assertThat(body.hypotheses().get(0).statement()).isEqualTo("变更回归");
         String json = new ObjectMapper().writeValueAsString(body);
         assertThat(json).contains("\"trace_id\"", "\"evidence_type\"", "\"session_trace_id\"")
-                .doesNotContain("traceId\", "evidenceType\", "sessionTraceId\");
+                .doesNotContain("\"traceId\"", "\"evidenceType\"", "\"sessionTraceId\"");
     }
 
     @Test
