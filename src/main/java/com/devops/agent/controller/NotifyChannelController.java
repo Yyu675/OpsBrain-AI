@@ -95,17 +95,43 @@ public class NotifyChannelController {
         return ApiResponse.success(revealed);
     }
 
+    /**
+     * 两种响应保持原 JSON 形状：默认打码视图与显式 reveal 明文视图是一个有判别的联合类型。
+     * 不把两种结构扁平合并，避免为调用方增加 null 字段或改变明文字段语义。
+     */
+    @io.swagger.v3.oas.annotations.media.Schema(
+            description = "告警接入密钥视图：默认打码；reveal=true 时为明文结果",
+            oneOf = {MaskedIngestSecretResponse.class, RevealedIngestSecretResponse.class})
+    public sealed interface IngestSecretResponse
+            permits MaskedIngestSecretResponse, RevealedIngestSecretResponse {}
+
+    public record MaskedIngestSecretResponse(boolean configured, String source, String secretMasked,
+                                             boolean hmacConfigured, String hint)
+            implements IngestSecretResponse {
+        static MaskedIngestSecretResponse from(NotifyChannelService.IngestSecretView view) {
+            return new MaskedIngestSecretResponse(view.configured(), view.source(), view.secretMasked(),
+                    view.hmacConfigured(), view.hint());
+        }
+    }
+
+    public record RevealedIngestSecretResponse(String channelKey, String webhook, String secret)
+            implements IngestSecretResponse {
+        static RevealedIngestSecretResponse from(NotifyChannelService.Revealed view) {
+            return new RevealedIngestSecretResponse(view.channelKey(), view.webhook(), view.secret());
+        }
+    }
+
     @GetMapping("/ingest-secret")
-    public ApiResponse<Object> ingestSecret(@RequestParam(defaultValue = "false") boolean reveal,
-                                            jakarta.servlet.http.HttpServletRequest request) {
+    public ApiResponse<IngestSecretResponse> ingestSecret(@RequestParam(defaultValue = "false") boolean reveal,
+                                                           jakarta.servlet.http.HttpServletRequest request) {
         if (reveal) {
             NotifyChannelService.Revealed revealed = service.revealIngest();
             revealAuditor.record(SecretRevealAuditor.ACTION_NOTIFY_REVEAL,
                     NotifyChannelService.KEY_ALERT_INGEST, request.getRequestURI(), request);
-            return ApiResponse.success(revealed);
+            return ApiResponse.success(RevealedIngestSecretResponse.from(revealed));
         }
         // 复用 listViews 的 ingestSecret 视图（打码整屏里已含它，这里给单取入口）
-        return ApiResponse.success(service.listViews().ingestSecret());
+        return ApiResponse.success(MaskedIngestSecretResponse.from(service.listViews().ingestSecret()));
     }
 
     @PutMapping("/ingest-secret")

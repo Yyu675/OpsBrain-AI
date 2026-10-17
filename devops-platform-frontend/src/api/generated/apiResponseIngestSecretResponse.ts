@@ -4,10 +4,11 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
+import type { IngestSecretResponse } from './ingestSecretResponse';
 
-export interface ApiResponseObject {
+export interface ApiResponseIngestSecretResponse {
   code?: number;
-  data?: unknown;
+  data?: IngestSecretResponse;
   message?: string;
   timestamp?: number;
   traceId?: string;
