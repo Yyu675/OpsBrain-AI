@@ -5,9 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 审批服务（方向 D，domain 层）
@@ -74,10 +72,9 @@ public class ApprovalService {
         return com.devops.agent.controller.dto.ApprovalPageResponse.of(list, total, safePage, safeSize);
     }
 
-    /** 待审队列（最早提交的先审，兼容 Map 调用） */
-    public Map<String, Object> listPending(int page, int size) {
-        var p = listPendingPage(page, size);
-        return page(p.items(), p.total(), p.page(), p.size());
+    /** 待审队列（最早提交的先审；强类型兼容入口）。 */
+    public com.devops.agent.controller.dto.ApprovalPageResponse listPending(int page, int size) {
+        return listPendingPage(page, size);
     }
 
     /** 按状态查询（空=全部），最新在前 */
@@ -89,10 +86,9 @@ public class ApprovalService {
         return com.devops.agent.controller.dto.ApprovalPageResponse.of(list, total, safePage, safeSize);
     }
 
-    /** 按状态查询（空=全部），最新在前（兼容 Map 调用） */
-    public Map<String, Object> listByStatus(String status, int page, int size) {
-        var p = listByStatusPage(status, page, size);
-        return page(p.items(), p.total(), p.page(), p.size());
+    /** 按状态查询（空=全部），最新在前；返回强类型分页。 */
+    public com.devops.agent.controller.dto.ApprovalPageResponse listByStatus(String status, int page, int size) {
+        return listByStatusPage(status, page, size);
     }
 
     /**
@@ -165,16 +161,6 @@ public class ApprovalService {
             log.warn("🧟 [Approval] 恢复僵尸 APPROVED 单 {} 张（滞留超 {} 分钟，标记 EXECUTE_FAILED 待人工重放）", n, staleMinutes);
         }
         return n;
-    }
-
-    private Map<String, Object> page(List<ApprovalRequest> list, int total, int page, int size) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("items", list);
-        result.put("total", total);
-        result.put("page", page);
-        result.put("size", size);
-        result.put("totalPages", (int) Math.ceil((double) total / size));
-        return result;
     }
 
     private String truncate(String s, int max) {
