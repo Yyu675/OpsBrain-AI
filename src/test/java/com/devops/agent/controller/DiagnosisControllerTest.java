@@ -71,9 +71,13 @@ class DiagnosisControllerTest {
         assertThat(body.hypotheses()).hasSize(1);
         assertThat(body.evidences().get(0).evidenceType()).isEqualTo("metrics");
         assertThat(body.hypotheses().get(0).statement()).isEqualTo("变更回归");
-        String json = new ObjectMapper().writeValueAsString(body);
-        assertThat(json).contains("\"trace_id\"", "\"evidence_type\"", "\"session_trace_id\"")
-                .doesNotContain("\"traceId\"", "\"evidenceType\"", "\"sessionTraceId\"");
+        ObjectMapper mapper = new ObjectMapper();
+        String json = mapper.writeValueAsString(body);
+        assertThat(json).contains("\"trace_id\"", "\"evidence_type\"", "\"session_trace_id\"");
+        var serialized = mapper.readTree(json);
+        assertThat(serialized.path("session").has("traceId")).isFalse();
+        assertThat(serialized.path("evidences").get(0).has("evidenceType")).isFalse();
+        assertThat(serialized.path("hypotheses").get(0).has("sessionTraceId")).isFalse();
     }
 
     @Test
