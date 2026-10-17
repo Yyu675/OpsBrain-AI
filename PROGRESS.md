@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-17（批156 将文档反馈健康度 Repository Map 结果改为 `DocHealthRow`；批155 分类计数已合入，PR #64 merge `a9be979`）
+> **最后更新**：2026-10-18（批157 将全局搜索的固定字段 JDBC Map 行映射为 `SearchResultItem` typed rows；HTTP JSON 与查询语义保持不变，待 CI）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -561,3 +561,4 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 - 批154(2026-10-17):将 KnowledgeCategoryRepository.findDocuments、KnowledgeCategoryService.tree 及 Controller 适配链上的 Map<String,Object> 改为 `KnowledgeCategoryTreeData` typed records；保留按 categoryId/大小写无关 category 名归组、uncategorized 顺序、分类排序、文档顺序与 DTO JSON。新增 service 分组单测，更新 Controller HTTP 测试 stub。外部 `KnowledgeCategoryTreeResponse` 未变；前端 `typecheck`/`gen:check` 本地通过，PR #63 前端/后端/工作流/E2E 全绿并合入（merge commit `0155728`）。
 - 批155(2026-10-17):`KnowledgeDocRepository.findCategories` 从 `List<Map<String,Object>>` 改为 `List<KnowledgeCategoryCount>` typed row；service/controller 同步移除 map key 读取与 Number 转换，仍输出既有 `KnowledgeCategoryCountResponse(name,count)`。SQL filter/group/order 不变；新增 controller HTTP 响应字段断言。外部 schema 不变，无 OpenAPI/Orval 更新；PR #64 全部 CI 通过并合入（merge commit `a9be979`）。
 - 批156(2026-10-17):将 `KnowledgeBoostRepository.docHealthReport()` 的 `List<Map<String,Object>>` 改为 `List<DocHealthRow>` RowMapper，Controller 使用 typed fields 计算净反馈并映射原有 `KnowledgeDocHealthResponse`；保留 SQL 分组/排序、null 返回空列表、`net=wrong-helpful` 与 JSON 字段语义。新增 WebMvc 响应值断言；外部 DTO 未变，不需 OpenAPI/Orval 更新。本地后端未能编译，PR #65 CI 后端/前端/工作流/E2E 全通过。
+- 批157(2026-10-18):将 `SearchController` 三类全局搜索的 JDBC `queryForList`/Map key 解包改为直接 RowMapper 构造既有 `SearchResultItem`；保留查询条件、各类别 LIMIT/排序、合并顺序、总量截断及 null→空字符串语义。新增 WebMvc 测试锁定 HTTP 字段和类别顺序；外部 DTO schema 未变，无需 OpenAPI/Orval 更新。本地因无 Java 且 Maven Wrapper 下载失败未能运行后端测试，待 PR CI 验证。

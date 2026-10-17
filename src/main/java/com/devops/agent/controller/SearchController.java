@@ -39,56 +39,47 @@ public class SearchController {
         List<com.devops.agent.controller.dto.SearchResultItem> results = new ArrayList<>(8);
 
         // 1) 工单（按 ID 完全匹配优先，其次标题模糊匹配）
-        List<Map<String, Object>> tickets = jdbc.queryForList("""
+        results.addAll(jdbc.query("""
             SELECT id, title, 'ticket' AS kind, status AS sub
               FROM sys_devops_ticket
              WHERE id ILIKE ? OR title ILIKE ?
              ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, id DESC
              LIMIT 4
-            """, like, like, q.trim());
-        for (Map<String, Object> m : tickets) {
-            results.add(new com.devops.agent.controller.dto.SearchResultItem(
-                    Objects.toString(m.get("id"), ""),
-                    Objects.toString(m.get("title"), ""),
-                    "ticket",
-                    Objects.toString(m.get("sub"), "")
-            ));
-        }
+            """, (rs, rowNum) -> new com.devops.agent.controller.dto.SearchResultItem(
+                        Objects.toString(rs.getObject("id"), ""),
+                        Objects.toString(rs.getObject("title"), ""),
+                        Objects.toString(rs.getObject("kind"), ""),
+                        Objects.toString(rs.getObject("sub"), "")),
+                like, like, q.trim()));
 
         // 2) 知识库文档（按标题匹配）
-        List<Map<String, Object>> docs = jdbc.queryForList("""
+        results.addAll(jdbc.query("""
             SELECT id::text AS id, title, 'knowledge' AS kind, status AS sub
               FROM sys_knowledge_doc
              WHERE title ILIKE ? AND status IN ('PUBLISHED','DRAFT')
              ORDER BY update_time DESC
              LIMIT 3
-            """, like);
-        for (Map<String, Object> m : docs) {
-            results.add(new com.devops.agent.controller.dto.SearchResultItem(
-                    Objects.toString(m.get("id"), ""),
-                    Objects.toString(m.get("title"), ""),
-                    "knowledge",
-                    Objects.toString(m.get("sub"), "")
-            ));
-        }
+            """, (rs, rowNum) -> new com.devops.agent.controller.dto.SearchResultItem(
+                        Objects.toString(rs.getObject("id"), ""),
+                        Objects.toString(rs.getObject("title"), ""),
+                        Objects.toString(rs.getObject("kind"), ""),
+                        Objects.toString(rs.getObject("sub"), "")),
+                like));
 
         // 3) 告警（按告警名匹配）
-        List<Map<String, Object>> alerts = jdbc.queryForList("""
+        results.addAll(jdbc.query("""
             SELECT id::text AS id, alert_name AS title, 'alert' AS kind,
                    COALESCE(ticket_id, '') AS sub
               FROM sys_alert
              WHERE alert_name ILIKE ?
              ORDER BY id DESC
              LIMIT 3
-            """, like);
-        for (Map<String, Object> m : alerts) {
-            results.add(new com.devops.agent.controller.dto.SearchResultItem(
-                    Objects.toString(m.get("id"), ""),
-                    Objects.toString(m.get("title"), ""),
-                    "alert",
-                    Objects.toString(m.get("sub"), "")
-            ));
-        }
+            """, (rs, rowNum) -> new com.devops.agent.controller.dto.SearchResultItem(
+                        Objects.toString(rs.getObject("id"), ""),
+                        Objects.toString(rs.getObject("title"), ""),
+                        Objects.toString(rs.getObject("kind"), ""),
+                        Objects.toString(rs.getObject("sub"), "")),
+                like));
 
         // 总结果上限 8 条：优先保证工单完整，知识库和告警按 LIMIT 各自收束后合并
         if (results.size() > 8) {
