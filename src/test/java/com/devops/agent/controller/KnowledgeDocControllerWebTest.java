@@ -140,8 +140,7 @@ class KnowledgeDocControllerWebTest {
                 .build();
     }
 
-    // ==================== 夹具 ====================
-
+    // ==================== 夹具 =============
     private static KnowledgeDoc doc(Long id, String status, String indexStatus) {
         KnowledgeDoc d = new KnowledgeDoc();
         d.setId(id);
@@ -175,8 +174,7 @@ class KnowledgeDocControllerWebTest {
         return m;
     }
 
-    // ==================================================================
-
+    // ===========================================================
     @Nested
     @DisplayName("创建：两道去重关")
     class Create {
