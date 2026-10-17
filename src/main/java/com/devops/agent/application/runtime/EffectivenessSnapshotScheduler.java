@@ -144,15 +144,39 @@ public class EffectivenessSnapshotScheduler {
     }
 
     /** 趋势查询：近 N 天的快照行（效能大盘趋势图用）。 */
-    public List<Map<String, Object>> trend(int days) {
-        return jdbcTemplate.queryForList("""
+    public List<EffectivenessTrendRow> trend(int days) {
+        return jdbcTemplate.query("""
                 SELECT snapshot_date, total_tickets, finished_tickets, postmortem_count,
                        alert_sourced_tickets, alerts_total, events_total, diagnosis_total, diagnosis_sufficient,
                        knowledge_evidence, knowledge_hits, healing_total, healing_succeeded
                   FROM sys_effectiveness_snapshot
                  WHERE snapshot_date >= CURRENT_DATE - (?::int - 1)
                  ORDER BY snapshot_date
-                """, Math.max(1, days));
+                """, (rs, rowNum) -> new EffectivenessTrendRow(
+                toLocalDate(rs.getObject("snapshot_date")),
+                rs.getLong("total_tickets"),
+                rs.getLong("finished_tickets"),
+                rs.getLong("postmortem_count"),
+                rs.getLong("alert_sourced_tickets"),
+                rs.getLong("alerts_total"),
+                rs.getLong("events_total"),
+                rs.getLong("diagnosis_total"),
+                rs.getLong("diagnosis_sufficient"),
+                rs.getLong("knowledge_evidence"),
+                rs.getLong("knowledge_hits"),
+                rs.getLong("healing_total"),
+                rs.getLong("healing_succeeded")),
+                Math.max(1, days));
+    }
+
+    private static LocalDate toLocalDate(Object value) {
+        if (value instanceof LocalDate date) {
+            return date;
+        }
+        if (value instanceof java.sql.Date date) {
+            return date.toLocalDate();
+        }
+        return value == null ? null : LocalDate.parse(value.toString());
     }
 
     private long countSql(String sql) {
