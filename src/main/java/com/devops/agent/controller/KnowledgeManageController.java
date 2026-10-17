@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -125,40 +124,13 @@ public class KnowledgeManageController {
 
         log.info("查询知识库切片：page={}, size={}, keyword={}", safePage, safeSize, keyword);
 
-        Map<String, Object> map = knowledgeStatsService.listChunks(safePage, safeSize, keyword);
-        @SuppressWarnings("unchecked")
-        List<com.devops.agent.domain.rag.KnowledgeChunkView> list =
-                map.get("list") instanceof List<?> l
-                        ? (List<com.devops.agent.domain.rag.KnowledgeChunkView>) l
-                        : (map.get("content") instanceof List<?> c
-                                ? (List<com.devops.agent.domain.rag.KnowledgeChunkView>) c
-                                : List.of());
-        long total = 0L;
-        if (map.get("total") instanceof Number n) {
-            total = n.longValue();
-        } else if (map.get("totalElements") instanceof Number n) {
-            total = n.longValue();
-        }
-        int totalPages = map.get("totalPages") instanceof Number n ? n.intValue() : 0;
-        int currentPage = safePage;
-        if (map.get("page") instanceof Number n) {
-            currentPage = n.intValue();
-        } else if (map.get("currentPage") instanceof Number n) {
-            currentPage = n.intValue();
-        }
-        int pageSize = safeSize;
-        if (map.get("size") instanceof Number n) {
-            pageSize = n.intValue();
-        } else if (map.get("pageSize") instanceof Number n) {
-            pageSize = n.intValue();
-        }
-
+        com.devops.agent.domain.rag.KnowledgeChunkPageData pageData =
+                knowledgeStatsService.listChunks(safePage, safeSize, keyword);
         return ApiResponse.success(new com.devops.agent.controller.dto.KnowledgeChunkPageResponse(
-                list,
-                total,
-                totalPages,
-                currentPage,
-                pageSize
-        ));
+                pageData.content(),
+                pageData.totalElements(),
+                pageData.totalPages(),
+                pageData.currentPage(),
+                pageData.pageSize()));
     }
 }
