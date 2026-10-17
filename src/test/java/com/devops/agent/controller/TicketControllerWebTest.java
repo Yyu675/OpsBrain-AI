@@ -400,6 +400,30 @@ class TicketControllerWebTest {
     }
 
     @Test
+    @DisplayName("闭环度量从 typed projection 映射，窗口字段与 null 语义保留")
+    void closureMetricsKeepResponseShape() throws Exception {
+        var metrics = new com.devops.agent.domain.biz.entity.TicketClosureMetricsData(
+                20, 15, 12, 10, 8, 2,
+                1.2, 30.5, 45.0, 25.0,
+                null, null, null, null, null, null, null, null, null)
+                .withPostmortemMetrics(7, 6, 12, 50.0)
+                .withWindowMetrics(7, 4, 2, 3);
+        when(ticketService.getClosureMetrics(7)).thenReturn(metrics);
+
+        mockMvc.perform(get("/api/v1/tickets/metrics/closure").param("days", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(20))
+                .andExpect(jsonPath("$.data.firstResponded").value(15))
+                .andExpect(jsonPath("$.data.mttaMinutes").value(1.2))
+                .andExpect(jsonPath("$.data.skipRate").value(25.0))
+                .andExpect(jsonPath("$.data.postmortemRate").value(50.0))
+                .andExpect(jsonPath("$.data.windowDays").value(7))
+                .andExpect(jsonPath("$.data.alertsInWindow").value(4))
+                .andExpect(jsonPath("$.data.incidentsInWindow").value(3));
+    }
+
+    @Test
     @DisplayName("未注册的子路径返回 404，不应被当作工单号吞掉")
     void unknownSubPathIsNotSwallowed() throws Exception {
         mockMvc.perform(post("/api/v1/tickets/TKT-1/definitely-not-an-endpoint"))

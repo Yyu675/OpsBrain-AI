@@ -944,7 +944,7 @@ public class DevOpsTicketRepository {
      * 否则"点一下已解决"就能刷低 MTTR（6.41 契约）。
      * </p>
      */
-    public java.util.Map<String, Object> countClosureMetrics() {
+    public com.devops.agent.domain.biz.entity.TicketClosureMetricsData countClosureMetrics() {
         String sql = """
             SELECT
                 COUNT(*) AS total,
@@ -961,30 +961,40 @@ public class DevOpsTicketRepository {
                     FILTER (WHERE verified_at IS NOT NULL AND verify_skipped = FALSE) AS mttr
               FROM sys_devops_ticket
             """;
-        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
         try {
-            jdbcTemplate.query(sql, rs -> {
+            return jdbcTemplate.query(sql, (rs, rowNum) -> {
                 long verified = rs.getLong("verified");
                 long skipped = rs.getLong("verify_skipped");
-                result.put("total", rs.getLong("total"));
-                result.put("firstResponded", rs.getLong("first_responded"));
-                result.put("mitigated", rs.getLong("mitigated"));
-                result.put("rootCauseConfirmed", rs.getLong("root_cause_confirmed"));
-                result.put("verified", verified);
-                result.put("verifySkipped", skipped);
                 double mtta = rs.getDouble("mtta");
-                result.put("mttaMinutes", rs.wasNull() ? null : Math.round(mtta * 10) / 10.0);
+                Double mttaMinutes = rs.wasNull() ? null : Math.round(mtta * 10) / 10.0;
                 double mttm = rs.getDouble("mttm");
-                result.put("mttmMinutes", rs.wasNull() ? null : Math.round(mttm * 10) / 10.0);
+                Double mttmMinutes = rs.wasNull() ? null : Math.round(mttm * 10) / 10.0;
                 double mttr = rs.getDouble("mttr");
-                result.put("mttrMinutes", rs.wasNull() ? null : Math.round(mttr * 10) / 10.0);
-                result.put("skipRate", verified > 0
-                        ? Math.round(skipped * 10000.0 / verified) / 100.0 : null);
-            });
+                Double mttrMinutes = rs.wasNull() ? null : Math.round(mttr * 10) / 10.0;
+                return new com.devops.agent.domain.biz.entity.TicketClosureMetricsData(
+                        rs.getLong("total"),
+                        rs.getLong("first_responded"),
+                        rs.getLong("mitigated"),
+                        rs.getLong("root_cause_confirmed"),
+                        verified,
+                        skipped,
+                        mttaMinutes,
+                        mttmMinutes,
+                        mttrMinutes,
+                        verified > 0 ? Math.round(skipped * 10000.0 / verified) / 100.0 : null,
+                        null, null, null, null, null, null, null, null, null);
+            }).stream().findFirst().orElseGet(() -> emptyClosureMetrics());
         } catch (Exception e) {
             log.warn("⚠️ [Repository] 闭环度量查询失败: {}", e.getMessage());
+            return emptyClosureMetrics();
         }
-        return result;
+    }
+
+    private com.devops.agent.domain.biz.entity.TicketClosureMetricsData emptyClosureMetrics() {
+        return new com.devops.agent.domain.biz.entity.TicketClosureMetricsData(
+                0L, 0L, 0L, 0L, 0L, 0L, null, null, null, null,
+                null, null, null, null, null, null, null, null, null);
+
     }
 
     /**
