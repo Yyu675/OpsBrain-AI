@@ -65,16 +65,17 @@ public class AuthController {
 
     /** 登录：BCrypt 校验通过后 Sa-Token 签发 token，返回 token + 用户信息（不含密码） */
     @PostMapping("/login")
-    public ApiResponse<Map<String, Object>> login(@Valid @RequestBody LoginRequest req) {
+    public ApiResponse<com.devops.agent.controller.dto.LoginResponse> login(@Valid @RequestBody LoginRequest req) {
         try {
             User user = authService.login(req.username(), req.password());
             // Sa-Token 登录：以 userId 为 loginId，token 存 Redis（服务端可控失效）
             StpUtil.login(user.getId());
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("token", StpUtil.getTokenValue());
-            data.put("tokenName", StpUtil.getTokenName());   // 前端据此设置请求头名（默认 satoken）
-            data.put("user", toUserView(user));
-            return ApiResponse.success(data, "登录成功");
+            var loginResp = new com.devops.agent.controller.dto.LoginResponse(
+                    StpUtil.getTokenValue(),
+                    StpUtil.getTokenName(),
+                    toUserView(user)
+            );
+            return ApiResponse.success(loginResp, "登录成功");
         } catch (AuthService.AuthException e) {
             log.info("🔒 [Auth] 登录失败 | username={} | reason={}", req.username(), e.getMessage());
             return ApiResponse.error(ApiCode.LOGIN_FAILED, e.getMessage());
@@ -86,7 +87,7 @@ public class AuthController {
 
     /** 取当前用户：Sa-Token 从请求上下文读 token 判定登录态 */
     @GetMapping("/me")
-    public ApiResponse<Map<String, Object>> me() {
+    public ApiResponse<com.devops.agent.controller.dto.UserView> me() {
         if (!StpUtil.isLogin()) {
             return ApiResponse.error(ApiCode.UNAUTHORIZED, "未登录");
         }
@@ -118,12 +119,12 @@ public class AuthController {
     }
 
     /** 用户视图：绝不含 password */
-    private Map<String, Object> toUserView(User user) {
-        Map<String, Object> view = new LinkedHashMap<>();
-        view.put("id", user.getId());
-        view.put("username", user.getUsername());
-        view.put("displayName", user.getDisplayName());
-        view.put("role", user.getRole());
-        return view;
+    private com.devops.agent.controller.dto.UserView toUserView(User user) {
+        return new com.devops.agent.controller.dto.UserView(
+                user.getId(),
+                user.getUsername(),
+                user.getDisplayName(),
+                user.getRole()
+        );
     }
 }

@@ -78,48 +78,40 @@ public class AgentTraceController {
      * @return 轨迹列表 + 当前状态 + 汇总信息
      */
     @GetMapping("/{traceId}")
-    public ApiResponse<Map<String, Object>> getTrace(@PathVariable String traceId) {
+    public ApiResponse<com.devops.agent.controller.dto.AgentTraceDetailResponse> getTrace(@PathVariable String traceId) {
         AgentState current = stateManager.getCurrentState(traceId);
-
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("traceId", traceId);
 
         // 「会话不存在」和「会话存在但还没发生迁移」是两件事，必须分开告诉运维：
         // 前者说明会话已被清理或 traceId 抄错了，后者说明流程真的卡在最开始。
         // 混成一个空列表会让人在错误的方向上排查很久。
         if (current == null) {
-            data.put("found", false);
-            data.put("currentState", null);
-            data.put("transitions", List.of());
-            data.put("message", "会话不存在：可能已超过 30 分钟空闲期被清理，或 traceId 有误");
-            return ApiResponse.success(data);
+            return ApiResponse.success(com.devops.agent.controller.dto.AgentTraceDetailResponse.notFound(traceId));
         }
 
         List<AgentStateTransition> transitions = stateManager.exportTransitions(traceId);
-
-        data.put("found", true);
-        data.put("currentState", current.name());
-        data.put("currentStateText", current.getDisplayName());
-        // 是否还在自动流程中——补偿中/人工升级虽非终态，但已脱离自动化链路，
-        // 前端据此决定要不要继续轮询
-        data.put("settled", current.isSettled());
-        data.put("terminal", current.isTerminal());
-
-        List<Map<String, Object>> items = new ArrayList<>(transitions.size());
+        List<com.devops.agent.controller.dto.AgentTransitionItemResponse> items = new ArrayList<>(transitions.size());
         long totalMs = 0;
         for (AgentStateTransition t : transitions) {
             items.add(toItem(t));
             totalMs += t.getDurationMs();
         }
-        data.put("transitions", items);
-        data.put("transitionCount", items.size());
-        data.put("totalDurationMs", totalMs);
 
-        if (items.isEmpty()) {
-            data.put("message", "会话已创建但尚未发生任何状态迁移");
-        }
+        String message = items.isEmpty() ? "会话已创建但尚未发生任何状态迁移" : null;
 
-        return ApiResponse.success(data);
+        var detail = new com.devops.agent.controller.dto.AgentTraceDetailResponse(
+                traceId,
+                true,
+                current.name(),
+                current.getDisplayName(),
+                current.isSettled(),
+                current.isTerminal(),
+                items,
+                items.size(),
+                totalMs,
+                message
+        );
+
+        return ApiResponse.success(detail);
     }
 
     /**
@@ -130,27 +122,27 @@ public class AgentTraceController {
      * </p>
      */
     @GetMapping("/stats")
-    public ApiResponse<Map<String, Object>> stats() {
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("activeSessions", stateManager.sessionCount());
-        data.put("idleTimeoutMinutes", 30);
-        return ApiResponse.success(data);
+    public ApiResponse<com.devops.agent.controller.dto.AgentTraceStatsResponse> stats() {
+        return ApiResponse.success(new com.devops.agent.controller.dto.AgentTraceStatsResponse(
+                stateManager.sessionCount(),
+                30
+        ));
     }
 
-    private Map<String, Object> toItem(AgentStateTransition t) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", t.getId());
-        m.put("sessionId", t.getSessionId());
-        m.put("fromState", t.getFromState() == null ? null : t.getFromState().name());
-        m.put("fromStateText", t.getFromState() == null ? null : t.getFromState().getDisplayName());
-        m.put("toState", t.getToState() == null ? null : t.getToState().name());
-        m.put("toStateText", t.getToState() == null ? null : t.getToState().getDisplayName());
-        m.put("triggerType", t.getTriggerType() == null ? null : t.getTriggerType().name());
-        m.put("triggerDetail", t.getTriggerDetail());
-        m.put("operator", t.getOperator());
-        m.put("timestamp", t.getTimestamp());
-        m.put("durationMs", t.getDurationMs());
-        m.put("metadata", t.getMetadata());
-        return m;
+    private com.devops.agent.controller.dto.AgentTransitionItemResponse toItem(AgentStateTransition t) {
+        return new com.devops.agent.controller.dto.AgentTransitionItemResponse(
+                t.getId(),
+                t.getSessionId(),
+                t.getFromState() == null ? null : t.getFromState().name(),
+                t.getFromState() == null ? null : t.getFromState().getDisplayName(),
+                t.getToState() == null ? null : t.getToState().name(),
+                t.getToState() == null ? null : t.getToState().getDisplayName(),
+                t.getTriggerType() == null ? null : t.getTriggerType().name(),
+                t.getTriggerDetail(),
+                t.getOperator(),
+                t.getTimestamp(),
+                t.getDurationMs(),
+                t.getMetadata()
+        );
     }
 }
