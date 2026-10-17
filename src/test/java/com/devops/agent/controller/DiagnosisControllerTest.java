@@ -139,13 +139,13 @@ class DiagnosisControllerTest {
         var fallback = controller.feedback(
                 new DiagnosisController.FeedbackRequest(42L, "wrong", null));
         assertThat(fallback.getCode()).isZero();
-        assertThat(fallback.getData().get("knowledgeBoosted")).isEqualTo(1);
+        assertThat(fallback.getData().knowledgeBoosted()).isEqualTo(1);
         verify(knowledgeBoostRepository).recordFeedback(11L, "WRONG");
 
         // 空数组（前端明确说本次没有可引用切片）：不反查、不回流
         var explicit = controller.feedback(
                 new DiagnosisController.FeedbackRequest(42L, "wrong", List.of()));
-        assertThat(explicit.getData().get("knowledgeBoosted")).isEqualTo(0);
+        assertThat(explicit.getData().knowledgeBoosted()).isEqualTo(0);
         verify(knowledgeBoostRepository, times(1)).recordFeedback(anyLong(), anyString());
     }
 

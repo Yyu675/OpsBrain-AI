@@ -477,28 +477,43 @@ jobs:
           node tools/ci/check-openapi-freshness.js 2>&1 | tee /tmp/freshness.log
 
       - name: 失败诊断回帖（沙箱日志取证道 · 批 45 红案催生）
+        # 背景：托管 runner 日志归档在 azure blob，开发沙箱 egress 不通该域，
+        # gh api/gh run view --log 都取不到失败日志（批 45 红案两度空跑）。
+        # PR 评论走 api.github.com 是沙箱唯一稳定通道——失败时把编译错误
+        # 指纹 + 红测报告摘要 + maven 日志尾段回帖本 PR，取证不求日志。
+        # 只有失败时执行，绿案零开销零噪声；本步常驻不拆。
+        #
+        # 2026-10-13：原条件 `failure() && github.event_name == 'pull_request'`
+        # 在本仓实测拿不到任何东西——本分支的 Actions 只产生 push 事件运行
+        # （PR #3 无 pull_request 运行），于是后端腿红了也无人能读。
+        # 现改为：push/dispatch 走 commit comment，PR 事件额外再回帖 PR（保持原通道）。
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           {
             echo "<!-- opsbrain-red-diagnosis -->"
             echo "### 🔴 后端腿失败诊断（tee 取证道）"
-            echo "SHA: $GITHUB_SHA"
-            echo
-            echo "**负对照日志尾段（若在负对照阶段失败）**："
-            echo '```'
-            tail -30 /tmp/spring-negative-control.log 2>/dev/null || echo "(非 spring 负对照红)"
-            echo '```'
             echo
             echo "**编译错误指纹**："
             echo '```'
-            (grep -E "\[ERROR\]|cannot find symbol|COMPILATION ERROR" /tmp/mvn-verify.log 2>/dev/null | head -25) || echo "(无编译错误——为测试阶段红或未执行到 mvn verify)"
+            (grep -E "\[ERROR\]|cannot find symbol|COMPILATION ERROR" /tmp/mvn-verify.log | head -25) || echo "(无编译错误——为测试阶段红)"
+            echo '```'
+            echo
+            echo "**失败用例清单**（surefire 的 `<<< FAILURE!` 行就是用例全名）："
+            echo '```'
+            (grep -h -E "<<< (FAILURE|ERROR)!" target/surefire-reports/*.txt 2>/dev/null | head -20) || true
+            echo '```'
+            echo
+            echo "**失败摘要**："
+            echo '```'
+            (grep -h -E "^Tests run.*(Failures: [1-9]|Errors: [1-9])" target/surefire-reports/*.txt 2>/dev/null | head -20) || echo "(无 SUMMARY 行)"
             echo '```'
             echo
             echo "**mvn 日志尾段**："
             echo '```'
-            tail -50 /tmp/mvn-verify.log 2>/dev/null || echo "(无 mvn-verify.log)"
+            tail -50 /tmp/mvn-verify.log
             echo '```'
             if [ -f /tmp/freshness.log ]; then
               echo
@@ -508,8 +523,13 @@ jobs:
               echo '```'
             fi
           } > /tmp/red-diag.md
-          gh pr comment 50 --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md || true
-          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/red-diag.md || true
+          # commit comment：push / workflow_dispatch 运行时唯一可读通道（沙箱读不了 blob 日志）
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
+            -F body=@/tmp/red-diag.md --silent || true
+          # PR 评论：pull_request 事件时保留原通道（本仓暂无此类运行，条件不满足即跳过）
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/red-diag.md || true
+          fi
 
       - name: 评测指标基线对比（S4-3 CI 回归门禁）
         # 接线批次 18（报告 121）。契约层指标由 AgentEvaluationTest 常驻落盘
@@ -796,8 +816,7 @@ jobs:
             tail -100 /tmp/e2e-package.log 2>/dev/null || echo "(日志文件缺失——步骤在 tee 前即炸，如 wrapper 下载失败)"
             echo '```'
           } > /tmp/e2e-package-diag.md
-          gh pr comment 50 --repo "$GITHUB_REPOSITORY" --body-file /tmp/e2e-package-diag.md || true
-          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/e2e-package-diag.md || true
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@/tmp/e2e-package-diag.md --silent || true
 
       - name: 启动 Prometheus 桩（监控中心的 e2e 数据源）
         # 监控中心是「代理查询」设计：数据不在 OpsBrain 里，页面数据全靠后端转调
