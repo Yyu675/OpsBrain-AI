@@ -1,5 +1,8 @@
 package com.devops.agent.controller.dto;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -10,6 +13,8 @@ import java.util.Map;
  * 审计数据结构化转换工具类，用于从通用 Map 转换为强类型 Record。
  */
 public final class AuditLogConverter {
+
+    private static final Logger log = LoggerFactory.getLogger(AuditLogConverter.class);
 
     private AuditLogConverter() {}
 
@@ -192,7 +197,11 @@ public final class AuditLogConverter {
         if (obj instanceof BigDecimal b) return b;
         if (obj instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
         if (obj instanceof String s) {
-            try { return new BigDecimal(s); } catch (Exception ignored) {}
+            try {
+                return new BigDecimal(s);
+            } catch (Exception e) {
+                log.debug("[AuditLogConverter] BigDecimal 解析失败，回落 null: {}", s, e);
+            }
         }
         return null;
     }
@@ -207,7 +216,11 @@ public final class AuditLogConverter {
         if (obj instanceof LocalDateTime ldt) return ldt;
         if (obj instanceof java.sql.Timestamp ts) return ts.toLocalDateTime();
         if (obj instanceof String s) {
-            try { return LocalDateTime.parse(s); } catch (Exception ignored) {}
+            try {
+                return LocalDateTime.parse(s);
+            } catch (Exception e) {
+                log.debug("[AuditLogConverter] LocalDateTime 解析失败，回落 null: {}", s, e);
+            }
         }
         return null;
     }
