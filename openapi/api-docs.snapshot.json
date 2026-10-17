@@ -10640,7 +10640,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringLong"
+                  "$ref": "#/components/schemas/ApiResponseTicketRootCauseStatsResponse"
                 }
               }
             }
@@ -24929,32 +24929,6 @@
         ],
         "description": "跨模块全局搜索项"
       },
-      "ApiResponseMapStringLong": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "traceId": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponseTeamMemberListResponse": {
         "type": "object",
         "properties": {
@@ -25014,6 +24988,45 @@
             "items": {
               "$ref": "#/components/schemas/SearchResultItem"
             }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "TicketRootCauseStatsResponse": {
+        "type": "object",
+        "properties": {
+          "stats": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "根因分类与工单数映射表"
+          }
+        },
+        "required": [
+          "stats"
+        ],
+        "description": "工单根因聚合统计响应"
+      },
+      "ApiResponseTicketRootCauseStatsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketRootCauseStatsResponse"
           },
           "message": {
             "type": "string"

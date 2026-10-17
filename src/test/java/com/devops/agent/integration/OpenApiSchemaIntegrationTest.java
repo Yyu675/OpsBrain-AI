@@ -466,6 +466,10 @@ class OpenApiSchemaIntegrationTest {
             JsonNode searchItem = componentSchema("SearchResultItem");
             assertThat(searchItem).as("SearchResultItem 缺失").isNotNull();
             assertThat(fieldNames(searchItem.path("properties"))).contains("id", "title", "kind", "sub");
+
+            JsonNode rootCauseStats = componentSchema("TicketRootCauseStatsResponse");
+            assertThat(rootCauseStats).as("TicketRootCauseStatsResponse 缺失").isNotNull();
+            assertThat(fieldNames(rootCauseStats.path("properties"))).contains("stats");
         }
     }
 
