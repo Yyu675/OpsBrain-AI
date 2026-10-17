@@ -2880,7 +2880,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketVoidResponse"
                 }
               }
             }
@@ -4149,7 +4149,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketActionResponse"
                 }
               }
             }
@@ -4349,7 +4349,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketAiFeedbackResponse"
                 }
               }
             }
@@ -10378,7 +10378,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketStatsResponse"
                 }
               }
             }
@@ -10458,7 +10458,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketFirstResponseStatsResponse"
                 }
               }
             }
@@ -10560,7 +10560,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketSlaAtRiskResponse"
                 }
               }
             }
@@ -10838,7 +10838,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketClosureMetricsResponse"
                 }
               }
             }
@@ -10930,7 +10930,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseListMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseListMissingPostmortemItemDto"
                 }
               }
             }
@@ -11191,7 +11191,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseTicketAiAccuracyStatsResponse"
                 }
               }
             }
@@ -23991,6 +23991,450 @@
           },
           "data": {
             "$ref": "#/components/schemas/SagaCompensateResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketSlaAtRiskResponse": {
+        "type": "object",
+        "properties": {
+          "tickets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DevOpsTicket"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "withinMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseTicketSlaAtRiskResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketSlaAtRiskResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketFirstResponseStatsResponse": {
+        "type": "object",
+        "properties": {
+          "avgFirstResponseMinutes": {
+            "type": "number"
+          },
+          "breached": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "notResponded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "responded": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseTicketFirstResponseStatsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketFirstResponseStatsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketActionResponse": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/TicketAction"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseTicketActionResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketActionResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "MissingPostmortemItemDto": {
+        "type": "object",
+        "properties": {
+          "createTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseListMissingPostmortemItemDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissingPostmortemItemDto"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketVoidResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "ticketId": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseTicketVoidResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketVoidResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketStatsResponse": {
+        "type": "object",
+        "properties": {
+          "byPriority": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "byStatus": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "processing": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "resolved": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "todayNew": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unassignedOpen": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "urgentPending": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseTicketStatsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketStatsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketAiFeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "analysisId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "helpful": {
+            "type": "boolean"
+          },
+          "knowledgeBoosted": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseTicketAiFeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketAiFeedbackResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketAiAccuracyStatsResponse": {
+        "type": "object",
+        "properties": {
+          "helpful": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "helpfulRate": {
+            "type": "number"
+          },
+          "rated": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unhelpful": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseTicketAiAccuracyStatsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketAiAccuracyStatsResponse"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TicketClosureMetricsResponse": {
+        "type": "object",
+        "properties": {
+          "alertSourced": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "alertSourcedInWindow": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "alertsInWindow": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "finishedTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "firstResponded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "incidentsInWindow": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "incidentsTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mitigated": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mttaMinutes": {
+            "type": "number"
+          },
+          "mttmMinutes": {
+            "type": "number"
+          },
+          "mttrMinutes": {
+            "type": "number"
+          },
+          "postmortemRate": {
+            "type": "number"
+          },
+          "postmortemTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rootCauseConfirmed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "skipRate": {
+            "type": "number"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verified": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "verifySkipped": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "windowDays": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseTicketClosureMetricsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TicketClosureMetricsResponse"
           },
           "traceId": {
             "type": "string"
