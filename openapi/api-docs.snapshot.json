@@ -13534,7 +13534,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseKnowledgeDocListItem"
+                  "$ref": "#/components/schemas/ApiResponseListListItem"
                 }
               }
             }
@@ -26028,7 +26028,7 @@
           }
         }
       },
-      "ApiResponseKnowledgeDocListItem": {
+      "ApiResponseListListItem": {
         "type": "object",
         "properties": {
           "code": {
