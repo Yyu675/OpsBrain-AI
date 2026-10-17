@@ -138,14 +138,33 @@ public class NotifySilentWatchdogScheduler {
     }
 
     /** 最近一轮扫描快照（告警页「通知链」卡读它，与 /logs-heartbeat 同族） */
-    public Map<String, Object> snapshot() {
-        Map<String, Object> m = metrics != null ? metrics.notifySnapshot() : Map.of();
-        m = new java.util.LinkedHashMap<>(m);
-        m.put("configured", notifier.available());
-        m.put("enabled", enabled);
-        m.put("silent", Boolean.TRUE.equals(silent));
-        m.put("lastScanAt", lastScanAt != null ? lastScanAt.toString() : null);
-        m.put("windowMinutes", Math.max(1, scanIntervalMs / 60_000));
-        return m;
+    public com.devops.agent.domain.alert.DTO.NotifyHealthResponse snapshot() {
+        if (!notifier.available()) {
+            return com.devops.agent.domain.alert.DTO.NotifyHealthResponse.unconfigured();
+        }
+        long attempts = metrics != null ? metrics.notifyAttempts() : 0;
+        long successes = metrics != null ? metrics.notifySuccesses() : 0;
+        long failed = metrics != null ? metrics.notifyFailed() : 0;
+        long degraded = metrics != null ? metrics.notifyDegraded() : 0;
+        long delivered = metrics != null ? metrics.notifyDelivered() : 0;
+        long deliverFailed = metrics != null ? metrics.notifyDeliveryFailed() : 0;
+        long dl = metrics != null ? metrics.notifyLastDeliveredAt() : 0;
+        long last = metrics != null ? metrics.notifyLastSuccessAt() : 0;
+
+        return new com.devops.agent.domain.alert.DTO.NotifyHealthResponse(
+                attempts,
+                successes,
+                failed,
+                degraded,
+                delivered,
+                deliverFailed,
+                dl > 0 ? java.time.Instant.ofEpochMilli(dl).toString() : null,
+                last > 0 ? java.time.Instant.ofEpochMilli(last).toString() : null,
+                notifier.available(),
+                enabled,
+                Boolean.TRUE.equals(silent),
+                lastScanAt != null ? lastScanAt.toString() : null,
+                Math.max(1, scanIntervalMs / 60_000)
+        );
     }
 }

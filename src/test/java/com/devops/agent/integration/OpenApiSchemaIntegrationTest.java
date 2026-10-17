@@ -238,6 +238,38 @@ class OpenApiSchemaIntegrationTest {
                             "requiresApproval", "approvalMode",
                             "blastRadiusCount", "cooldownSeconds");
         }
+
+        @Test
+        @DisplayName("批129 P0-2b: 核心弱契约端点重构为具体 record 结构")
+        void batch129EndpointsHaveProperties() throws Exception {
+            JsonNode pending = componentSchema("PendingApprovalCountResponse");
+            assertThat(pending).as("PendingApprovalCountResponse 缺失").isNotNull();
+            assertThat(fieldNames(pending.path("properties"))).contains("pending");
+
+            JsonNode pipeline = componentSchema("PipelineHeartbeat");
+            assertThat(pipeline).as("PipelineHeartbeat 缺失").isNotNull();
+            assertThat(fieldNames(pipeline.path("properties"))).contains("lastSeenAt", "silent", "silenceMinutes");
+
+            JsonNode logs = componentSchema("LogsHeartbeat");
+            assertThat(logs).as("LogsHeartbeat 缺失").isNotNull();
+            assertThat(fieldNames(logs.path("properties"))).contains("freshestLogAt", "silent", "silenceMinutes", "probed", "lokiEnabled");
+
+            JsonNode notify = componentSchema("NotifyHealthResponse");
+            assertThat(notify).as("NotifyHealthResponse 缺失").isNotNull();
+            assertThat(fieldNames(notify.path("properties"))).contains("attempts", "successes", "failed", "degraded", "delivered", "deliverFailed", "configured", "enabled", "silent");
+
+            JsonNode serviceOwnerList = componentSchema("ServiceOwnerListResponse");
+            assertThat(serviceOwnerList).as("ServiceOwnerListResponse 缺失").isNotNull();
+            assertThat(fieldNames(serviceOwnerList.path("properties"))).contains("total", "items");
+
+            JsonNode serviceOwnerUpsert = componentSchema("ServiceOwnerUpsertResponse");
+            assertThat(serviceOwnerUpsert).as("ServiceOwnerUpsertResponse 缺失").isNotNull();
+            assertThat(fieldNames(serviceOwnerUpsert.path("properties"))).contains("id", "service", "owner");
+
+            JsonNode serviceOwnerDisable = componentSchema("ServiceOwnerDisableResponse");
+            assertThat(serviceOwnerDisable).as("ServiceOwnerDisableResponse 缺失").isNotNull();
+            assertThat(fieldNames(serviceOwnerDisable.path("properties"))).contains("service", "disabled");
+        }
     }
 
     @Nested

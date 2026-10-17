@@ -136,10 +136,10 @@ public class AlertController {
      * 「管道活着/管道断了」。没有这条，告警列表长期空白会被误读成「天下太平」。
      * </p>
      *
-     * @return {lastSeenAt, silent, silenceMinutes}；从未收到看门狗时 lastSeenAt 为 null
+     * @return 强类型 PipelineHeartbeat；从未收到看门狗时 lastSeenAt 为 null
      */
     @GetMapping("/heartbeat")
-    public ApiResponse<java.util.Map<String, Object>> heartbeat() {
+    public ApiResponse<com.devops.agent.domain.alert.DTO.PipelineHeartbeat> heartbeat() {
         return ApiResponse.success(alertQueryService.pipelineHeartbeat(pipelineHeartbeatSilenceMinutes));
     }
 
@@ -149,9 +149,10 @@ public class AlertController {
      * 探测是 5 分钟一轮的低频旁路，前端读快照不重复打 Loki。</p>
      */
     @GetMapping("/logs-heartbeat")
-    public ApiResponse<java.util.Map<String, Object>> logsHeartbeat() {
+    public ApiResponse<com.devops.agent.domain.alert.DTO.LogsHeartbeat> logsHeartbeat() {
         if (logsWatchdog == null) {
-            return ApiResponse.success(java.util.Map.of("probed", false, "silent", false));
+            return ApiResponse.success(new com.devops.agent.domain.alert.DTO.LogsHeartbeat(
+                    null, false, 10, false, false));
         }
         return ApiResponse.success(logsWatchdog.snapshot());
     }
@@ -171,10 +172,9 @@ public class AlertController {
      * configured=false=未配置渠道（未知态——按「未配置」呈现，不是「故障」）。
      */
     @GetMapping("/notify-health")
-    public ApiResponse<java.util.Map<String, Object>> notifyHealth() {
+    public ApiResponse<com.devops.agent.domain.alert.DTO.NotifyHealthResponse> notifyHealth() {
         if (notifyWatchdog == null) {
-            return ApiResponse.success(java.util.Map.of(
-                    "configured", false, "enabled", false, "silent", false));
+            return ApiResponse.success(com.devops.agent.domain.alert.DTO.NotifyHealthResponse.unconfigured());
         }
         return ApiResponse.success(notifyWatchdog.snapshot());
     }

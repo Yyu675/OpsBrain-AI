@@ -72,9 +72,14 @@ public class ApprovalController {
 
     /** 待审数（前端角标） */
     @GetMapping("/pending/count")
-    public ApiResponse<Map<String, Object>> pendingCount() {
+    public ApiResponse<com.devops.agent.controller.dto.PendingApprovalCountResponse> pendingCount() {
         Map<String, Object> data = approvalService.listPending(1, 1);
-        return ApiResponse.success(Map.of("pending", data.getOrDefault("total", 0)));
+        Object totalObj = data.getOrDefault("total", 0);
+        long pending = 0;
+        if (totalObj instanceof Number n) {
+            pending = n.longValue();
+        }
+        return ApiResponse.success(new com.devops.agent.controller.dto.PendingApprovalCountResponse(pending));
     }
 
     @GetMapping("/{id}")
