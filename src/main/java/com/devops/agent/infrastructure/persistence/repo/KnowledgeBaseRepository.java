@@ -27,6 +27,8 @@ import java.util.Map;
 @Repository
 public class KnowledgeBaseRepository {
 
+    record KbDocIndexStatusRow(Long kbId, String indexStatus, long count) {}
+
     private final JdbcTemplate jdbcTemplate;
 
     public KnowledgeBaseRepository(JdbcTemplate jdbcTemplate) {
@@ -125,20 +127,20 @@ public class KnowledgeBaseRepository {
      * 库数量级虽小，但多一次往返没有任何收益。</p>
      */
     public Map<Long, KbDocStats> docStatsByBase() {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        List<KbDocIndexStatusRow> rows = jdbcTemplate.query("""
             SELECT kb_id, index_status, COUNT(*) AS cnt
               FROM sys_knowledge_doc
              GROUP BY kb_id, index_status
-            """);
+            """, (rs, rowNum) -> new KbDocIndexStatusRow(
+                rs.getObject("kb_id", Long.class), rs.getString("index_status"), rs.getLong("cnt")));
         Map<Long, long[]> acc = new HashMap<>();
-        for (Map<String, Object> row : rows) {
-            Object kbIdObj = row.get("kb_id");
-            if (kbIdObj == null) {
+        for (KbDocIndexStatusRow row : rows) {
+            if (row.kbId() == null) {
                 continue; // 历史游离数据（kb_id 为 NULL）不计入任何库
             }
-            long kbId = ((Number) kbIdObj).longValue();
-            String indexStatus = String.valueOf(row.get("index_status"));
-            long cnt = ((Number) row.get("cnt")).longValue();
+            long kbId = row.kbId();
+            String indexStatus = String.valueOf(row.indexStatus());
+            long cnt = row.count();
             long[] a = acc.computeIfAbsent(kbId, k -> new long[3]);
             a[0] += cnt;
             if ("INDEXED".equals(indexStatus)) {
