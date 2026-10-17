@@ -568,7 +568,7 @@ public class KnowledgeDocService {
         }
     }
 
-    public List<Map<String, Object>> listVersions(Long docId) {
+    public List<KnowledgeDocVersionRow> listVersions(Long docId) {
         return historyRepo.listVersions(docId);
     }
 

@@ -5,6 +5,7 @@ import com.devops.agent.common.exception.OptimisticLockException;
 import com.devops.agent.domain.rag.KnowledgeDoc;
 import com.devops.agent.domain.rag.KnowledgeDocDiff;
 import com.devops.agent.domain.rag.KnowledgeDocService;
+import com.devops.agent.domain.rag.KnowledgeDocVersionRow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -630,13 +631,25 @@ class KnowledgeDocControllerWebTest {
         @Test
         @DisplayName("版本列表带 docId，便于前端关联")
         void listVersions() throws Exception {
-            when(docService.listVersions(7L)).thenReturn(List.of(
-                    Map.of("version", 3, "changeReason", "补充回滚步骤")));
+            when(docService.listVersions(7L)).thenReturn(List.of(new KnowledgeDocVersionRow(
+                    91L, 7L, 3, "运维手册", "平台", "Alice", "hash-3", 128,
+                    "u-1", "补充回滚步骤", "UPDATE", LocalDateTime.parse("2026-10-18T10:15:30"))));
 
             mockMvc.perform(get("/api/v1/knowledge/docs/7/versions"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.docId").value(7))
-                    .andExpect(jsonPath("$.data.versions[0].version").value(3));
+                    .andExpect(jsonPath("$.data.versions[0].id").value(91))
+                    .andExpect(jsonPath("$.data.versions[0].docId").value(7))
+                    .andExpect(jsonPath("$.data.versions[0].version").value(3))
+                    .andExpect(jsonPath("$.data.versions[0].title").value("运维手册"))
+                    .andExpect(jsonPath("$.data.versions[0].category").value("平台"))
+                    .andExpect(jsonPath("$.data.versions[0].author").value("Alice"))
+                    .andExpect(jsonPath("$.data.versions[0].contentHash").value("hash-3"))
+                    .andExpect(jsonPath("$.data.versions[0].contentLength").value(128))
+                    .andExpect(jsonPath("$.data.versions[0].changedBy").value("u-1"))
+                    .andExpect(jsonPath("$.data.versions[0].changeReason").value("补充回滚步骤"))
+                    .andExpect(jsonPath("$.data.versions[0].changeType").value("UPDATE"))
+                    .andExpect(jsonPath("$.data.versions[0].createTime").value("2026-10-18T10:15:30"));
         }
 
         @Test
