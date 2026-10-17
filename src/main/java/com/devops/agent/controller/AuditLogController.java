@@ -118,7 +118,8 @@ public class AuditLogController {
     @GetMapping("/trace/{traceId}")
     public ApiResponse<AuditTraceDetailResponse> traceDetail(@PathVariable String traceId) {
         Map<String, Object> aiCall = repository.findAgentCallByTraceId(traceId);
-        List<Map<String, Object>> operations = repository.findAuditByTraceId(traceId);
+        List<com.devops.agent.domain.audit.OperationAuditTraceRow> operations =
+                repository.findAuditByTraceId(traceId);
 
         if (aiCall == null && operations.isEmpty()) {
             log.debug("[Audit] traceId 无任何记录 | trace={}", traceId);
@@ -128,7 +129,7 @@ public class AuditLogController {
         AgentCallDetailItem aiCallItem = AuditLogConverter.toAgentCallDetailItem(aiCall);
         List<OperationAuditItem> opItems = new ArrayList<>();
         if (operations != null) {
-            for (Map<String, Object> op : operations) {
+            for (com.devops.agent.domain.audit.OperationAuditTraceRow op : operations) {
                 opItems.add(AuditLogConverter.toOperationAuditItem(op));
             }
         }

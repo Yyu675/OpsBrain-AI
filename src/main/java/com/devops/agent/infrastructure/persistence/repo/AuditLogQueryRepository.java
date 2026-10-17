@@ -1,6 +1,7 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
 import com.devops.agent.domain.audit.AuditFilterOptionsData;
+import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -215,8 +216,8 @@ public class AuditLogQueryRepository {
      * 「AI 调用记录」与「工单创建审计」，用 traceId 关联起来才能回答
      * 「这张工单是谁、通过什么方式、基于什么问答创建的」。</p>
      */
-    public List<Map<String, Object>> findAuditByTraceId(String traceId) {
-        return jdbcTemplate.queryForList(
+    public List<OperationAuditTraceRow> findAuditByTraceId(String traceId) {
+        return jdbcTemplate.query(
                 """
                 SELECT id, trace_id, actor_id, actor_name, action,
                        target_type, target_id, http_method, http_path,
@@ -225,7 +226,25 @@ public class AuditLogQueryRepository {
                 FROM sys_operation_audit
                 WHERE trace_id = ?
                 ORDER BY create_time ASC, id ASC
-                """, traceId);
+                """,
+                (rs, rowNum) -> new OperationAuditTraceRow(
+                        rs.getObject("id", Long.class),
+                        rs.getString("trace_id"),
+                        rs.getString("actor_id"),
+                        rs.getString("actor_name"),
+                        rs.getString("action"),
+                        rs.getString("target_type"),
+                        rs.getString("target_id"),
+                        rs.getString("http_method"),
+                        rs.getString("http_path"),
+                        rs.getObject("status_code", Integer.class),
+                        rs.getObject("success", Boolean.class),
+                        rs.getObject("biz_code", Integer.class),
+                        rs.getString("error_message"),
+                        rs.getString("client_ip"),
+                        rs.getObject("duration_ms", Integer.class),
+                        rs.getObject("create_time", LocalDateTime.class)),
+                traceId);
     }
 
     /** 筛选下拉的候选值（模型名 / 操作类型 / 操作者），从实际数据聚合而非硬编码 */
