@@ -5,8 +5,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -50,11 +51,22 @@ public class ServiceOwnerRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.ofNullable(rows.get(0));
     }
 
+    public record ServiceOwnerRow(Long id, String service, String owner, boolean enabled,
+                                  LocalDateTime createTime, LocalDateTime updateTime) {}
+
     /** 全量路由清单（管理接口用），按服务名排序。 */
-    public List<Map<String, Object>> listAll() {
-        return jdbcTemplate.queryForList(
+    public List<ServiceOwnerRow> listAll() {
+        return jdbcTemplate.query(
                 "SELECT id, service, owner, enabled, create_time, update_time "
-                        + "FROM sys_service_owner ORDER BY lower(service)");
+                        + "FROM sys_service_owner ORDER BY lower(service)",
+                (rs, rowNum) -> new ServiceOwnerRow(
+                        rs.getLong("id"), rs.getString("service"), rs.getString("owner"),
+                        rs.getBoolean("enabled"), toLocalDateTime(rs.getTimestamp("create_time")),
+                        toLocalDateTime(rs.getTimestamp("update_time"))));
+    }
+
+    private static LocalDateTime toLocalDateTime(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toLocalDateTime();
     }
 
     /**

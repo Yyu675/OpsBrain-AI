@@ -4,9 +4,9 @@
  * OpenAPI definition
  * OpenAPI spec version: v0
  */
-import type { ServiceOwnerListResponseItemsItem } from './serviceOwnerListResponseItemsItem';
+import type { ServiceOwnerItem } from './serviceOwnerItem';
 
 export interface ServiceOwnerListResponse {
-  items?: ServiceOwnerListResponseItemsItem[];
+  items?: ServiceOwnerItem[];
   total?: number;
 }
