@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批177 审计调用统计固定 Map 类型化；批176 已合入 PR #87）
+> **最后更新**：2026-10-18（批178 会话归档 transcript 固定行类型化；批177 已合入 PR #88）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -117,7 +117,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T32** | **固定结构 Map 清理：诊断看板 DTO 端到端类型化**（批174） | `DashboardService` 返回既有 `DiagnosisBoardResponse`；JDBC 聚合行、趋势和校准行均改为 typed RowMapper/Record；composer 直接构造 DTO，移除 Map→DTO 转换器；既有聚合/趋势/舍入/空值测试改断言 DTO | PR #85 已合并（7428fbe），合并前 CI 四道门全绿 |
 | **T33** | **固定结构 Map 清理：诊断队列会话行类型化**（批175） | `findQueued()` 固定字段行改 `QueuedSessionRow` RowMapper，调度器移除字符串键读取；新增测试覆盖池满不查询、CAS 赢者才恢复、每轮最多 20 条；筛选排序和恢复条件未改 | PR #86 已合并（4d2a5f6），CI 四道门全绿 |
 | **T34** | **固定结构 Map 清理：Prometheus 健康检查响应类型化**（批176） | 固定 `baseUrl/enabled/reachable/latencyMs/error` 改为 DTO，覆盖 client 的禁用/连通/失败/fallback 与 controller 的 HTTP JSON 行为测试；保留 optional latency/error 语义 | PR #87 已合并，CI 四道门全绿 |
-| **T35** | **固定结构 Map 清理：审计 AI 调用统计类型化**（批177） | JDBC 统计聚合行改 RowMapper；统计结果改领域 Record，经 converter 映射到既有 API DTO；移除统计 Map 与 `result.put("stats", ...)`，同筛选条件、四舍五入与零分母语义不变，Web 测试锁住各字段 | 2026-10-18，待 CI 验证 |
+| **T35** | **固定结构 Map 清理：审计 AI 调用统计类型化**（批177） | JDBC 统计聚合行改 RowMapper；统计结果改领域 Record，经 converter 映射到既有 API DTO；移除统计 Map 与 `result.put("stats", ...)`，同筛选条件、四舍五入与零分母语义不变，Web 测试锁住各字段 | PR #88 已合并，CI 四道门全绿 |
+| **T36** | **固定结构 Map 清理：冷归档 transcript 行类型化**（批178） | `findBySession()` 固定 SQL 行改为 Record RowMapper；序列化保留原 snake_case JSON 字段及 null/时间戳值，归档的 FULL_TRANSCRIPT/SUMMARY_ONLY 与异常降级测试覆盖不变 | 2026-10-18，待 CI 验证 |
 
 ---
 
