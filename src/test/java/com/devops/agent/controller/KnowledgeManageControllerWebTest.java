@@ -156,22 +156,26 @@ class KnowledgeManageControllerWebTest {
         @Test
         @DisplayName("统计原样下发，带 traceId")
         void statsPassThrough() throws Exception {
-            when(knowledgeStatsService.getStats()).thenReturn(Map.of(
-                    "totalDocuments", 5, "totalChunks", 62));
+            when(knowledgeStatsService.getStats()).thenReturn(new com.devops.agent.domain.rag.KnowledgeStatsData(
+                    5L, 62L, 57L, 5L, Map.of("confluence", 4L, "manual", 1L), null, 9L));
 
             mockMvc.perform(get("/api/v1/knowledge/stats"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(0))
                     .andExpect(jsonPath("$.data.totalDocuments").value(5))
                     .andExpect(jsonPath("$.data.totalChunks").value(62))
+                    .andExpect(jsonPath("$.data.activeChunks").value(57))
+                    .andExpect(jsonPath("$.data.filteredOut").value(5))
+                    .andExpect(jsonPath("$.data.bySource.confluence").value(4))
+                    .andExpect(jsonPath("$.data.hotQueryCount").value(9))
                     .andExpect(jsonPath("$.traceId").exists());
         }
 
         @Test
         @DisplayName("零数据时字段仍在（0 而非缺字段）")
         void zeroStatsKeepFields() throws Exception {
-            when(knowledgeStatsService.getStats()).thenReturn(Map.of(
-                    "totalDocuments", 0, "totalChunks", 0));
+            when(knowledgeStatsService.getStats()).thenReturn(new com.devops.agent.domain.rag.KnowledgeStatsData(
+                    0L, 0L, 0L, 0L, Map.of(), null, 0L));
 
             mockMvc.perform(get("/api/v1/knowledge/stats"))
                     .andExpect(status().isOk())
