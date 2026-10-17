@@ -5,4 +5,9 @@
  * OpenAPI spec version: v0
  */
 
-export type HealingExecutionDetailResponseStepsItem = {[key: string]: { [key: string]: unknown }};
+export interface HealingExecutionStep {
+  at?: string;
+  detail?: string;
+  name?: string;
+  status?: string;
+}

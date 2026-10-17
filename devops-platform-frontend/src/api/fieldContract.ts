@@ -50,6 +50,7 @@ import type { ActionFilterOptions as GenActionFilterOptions } from './generated/
 import type { ActionStats as GenActionStats } from './generated/actionStats'
 import type { EvaluateResult as GenEvaluateResult } from './generated/evaluateResult'
 import type { HealingExecution as GenHealingExecution } from './generated/healingExecution'
+import type { HealingExecutionStep as GenHealingExecutionStep } from './generated/healingExecutionStep'
 import type { ServiceOwnerItem as GenServiceOwnerItem } from './generated/serviceOwnerItem'
 import type { KnowledgeBaseReindexFailure as GenKnowledgeBaseReindexFailure } from './generated/knowledgeBaseReindexFailure'
 import type { KnowledgeTag as GenKnowledgeTag } from './generated/knowledgeTag'
@@ -140,7 +141,7 @@ import type {
   SimulatedRow,
   SimulateResult
 } from './governance'
-import type { HealingExecution } from './healing'
+import type { HealingExecution, HealingStep } from './healing'
 import type {
   NotifyChannelView, NotifyChannelList, IngestSecretView,
   NotifyTestResult, NotifySecretRevealed
@@ -346,6 +347,8 @@ export type SimulateResult_Extra = AssertDriftFree<HandOnly<GenSimulateResult, S
 
 export type HealingExecution_Missing = AssertDriftFree<GenOnly<GenHealingExecution, HealingExecution>>
 export type HealingExecution_Extra = AssertDriftFree<HandOnly<GenHealingExecution, HealingExecution>>
+export type HealingStep_Missing = AssertDriftFree<GenOnly<GenHealingExecutionStep, HealingStep>>
+export type HealingStep_Extra = AssertDriftFree<HandOnly<GenHealingExecutionStep, HealingStep>>
 
 // ==================== 渠道 / 平台能力 ====================
 

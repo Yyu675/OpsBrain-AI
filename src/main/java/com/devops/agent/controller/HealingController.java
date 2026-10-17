@@ -8,6 +8,7 @@ import com.devops.agent.domain.auth.UserRepository;
 import com.devops.agent.domain.healing.ExecutorRegistry;
 import com.devops.agent.domain.healing.HealingAction;
 import com.devops.agent.domain.healing.HealingExecution;
+import com.devops.agent.controller.dto.HealingExecutionStep;
 import com.devops.agent.domain.healing.HealingExecutionRepository;
 import com.devops.agent.domain.healing.HealingOrchestrator;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -119,13 +120,13 @@ public class HealingController {
     }
 
     /** steps_json → 数组；损坏/空 → 空数组（回放页给出「无步骤数据」档位）。 */
-    private List<Map<String, Object>> parseSteps(String stepsJson) {
+    private List<HealingExecutionStep> parseSteps(String stepsJson) {
         if (stepsJson == null || stepsJson.isBlank()) {
             return List.of();
         }
         try {
             return objectMapper.readValue(stepsJson,
-                    new TypeReference<List<Map<String, Object>>>() { });
+                    new TypeReference<List<HealingExecutionStep>>() { });
         } catch (Exception e) {
             log.warn("⚠️ [HealingController] steps_json 解析失败，按空数组降级 | err={}", e.getMessage());
             return List.of();

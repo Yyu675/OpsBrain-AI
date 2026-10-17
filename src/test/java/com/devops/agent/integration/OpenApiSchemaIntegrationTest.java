@@ -312,6 +312,9 @@ class OpenApiSchemaIntegrationTest {
             JsonNode healingDetail = componentSchema("HealingExecutionDetailResponse");
             assertThat(healingDetail).as("HealingExecutionDetailResponse 缺失").isNotNull();
             assertThat(fieldNames(healingDetail.path("properties"))).contains("execution", "steps");
+            JsonNode healingStep = componentSchema("HealingExecutionStep");
+            assertThat(healingStep).as("HealingExecutionStep 缺失").isNotNull();
+            assertThat(fieldNames(healingStep.path("properties"))).contains("name", "status", "detail", "at");
 
             JsonNode healingStats = componentSchema("HealingStatsResponse");
             assertThat(healingStats).as("HealingStatsResponse 缺失").isNotNull();

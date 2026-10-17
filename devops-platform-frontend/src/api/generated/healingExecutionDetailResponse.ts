@@ -5,9 +5,9 @@
  * OpenAPI spec version: v0
  */
 import type { HealingExecution } from './healingExecution';
-import type { HealingExecutionDetailResponseStepsItem } from './healingExecutionDetailResponseStepsItem';
+import type { HealingExecutionStep } from './healingExecutionStep';
 
 export interface HealingExecutionDetailResponse {
   execution?: HealingExecution;
-  steps?: HealingExecutionDetailResponseStepsItem[];
+  steps?: HealingExecutionStep[];
 }
