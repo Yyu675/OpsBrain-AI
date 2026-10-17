@@ -15168,7 +15168,7 @@
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                  "$ref": "#/components/schemas/ApiResponseDiagnosisBoardResponse"
                 }
               }
             }
@@ -22516,6 +22516,240 @@
           },
           "data": {
             "$ref": "#/components/schemas/HealingStatsResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "DiagnosisStatusCount": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "DiagnosisSufficiencyStat": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sufficiency": {
+            "type": "string"
+          }
+        }
+      },
+      "DiagnosisSessionsStats": {
+        "type": "object",
+        "properties": {
+          "avgCostRmb": {
+            "type": "number",
+            "format": "double"
+          },
+          "avgDurationSeconds": {
+            "type": "number",
+            "format": "double"
+          },
+          "byStatus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisStatusCount"
+            }
+          },
+          "sufficiency": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisSufficiencyStat"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DiagnosisSessionTrend": {
+        "type": "object",
+        "properties": {
+          "completed": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "created": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DiagnosisDirectionStat": {
+        "type": "object",
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "noData": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "success": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "successRate": {
+            "type": "number",
+            "format": "double"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "type": {
+            "type": "string"
+          },
+          "unavailable": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CalibrationBucket": {
+        "type": "object",
+        "properties": {
+          "accuracy": {
+            "type": "number",
+            "format": "double"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gap": {
+            "type": "number",
+            "format": "double"
+          },
+          "index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "meanConfidence": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "HypothesisCalibration": {
+        "type": "object",
+        "properties": {
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalibrationBucket"
+            }
+          },
+          "ece": {
+            "type": "number",
+            "format": "double"
+          },
+          "empiricalAccuracy": {
+            "type": "number",
+            "format": "double"
+          },
+          "excludedInvalid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "excludedPartial": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "excludedUnknown": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "helpful": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "meanConfidence": {
+            "type": "number",
+            "format": "double"
+          },
+          "ratedTotal": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "wrong": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DiagnosisBoardResponse": {
+        "type": "object",
+        "properties": {
+          "attentionTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "calibration": {
+            "$ref": "#/components/schemas/HypothesisCalibration"
+          },
+          "evidenceDirections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisDirectionStat"
+            }
+          },
+          "sessionTrend": {
+            "$ref": "#/components/schemas/DiagnosisSessionTrend"
+          },
+          "sessions": {
+            "$ref": "#/components/schemas/DiagnosisSessionsStats"
+          },
+          "windowDays": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseDiagnosisBoardResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DiagnosisBoardResponse"
           },
           "message": {
             "type": "string"
