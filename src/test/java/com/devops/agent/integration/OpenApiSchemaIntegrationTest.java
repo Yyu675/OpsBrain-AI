@@ -377,6 +377,23 @@ class OpenApiSchemaIntegrationTest {
             JsonNode sessionContext = componentSchema("SessionContextResponse");
             assertThat(sessionContext).as("SessionContextResponse 缺失").isNotNull();
             assertThat(fieldNames(sessionContext.path("properties"))).contains("sessionId", "recentHistory", "keyFactsText", "hasHistory");
+
+            JsonNode changeReport = componentSchema("ChangeEventReportResponse");
+            assertThat(changeReport).as("ChangeEventReportResponse 缺失").isNotNull();
+            assertThat(fieldNames(changeReport.path("properties"))).contains("success", "deduplicated", "message");
+
+            JsonNode sagaAttention = componentSchema("SagaAttentionResponse");
+            assertThat(sagaAttention).as("SagaAttentionResponse 缺失").isNotNull();
+            assertThat(fieldNames(sagaAttention.path("properties"))).contains("records", "count");
+
+            JsonNode sagaSteps = componentSchema("SagaStepsResponse");
+            assertThat(sagaSteps).as("SagaStepsResponse 缺失").isNotNull();
+            assertThat(fieldNames(sagaSteps.path("properties"))).contains("sagaId", "steps", "stepCount");
+
+            JsonNode sagaCompensate = componentSchema("SagaCompensateResponse");
+            assertThat(sagaCompensate).as("SagaCompensateResponse 缺失").isNotNull();
+            assertThat(fieldNames(sagaCompensate.path("properties"))).contains(
+                    "sagaId", "compensatedCount", "failedCount", "compensated", "failed", "fullySucceeded");
         }
     }
 

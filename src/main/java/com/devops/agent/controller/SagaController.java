@@ -65,21 +65,18 @@ public class SagaController {
      */
 
     @GetMapping("/attention")
-    public ApiResponse<Map<String, Object>> listNeedingAttention(
+    public ApiResponse<com.devops.agent.controller.dto.SagaAttentionResponse> listNeedingAttention(
             @RequestParam(defaultValue = "50") int limit) {
 
         int safeLimit = Math.min(Math.max(1, limit), 200);
         List<ToolExecutionRecord> records = sagaManager.listNeedingAttention(safeLimit);
 
-        List<Map<String, Object>> items = new ArrayList<>(records.size());
+        List<com.devops.agent.controller.dto.SagaRecordDetailDto> items = new ArrayList<>(records.size());
         for (ToolExecutionRecord r : records) {
             items.add(toDetail(r));
         }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("records", items);
-        data.put("count", items.size());
-        return ApiResponse.success(data);
+        return ApiResponse.success(new com.devops.agent.controller.dto.SagaAttentionResponse(items, items.size()));
     }
 
     /**
@@ -88,19 +85,15 @@ public class SagaController {
      * @param sagaId Saga 事务 ID（等于请求的 traceId）
      */
     @GetMapping("/{sagaId}/steps")
-    public ApiResponse<Map<String, Object>> listSteps(@PathVariable String sagaId) {
+    public ApiResponse<com.devops.agent.controller.dto.SagaStepsResponse> listSteps(@PathVariable String sagaId) {
         List<ToolExecutionRecord> steps = sagaManager.listSagaSteps(sagaId);
 
-        List<Map<String, Object>> items = new ArrayList<>(steps.size());
+        List<com.devops.agent.controller.dto.SagaRecordDetailDto> items = new ArrayList<>(steps.size());
         for (ToolExecutionRecord r : steps) {
             items.add(toDetail(r));
         }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("sagaId", sagaId);
-        data.put("steps", items);
-        data.put("stepCount", items.size());
-        return ApiResponse.success(data);
+        return ApiResponse.success(new com.devops.agent.controller.dto.SagaStepsResponse(sagaId, items, items.size()));
     }
 
     /**
@@ -113,52 +106,48 @@ public class SagaController {
      * @param sagaId Saga 事务 ID
      */
     @PostMapping("/{sagaId}/compensate")
-    public ApiResponse<Map<String, Object>> retryCompensation(@PathVariable String sagaId) {
+    public ApiResponse<com.devops.agent.controller.dto.SagaCompensateResponse> retryCompensation(@PathVariable String sagaId) {
         log.warn("🔧 [Saga] 人工触发补偿重试 | sagaId={}", sagaId);
 
         var result = sagaManager.compensateSaga(sagaId, "人工触发补偿重试");
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("sagaId", sagaId);
-        data.put("compensatedCount", result.compensatedCount());
-        data.put("failedCount", result.failedCount());
-        data.put("compensated", result.compensated());
-        data.put("failed", result.failed());
-        data.put("fullySucceeded", result.isFullySucceeded());
+        var response = new com.devops.agent.controller.dto.SagaCompensateResponse(
+                sagaId,
+                result.compensatedCount(),
+                result.failedCount(),
+                result.compensated() != null ? result.compensated() : List.of(),
+                result.failed() != null ? result.failed() : List.of(),
+                result.isFullySucceeded());
 
-        if (result.needsManualIntervention()) {
-            return ApiResponse.success(data);  // 仍有失败，前端按 failedCount 提示
-        }
-        return ApiResponse.success(data);
+        return ApiResponse.success(response);
     }
 
     // ==================== 内部转换 ====================
 
-    private Map<String, Object> toDetail(ToolExecutionRecord r) {
-        Map<String, Object> m = new HashMap<>();
-        m.put("id", r.getId());
-        m.put("traceId", r.getTraceId());
-        m.put("sessionId", r.getSessionId());
-        m.put("sagaId", r.getSagaId());
-        m.put("stepSeq", r.getStepSeq());
-        m.put("toolName", r.getToolName());
-        m.put("riskLevel", r.getRiskLevel() != null ? r.getRiskLevel().name() : null);
-        m.put("riskLevelLabel", r.getRiskLevel() != null ? r.getRiskLevel().getDisplayName() : null);
-        m.put("state", r.getState() != null ? r.getState().name() : null);
-        m.put("stateLabel", r.getState() != null ? r.getState().getDisplayName() : null);
-        m.put("needsAttention", r.getState() != null && r.getState().needsAttention());
-        m.put("failureType", r.getFailureType() != null ? r.getFailureType().name() : null);
-        m.put("failureHint", r.getFailureType() != null ? r.getFailureType().getHandlingHint() : null);
-        m.put("errorMessage", r.getErrorMessage());
-        m.put("compensable", r.getCompensable());
-        m.put("compensationAction", r.getCompensationAction());
-        m.put("businessKey", r.getBusinessKey());
-        m.put("compensatedAt", r.getCompensatedAt());
-        m.put("compensationError", r.getCompensationError());
-        m.put("attemptCount", r.getAttemptCount());
-        m.put("durationMs", r.getDurationMs());
-        m.put("createTime", r.getCreateTime());
-        m.put("updateTime", r.getUpdateTime());
-        return m;
+    private com.devops.agent.controller.dto.SagaRecordDetailDto toDetail(ToolExecutionRecord r) {
+        return new com.devops.agent.controller.dto.SagaRecordDetailDto(
+                r.getId(),
+                r.getTraceId(),
+                r.getSessionId(),
+                r.getSagaId(),
+                r.getStepSeq(),
+                r.getToolName(),
+                r.getRiskLevel() != null ? r.getRiskLevel().name() : null,
+                r.getRiskLevel() != null ? r.getRiskLevel().getDisplayName() : null,
+                r.getState() != null ? r.getState().name() : null,
+                r.getState() != null ? r.getState().getDisplayName() : null,
+                r.getState() != null && r.getState().needsAttention(),
+                r.getFailureType() != null ? r.getFailureType().name() : null,
+                r.getFailureType() != null ? r.getFailureType().getHandlingHint() : null,
+                r.getErrorMessage(),
+                r.getCompensable(),
+                r.getCompensationAction(),
+                r.getBusinessKey(),
+                r.getCompensatedAt(),
+                r.getCompensationError(),
+                r.getAttemptCount(),
+                r.getDurationMs(),
+                r.getCreateTime(),
+                r.getUpdateTime());
     }
 }
