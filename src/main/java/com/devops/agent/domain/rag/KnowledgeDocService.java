@@ -514,7 +514,7 @@ public class KnowledgeDocService {
     /**
      * 扁平分类聚合（侧栏导航），全库跨页统计
      */
-    public List<Map<String, Object>> findCategories() {
+    public List<KnowledgeCategoryCount> findCategories() {
         return docRepo.findCategories();
     }
 

@@ -862,4 +862,17 @@ class KnowledgeDocControllerWebTest {
                     .andExpect(jsonPath("$.message").value("文档不存在"));
         }
     }
+
+    @Test
+    @DisplayName("分类聚合保持 name/count 响应字段")
+    void categoriesReturnsTypedAggregation() throws Exception {
+        when(docService.findCategories()).thenReturn(List.of(
+                new com.devops.agent.domain.rag.KnowledgeCategoryCount("Kubernetes", 7L)));
+
+        mockMvc.perform(get("/api/v1/knowledge/docs/categories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[0].name").value("Kubernetes"))
+                .andExpect(jsonPath("$.data[0].count").value(7));
+    }
 }
