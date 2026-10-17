@@ -23,6 +23,9 @@ public class DiagnosisSessionRepository {
                              String status, String sufficiency, String summary,
                              Timestamp createdAt, Timestamp updatedAt) {}
 
+    /** 固定投影：诊断队列扫描器恢复任务所需的 QUEUED 会话字段。 */
+    public record QueuedSessionRow(Long id, String traceId, Long alertId, String ticketId, String service) {}
+
     private final JdbcTemplate jdbcTemplate;
 
     public DiagnosisSessionRepository(JdbcTemplate jdbcTemplate) {
@@ -84,7 +87,7 @@ public class DiagnosisSessionRepository {
      * 捞排队中的会话（先进先出）：QUEUED 且无人 RUNNING 中（同告警）
      * ——排队扫描器按批捞起重新提交。
      */
-    public List<Map<String, Object>> findQueued(int limit) {
+    public List<QueuedSessionRow> findQueued(int limit) {
         String sql = """
                 SELECT * FROM sys_diagnosis_session
                  WHERE status = 'QUEUED'
@@ -93,7 +96,9 @@ public class DiagnosisSessionRepository {
                         WHERE r.alert_id = sys_diagnosis_session.alert_id AND r.status = 'RUNNING')
                  ORDER BY created_at ASC LIMIT ?
                 """;
-        return jdbcTemplate.queryForList(sql, limit);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new QueuedSessionRow(
+                rs.getLong("id"), rs.getString("trace_id"), rs.getObject("alert_id", Long.class),
+                rs.getString("ticket_id"), rs.getString("service")), limit);
     }
 
     /**

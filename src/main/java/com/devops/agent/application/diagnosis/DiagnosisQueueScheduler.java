@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
+import com.devops.agent.domain.biz.repository.DiagnosisSessionRepository.QueuedSessionRow;
 
 /**
  * 诊断排队扫描器（批 76 / P2-3，报告 174 审计件）。
@@ -63,15 +63,12 @@ public class DiagnosisQueueScheduler {
                 return;
             }
             int resumed = 0;
-            for (Map<String, Object> row : queued) {
-                Long id = ((Number) row.get("id")).longValue();
+            for (QueuedSessionRow row : queued) {
                 // CAS 置位：赢了才提交（多实例安全；输家=别的实例已捞起）
-                if (sessionRepository.markQueuedRunning(id) > 0) {
-                    Long alertId = ((Number) row.get("alert_id")).longValue();
-                    String ticketId = (String) row.get("ticket_id");
-                    String service = (String) row.get("service");
-                    String traceId = (String) row.get("trace_id");
-                    orchestrator.resumeQueued(traceId, alertId, ticketId, service);
+                if (sessionRepository.markQueuedRunning(row.id()) > 0) {
+                    // 旧 Map 投影对 alert_id 执行 Number.longValue()；保留 null 时失败的语义。
+                    Long alertId = row.alertId().longValue();
+                    orchestrator.resumeQueued(row.traceId(), alertId, row.ticketId(), row.service());
                     resumed++;
                 }
             }
