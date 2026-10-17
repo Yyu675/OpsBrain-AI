@@ -1,6 +1,7 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
 import com.devops.agent.domain.audit.AgentCallTraceRow;
+import com.devops.agent.domain.audit.AuditAgentCallStats;
 import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -15,6 +16,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -54,6 +56,30 @@ class AuditLogQueryRepositoryTest {
         verify(jdbc).query(sql.capture(),
                 any(org.springframework.jdbc.core.RowMapper.class), aryEq(new Object[]{"trace-7"}));
         assertThat(sql.getValue()).contains("ORDER BY id DESC", "LIMIT 1");
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aiCallStatsAreTypedRoundedAndUseTheSameFilterPredicates() throws Exception {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AuditLogQueryRepository repository = new AuditLogQueryRepository(jdbc);
+        java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+        when(rs.getLong("total_calls")).thenReturn(3L);
+        when(rs.getLong("cache_hits")).thenReturn(1L);
+        when(rs.getBigDecimal("total_cost")).thenReturn(new java.math.BigDecimal("1.234567"));
+        when(rs.getDouble("avg_latency")).thenReturn(99.7);
+        doAnswer(invocation -> ((org.springframework.jdbc.core.RowMapper<?>) invocation.getArgument(1))
+                .mapRow(rs, 0)).when(jdbc).queryForObject(
+                contains("FROM sys_agent_call_log"), any(org.springframework.jdbc.core.RowMapper.class),
+                aryEq(new Object[]{"model-a", true, 100}));
+
+        AuditAgentCallStats stats = repository.queryAgentCallStats(
+                "model-a", null, true, 100, null, null);
+
+        assertThat(stats).isEqualTo(new AuditAgentCallStats(3, 1, 33.33,
+                java.math.BigDecimal.valueOf(1.2346), 100));
+        verify(jdbc).queryForObject(contains("AND model_name = ?"),
+                any(org.springframework.jdbc.core.RowMapper.class), aryEq(new Object[]{"model-a", true, 100}));
     }
 
     @Test

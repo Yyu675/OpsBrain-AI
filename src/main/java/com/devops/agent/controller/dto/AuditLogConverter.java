@@ -1,5 +1,6 @@
 package com.devops.agent.controller.dto;
 
+import com.devops.agent.domain.audit.AuditAgentCallStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,7 +71,7 @@ public final class AuditLogConverter {
         );
     }
 
-    public static AuditAiCallsResponse toAuditAiCallsResponse(Map<String, Object> map) {
+    public static AuditAiCallsResponse toAuditAiCallsResponse(Map<String, Object> map, AuditAgentCallStats rawStats) {
         if (map == null) {
             return new AuditAiCallsResponse(List.of(), 0, 1, 20, 0, new AiCallStats(0, 0, 0.0, BigDecimal.ZERO, 0));
         }
@@ -88,7 +89,6 @@ public final class AuditLogConverter {
         int size = getInt(map.get("size"), 20);
         int totalPages = getInt(map.get("totalPages"), 0);
 
-        Map<String, Object> rawStats = (Map<String, Object>) map.get("stats");
         AiCallStats stats = toAiCallStats(rawStats);
 
         return new AuditAiCallsResponse(items, total, page, size, totalPages, stats);
@@ -111,18 +111,13 @@ public final class AuditLogConverter {
         );
     }
 
-    public static AiCallStats toAiCallStats(Map<String, Object> m) {
-        if (m == null) {
+    public static AiCallStats toAiCallStats(AuditAgentCallStats stats) {
+        if (stats == null) {
             return new AiCallStats(0, 0, 0.0, BigDecimal.ZERO, 0);
         }
-        long totalCalls = getLong(m.get("totalCalls")) != null ? getLong(m.get("totalCalls")) : 0L;
-        long cacheHits = getLong(m.get("cacheHits")) != null ? getLong(m.get("cacheHits")) : 0L;
-        double cacheHitRate = getDouble(m.get("cacheHitRate"), 0.0);
-        BigDecimal totalCost = getBigDecimal(m.get("totalCost"));
-        if (totalCost == null) totalCost = BigDecimal.ZERO;
-        long avgLatencyMs = getLong(m.get("avgLatencyMs")) != null ? getLong(m.get("avgLatencyMs")) : 0L;
-
-        return new AiCallStats(totalCalls, cacheHits, cacheHitRate, totalCost, avgLatencyMs);
+        BigDecimal totalCost = stats.totalCost() == null ? BigDecimal.ZERO : stats.totalCost();
+        return new AiCallStats(stats.totalCalls(), stats.cacheHits(), stats.cacheHitRate(),
+                totalCost, stats.avgLatencyMs());
     }
 
     public static AgentCallDetailItem toAgentCallDetailItem(

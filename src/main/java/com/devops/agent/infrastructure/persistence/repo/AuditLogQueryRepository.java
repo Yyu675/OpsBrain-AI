@@ -1,6 +1,7 @@
 package com.devops.agent.infrastructure.persistence.repo;
 
 import com.devops.agent.domain.audit.AgentCallTraceRow;
+import com.devops.agent.domain.audit.AuditAgentCallStats;
 import com.devops.agent.domain.audit.AuditFilterOptionsData;
 import com.devops.agent.domain.audit.OperationAuditTraceRow;
 import lombok.extern.slf4j.Slf4j;
@@ -291,7 +292,7 @@ public class AuditLogQueryRepository {
      * <b>与列表用同一套 where 条件</b>——否则「列表显示 20 条、统计说 1 万次」
      * 这种自相矛盾会让用户不知道该信哪个。</p>
      */
-    public Map<String, Object> queryAgentCallStats(
+    public AuditAgentCallStats queryAgentCallStats(
             String modelName, String operationType, Boolean cached,
             Integer minLatencyMs, LocalDateTime from, LocalDateTime to) {
 
@@ -304,28 +305,32 @@ public class AuditLogQueryRepository {
         if (from != null) { where.append(" AND create_time >= ?"); args.add(from); }
         if (to != null) { where.append(" AND create_time <= ?"); args.add(to); }
 
-        Map<String, Object> row = jdbcTemplate.queryForMap(
+        AgentCallStatsAggregate aggregate = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)                                              AS total_calls,
                        COALESCE(SUM(CASE WHEN is_cached THEN 1 ELSE 0 END),0) AS cache_hits,
                        COALESCE(SUM(cost_rmb), 0)                             AS total_cost,
                        COALESCE(AVG(latency_ms), 0)                           AS avg_latency
                 FROM sys_agent_call_log
-                """ + where, args.toArray());
-
-        long totalCalls = ((Number) row.get("total_calls")).longValue();
-        long cacheHits = ((Number) row.get("cache_hits")).longValue();
-
-        Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("totalCalls", totalCalls);
-        stats.put("cacheHits", cacheHits);
-        // 分母为 0 时给 0 而非 NaN——前端 toFixed(NaN) 会显示 "NaN%"
-        stats.put("cacheHitRate", totalCalls > 0
-                ? Math.round(cacheHits * 10000.0 / totalCalls) / 100.0 : 0.0);
-        stats.put("totalCost", Math.round(((Number) row.get("total_cost")).doubleValue() * 10000.0) / 10000.0);
-        stats.put("avgLatencyMs", Math.round(((Number) row.get("avg_latency")).doubleValue()));
-        return stats;
+                """ + where,
+                (rs, rowNum) -> new AgentCallStatsAggregate(
+                        rs.getLong("total_calls"), rs.getLong("cache_hits"),
+                        rs.getBigDecimal("total_cost"), rs.getDouble("avg_latency")),
+                args.toArray());
+        if (aggregate == null) {
+            // 聚合查询预期恒返回一行；保持旧 queryForMap 对异常数据的显式失败纪律。
+            throw new IllegalStateException("AI 调用统计聚合未返回行");
+        }
+        double totalCost = aggregate.totalCost().doubleValue();
+        return new AuditAgentCallStats(aggregate.totalCalls(), aggregate.cacheHits(),
+                aggregate.totalCalls() > 0
+                        ? Math.round(aggregate.cacheHits() * 10000.0 / aggregate.totalCalls()) / 100.0 : 0.0,
+                java.math.BigDecimal.valueOf(Math.round(totalCost * 10000.0) / 10000.0),
+                Math.round(aggregate.avgLatencyMs()));
     }
+
+    private record AgentCallStatsAggregate(long totalCalls, long cacheHits,
+                                           java.math.BigDecimal totalCost, double avgLatencyMs) {}
 
     // ==================== 内部工具 ====================
 
