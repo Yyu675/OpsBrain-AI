@@ -84,10 +84,10 @@ class BusinessMetricsTest {
                 .tags("field", "endsAt").counter().count()).isEqualTo(2.0);
 
         var snap = m.notifySnapshot();
-        assertThat(snap)
-                .containsEntry("delivered", 2L)
-                .containsEntry("deliverFailed", 1L)
-                .containsKey("lastDeliveredAt");
+        assertThat(snap.delivered()).isEqualTo(2L);
+        assertThat(snap.deliverFailed()).isEqualTo(1L);
+        assertThat(snap.lastDeliveredAt()).isNotNull();
+        assertThat(snap.lastSuccessAt()).isNull();
     }
 
     @Test
