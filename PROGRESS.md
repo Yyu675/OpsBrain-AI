@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批183 知识检索固定 SQL 行类型化；批182 已合入 PR #94）
+> **最后更新**：2026-10-18（批183 已合入 PR #95；批182 已合入 PR #94）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -124,7 +124,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T39** | **固定结构 Map 清理：治理统计聚合行类型化**（批181） | ActionAllowlist/AutomationPolicy 的固定 SQL 聚合行用 RowMapper 映射到既有 `ActionStats`/`PolicyStats` records，替换 `queryForMap` 与字符串键取值；统计 SQL 和零值语义不变，新增仓储行映射测试 | PR #92 已合并（c4b1d0f）；CI run `39077184391` 四道门全绿 |
 | **T40** | **固定结构 Map 复扫范围确认** | 对剩余 Map 用法进一步按 SQL 行和现有测试覆盖核查，发现 `DashboardServiceImpl.getCallTrends()` 的固定聚合行已有行为测试，纳入批182；另发现 HybridRetriever 两个 SQL 查询共享固定列行且已有集成检索测试，纳入批183；其他主要为动态 payload、执行参数/状态快照、动态根因分类或未被调用旧方法，继续保留 | 2026-10-18，范围复核后继续推进 |
 | **T41** | **固定结构 Map 清理：仪表盘调用趋势聚合行类型化**（批182） | `getCallTrends()` 固定 day/served/hits/cost 聚合行改为 typed RowMapper + `CallTrendRow`；既有服务测试验证连续补零、成本舍入、命中率和 days-1 参数，保留 SQL 与 NULL→0 语义 | PR #94 已合并，CI run `39089984278` 四道门全绿 |
-| **T42** | **固定结构 Map 清理：知识检索 SQL 行类型化**（批183） | `HybridRetrieverService` 向量/混合检索返回的固定七列行改为 `SearchRow` + RowMapper；反馈 boost 继续按原 ID 批查询、score 乘数和降序排序；检索/去重/出处字段语义保持，更新固定列映射与检索契约测试 | 2026-10-18，待 CI 验证 |
+| **T42** | **固定结构 Map 清理：知识检索 SQL 行类型化**（批183） | `HybridRetrieverService` 向量/混合检索返回的固定七列行改为 `SearchRow` + RowMapper；反馈 boost 继续按原 ID 批查询、score 乘数和降序排序；检索/去重/出处字段语义保持，更新固定列映射与检索契约测试 | PR #95 已合并，CI run `39090892580` 四道门全绿 |
 
 ---
 
