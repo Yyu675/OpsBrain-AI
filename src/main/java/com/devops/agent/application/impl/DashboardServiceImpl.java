@@ -280,20 +280,24 @@ public class DashboardServiceImpl implements DashboardService {
                  GROUP BY DATE(create_time)
                 """;
 
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, days - 1);
+        List<CallTrendRow> rows = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            double costValue = rs.getDouble("cost");
+            double cost = rs.wasNull() ? 0.0 : costValue;
+            long servedValue = rs.getLong("served");
+            long served = rs.wasNull() ? 0L : servedValue;
+            long hitsValue = rs.getLong("hits");
+            long hits = rs.wasNull() ? 0L : hitsValue;
+            return new CallTrendRow(rs.getDate("day").toLocalDate(), cost, served, hits);
+        }, days - 1);
 
         Map<LocalDate, Double> costByDay = new java.util.HashMap<>();
         Map<LocalDate, Long> servedByDay = new java.util.HashMap<>();
         Map<LocalDate, Long> hitsByDay = new java.util.HashMap<>();
 
-        for (Map<String, Object> row : rows) {
-            LocalDate day = ((java.sql.Date) row.get("day")).toLocalDate();
-            Object cost = row.get("cost");
-            costByDay.put(day, cost != null ? ((Number) cost).doubleValue() : 0.0);
-            Object served = row.get("served");
-            servedByDay.put(day, served != null ? ((Number) served).longValue() : 0L);
-            Object hits = row.get("hits");
-            hitsByDay.put(day, hits != null ? ((Number) hits).longValue() : 0L);
+        for (CallTrendRow row : rows) {
+            costByDay.put(row.day(), row.cost());
+            servedByDay.put(row.day(), row.served());
+            hitsByDay.put(row.day(), row.hits());
         }
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -319,5 +323,8 @@ public class DashboardServiceImpl implements DashboardService {
         }
 
         return new DashboardCallTrends(dayLabels, costSeries, hitRateSeries);
+    }
+
+    private record CallTrendRow(LocalDate day, double cost, long served, long hits) {
     }
 }

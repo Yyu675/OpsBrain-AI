@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批181 已合入 PR #92；复扫余项未发现新的符合条件固定结构 Map）
+> **最后更新**：2026-10-18（批182 仪表盘调用趋势聚合行类型化；批181 已合入 PR #92）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -122,7 +122,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T37** | **固定结构 Map 清理：审计 AI 调用分页行端到端类型化**（批179） | `queryAgentCallLog()` 固定行及分页封套改为 Record + typed RowMapper；converter、controller 同步类型化，保留查询筛选、排序、隐私摘要截断与分页口径；新增仓储测试验证 SQL 参数和 typed projection | PR #90 已合并（d8bc20f），修复测试 stub 后 CI 四道门全绿 |
 | **T38** | **固定结构 Map 清理：操作审计分页行类型化**（批180） | `queryOperationAudit()` 固定行与分页封套改 typed Record/RowMapper；converter/controller 改 DTO 投影，保留 SQL 筛选、LIKE 转义、排序、分页及 snake_case JSON 语义，新增仓储映射/SQL 测试 | PR #91 已合并（48ad0c1），修复字符串转义断言后 CI 四道门全绿 |
 | **T39** | **固定结构 Map 清理：治理统计聚合行类型化**（批181） | ActionAllowlist/AutomationPolicy 的固定 SQL 聚合行用 RowMapper 映射到既有 `ActionStats`/`PolicyStats` records，替换 `queryForMap` 与字符串键取值；统计 SQL 和零值语义不变，新增仓储行映射测试 | PR #92 已合并（c4b1d0f）；CI run `39077184391` 四道门全绿 |
-| **T40** | **固定结构 Map 复扫范围确认** | 剩余 Map 用法检查后确认多为 Prometheus/通知/诊断 payload、执行参数与前后状态快照、动态根因分类汇总或未被调用的旧仓储方法；不符合固定结构且有测试覆盖的目标条件，本轮保留，避免动态键/任意 payload 契约变化 | 2026-10-18，审查完成；没有新增变更项 |
+| **T40** | **固定结构 Map 复扫范围确认** | 对剩余 Map 用法进一步按 SQL 行和现有测试覆盖核查，发现 `DashboardServiceImpl.getCallTrends()` 的固定聚合行已有行为测试，纳入批182；其余主要为动态 payload、执行参数/状态快照、动态根因分类或未被调用旧方法，继续保留 | 2026-10-18，范围复核后继续推进 |
+| **T41** | **固定结构 Map 清理：仪表盘调用趋势聚合行类型化**（批182） | `getCallTrends()` 固定 day/served/hits/cost 聚合行改为 typed RowMapper + `CallTrendRow`；既有服务测试改验证映射后的连续补零、成本舍入、命中率和 days-1 SQL 参数，保留 SQL 与 NULL→0 语义 | 2026-10-18，待 CI 验证 |
 
 ---
 
