@@ -43,7 +43,7 @@ public final class NotifyPayloads {
      */
     public static byte[] dingtalkPayload(NotifyMessage msg, ObjectMapper mapper) throws Exception {
         String rawMarkdown = msg.markdown();
-        List<Map<String, String>> buttons = extractActionButtons(rawMarkdown);
+        List<ActionButton> buttons = extractActionButtons(rawMarkdown);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         if (!buttons.isEmpty() && buttons.size() <= 3) {
@@ -69,18 +69,21 @@ public final class NotifyPayloads {
         return mapper.writeValueAsBytes(payload);
     }
 
-    private static List<Map<String, String>> extractActionButtons(String markdown) {
+    private static List<ActionButton> extractActionButtons(String markdown) {
         if (markdown == null || markdown.isBlank()) {
             return List.of();
         }
         java.util.regex.Matcher matcher = ACTION_LINK_PATTERN.matcher(markdown);
-        List<Map<String, String>> btns = new ArrayList<>();
+        List<ActionButton> buttons = new ArrayList<>();
         while (matcher.find()) {
             String title = matcher.group(1).trim();
             String url = matcher.group(2).trim();
-            btns.add(Map.of("title", title, "actionURL", url));
+            buttons.add(new ActionButton(title, url));
         }
-        return btns;
+        return buttons;
+    }
+
+    private record ActionButton(String title, String actionURL) {
     }
 
     /**
