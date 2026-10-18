@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -187,19 +186,11 @@ public class HealingAutoTrigger {
     /** 演练留痕的时间线：回放页要能看出「这台账来自策略演练」而不是门拒绝 */
     private void writeTraceSteps(long executionId, AutomationPolicy p) {
         try {
-            List<Map<String, Object>> steps = new ArrayList<>();
-            Map<String, Object> match = new LinkedHashMap<>();
-            match.put("name", "POLICY_MATCH");
-            match.put("status", "DRYRUN");
-            match.put("detail", "policy #" + p.getId() + " " + p.getName());
-            match.put("at", Instant.now().toString());
-            steps.add(match);
-            Map<String, Object> dry = new LinkedHashMap<>();
-            dry.put("name", "POLICY_DRYRUN");
-            dry.put("status", "REJECTED");
-            dry.put("detail", "演练模式：照常匹配与记录，但不真正执行");
-            dry.put("at", Instant.now().toString());
-            steps.add(dry);
+            List<HealingStep> steps = List.of(
+                    new HealingStep("POLICY_MATCH", "DRYRUN", "policy #" + p.getId() + " " + p.getName(),
+                            Instant.now().toString()),
+                    new HealingStep("POLICY_DRYRUN", "REJECTED", "演练模式：照常匹配与记录，但不真正执行",
+                            Instant.now().toString()));
             executionRepository.updateStepsJson(executionId, objectMapper.writeValueAsString(steps));
         } catch (Exception ex) {
             log.warn("⚠️ [PolicyEngine] 演练步骤落库失败（不影响留痕主行） | id={} | {}",

@@ -15,7 +15,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -83,7 +82,7 @@ public class HealingOrchestrator {
      */
     public HealingOutcome handle(HealingAction action) {
         // S3-5 步骤时间线：从它开始收集，终态落库时一次性写入（§3-5.1 可回放）
-        List<Map<String, Object>> steps = new ArrayList<>();
+        List<HealingStep> steps = new ArrayList<>();
 
         // 1. 门裁决（唯一准入裁决点）
         HealingGate.GateDecision decision = gate.decide(action);
@@ -536,13 +535,8 @@ public class HealingOrchestrator {
     // ---------------- S3-5：步骤时间线（§3-5.1 可回放） ----------------
 
     /** 单步节点：name=节点标识，status=节点结果（OK/FAIL/INTERVENED/裁决名），detail=截断摘要。 */
-    private static Map<String, Object> step(String name, String status, String detail) {
-        Map<String, Object> node = new LinkedHashMap<>();
-        node.put("name", name);
-        node.put("status", status);
-        node.put("detail", detail == null ? "" : detail);
-        node.put("at", Instant.now().toString());
-        return node;
+    private static HealingStep step(String name, String status, String detail) {
+        return new HealingStep(name, status, detail == null ? "" : detail, Instant.now().toString());
     }
 
     /** 步骤摘要上限 500 字：详情页不是日志文件，够回放判断即可。 */
@@ -569,7 +563,7 @@ public class HealingOrchestrator {
     }
 
     /** handle 主线各终态点的一次性写入（失败不拖垮主流程，warn 留痕）。 */
-    private void writeSteps(long id, List<Map<String, Object>> steps) {
+    private void writeSteps(long id, List<HealingStep> steps) {
         try {
             repository.updateStepsJson(id, objectMapper.writeValueAsString(steps));
         } catch (Exception ex) {
@@ -581,11 +575,11 @@ public class HealingOrchestrator {
     /** 阶段后追记（读-改-写）：验证/撤销/升级等事后节点逐条追加。 */
     private void appendStep(long id, String name, String status, String detail) {
         try {
-            List<Map<String, Object>> steps = new ArrayList<>();
+            List<HealingStep> steps = new ArrayList<>();
             String existing = repository.readStepsJson(id);
             if (existing != null && !existing.isBlank()) {
                 try {
-                    steps.addAll(objectMapper.readValue(existing, new TypeReference<>() { }));
+                    steps.addAll(objectMapper.readValue(existing, new TypeReference<List<HealingStep>>() { }));
                 } catch (Exception parseEx) {
                     // 既有序列损坏时清空重写而非整体放弃——损坏本身也要能被看见
                     log.warn("⚠️ [Healing] 既有步骤序列解析失败，清空重写 | id={} | {}",

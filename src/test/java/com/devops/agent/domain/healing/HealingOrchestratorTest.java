@@ -70,7 +70,7 @@ class HealingOrchestratorTest {
 
     @Test
     @DisplayName("AUTO_EXECUTE：dryRun → execute → 一行终态 SUCCEEDED（带快照/撤销凭据）")
-    void autoExecuteRunsAndPersists() {
+    void autoExecuteRunsAndPersists() throws Exception {
         when(gate.decide(any())).thenReturn(
                 HealingGate.GateDecision.auto("mock.disk.cleanup", "mock", 3, 300));
         when(repository.countRecentBlocking(eq(42L), anyString(), any())).thenReturn(0);
@@ -99,6 +99,11 @@ class HealingOrchestratorTest {
         assertTrue(stepsJson.contains("GATE_EVALUATE") && stepsJson.contains("AUTO_EXECUTE"), stepsJson);
         assertTrue(stepsJson.contains("IDEMPOTENCY_CHECK"), stepsJson);
         assertTrue(stepsJson.contains("DRY_RUN") && stepsJson.contains("EXECUTE"), stepsJson);
+        var timeline = new com.fasterxml.jackson.databind.ObjectMapper().readTree(stepsJson);
+        var firstStep = timeline.get(0);
+        assertEquals(4, firstStep.size(), "步骤 JSON 必须保持 name/status/detail/at 四字段契约");
+        assertEquals("GATE_EVALUATE", firstStep.path("name").asText());
+        assertTrue(firstStep.path("at").asText().endsWith("Z"), "时间戳仍为 ISO Instant");
     }
 
     @Test
@@ -325,6 +330,8 @@ class HealingOrchestratorTest {
     @DisplayName("验证失败且有凭据：自动撤销转 UNDONE + 升级 P1 工单（人知悉即可）")
     void verifyFailAutoUndoAndP1Ticket() {
         when(repository.findById(3002L)).thenReturn(Optional.of(succeededRowWithToken(3002L)));
+        when(repository.readStepsJson(3002L)).thenReturn(
+                "[{\"name\":\"PREVIOUS_STEP\",\"status\":\"OK\",\"detail\":\"prior\",\"at\":\"2026-10-18T00:00:00Z\"}]");
         ActionVerifier v3002 = verifierReturning(ActionVerifier.VerificationResult.unhealthy(
                 "错误率不降反升", Map.of(), Map.of()));
         when(verifierRegistry.locate("mock.disk.cleanup")).thenReturn(Optional.of(v3002));
@@ -343,6 +350,7 @@ class HealingOrchestratorTest {
         assertTrue(all.contains("POST_VERIFY"), all);
         assertTrue(all.contains("AUTO_UNDO"), all);
         assertTrue(all.contains("ESCALATE_TICKET"), all);
+        assertTrue(all.contains("PREVIOUS_STEP"), "既有 JSON 步骤应可按 typed record 回读: " + all);
     }
 
     @Test
