@@ -142,7 +142,7 @@ class HybridRetrieverIntegrationTest extends AbstractIntegrationTest {
                         + "说明摄取与检索使用了不兼容的存储 schema——"
                         + "写入走 sys_knowledge_chunk 自定义列，读取走 PgVectorEmbeddingStore 期望的 "
                         + "embedding_id/text/metadata 列");
-        assertTrue(results.stream().allMatch(chunk -> chunk.id() != null
+        assertTrue(results.stream().allMatch(chunk -> chunk.chunkId() != null
                         && chunk.docTitle() != null && !chunk.docTitle().isBlank()
                         && chunk.text() != null && !chunk.text().isBlank()
                         && Double.isFinite(chunk.score()) && chunk.score() >= 0.0),
