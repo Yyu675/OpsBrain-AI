@@ -174,10 +174,10 @@ class PrometheusClientTest {
             var all = MetricsCatalog.describeAll();
             assertFalse(all.isEmpty());
             for (var m : all) {
-                assertTrue(m.containsKey("id"));
-                assertTrue(m.containsKey("name"));
-                assertTrue(m.containsKey("unit"));
-                assertTrue(m.containsKey("describe"));
+                assertFalse(m.id().isBlank());
+                assertFalse(m.name().isBlank());
+                assertFalse(m.unit().isBlank());
+                assertFalse(m.describe().isBlank());
             }
         }
 

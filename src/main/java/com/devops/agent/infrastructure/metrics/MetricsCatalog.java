@@ -34,6 +34,10 @@ public final class MetricsCatalog {
     private MetricsCatalog() {
     }
 
+    /** 固定的指标选择器元数据；不暴露内部 PromQL。 */
+    public record MetricDescription(String id, String name, String unit, String describe) {
+    }
+
     /**
      * 一条内置指标的定义。
      *
@@ -117,13 +121,9 @@ public final class MetricsCatalog {
     }
 
     /** 供前端渲染指标选择器 */
-    public static List<Map<String, String>> describeAll() {
+    public static List<MetricDescription> describeAll() {
         return METRICS.values().stream()
-                .map(m -> Map.of(
-                        "id", m.id(),
-                        "name", m.name(),
-                        "unit", m.unit(),
-                        "describe", m.describe()))
+                .map(m -> new MetricDescription(m.id(), m.name(), m.unit(), m.describe()))
                 .toList();
     }
 }
