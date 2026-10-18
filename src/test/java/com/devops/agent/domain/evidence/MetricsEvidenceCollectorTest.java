@@ -147,6 +147,12 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
         var e = collector.collect("order-service", "30m", "cpu");
         assertThat(e.status()).as(() -> "evidence_title=" + e.title() + " || " + e.toToolPayload()).isEqualTo(Evidence.EvidenceStatus.SUCCESS);
         assertThat(((Number) e.content().get("anomalyCount")).longValue()).isGreaterThanOrEqualTo(1);
+        @SuppressWarnings("unchecked")
+        var anomalies = (java.util.List<Map<String, Object>>) e.content().get("anomalies");
+        @SuppressWarnings("unchecked")
+        var samples = (java.util.List<Map<String, Object>>) anomalies.get(0).get("samples");
+        assertThat(samples).isNotEmpty().first().containsKeys("index", "value", "position");
+        assertThat(e.toToolPayload()).contains("\"position\":\"latest\"");
     }
 
     @Test

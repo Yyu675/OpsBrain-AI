@@ -41,6 +41,7 @@ class MetricsAnomalyDetectorTest {
         var base = MetricsAnomalyDetector.analyze("{}", buildFlatThenSpike());
         assertTrue(base.anomalyCount() >= 1, "5.0 尖峰必须被 IQR 栅栏捕获");
         assertTrue(base.deviationFactor() > 2, "末值/基线偏离倍数应显著");
+        assertEquals(List.of(new MetricsAnomalyDetector.AnomalySample(29, 5.0, "latest")), base.samples());
     }
 
     private static List<Double> buildFlatThenSpike() {
