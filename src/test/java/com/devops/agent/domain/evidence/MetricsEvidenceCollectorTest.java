@@ -151,7 +151,8 @@ class MetricsEvidenceCollectorTest extends AbstractIntegrationTest {
         var anomalies = (java.util.List<Map<String, Object>>) e.content().get("anomalies");
         @SuppressWarnings("unchecked")
         var samples = (java.util.List<Map<String, Object>>) anomalies.get(0).get("samples");
-        assertThat(samples).isNotEmpty().first().containsKeys("index", "value", "position");
+        assertThat(samples).isNotEmpty();
+        assertThat(samples.get(0)).containsKeys("index", "value", "position");
         assertThat(e.toToolPayload()).contains("\"position\":\"latest\"");
     }
 
