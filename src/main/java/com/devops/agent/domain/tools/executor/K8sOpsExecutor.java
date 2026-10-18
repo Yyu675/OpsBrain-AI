@@ -121,24 +121,22 @@ public class K8sOpsExecutor implements OpsExecutor {
                 .sum();
     }
 
-    private List<Map<String, Object>> containerStates(Pod pod) {
-        List<Map<String, Object>> out = new ArrayList<>();
+    private List<ContainerState> containerStates(Pod pod) {
+        List<ContainerState> out = new ArrayList<>();
         if (pod.getStatus() == null || pod.getStatus().getContainerStatuses() == null) return out;
         for (ContainerStatus cs : pod.getStatus().getContainerStatuses()) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("name", cs.getName());
-            m.put("ready", cs.getReady());
-            m.put("restartCount", cs.getRestartCount());
-            m.put("state", cs.getState() != null
+            String state = cs.getState() != null
                     ? (cs.getState().getRunning() != null ? "Running"
                     : cs.getState().getWaiting() != null ? "Waiting:" + cs.getState().getWaiting().getReason()
                     : cs.getState().getTerminated() != null ? "Terminated:" + cs.getState().getTerminated().getReason()
                     : "Unknown")
-                    : "Unknown");
-            m.put("image", cs.getImage());
-            out.add(m);
+                    : "Unknown";
+            out.add(new ContainerState(cs.getName(), cs.getReady(), cs.getRestartCount(), state, cs.getImage()));
         }
         return out;
+    }
+
+    record ContainerState(String name, Boolean ready, Integer restartCount, String state, String image) {
     }
 
     /**
