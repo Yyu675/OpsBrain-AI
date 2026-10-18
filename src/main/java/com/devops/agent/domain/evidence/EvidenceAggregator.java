@@ -40,6 +40,10 @@ public final class EvidenceAggregator {
 
     public enum Sufficiency { SUFFICIENT, WEAK, INSUFFICIENT }
 
+    /** 固定的证据冲突描述；字段名保持既有可回放 JSON 键。 */
+    public record Conflict(String rule, String severity, String description, String left, String right) {
+    }
+
     /** 聚合结果（record 字段名即 JSON 键名；诊断链路全程可回放）。 */
     public record AggregateResult(
             Sufficiency sufficiency,
@@ -47,7 +51,7 @@ public final class EvidenceAggregator {
             Map<String, Integer> directionNoDataCount,
             Map<String, Integer> directionFailedCount,
             int unavailableCount,
-            List<Map<String, Object>> conflicts,
+            List<Conflict> conflicts,
             List<Evidence> evidences,
             String summary) {
 
@@ -88,7 +92,7 @@ public final class EvidenceAggregator {
 
         Sufficiency sufficiency = computeSufficiency(successTotal, failedTotal, noDataTotal, unavailable);
 
-        List<Map<String, Object>> conflicts = new ArrayList<>();
+        List<Conflict> conflicts = new ArrayList<>();
         detectC1(evidences, conflicts);
         detectC2(evidences, conflicts);
 
@@ -114,7 +118,7 @@ public final class EvidenceAggregator {
     }
 
     /** C1：有变更但指标零波动（弱相关度变更不触发——低分变更本来就该忽略）。 */
-    private static void detectC1(List<Evidence> evidences, List<Map<String, Object>> conflicts) {
+    private static void detectC1(List<Evidence> evidences, List<Conflict> conflicts) {
         Evidence changes = firstSuccess(evidences, Evidence.Type.CHANGES);
         Evidence metrics = firstSuccess(evidences, Evidence.Type.METRICS);
         if (changes == null || metrics == null) return;
@@ -122,19 +126,18 @@ public final class EvidenceAggregator {
         int changeCount = intOf(changes.content().get("count"));
         Double maxRel = changes.relevanceScore();
         if (anomalyCount == 0 && changeCount > 0 && (maxRel == null || maxRel >= 0.6)) {
-            Map<String, Object> c = new LinkedHashMap<>();
-            c.put("rule", "C1");
-            c.put("severity", "medium");
-            c.put("description", "时间窗内存在变更但关键指标零波动：变更可能未生效，"
-                    + "或指标 query-catalog 的 label 约定与现场不匹配——核对该证据的 sourceRef");
-            c.put("left", "changes.count=" + changeCount + ", maxRelevance=" + maxRel);
-            c.put("right", "metrics.anomalyCount=0");
-            conflicts.add(c);
+            conflicts.add(new Conflict(
+                    "C1",
+                    "medium",
+                    "时间窗内存在变更但关键指标零波动：变更可能未生效，"
+                            + "或指标 query-catalog 的 label 约定与现场不匹配——核对该证据的 sourceRef",
+                    "changes.count=" + changeCount + ", maxRelevance=" + maxRel,
+                    "metrics.anomalyCount=0"));
         }
     }
 
     /** C2：错误日志模式有、指标零异常。 */
-    private static void detectC2(List<Evidence> evidences, List<Map<String, Object>> conflicts) {
+    private static void detectC2(List<Evidence> evidences, List<Conflict> conflicts) {
         Evidence logs = firstSuccess(evidences, Evidence.Type.LOGS);
         Evidence metrics = firstSuccess(evidences, Evidence.Type.METRICS);
         if (logs == null || metrics == null) return;
@@ -142,14 +145,13 @@ public final class EvidenceAggregator {
         int patternCount = intOf(logs.content().get("patternCount"));
         Object lvl = logs.content().get("level");
         if (anomalyCount == 0 && patternCount > 0 && "ERROR".equals(lvl)) {
-            Map<String, Object> c = new LinkedHashMap<>();
-            c.put("rule", "C2");
-            c.put("severity", "low");
-            c.put("description", "ERROR 级日志模式存在但关键指标零异常："
-                    + "指标 label 约定可能失配，建议以日志模式为主证据并复核 metrics 的 sourceRef");
-            c.put("left", "logs.patternCount=" + patternCount);
-            c.put("right", "metrics.anomalyCount=0");
-            conflicts.add(c);
+            conflicts.add(new Conflict(
+                    "C2",
+                    "low",
+                    "ERROR 级日志模式存在但关键指标零异常："
+                            + "指标 label 约定可能失配，建议以日志模式为主证据并复核 metrics 的 sourceRef",
+                    "logs.patternCount=" + patternCount,
+                    "metrics.anomalyCount=0"));
         }
     }
 

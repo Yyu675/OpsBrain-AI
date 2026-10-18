@@ -49,7 +49,7 @@ class ConfidenceEngineTest {
                 Map.of("metrics", 2, "changes", 1, "logs", 1),
                 Map.of(), Map.of(),
                 0,
-                List.of(Map.of("rule", "C1"), Map.of("rule", "C2"), Map.of("rule", "CX")),
+                List.of(conflict("C1"), conflict("C2"), conflict("CX")),
                 List.of(), "conflicted");
         double c = ConfidenceEngine.compute(conflictAgg, List.of());
         // 0.5 + 0.15×(4/3>1?——注意 success 累计方向数取 KEY_DIRECTIONS 维度总和为分母，
@@ -73,14 +73,18 @@ class ConfidenceEngineTest {
         var agg = new EvidenceAggregator.AggregateResult(
                 EvidenceAggregator.Sufficiency.WEAK,
                 Map.of(), Map.of(), Map.of(), 0,
-                List.of(Map.of("r", 1), Map.of("r", 2), Map.of("r", 3), Map.of("r", 4)),
+                List.of(conflict("r1"), conflict("r2"), conflict("r3"), conflict("r4")),
                 List.of(), "extreme");
         double c = ConfidenceEngine.compute(agg, List.of());
         assertEquals(0.1, c, 1e-4, "下限 0.1 必须兜住，实际 " + c);
     }
 
+    private static EvidenceAggregator.Conflict conflict(String rule) {
+        return new EvidenceAggregator.Conflict(rule, "low", "test conflict", "left", "right");
+    }
+
     private static EvidenceAggregator.AggregateResult aggregateWithSuccess(
-            int successDirs, List<Map<String, Object>> conflicts) {
+            int successDirs, List<EvidenceAggregator.Conflict> conflicts) {
         Map<String, Integer> success = new java.util.LinkedHashMap<>();
         int i = 0;
         for (String d : EvidenceAggregator.KEY_DIRECTIONS) {

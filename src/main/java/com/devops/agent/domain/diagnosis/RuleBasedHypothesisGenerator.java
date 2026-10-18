@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 规则基线假设生成器（S2-2 双轨的永远可用一轨，路线图 §6.2 2-2.3/2-2.5）。
@@ -122,8 +121,8 @@ public class RuleBasedHypothesisGenerator implements HypothesisGenerator {
         // 简化规则：被检出冲突的方向的证据 id 记入矛盾名单（点开核对的关联键）。
         // roadmap 2-2.4「有冲突证据时每条冲突 -0.1」由引擎统一钳制，此处只留关联。
         List<Long> ids = new ArrayList<>();
-        for (Map<String, Object> c : agg.conflicts()) {
-            String left = String.valueOf(c.get("left"));
+        for (EvidenceAggregator.Conflict conflict : agg.conflicts()) {
+            String left = conflict.left();
             for (RankedEvidence re : all) {
                 if (left != null && left.startsWith(re.evidence().evidenceType())) {
                     ids.add(re.id());
