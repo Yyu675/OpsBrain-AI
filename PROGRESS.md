@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批190 通知健康快照类型化；批189 已合入 PR #104）
+> **最后更新**：2026-10-18（批191 自愈步骤时间线类型化；批190 已合入 PR #106）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -122,7 +122,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T37** | **固定结构 Map 清理：审计 AI 调用分页行端到端类型化**（批179） | `queryAgentCallLog()` 固定行及分页封套改为 Record + typed RowMapper；converter、controller 同步类型化，保留查询筛选、排序、隐私摘要截断与分页口径；新增仓储测试验证 SQL 参数和 typed projection | PR #90 已合并（d8bc20f），修复测试 stub 后 CI 四道门全绿 |
 | **T38** | **固定结构 Map 清理：操作审计分页行类型化**（批180） | `queryOperationAudit()` 固定行与分页封套改 typed Record/RowMapper；converter/controller 改 DTO 投影，保留 SQL 筛选、LIKE 转义、排序、分页及 snake_case JSON 语义，新增仓储映射/SQL 测试 | PR #91 已合并（48ad0c1），修复字符串转义断言后 CI 四道门全绿 |
 | **T39** | **固定结构 Map 清理：治理统计聚合行类型化**（批181） | ActionAllowlist/AutomationPolicy 的固定 SQL 聚合行用 RowMapper 映射到既有 `ActionStats`/`PolicyStats` records，替换 `queryForMap` 与字符串键取值；统计 SQL 和零值语义不变，新增仓储行映射测试 | PR #92 已合并（c4b1d0f）；CI run `39077184391` 四道门全绿 |
-| **T40** | **固定结构 Map 复扫范围确认** | `DashboardServiceImpl` 模型/成本聚合、`MetricsCatalog.describeAll()` 固定元数据、K8s 容器状态列表项、C1/C2 证据冲突结果、钉钉操作按钮项已纳入批184–188；后续 `DiagnosisSessionRepository.findByAlertId()` 固定十列查询行纳入批189；`BusinessMetrics.notifySnapshot()` 固定八字段快照纳入批190。对 `queryForList/queryForMap` 路径复核后，除该项外其余为标量列表或已类型化行；Prometheus 图表视图 Map 源码明确要求字段灵活演进，外围执行结果 data、通知 payload 容器、执行参数/快照及动态根因汇总按范围保留 | 2026-10-18，候选复核收敛，继续留意新出现的固定行 |
+| **T40** | **固定结构 Map 复扫范围确认** | `DashboardServiceImpl` 模型/成本聚合、`MetricsCatalog.describeAll()` 固定元数据、K8s 容器状态列表项、C1/C2 证据冲突结果、钉钉操作按钮项已纳入批184–188；后续 `DiagnosisSessionRepository.findByAlertId()` 固定十列查询行纳入批189；`BusinessMetrics.notifySnapshot()` 固定八字段快照纳入批190；自愈人工/策略步骤时间线固定项纳入批191。对 `queryForList/queryForMap` 路径复核后，除该项外其余为标量列表或已类型化行；Prometheus 图表视图 Map 源码明确要求字段灵活演进，外围执行结果 data、通知 payload 容器、执行参数/快照及动态根因汇总按范围保留 | 2026-10-18，候选复核收敛，继续留意新出现的固定行 |
 | **T41** | **固定结构 Map 清理：仪表盘调用趋势聚合行类型化**（批182） | `getCallTrends()` 固定 day/served/hits/cost 聚合行改为 typed RowMapper + `CallTrendRow`；既有服务测试验证连续补零、成本舍入、命中率和 days-1 参数，保留 SQL 与 NULL→0 语义 | PR #94 已合并，CI run `39089984278` 四道门全绿 |
 | **T42** | **固定结构 Map 清理：知识检索 SQL 行类型化**（批183） | `HybridRetrieverService` 向量/混合检索返回的固定七列行改为 `SearchRow` + RowMapper；反馈 boost 继续按原 ID 批查询、score 乘数和降序排序；检索/去重/出处字段语义保持，更新固定列映射与检索契约测试 | PR #95 已合并，CI run `39090892580` 四道门全绿 |
 | **T43** | **固定结构 Map 清理：仪表盘模型/成本聚合行类型化**（批184） | `buildModelDistribution()` 与 `buildCostTrends()` 的固定 `model/count`、`date/cost` 行改为 typed RowMapper/Record；现有分母口径、百分比精度、7 日补零与 null 成本归零语义不变，新增 mapper 行为测试 | PR #97 已合并，CI run `39091727014` 四道门全绿 |
@@ -131,7 +131,8 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T46** | **固定结构 Map 清理：证据冲突结果类型化**（批187） | 聚合器 C1/C2 固定 rule/severity/description/left/right 冲突 Map 改为 `Conflict` record；规则判定、文案与证据关联 left 值不变，更新聚合测试和推理层访问 | PR #101 已合并，CI run `39101911236` 四道门全绿 |
 | **T47** | **固定结构 Map 清理：钉钉操作按钮项类型化**（批188） | 钉钉 ActionCard 的固定 title/actionURL 按钮项改为 `ActionButton` record；payload 外层仍保留 Map，链接筛选、最多按钮数及 JSON 字段结构不变，沿用现有序列化测试验证 | PR #102 已合并，CI run `39102251494` 四道门全绿 |
 | **T48** | **固定结构 Map 清理：诊断会话 alert_id 查询行类型化**（批189） | `DiagnosisSessionRepository.findByAlertId()` 的固定十列 SQL 行改用既有 `SessionRow` record 和 `Optional`，保留原 SQL、取首行语义及无结果语义（空对象 → empty Optional）；新增测试覆盖字段映射、nullable 列和无行情况 | PR #104 已合并，CI run `39103575220` 四道门全绿 |
-| **T49** | **固定结构 Map 清理：通知健康快照类型化**（批190） | `BusinessMetrics.notifySnapshot()` 的固定八字段 Map 改为 `NotifySnapshot` record；计数及 ISO 时间字符串、初始时间 null 的含义不变，更新指标断言与调用方 mock fixture | 2026-10-18，待 CI 验证 |
+| **T49** | **固定结构 Map 清理：通知健康快照类型化**（批190） | `BusinessMetrics.notifySnapshot()` 的固定八字段 Map 改为 `NotifySnapshot` record；计数及 ISO 时间字符串、初始时间 null 的含义不变，更新指标断言与调用方 mock fixture | PR #106 已合并，CI run `39108503469` 四道门全绿 |
+| **T50** | **固定结构 Map 清理：自愈步骤时间线项类型化**（批191） | 手工编排与策略演练共用的固定 name/status/detail/at 步骤 Map 改为 `HealingStep` record；数据库 JSON 属性、时间戳与空 detail 语义不变，增加序列化字段和历史步骤反序列化断言 | 2026-10-18，待 CI 验证 |
 
 ---
 
