@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
@@ -116,12 +117,12 @@ class RetrieverContractTest {
 
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         if (backendFails) {
-            when(jdbc.queryForList(anyString(), any(Object[].class)))
+            when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
                     .thenThrow(new DataAccessResourceFailureException("pgvector 连接被拒绝"));
             when(jdbc.queryForObject(anyString(), any(Class.class)))
                     .thenThrow(new DataAccessResourceFailureException("pgvector 连接被拒绝"));
         } else {
-            when(jdbc.queryForList(anyString(), any(Object[].class)))
+            when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
                     .thenReturn(List.of());
             when(jdbc.queryForObject(anyString(), any(Class.class)))
                     .thenReturn(0L);
