@@ -121,7 +121,9 @@ class MetricsControllerWebTest {
                     // 每条指标必须自带 id/name/unit/describe，
                     // 缺 unit 会让前端不知道该不该加百分号
                     .andExpect(jsonPath("$.data.metrics[0].id").exists())
+                    .andExpect(jsonPath("$.data.metrics[0].name").exists())
                     .andExpect(jsonPath("$.data.metrics[0].unit").exists())
+                    .andExpect(jsonPath("$.data.metrics[0].describe").exists())
                     .andExpect(jsonPath("$.data.enabled").value(true))
                     .andExpect(jsonPath("$.traceId").exists());
         }

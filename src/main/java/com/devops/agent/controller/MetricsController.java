@@ -70,11 +70,7 @@ public class MetricsController {
     @GetMapping("/catalog")
     public ApiResponse<MetricCatalogResponse> catalog() {
         List<MetricMetaDto> metaList = MetricsCatalog.describeAll().stream()
-                .map(m -> new MetricMetaDto(
-                        (String) m.get("id"),
-                        (String) m.get("name"),
-                        (String) m.get("unit"),
-                        (String) m.get("describe")))
+                .map(m -> new MetricMetaDto(m.id(), m.name(), m.unit(), m.describe()))
                 .toList();
         return ApiResponse.success(new MetricCatalogResponse(metaList, prometheus.isEnabled()));
     }
