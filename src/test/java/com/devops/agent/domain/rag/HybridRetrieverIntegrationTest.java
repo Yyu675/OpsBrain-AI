@@ -144,7 +144,8 @@ class HybridRetrieverIntegrationTest extends AbstractIntegrationTest {
                         + "embedding_id/text/metadata 列");
         assertTrue(results.stream().allMatch(chunk -> chunk.id() != null
                         && chunk.docTitle() != null && !chunk.docTitle().isBlank()
-                        && chunk.text() != null && !chunk.text().isBlank()),
+                        && chunk.text() != null && !chunk.text().isBlank()
+                        && Double.isFinite(chunk.score()) && chunk.score() >= 0.0),
                 "固定检索行的 chunk id、标题和内容必须映射到 typed source result");
     }
 }
