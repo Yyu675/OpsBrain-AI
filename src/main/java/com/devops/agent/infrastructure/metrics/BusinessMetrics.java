@@ -36,6 +36,11 @@ import io.micrometer.core.instrument.Timer;
 @ConditionalOnProperty(name = "devops.metrics.business.enabled", havingValue = "true", matchIfMissing = true)
 public class BusinessMetrics {
 
+    public record NotifySnapshot(long attempts, long successes, long failed, long degraded,
+                                 long delivered, long deliverFailed,
+                                 String lastDeliveredAt, String lastSuccessAt) {
+    }
+
     private static final Logger log = LoggerFactory.getLogger(BusinessMetrics.class);
 
     // ==================== 增量流速面（方案⑥ RED 指标，2026-10-01）=================
@@ -319,22 +324,15 @@ public class BusinessMetrics {
      * 通知健康快照（看门狗 delta 源 + 效能卡读它）。
      * {@code lastSuccessAt} 为 ISO 时间或 null（尚无成功）。
      */
-    public java.util.Map<String, Object> notifySnapshot() {
-        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
-        m.put("attempts", notifyAttempts.get());
-        m.put("successes", notifySuccesses.get());
-        m.put("failed", notifyFailed.get());
-        m.put("degraded", notifyDegraded.get());
-        // ROI#1：送达回执三字段（受理≠送达——快照要能一句话答「渠道收到没」）
-        m.put("delivered", notifyDelivered.get());
-        m.put("deliverFailed", notifyDeliveryFailed.get());
+    public NotifySnapshot notifySnapshot() {
         long dl = notifyLastDeliveredAt;
-        m.put("lastDeliveredAt", dl > 0
-                ? java.time.Instant.ofEpochMilli(dl).toString() : null);
+        String lastDeliveredAt = dl > 0 ? java.time.Instant.ofEpochMilli(dl).toString() : null;
         long last = notifyLastSuccessAt;
-        m.put("lastSuccessAt", last > 0
-                ? java.time.Instant.ofEpochMilli(last).toString() : null);
-        return m;
+        String lastSuccessAt = last > 0 ? java.time.Instant.ofEpochMilli(last).toString() : null;
+        // ROI#1：送达回执三字段（受理≠送达——快照要能一句话答「渠道收到没」）
+        return new NotifySnapshot(notifyAttempts.get(), notifySuccesses.get(), notifyFailed.get(),
+                notifyDegraded.get(), notifyDelivered.get(), notifyDeliveryFailed.get(),
+                lastDeliveredAt, lastSuccessAt);
     }
 
     /**

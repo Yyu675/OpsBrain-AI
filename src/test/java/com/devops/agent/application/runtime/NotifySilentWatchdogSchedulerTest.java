@@ -10,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,8 +47,9 @@ class NotifySilentWatchdogSchedulerTest {
         metrics = mock(BusinessMetrics.class);
         when(notifier.available()).thenReturn(true);
         when(alertRepository.findActiveByName(anyString())).thenReturn(Optional.empty());
-        // snapshot 会拷贝 notifySnapshot 的结果——mock 默认返回 null 会 NPE，必须给空 Map
-        when(metrics.notifySnapshot()).thenReturn(new LinkedHashMap<>());
+        // 为通知健康快照提供与生产类型一致的零值基线。
+        when(metrics.notifySnapshot()).thenReturn(
+                new BusinessMetrics.NotifySnapshot(0, 0, 0, 0, 0, 0, null, null));
         scheduler = new NotifySilentWatchdogScheduler(notifier, alertService, alertRepository, true);
         org.springframework.test.util.ReflectionTestUtils.setField(scheduler, "metrics", metrics);
     }
