@@ -69,7 +69,12 @@ class EvidenceAggregatorTest {
         var metrics = ev(SUCCESS, "metrics", Map.of("anomalyCount", 0));
         var r = EvidenceAggregator.aggregate(List.of(changes, metrics));
         assertEquals(1, r.conflicts().size());
-        assertEquals("C1", r.conflicts().get(0).get("rule"));
+        var conflict = r.conflicts().get(0);
+        assertEquals("C1", conflict.rule());
+        assertEquals("medium", conflict.severity());
+        assertTrue(conflict.description().contains("时间窗内存在变更"));
+        assertTrue(conflict.left().startsWith("changes.count=2"));
+        assertEquals("metrics.anomalyCount=0", conflict.right());
     }
 
     @Test
@@ -88,7 +93,12 @@ class EvidenceAggregatorTest {
         var metrics = ev(SUCCESS, "metrics", Map.of("anomalyCount", 0));
         var r = EvidenceAggregator.aggregate(List.of(logs, metrics));
         assertEquals(1, r.conflicts().size());
-        assertEquals("C2", r.conflicts().get(0).get("rule"));
+        var conflict = r.conflicts().get(0);
+        assertEquals("C2", conflict.rule());
+        assertEquals("low", conflict.severity());
+        assertTrue(conflict.description().contains("ERROR 级日志模式"));
+        assertEquals("logs.patternCount=3", conflict.left());
+        assertEquals("metrics.anomalyCount=0", conflict.right());
     }
 
     @Test
