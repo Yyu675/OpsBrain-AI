@@ -5,7 +5,6 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -175,10 +174,15 @@ public class DiagnosisSessionRepository {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    /** 供诊断详情 API 汇报：按 alert_id 取活动会话。 */
-    public Map<String, Object> findByAlertId(Long alertId) {
-        String sql = "SELECT id, trace_id, alert_id, ticket_id, service, status, sufficiency, summary, created_at, updated_at FROM sys_diagnosis_session WHERE alert_id = ?";
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, alertId);
-        return rows.isEmpty() ? Map.of() : rows.get(0);
+    /** 按 alert_id 取诊断会话；无匹配时返回 Optional.empty()。 */
+    public Optional<SessionRow> findByAlertId(Long alertId) {
+        String sql = "SELECT id, trace_id, alert_id, ticket_id, service, status, sufficiency, summary, created_at, updated_at "
+                + "FROM sys_diagnosis_session WHERE alert_id = ?";
+        List<SessionRow> rows = jdbcTemplate.query(sql, (rs, rowNum) -> new SessionRow(
+                rs.getLong("id"), rs.getString("trace_id"), rs.getObject("alert_id", Long.class),
+                rs.getString("ticket_id"), rs.getString("service"), rs.getString("status"),
+                rs.getString("sufficiency"), rs.getString("summary"),
+                rs.getTimestamp("created_at"), rs.getTimestamp("updated_at")), alertId);
+        return rows.stream().findFirst();
     }
 }
