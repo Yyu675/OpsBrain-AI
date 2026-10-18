@@ -120,9 +120,13 @@ class K8sOpsExecutorTest {
         assertTrue(result.summary().contains("Running"));
         // 容器状态列表
         @SuppressWarnings("unchecked")
-        var containers = (java.util.List<Map<String, Object>>) result.data().get("containers");
+        var containers = (java.util.List<K8sOpsExecutor.ContainerState>) result.data().get("containers");
         assertEquals(1, containers.size());
-        assertEquals("payment-service", containers.get(0).get("name"));
+        assertEquals("payment-service", containers.get(0).name());
+        assertEquals(Boolean.TRUE, containers.get(0).ready());
+        assertEquals(3, containers.get(0).restartCount());
+        assertEquals("Unknown", containers.get(0).state());
+        assertEquals("payment-service:v2.4.1", containers.get(0).image());
     }
 
     @Test
