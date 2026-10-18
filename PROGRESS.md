@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批184 仪表盘分布/成本聚合行类型化；批183 已合入 PR #95）
+> **最后更新**：2026-10-18（批184 已合入 PR #97，CI 四道门全绿；批183 已合入 PR #95）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -125,7 +125,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T40** | **固定结构 Map 复扫范围确认** | 后续复核发现 `DashboardServiceImpl` 的模型分布和成本趋势两个聚合结果也是固定字段且有可扩展服务测试，纳入批184；其他主要为动态 payload、执行参数/状态快照、动态根因分类或未被调用旧方法，继续保留 | 2026-10-18，范围复核后继续推进 |
 | **T41** | **固定结构 Map 清理：仪表盘调用趋势聚合行类型化**（批182） | `getCallTrends()` 固定 day/served/hits/cost 聚合行改为 typed RowMapper + `CallTrendRow`；既有服务测试验证连续补零、成本舍入、命中率和 days-1 参数，保留 SQL 与 NULL→0 语义 | PR #94 已合并，CI run `39089984278` 四道门全绿 |
 | **T42** | **固定结构 Map 清理：知识检索 SQL 行类型化**（批183） | `HybridRetrieverService` 向量/混合检索返回的固定七列行改为 `SearchRow` + RowMapper；反馈 boost 继续按原 ID 批查询、score 乘数和降序排序；检索/去重/出处字段语义保持，更新固定列映射与检索契约测试 | PR #95 已合并，CI run `39090892580` 四道门全绿 |
-| **T43** | **固定结构 Map 清理：仪表盘模型/成本聚合行类型化**（批184） | `buildModelDistribution()` 与 `buildCostTrends()` 的固定 `model/count`、`date/cost` 行改为 typed RowMapper/Record；现有分母口径、百分比精度、7 日补零与 null 成本归零语义不变，新增 mapper 行为测试 | 2026-10-18，待 CI 验证 |
+| **T43** | **固定结构 Map 清理：仪表盘模型/成本聚合行类型化**（批184） | `buildModelDistribution()` 与 `buildCostTrends()` 的固定 `model/count`、`date/cost` 行改为 typed RowMapper/Record；现有分母口径、百分比精度、7 日补零与 null 成本归零语义不变，新增 mapper 行为测试 | PR #97 已合并，CI run `39091727014` 四道门全绿 |
 
 ---
 
