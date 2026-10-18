@@ -192,17 +192,18 @@ public class DashboardServiceImpl implements DashboardService {
         String sql = "SELECT model_name AS model, COUNT(*) as count FROM sys_agent_call_log "
                 + "WHERE model_name IS NOT NULL GROUP BY model_name ORDER BY count DESC";
 
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
+        List<ModelDistributionRow> rows = jdbcTemplate.query(sql, (rs, rowNum) ->
+                new ModelDistributionRow(rs.getString("model"), rs.getLong("count")));
 
         // 分母 = 有模型归属的调用总数，保证百分比之和 = 100%
         long modelTotal = 0L;
-        for (Map<String, Object> row : rows) {
-            modelTotal += ((Number) row.get("count")).longValue();
+        for (ModelDistributionRow row : rows) {
+            modelTotal += row.count();
         }
 
-        for (Map<String, Object> row : rows) {
-            String model = (String) row.get("model");
-            Long count = ((Number) row.get("count")).longValue();
+        for (ModelDistributionRow row : rows) {
+            String model = row.model();
+            Long count = row.count();
             double percentage = modelTotal > 0 ? (count * 100.0 / modelTotal) : 0.0;
 
             result.add(DashboardOverviewDTO.ModelDistribution.builder()
@@ -231,14 +232,15 @@ public class DashboardServiceImpl implements DashboardService {
                 GROUP BY DATE(create_time)
                 """;
 
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
+        List<CostTrendRow> rows = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            double cost = rs.getDouble("cost");
+            return new CostTrendRow(rs.getDate("date").toLocalDate(), rs.wasNull() ? 0.0 : cost);
+        });
 
         // 先把有数据的日期归入 map，便于补零时按日期查
         Map<LocalDate, Double> costByDate = new java.util.HashMap<>();
-        for (Map<String, Object> row : rows) {
-            LocalDate date = ((java.sql.Date) row.get("date")).toLocalDate();
-            Double cost = row.get("cost") != null ? ((Number) row.get("cost")).doubleValue() : 0.0;
-            costByDate.put(date, cost);
+        for (CostTrendRow row : rows) {
+            costByDate.put(row.date(), row.cost());
         }
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -323,6 +325,12 @@ public class DashboardServiceImpl implements DashboardService {
         }
 
         return new DashboardCallTrends(dayLabels, costSeries, hitRateSeries);
+    }
+
+    private record ModelDistributionRow(String model, long count) {
+    }
+
+    private record CostTrendRow(LocalDate date, double cost) {
     }
 
     private record CallTrendRow(LocalDate day, double cost, long served, long hits) {
