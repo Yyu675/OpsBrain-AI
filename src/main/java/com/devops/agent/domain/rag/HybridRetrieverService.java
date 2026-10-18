@@ -166,7 +166,7 @@ public class HybridRetrieverService implements Retriever {
         String vectorLiteral = toVectorLiteral(queryEmbedding);
 
         // 2. 向量检索 + 治理过滤 + L4 熔断（全部在 SQL 内完成）
-        List<Map<String, Object>> rows;
+        List<SearchRow> rows;
         try {
             rows = hybridEnabled
                     ? searchHybrid(vectorLiteral, query, topK * 2, scope)
@@ -195,27 +195,27 @@ public class HybridRetrieverService implements Retriever {
         // 首次出现的出处优先保留——SQL 已按相似度排序，
         // 先出现的那条与查询更相关，其章节标题更贴切。
         Map<String, RetrievedChunk> uniqueParents = new LinkedHashMap<>();
-        for (Map<String, Object> row : rows) {
-            String contentHash = (String) row.get("content_hash");
-            String parentText = (String) row.get("parent_text");
-            String content = (String) row.get("content");
+        for (SearchRow row : rows) {
+            String contentHash = row.contentHash();
+            String parentText = row.parentText();
+            String content = row.content();
 
             // 有父段落则用父段落（上下文更完整），否则退化用子段落
             String text = (parentText != null && !parentText.isBlank()) ? parentText : content;
             if (text != null && !text.isBlank()) {
                 // 同一文档内同哈希（完全重复切片）合并；跨文档同内容保留两出处。
                 // content_hash 为 NULL 时退化为按正文去重（不影响正确性）
-                String docTitle = (String) row.get("doc_title");
+                String docTitle = row.docTitle();
                 String dedupKey = (contentHash != null ? contentHash : text) + "|" + docTitle;
                 if (!uniqueParents.containsKey(dedupKey)) {
                     uniqueParents.put(dedupKey, new RetrievedChunk(
                             docTitle,
-                            (String) row.get("section_header"),
+                            row.sectionHeader(),
                             text,
-                            toDouble(row.get("score")),
+                            row.score(),
                             // 切片主键随行：诊断反馈回流要带「本次引用了哪些 chunk」，
                             // id 比 citation 字符串反查无歧义（标题含分隔符/章节改版会漂移）
-                            toLongOrNull(row.get("id"))
+                            row.id()
                     ));
                 }
             }
@@ -224,7 +224,7 @@ public class HybridRetrieverService implements Retriever {
                 String preview = content != null
                         ? content.substring(0, Math.min(50, content.length())) : "";
                 log.debug("[HybridRetriever] 匹配片段: score={}, doc={}, text={}",
-                        row.get("score"), row.get("doc_title"), preview);
+                        row.score(), row.docTitle(), preview);
             }
 
             if (uniqueParents.size() >= topK) {
@@ -237,20 +237,20 @@ public class HybridRetrieverService implements Retriever {
         return result;
     }
 
-    /**
-     * score 列的类型转换
-     * <p>
-     * pgvector 的表达式结果可能是 {@code Double}/{@code Float}/{@code BigDecimal}，
-     * 直接强转会在部分驱动版本下抛 ClassCastException。
-     * </p>
-     */
-    private double toDouble(Object v) {
-        return (v instanceof Number n) ? n.doubleValue() : 0.0;
+    private static SearchRow mapSearchRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+        Object rawId = rs.getObject("id");
+        Object rawScore = rs.getObject("score");
+        Long id = rawId instanceof Number idNumber ? idNumber.longValue() : null;
+        double score = rawScore instanceof Number scoreNumber ? scoreNumber.doubleValue() : 0.0;
+        return new SearchRow(id, rs.getString("content"), rs.getString("parent_text"),
+                rs.getString("doc_title"), rs.getString("section_header"), rs.getString("content_hash"), score);
     }
 
-    /** 主键列的类型转换：驱动可能返回 Integer/Long/BigDecimal，非数字返回 null（宁缺不编）。 */
-    private static Long toLongOrNull(Object v) {
-        return (v instanceof Number n) ? n.longValue() : null;
+    private record SearchRow(Long id, String content, String parentText, String docTitle,
+                             String sectionHeader, String contentHash, double score) {
+        private SearchRow withScore(double updatedScore) {
+            return new SearchRow(id, content, parentText, docTitle, sectionHeader, contentHash, updatedScore);
+        }
     }
 
     /**
@@ -264,7 +264,7 @@ public class HybridRetrieverService implements Retriever {
      * 真正生效——废弃或过期的文档不会进入检索结果。
      * </p>
      */
-    private List<Map<String, Object>> searchByVector(String vectorLiteral, int limit, KnowledgeScope scope) {
+    private List<SearchRow> searchByVector(String vectorLiteral, int limit, KnowledgeScope scope) {
         // C1：权限谓词直接拼进 WHERE（谓词本身是常量串，部门名走占位参数，
         // 不存在注入面）。之所以不 JOIN sys_knowledge_doc 取 visibility，
         // 是因为带 JOIN 的 ORDER BY embedding <=> ? 会让 PG 放弃 HNSW 索引
@@ -293,7 +293,7 @@ public class HybridRetrieverService implements Retriever {
         args.add(minScore);
         args.add(vectorLiteral);
         args.add(limit);
-        return jdbcTemplate.queryForList(sql, args.toArray());
+        return jdbcTemplate.query(sql, HybridRetrieverService::mapSearchRow, args.toArray());
     }
 
     /**
@@ -308,7 +308,7 @@ public class HybridRetrieverService implements Retriever {
      * 贸然启用会让 35% 的权重变成噪音。
      * </p>
      */
-    private List<Map<String, Object>> searchHybrid(String vectorLiteral, String query, int limit,
+    private List<SearchRow> searchHybrid(String vectorLiteral, String query, int limit,
                                                    KnowledgeScope scope) {
         String sql = """
             SELECT id, content, parent_text, doc_title, section_header,
@@ -335,37 +335,33 @@ public class HybridRetrieverService implements Retriever {
         args.add(vectorLiteral);
         args.add(minScore);
         args.add(limit);
-        return jdbcTemplate.queryForList(sql, args.toArray());
+        return jdbcTemplate.query(sql, HybridRetrieverService::mapSearchRow, args.toArray());
     }
 
     /**
      * 反馈回流 boost（S2-3 2-3.6）：score ×= boost(chunkId)，重排 DESC。
      * 失败 fallback 到未 boost 的原始次序——回流是增值冒险，不是检索环路的筋骨。
      */
-    private List<Map<String, Object>> applyFeedbackBoost(List<Map<String, Object>> rows) {
+    private List<SearchRow> applyFeedbackBoost(List<SearchRow> rows) {
         if (knowledgeBoostRepository == null || rows == null || rows.isEmpty()) {
             return rows;
         }
         try {
-            List<Long> ids = rows.stream()
-                    .map(r -> ((Number) r.get("id")).longValue()).toList();
+            List<Long> ids = rows.stream().map(row -> row.id().longValue()).toList();
             Map<Long, Double> boosts = knowledgeBoostRepository.boostBatch(ids);
             if (boosts.isEmpty()) {
                 return rows;
             }
-            List<Map<String, Object>> boosted = new ArrayList<>(rows.size());
-            for (Map<String, Object> row : rows) {
-                long id = ((Number) row.get("id")).longValue();
-                Double b = boosts.get(id);
-                if (b != null && Math.abs(b - 1.0) > 1e-9) {
-                    Map<String, Object> copy = new java.util.LinkedHashMap<>(row);
-                    copy.put("score", toDouble(row.get("score")) * b);
-                    boosted.add(copy);
+            List<SearchRow> boosted = new ArrayList<>(rows.size());
+            for (SearchRow row : rows) {
+                Double boost = boosts.get(row.id());
+                if (boost != null && Math.abs(boost - 1.0) > 1e-9) {
+                    boosted.add(row.withScore(row.score() * boost));
                 } else {
                     boosted.add(row);
                 }
             }
-            boosted.sort((a, z) -> Double.compare(toDouble(z.get("score")), toDouble(a.get("score"))));
+            boosted.sort((a, b) -> Double.compare(b.score(), a.score()));
             return boosted;
         } catch (Exception ex) {
             log.warn("[HybridRetriever] 反馈 boost 失败，降级为原序: {}", ex.getMessage());

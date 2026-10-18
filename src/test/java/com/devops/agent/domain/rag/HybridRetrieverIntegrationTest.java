@@ -126,7 +126,7 @@ class HybridRetrieverIntegrationTest extends AbstractIntegrationTest {
         // 用知识库文档中确实存在的主题检索
         // C1：检索now需显式传可见范围。系统范围 = 可见全部，
         // 保持本测试原有语义（验证存储管道连通性，与权限无关）。
-        List<String> results = retrieverService.retrieve(
+        List<RetrievedChunk> results = retrieverService.retrieveWithSource(
                 "Pod CrashLoopBackOff 排查", 3, KnowledgeScope.admin("TEST", null));
 
         assertNotNull(results, "检索不应返回 null");
@@ -142,5 +142,9 @@ class HybridRetrieverIntegrationTest extends AbstractIntegrationTest {
                         + "说明摄取与检索使用了不兼容的存储 schema——"
                         + "写入走 sys_knowledge_chunk 自定义列，读取走 PgVectorEmbeddingStore 期望的 "
                         + "embedding_id/text/metadata 列");
+        assertTrue(results.stream().allMatch(chunk -> chunk.id() != null
+                        && chunk.docTitle() != null && !chunk.docTitle().isBlank()
+                        && chunk.text() != null && !chunk.text().isBlank()),
+                "固定检索行的 chunk id、标题和内容必须映射到 typed source result");
     }
 }
