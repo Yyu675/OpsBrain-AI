@@ -108,7 +108,15 @@ public class MetricsEvidenceCollector {
                         a.put("currentValue", v.currentValue());
                         a.put("deviationFactor", v.deviationFactor());
                         a.put("anomalyCount", v.anomalyCount());
-                        a.put("samples", v.samples());
+                        // Evidence.content is deliberately Map-shaped; adapt the typed sample records here
+                        // to preserve the existing payload object's field names and JSON serialization.
+                        a.put("samples", v.samples().stream().map(sample -> {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            row.put("index", sample.index());
+                            row.put("value", sample.value());
+                            row.put("position", sample.position());
+                            return row;
+                        }).toList());
                         metricAnomalies.add(a);
                     }
                 }

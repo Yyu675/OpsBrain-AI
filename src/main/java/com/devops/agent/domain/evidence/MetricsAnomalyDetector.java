@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * 指标异常检测：IQR（四分位距）法（路线图 §5.2 1-1.3「3-sigma 或 IQR」取 IQR）。
@@ -34,7 +33,11 @@ public final class MetricsAnomalyDetector {
 
     private MetricsAnomalyDetector() {}
 
-    /** 一个序列的检测结论（字段名即 JSON 键名，逐字为准）。 */
+    /** 固定异常样本点结构；证据 payload 边界再映射为既有 JSON 对象。 */
+    public record AnomalySample(int index, double value, String position) {
+    }
+
+    /** 一个序列的检测结论。 */
     public record SeriesVerdict(
             String metricLabels,
             double baseline,
@@ -42,7 +45,7 @@ public final class MetricsAnomalyDetector {
             double deviationFactor,
             int pointCount,
             int anomalyCount,
-            List<Map<String, Object>> samples) {
+            List<AnomalySample> samples) {
 
         /** 汇总用：最大偏离倍数（无异常时也为当前/基线，用于排序不用于判异）。 */
         public boolean anomalous() { return anomalyCount > 0; }
@@ -73,7 +76,7 @@ public final class MetricsAnomalyDetector {
         double lowerFence = q1 - FENCE_K * iqr;
         double baseline = percentile(sorted, 50);
 
-        List<Map<String, Object>> samples = new ArrayList<>();
+        List<AnomalySample> samples = new ArrayList<>();
         int anomalyCount = 0;
         double maxDev = 0;
         for (int i = 0; i < n; i++) {
@@ -88,10 +91,8 @@ public final class MetricsAnomalyDetector {
                 maxDev = baseline == 0 ? Double.POSITIVE_INFINITY : Math.abs(v / baseline);
             }
             if (samples.size() < MAX_SAMPLES_PER_SERIES) {
-                samples.add(Map.of(
-                        "index", i,
-                        "value", round3(v),
-                        "position", i == n - 1 ? "latest" : (i == 0 ? "earliest" : "middle")));
+                samples.add(new AnomalySample(i, round3(v),
+                        i == n - 1 ? "latest" : (i == 0 ? "earliest" : "middle")));
             }
         }
         double deviationFactor = baseline == 0
