@@ -1,7 +1,7 @@
 # OpsBrain AI · 任务进度台账
 
 > **这是什么**：正在做和刚做完的事都记在这里。**唯一的实时进度真相源**。
-> **最后更新**：2026-10-18（批192 指标异常样本结构类型化；批191 已合入 PR #107）
+> **最后更新**：2026-10-18（批192 已合入 PR #109，CI 四道门全绿；异常样本 payload 契约保持）
 > **配套文档**：`README.md`（只登已验收的能力）｜`AGENTS.md`（硬约束）｜`docs/08-benchmark/`（每轮审查报告）
 
 ---
@@ -133,7 +133,7 @@ README 是对外承诺。当前 README 就是反面教材——它写着「L1-L5
 | **T48** | **固定结构 Map 清理：诊断会话 alert_id 查询行类型化**（批189） | `DiagnosisSessionRepository.findByAlertId()` 的固定十列 SQL 行改用既有 `SessionRow` record 和 `Optional`，保留原 SQL、取首行语义及无结果语义（空对象 → empty Optional）；新增测试覆盖字段映射、nullable 列和无行情况 | PR #104 已合并，CI run `39103575220` 四道门全绿 |
 | **T49** | **固定结构 Map 清理：通知健康快照类型化**（批190） | `BusinessMetrics.notifySnapshot()` 的固定八字段 Map 改为 `NotifySnapshot` record；计数及 ISO 时间字符串、初始时间 null 的含义不变，更新指标断言与调用方 mock fixture | PR #106 已合并，CI run `39108503469` 四道门全绿 |
 | **T50** | **固定结构 Map 清理：自愈步骤时间线项类型化**（批191） | 手工编排与策略演练共用的固定 name/status/detail/at 步骤 Map 改为 `HealingStep` record；数据库 JSON 属性、时间戳与空 detail 语义不变，增加序列化字段和历史步骤反序列化断言 | PR #107 已合并，CI run `39109023241` 四道门全绿 |
-| **T51** | **固定结构 Map 清理：异常样本点类型化**（批192） | `MetricsAnomalyDetector.SeriesVerdict.samples` 固定 index/value/position 行改为 `AnomalySample` record；在 `Evidence.content` payload 边界适配回既有 JSON 对象，保持字段名、数值、顺序与 JSON 契约；扩展算法和真实采集器测试 | 2026-10-18，待 CI 验证 |
+| **T51** | **固定结构 Map 清理：异常样本点类型化**（批192） | `MetricsAnomalyDetector.SeriesVerdict.samples` 固定 index/value/position 行改为 `AnomalySample` record；在 `Evidence.content` payload 边界适配回既有 JSON 对象，保持字段名、数值、顺序与 JSON 契约；扩展算法和真实采集器测试 | PR #109 已合并，CI run `39110357258` 四道门全绿 |
 
 ---
 
